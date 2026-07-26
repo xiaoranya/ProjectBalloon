@@ -211,6 +211,19 @@ impl PresentationService {
                 "Screen presentation is not published",
             ));
         }
+        let recent = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM screen_instances WHERE last_ip = $1 AND created_at > now() - interval '10 minutes'",
+        )
+        .bind(ip.to_string())
+        .fetch_one(&self.database)
+        .await
+        .map_err(|error| AppError::internal("check screen registration rate", error))?;
+        if recent >= 20 {
+            return Err(AppError::too_many_requests(
+                "SCREEN_REGISTRATION_RATE_LIMITED",
+                "Too many screen registrations; try again later",
+            ));
+        }
         let mut raw = [0_u8; 32];
         getrandom::fill(&mut raw)
             .map_err(|error| AppError::internal("generate screen token", error))?;

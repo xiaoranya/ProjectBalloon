@@ -55,7 +55,9 @@ reasserts mode `0600` and validates all three Compose projects. The populated en
 and excluded from offline packages and configuration backups.
 
 The default web endpoint is `http://<host>:8088`; `/api/health` is the dependency
-readiness endpoint and `/livez` is process liveness.
+readiness endpoint and `/livez` is process liveness. If HTTPS terminates in front
+of Nginx, set `PROJECT_BALLOON_SECURE_COOKIES=true` before the second
+`install.sh` run.
 
 ## Routine control
 

@@ -37,6 +37,12 @@ pub struct S3ArtifactSource {
     request_timeout: Duration,
 }
 
+const MAX_S3_RESPONSE_BYTES: i64 = 512 * 1024 * 1024;
+
+fn declared_size_is_allowed(length: Option<i64>) -> bool {
+    length.is_none_or(|length| (0..=MAX_S3_RESPONSE_BYTES).contains(&length))
+}
+
 pub struct S3ArtifactSourceConfig {
     pub endpoint: String,
     pub region: String,
@@ -82,6 +88,9 @@ impl ArtifactSource for S3ArtifactSource {
                 .await
                 .map_err(|_| ArtifactError::Timeout)?
                 .map_err(|error| ArtifactError::Request(error.to_string()))?;
+        if !declared_size_is_allowed(response.content_length()) {
+            return Err(ArtifactError::TooLarge(MAX_S3_RESPONSE_BYTES as u64));
+        }
         timeout(self.request_timeout, response.body.collect())
             .await
             .map_err(|_| ArtifactError::Timeout)?
@@ -279,6 +288,15 @@ mod tests {
             assert_eq!(reads.get(&("problems".to_owned(), task.testdata_object_key)), Some(&1));
         }
         tokio::fs::remove_dir_all(cache).await.expect("remove test cache");
+    }
+
+    #[test]
+    fn declared_s3_size_is_bounded_before_body_collection() {
+        assert!(declared_size_is_allowed(None));
+        assert!(declared_size_is_allowed(Some(1)));
+        assert!(declared_size_is_allowed(Some(MAX_S3_RESPONSE_BYTES)));
+        assert!(!declared_size_is_allowed(Some(MAX_S3_RESPONSE_BYTES + 1)));
+        assert!(!declared_size_is_allowed(Some(-1)));
     }
 
     #[tokio::test]

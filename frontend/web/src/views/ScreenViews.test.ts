@@ -5,6 +5,7 @@ import ScreenManageView from './ScreenManageView.vue';
 import { contestApi } from '../api/contest';
 import { presentationApi } from '../api/presentation';
 import { screenApi } from '../api/screen';
+import { ApiError } from '../api/client';
 const replace = vi.fn();
 const stored = new Map<string, string>();
 vi.stubGlobal('localStorage', { clear: () => stored.clear(), getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value), removeItem: (key: string) => stored.delete(key) });
@@ -34,5 +35,19 @@ describe('screen views', () => {
     const wrapper = mount(ScreenClientView); await flushPromises();
     expect(screenApi.register).toHaveBeenCalledWith(7, 'Main Hall'); expect(screenApi.heartbeat).toHaveBeenCalledWith(3, 'secret', 'SCOREBOARD');
     expect(wrapper.text()).toContain('AWARDS'); expect(localStorage.getItem('project-balloon:screen:7')).toContain('secret'); wrapper.unmount();
+  });
+  it('clears malformed cached registration and registers again', async () => {
+    localStorage.setItem('project-balloon:screen:7', '{not-json');
+    const wrapper = mount(ScreenClientView); await flushPromises();
+    expect(screenApi.register).toHaveBeenCalledWith(7, 'Main Hall');
+    expect(localStorage.getItem('project-balloon:screen:7')).toContain('secret');
+    wrapper.unmount();
+  });
+  it('clears a revoked cached registration token', async () => {
+    localStorage.setItem('project-balloon:screen:7', JSON.stringify({ instanceId: 3, contestId: 7, name: 'Main Hall', clientToken: 'revoked', currentView: 'SCOREBOARD', registeredAt: '2026-07-22T01:00:00Z' }));
+    vi.mocked(screenApi.heartbeat).mockRejectedValueOnce(new ApiError(401, 'SCREEN_TOKEN_INVALID', 'Screen token is invalid'));
+    const wrapper = mount(ScreenClientView); await flushPromises();
+    expect(localStorage.getItem('project-balloon:screen:7')).toBeNull();
+    wrapper.unmount();
   });
 });

@@ -70,16 +70,20 @@ const scoreboard = ref<Scoreboard | null>(null);
 const loading = ref(false);
 const errorMessage = ref('');
 let timer: number | undefined;
+let requestGeneration = 0;
 
 async function loadScoreboard(silent = false) {
+  const generation = ++requestGeneration;
   if (!silent) loading.value = true;
   try {
-    scoreboard.value = await contestApi.getScoreboard(contestId);
+    const result = await contestApi.getScoreboard(contestId);
+    if (generation !== requestGeneration) return;
+    scoreboard.value = result;
     errorMessage.value = '';
   } catch (error) {
-    if (!silent) errorMessage.value = getErrorMessage(error);
+    if (generation === requestGeneration && !silent) errorMessage.value = getErrorMessage(error);
   } finally {
-    loading.value = false;
+    if (generation === requestGeneration) loading.value = false;
   }
 }
 

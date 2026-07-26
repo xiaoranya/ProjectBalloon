@@ -12,7 +12,9 @@ pub mod state;
 
 use axum::{
     Router,
-    extract::DefaultBodyLimit,
+    body::Body,
+    extract::{ConnectInfo, DefaultBodyLimit},
+    http::Request,
     middleware,
     routing::{delete, get, patch, post, put},
 };
@@ -26,6 +28,23 @@ use crate::{
     health::{liveness, readiness},
     state::AppState,
 };
+
+async fn apply_forwarded_client_ip(
+    mut request: Request<Body>,
+    next: middleware::Next,
+) -> axum::response::Response {
+    // The API is only reachable through the bundled reverse proxy in the
+    // deployment topology. Preserve the peer port while replacing the proxy
+    // address with the validated X-Real-IP address for audit/rate-limit data.
+    if let Some(peer) = request.extensions().get::<ConnectInfo<std::net::SocketAddr>>().copied()
+        && let Some(value) =
+            request.headers().get("x-real-ip").and_then(|value| value.to_str().ok())
+        && let Ok(ip) = value.parse::<std::net::IpAddr>()
+    {
+        request.extensions_mut().insert(ConnectInfo(std::net::SocketAddr::new(ip, peer.0.port())));
+    }
+    next.run(request).await
+}
 
 pub const SERVICE_NAME: &str = "xcpc-platform";
 
@@ -315,5 +334,6 @@ pub fn router(state: AppState) -> Router {
         .route("/api/events/contests/{contest_id}", get(realtime::subscribe_staff))
         .route("/api/team/events/contests/{contest_id}", get(realtime::subscribe_team))
         .layer(middleware::from_fn_with_state(state.clone(), auth::protect_csrf))
+        .layer(middleware::from_fn(apply_forwarded_client_ip))
         .with_state(state)
 }

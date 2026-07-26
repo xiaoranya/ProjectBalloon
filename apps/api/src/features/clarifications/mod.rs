@@ -481,7 +481,12 @@ async fn require_staff_access(
     if actor.has_role("SUPER_ADMIN") {
         return Ok(());
     }
-    if !actor.has_role("JUDGE") && !actor.has_role("CONTEST_ADMIN") {
+    // Judge workers are global staff operators; unlike contest administrators
+    // they are intentionally not present in contest_admin_assignments.
+    if actor.has_role("JUDGE") {
+        return Ok(());
+    }
+    if !actor.has_role("CONTEST_ADMIN") {
         return Err(clarification_not_found());
     }
     let assigned = sqlx::query_scalar::<_, bool>(

@@ -301,6 +301,12 @@ impl AuthService {
                 "CURRENT_PASSWORD_INVALID",
             ));
         }
+        sqlx::query("DELETE FROM auth_sessions WHERE user_id = $1 AND token_hash <> $2")
+            .bind(session.user.id)
+            .bind(&session.token_hash)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| AppError::internal("revoke other password sessions", error))?;
         record_audit(
             &mut transaction,
             Some(session.user.id),
