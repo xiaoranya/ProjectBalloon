@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -41,6 +42,7 @@ pb_compose data exec -T postgres pg_dump -U "$DB_USER" -d "$DB" \
 export AWS_ACCESS_KEY_ID="$ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$SECRET_KEY"
 pb_log "copying RustFS buckets from $S3_ENDPOINT"
 buckets="$(aws --endpoint-url "$S3_ENDPOINT" s3api list-buckets --query 'Buckets[].Name' --output text | tr '\t' '\n')"
+printf '%s\n' "$buckets" | sed '/^$/d' > "$TMP/buckets.txt"
 while IFS= read -r bucket; do
   [ -n "$bucket" ] || continue
   aws --endpoint-url "$S3_ENDPOINT" s3 sync "s3://$bucket" "$TMP/objects/$bucket" --no-progress

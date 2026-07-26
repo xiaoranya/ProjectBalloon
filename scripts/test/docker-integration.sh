@@ -117,7 +117,7 @@ for bucket in project-balloon-integration xcpc-problems xcpc-sources; do
   aws --endpoint-url "$PROJECT_BALLOON_TEST_S3_ENDPOINT" s3 mb "s3://$bucket" >/dev/null
 done
 
-log 'running 33 API/PostgreSQL/Redis/RustFS integration tests'
+log 'running 34 API/PostgreSQL/Redis/RustFS integration tests'
 cargo test -p project-balloon-api --all-features --quiet -- --ignored --test-threads=1
 
 log 'starting API briefly to declare RabbitMQ topology'
@@ -178,4 +178,4 @@ cargo test -p project-balloon-judge-worker --test rabbit_concurrency \
   broker_restart_requeues_unacknowledged_in_flight_task -- --ignored --exact --test-threads=1
 log 'running 11 real Docker sandbox tests'
 cargo test -p project-balloon-judge-worker --test sandbox_docker -- --ignored --test-threads=1
-log 'all 47 Docker-backed integration tests passed'
+log 'all 48 Docker-backed integration tests passed'

@@ -21,6 +21,12 @@ pub const CSRF_HEADER_NAME: &str = "X-XSRF-TOKEN";
 
 type HmacSha256 = Hmac<Sha256>;
 
+fn reuse_or_issue(signer: &CsrfSigner, existing: Option<&str>) -> Result<String, AppError> {
+    existing
+        .filter(|token| signer.verify(token))
+        .map_or_else(|| signer.issue(), |token| Ok(token.to_owned()))
+}
+
 pub struct CsrfSigner {
     secret: Vec<u8>,
 }
@@ -84,7 +90,11 @@ pub async fn csrf(
     State(state): State<AppState>,
     jar: CookieJar,
 ) -> Result<(CookieJar, Json<CsrfResponse>), AppError> {
-    let token = state.csrf().issue()?;
+    // Keep a valid double-submit token stable across browser tabs. Issuing a
+    // fresh token for every GET would overwrite the shared cookie and make
+    // another tab's cached header fail CSRF validation.
+    let token =
+        reuse_or_issue(state.csrf(), jar.get(CSRF_COOKIE_NAME).map(|cookie| cookie.value()))?;
     let cookie = Cookie::build((CSRF_COOKIE_NAME, token.clone()))
         .path("/")
         .http_only(false)
@@ -122,7 +132,7 @@ pub async fn protect_csrf(State(state): State<AppState>, request: Request, next:
 
 #[cfg(test)]
 mod tests {
-    use super::CsrfSigner;
+    use super::{CsrfSigner, reuse_or_issue};
 
     #[test]
     fn issued_token_verifies_and_tampering_fails() {
@@ -131,5 +141,19 @@ mod tests {
 
         assert!(signer.verify(&token));
         assert!(!signer.verify(&format!("{token}x")));
+    }
+
+    #[test]
+    fn valid_cookie_token_is_reused_across_requests() {
+        let signer = CsrfSigner::new(b"test-secret-that-is-longer-than-32-bytes");
+        let token = signer.issue().expect("token must be generated");
+        assert_eq!(reuse_or_issue(&signer, Some(&token)).expect("token must be reused"), token);
+    }
+
+    #[test]
+    fn invalid_cookie_token_is_replaced() {
+        let signer = CsrfSigner::new(b"test-secret-that-is-longer-than-32-bytes");
+        let token = reuse_or_issue(&signer, Some("invalid-token")).expect("token must be issued");
+        assert!(signer.verify(&token));
     }
 }

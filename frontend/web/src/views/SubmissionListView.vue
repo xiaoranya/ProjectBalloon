@@ -74,20 +74,25 @@ const page = ref<PageResponse<SubmissionSummary>>({
   totalPages: 0,
 });
 let pollTimer: number | undefined;
+let requestGeneration = 0;
 
 async function loadSubmissions(silent = false) {
+  const generation = ++requestGeneration;
   if (!silent) loading.value = true;
   errorMessage.value = '';
   try {
     const result = await contestApi.listSubmissions(contestId, currentPage.value - 1);
+    if (generation !== requestGeneration) return;
     page.value = result;
     submissions.value = result.content;
     schedulePolling();
   } catch (error) {
-    if (!silent) errorMessage.value = getErrorMessage(error);
-    schedulePolling(8_000);
+    if (generation === requestGeneration) {
+      if (!silent) errorMessage.value = getErrorMessage(error);
+      schedulePolling(8_000);
+    }
   } finally {
-    loading.value = false;
+    if (generation === requestGeneration) loading.value = false;
   }
 }
 
