@@ -1,0 +1,23 @@
+/target/
+/.env
+/deploy/compose/.env.rust
+/deploy/compose/.env.local
+/backups/
+/images/
+/dist/
+/build/
+/ProjectBalloon/
+/.sqlx-tmp/
+**/*.rs.bk
+
+# Frontend build and dependency state
+node_modules/
+dist/
+coverage/
+.npm/
+__pycache__/
+
+# Editor and operating-system state
+.idea/
+.vscode/
+.DS_Store

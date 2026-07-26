@@ -1,0 +1,5943 @@
+openapi: 3.0.1
+info:
+  title: OpenAPI definition
+  version: v0
+servers:
+- url: http://localhost
+  description: Generated server url
+paths:
+  /api/screen-playlists/{playlistId}:
+    put:
+      tags:
+      - screen-orchestration-controller
+      operationId: updatePlaylist
+      parameters:
+      - name: playlistId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScreenPlaylistRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScreenPlaylistResponse"
+    delete:
+      tags:
+      - screen-orchestration-controller
+      operationId: deletePlaylist
+      parameters:
+      - name: playlistId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+  /api/screen-groups/{groupId}:
+    put:
+      tags:
+      - screen-orchestration-controller
+      operationId: updateGroup
+      parameters:
+      - name: groupId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScreenGroupRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScreenGroupResponse"
+    delete:
+      tags:
+      - screen-orchestration-controller
+      operationId: deleteGroup
+      parameters:
+      - name: groupId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+  /api/problems/{id}/statements/{langCode}:
+    put:
+      tags:
+      - problem-controller
+      operationId: upsertStatement
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: langCode
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertStatementCommand"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+  /api/presentation-configs/{contestId}/screen:
+    put:
+      tags:
+      - presentation-controller
+      operationId: updateScreen
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresentationConfigRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PresentationConfigResponse"
+  /api/presentation-configs/{contestId}/live:
+    put:
+      tags:
+      - presentation-controller
+      operationId: updateLive
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresentationConfigRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PresentationConfigResponse"
+  /api/contests/{contestId}/problems/reorder:
+    put:
+      tags:
+      - contest-problem-controller
+      operationId: reorder
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/ReorderEntry"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContestProblemResponse"
+  /api/contests/{contestId}/awards/presentation:
+    put:
+      tags:
+      - award-presentation-controller
+      operationId: update
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AwardPresentationRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AwardPresentationResponse"
+  /api/contests/{contestId}/awards/host-script:
+    get:
+      tags:
+      - award-host-script-controller
+      operationId: get_4
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AwardHostScriptResponse"
+    put:
+      tags:
+      - award-host-script-controller
+      operationId: save
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AwardHostScriptRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AwardHostScriptResponse"
+  /api/award-categories/{categoryId}:
+    put:
+      tags:
+      - award-controller
+      operationId: updateCategory
+      parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AwardCategoryRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AwardCategoryResponse"
+    delete:
+      tags:
+      - award-controller
+      operationId: deleteCategory
+      parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+  /api/admin/contest-admins/{userId}/contests:
+    put:
+      tags:
+      - contest-admin-scope-controller
+      operationId: replace
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContestAdminScopeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ContestAdminScopeResponse"
+  /api/teams:
+    get:
+      tags:
+      - team-controller
+      operationId: list
+      parameters:
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      - name: includeDeleted
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseTeamResponse"
+    post:
+      tags:
+      - team-controller
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TeamResponse"
+  /api/teams/{teamId}/members:
+    get:
+      tags:
+      - team-member-controller
+      operationId: list_1
+      parameters:
+      - name: teamId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamMemberResponse"
+    post:
+      tags:
+      - team-member-controller
+      operationId: add
+      parameters:
+      - name: teamId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamMemberRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TeamMemberResponse"
+  /api/teams/batch:
+    post:
+      tags:
+      - batch-import-controller
+      operationId: importTeams
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamBatchImportRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TeamBatchImportResponse"
+  /api/screen-instances/{contestId}/{instanceId}/commands:
+    post:
+      tags:
+      - screen-instance-controller
+      operationId: command
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScreenCommandRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScreenCommandResponse"
+  /api/screen-groups/{groupId}/control:
+    post:
+      tags:
+      - screen-orchestration-controller
+      operationId: control
+      parameters:
+      - name: groupId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScreenGroupControlRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScreenGroupResponse"
+  /api/resolver/runs/{runId}/step-back:
+    post:
+      tags:
+      - resolver-controller
+      operationId: stepBack
+      parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolverControlRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResolverRunResponse"
+  /api/resolver/runs/{runId}/pause:
+    post:
+      tags:
+      - resolver-controller
+      operationId: pause
+      parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolverControlRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResolverRunResponse"
+  /api/resolver/runs/{runId}/next:
+    post:
+      tags:
+      - resolver-controller
+      operationId: next
+      parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolverControlRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResolverRunResponse"
+  /api/resolver/runs/{runId}/continue:
+    post:
+      tags:
+      - resolver-controller
+      operationId: continueRun
+      parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolverControlRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResolverRunResponse"
+  /api/resolver/runs/{runId}/complete:
+    post:
+      tags:
+      - resolver-controller
+      operationId: complete
+      parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolverControlRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResolverRunResponse"
+  /api/public/screens/{instanceId}/heartbeat:
+    post:
+      tags:
+      - screen-instance-controller
+      operationId: heartbeat
+      parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScreenHeartbeatRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScreenHeartbeatResponse"
+  /api/public/screens/register:
+    post:
+      tags:
+      - screen-instance-controller
+      operationId: register
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScreenRegistrationRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScreenRegistrationResponse"
+  /api/problems:
+    get:
+      tags:
+      - problem-controller
+      operationId: list_3
+      parameters:
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseProblemResponse"
+    post:
+      tags:
+      - problem-controller
+      operationId: create_1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProblemCommand"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+  /api/problems/{id}/testdata:
+    get:
+      tags:
+      - problem-controller
+      operationId: presignTestdata
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+    post:
+      tags:
+      - problem-controller
+      operationId: uploadTestdata
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              required:
+              - file
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+  /api/problems/{id}/attachments:
+    post:
+      tags:
+      - problem-controller
+      operationId: uploadAttachment
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: kind
+        in: query
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              required:
+              - file
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+  /api/print-requests/{printRequestId}/retry:
+    post:
+      tags:
+      - printing-controller
+      operationId: retry
+      parameters:
+      - name: printRequestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PrintRequestResponse"
+  /api/print-requests/{printRequestId}/reject:
+    post:
+      tags:
+      - printing-controller
+      operationId: reject
+      parameters:
+      - name: printRequestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrintRejectRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PrintRequestResponse"
+  /api/print-requests/{printRequestId}/cancel:
+    post:
+      tags:
+      - printing-controller
+      operationId: cancel
+      parameters:
+      - name: printRequestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PrintRequestResponse"
+  /api/presentation-configs/{contestId}/live/tokens:
+    get:
+      tags:
+      - presentation-controller
+      operationId: listBroadcastTokens
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BroadcastTokenResponse"
+    post:
+      tags:
+      - presentation-controller
+      operationId: createBroadcastToken
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BroadcastTokenRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BroadcastTokenCreatedResponse"
+  /api/contests:
+    get:
+      tags:
+      - contest-controller
+      operationId: list_4
+      parameters:
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      - name: includeDeleted
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseContestResponse"
+    post:
+      tags:
+      - contest-controller
+      operationId: create_2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContestRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ContestResponse"
+  /api/contests/{id}/extensions:
+    post:
+      tags:
+      - contest-controller
+      operationId: extend
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContestExtensionRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ContestExtensionResponse"
+  /api/contests/{id}/clones:
+    post:
+      tags:
+      - contest-controller
+      operationId: cloneContest
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContestCloneRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ContestCloneResponse"
+  /api/contests/{contestId}/transitions:
+    post:
+      tags:
+      - contest-lifecycle-controller
+      operationId: transition
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LifecycleTransitionRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LifecycleTransitionResponse"
+  /api/contests/{contestId}/teams:
+    get:
+      tags:
+      - contest-team-controller
+      operationId: list_5
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseContestTeamResponse"
+    post:
+      tags:
+      - contest-team-controller
+      operationId: assign
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContestTeamAssignmentRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ContestTeamResponse"
+  /api/contests/{contestId}/submissions:
+    get:
+      tags:
+      - submission-controller
+      operationId: list_6
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseSubmissionView"
+    post:
+      tags:
+      - submission-controller
+      operationId: submit
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              required:
+              - metadata
+              - source
+              type: object
+              properties:
+                metadata:
+                  type: string
+                source:
+                  type: string
+                  format: binary
+      responses:
+        "202":
+          description: Submission accepted for judging
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SubmitResult"
+  /api/contests/{contestId}/screen-playlists:
+    get:
+      tags:
+      - screen-orchestration-controller
+      operationId: listPlaylists
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScreenPlaylistResponse"
+    post:
+      tags:
+      - screen-orchestration-controller
+      operationId: createPlaylist
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScreenPlaylistRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScreenPlaylistResponse"
+  /api/contests/{contestId}/screen-groups:
+    get:
+      tags:
+      - screen-orchestration-controller
+      operationId: listGroups
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScreenGroupResponse"
+    post:
+      tags:
+      - screen-orchestration-controller
+      operationId: createGroup
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScreenGroupRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScreenGroupResponse"
+  /api/contests/{contestId}/resolver/start:
+    post:
+      tags:
+      - resolver-controller
+      operationId: start
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResolverRunResponse"
+  /api/contests/{contestId}/resolver/preview:
+    post:
+      tags:
+      - resolver-controller
+      operationId: preview
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResolverRunResponse"
+  /api/contests/{contestId}/problems:
+    get:
+      tags:
+      - contest-problem-controller
+      operationId: list_7
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContestProblemResponse"
+    post:
+      tags:
+      - contest-problem-controller
+      operationId: assign_1
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignProblemRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ContestProblemResponse"
+  /api/contests/{contestId}/print-requests:
+    post:
+      tags:
+      - printing-controller
+      operationId: create_3
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrintRequestCreateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PrintRequestResponse"
+  /api/contests/{contestId}/clarifications:
+    post:
+      tags:
+      - clarification-controller
+      operationId: ask
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClarificationRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClarificationResponse"
+  /api/contests/{contestId}/balloons/{taskId}/status:
+    post:
+      tags:
+      - balloon-controller
+      operationId: transition_1
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BalloonStatusRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BalloonTaskResponse"
+  /api/contests/{contestId}/balloons/{taskId}/reopen:
+    post:
+      tags:
+      - balloon-controller
+      operationId: reopen
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BalloonTaskResponse"
+  /api/contests/{contestId}/balloons/{taskId}/note:
+    post:
+      tags:
+      - balloon-controller
+      operationId: updateNote
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BalloonNoteRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BalloonTaskResponse"
+  /api/contests/{contestId}/balloons/{taskId}/claim:
+    post:
+      tags:
+      - balloon-controller
+      operationId: claim
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BalloonTaskResponse"
+  /api/contests/{contestId}/awards/unfreeze:
+    post:
+      tags:
+      - award-controller
+      operationId: unfreeze
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+  /api/contests/{contestId}/awards/recipients:
+    post:
+      tags:
+      - award-controller
+      operationId: addManualRecipient
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AwardRecipientManualRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AwardRecipientResponse"
+  /api/contests/{contestId}/awards/generate:
+    post:
+      tags:
+      - award-controller
+      operationId: generate
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AwardGenerationResponse"
+  /api/contests/{contestId}/awards/freeze:
+    post:
+      tags:
+      - award-controller
+      operationId: freeze
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+  /api/contests/{contestId}/award-categories:
+    get:
+      tags:
+      - award-controller
+      operationId: listCategories
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AwardCategoryResponse"
+    post:
+      tags:
+      - award-controller
+      operationId: createCategory
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AwardCategoryRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AwardCategoryResponse"
+  /api/contests/{contestId}/announcements:
+    get:
+      tags:
+      - announcement-controller
+      operationId: list_9
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: includeWithdrawn
+        in: query
+        required: false
+        schema:
+          type: boolean
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnnouncementResponse"
+    post:
+      tags:
+      - announcement-controller
+      operationId: publish
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnnouncementRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AnnouncementResponse"
+  /api/clarifications/{clarificationId}/reply:
+    post:
+      tags:
+      - clarification-controller
+      operationId: reply
+      parameters:
+      - name: clarificationId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClarificationReplyRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClarificationResponse"
+  /api/clarifications/{clarificationId}/convert:
+    post:
+      tags:
+      - clarification-controller
+      operationId: convert
+      parameters:
+      - name: clarificationId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClarificationConvertRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AnnouncementResponse"
+  /api/clarifications/{clarificationId}/close:
+    post:
+      tags:
+      - clarification-controller
+      operationId: close
+      parameters:
+      - name: clarificationId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+  /api/auth/password:
+    post:
+      tags:
+      - auth-controller
+      operationId: changePassword
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CurrentUserResponse"
+  /api/auth/logout:
+    post:
+      tags:
+      - auth-controller
+      operationId: logout
+      responses:
+        "204":
+          description: No Content
+  /api/auth/login:
+    post:
+      tags:
+      - auth-controller
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CurrentUserResponse"
+  /api/announcements/{announcementId}/withdraw:
+    post:
+      tags:
+      - announcement-controller
+      operationId: withdraw
+      parameters:
+      - name: announcementId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+  /api/announcements/{announcementId}/schedule:
+    post:
+      tags:
+      - announcement-controller
+      operationId: updateSchedule
+      parameters:
+      - name: announcementId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnnouncementRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AnnouncementResponse"
+  /api/announcements/{announcementId}/pin:
+    post:
+      tags:
+      - announcement-controller
+      operationId: pin
+      parameters:
+      - name: announcementId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnnouncementPinRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AnnouncementResponse"
+  /api/announcements/{announcementId}/cancel:
+    post:
+      tags:
+      - announcement-controller
+      operationId: cancelSchedule
+      parameters:
+      - name: announcementId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AnnouncementResponse"
+  /api/admin/submissions/{submissionId}/rejudge:
+    post:
+      tags:
+      - rejudge-controller
+      operationId: rejudgeSubmission
+      parameters:
+      - name: submissionId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RejudgeResponse"
+  /api/admin/staff-accounts:
+    get:
+      tags:
+      - staff-account-controller
+      operationId: list_10
+      parameters:
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseStaffAccountResponse"
+    post:
+      tags:
+      - staff-account-controller
+      operationId: create_4
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffAccountCreateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StaffAccountResponse"
+  /api/admin/staff-accounts/{userId}/reset-password:
+    post:
+      tags:
+      - staff-account-controller
+      operationId: resetPassword
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffPasswordResetRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StaffAccountResponse"
+  /api/admin/contests/{contestId}/rejudge:
+    post:
+      tags:
+      - rejudge-controller
+      operationId: rejudgeContest
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RejudgeResponse"
+  /api/admin/batch-rejudge/tasks:
+    get:
+      tags:
+      - batch-rejudge-controller
+      operationId: list_12
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BatchRejudgeTaskResponse"
+    post:
+      tags:
+      - batch-rejudge-controller
+      operationId: create_5
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchRejudgeCreateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BatchRejudgeTaskResponse"
+  /api/admin/batch-rejudge/tasks/{taskId}/cancel:
+    post:
+      tags:
+      - batch-rejudge-controller
+      operationId: cancel_1
+      parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BatchRejudgeTaskResponse"
+  /api/admin/batch-rejudge/preview:
+    post:
+      tags:
+      - batch-rejudge-controller
+      operationId: preview_1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchRejudgeFilter"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BatchRejudgePreviewResponse"
+  /api/teams/{teamId}/members/{memberId}:
+    delete:
+      tags:
+      - team-member-controller
+      operationId: remove
+      parameters:
+      - name: teamId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: memberId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+    patch:
+      tags:
+      - team-member-controller
+      operationId: update_1
+      parameters:
+      - name: teamId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: memberId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamMemberPatchRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TeamMemberResponse"
+  /api/teams/{id}:
+    get:
+      tags:
+      - team-controller
+      operationId: get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TeamResponse"
+    delete:
+      tags:
+      - team-controller
+      operationId: delete
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+    patch:
+      tags:
+      - team-controller
+      operationId: update_2
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamPatchRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TeamResponse"
+  /api/problems/{id}:
+    get:
+      tags:
+      - problem-controller
+      operationId: get_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+    delete:
+      tags:
+      - problem-controller
+      operationId: delete_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+    patch:
+      tags:
+      - problem-controller
+      operationId: update_3
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProblemCommand"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ProblemResponse"
+  /api/contests/{id}:
+    get:
+      tags:
+      - contest-controller
+      operationId: get_2
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ContestResponse"
+    delete:
+      tags:
+      - contest-controller
+      operationId: delete_2
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+    patch:
+      tags:
+      - contest-controller
+      operationId: update_4
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContestPatchRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ContestResponse"
+  /api/contests/{contestId}/problems/{problemId}:
+    delete:
+      tags:
+      - contest-problem-controller
+      operationId: unassign_1
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: problemId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+    patch:
+      tags:
+      - contest-problem-controller
+      operationId: update_5
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: problemId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateContestProblemRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ContestProblemResponse"
+  /api/admin/staff-accounts/{userId}:
+    patch:
+      tags:
+      - staff-account-controller
+      operationId: update_6
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffAccountUpdateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StaffAccountResponse"
+  /api/team/events/contests/{contestId}:
+    get:
+      tags:
+      - realtime-event-controller
+      summary: Subscribe to the authenticated team's private contest events
+      operationId: subscribeTeam
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: Versioned team-private SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/RealtimeEvent"
+  /api/submissions/{submissionId}:
+    get:
+      tags:
+      - submission-controller
+      operationId: detail
+      parameters:
+      - name: submissionId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SubmissionDetailView"
+  /api/submissions/{submissionId}/source:
+    get:
+      tags:
+      - submission-controller
+      operationId: source
+      parameters:
+      - name: submissionId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: byte
+  /api/screen-instances/{contestId}:
+    get:
+      tags:
+      - screen-instance-controller
+      operationId: list_2
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScreenInstanceResponse"
+  /api/public/presentations/{contestId}:
+    get:
+      tags:
+      - presentation-controller
+      operationId: getPublished
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: mode
+        in: query
+        required: true
+        schema:
+          type: string
+          enum:
+          - SCREEN
+          - LIVE
+      - name: token
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: X-Broadcast-Token
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PresentationResponse"
+  /api/public/presentations/{contestId}/metrics:
+    get:
+      tags:
+      - presentation-controller
+      operationId: getPublishedMetrics
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: mode
+        in: query
+        required: true
+        schema:
+          type: string
+          enum:
+          - SCREEN
+          - LIVE
+      - name: token
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: X-Broadcast-Token
+        in: header
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PresentationMetricsResponse"
+  /api/public/events/contests/{contestId}:
+    get:
+      tags:
+      - realtime-event-controller
+      summary: Subscribe to public-scope contest invalidation events
+      operationId: subscribePublic
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: mode
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - SCREEN
+          - LIVE
+      - name: token
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Versioned SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/RealtimeEvent"
+  /api/public/contests/{contestId}/awards/presentation:
+    get:
+      tags:
+      - award-presentation-controller
+      operationId: getPublic
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AwardPresentationResponse"
+  /api/problems/{id}/attachments/{attachmentId}:
+    get:
+      tags:
+      - problem-controller
+      operationId: downloadAttachment
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: attachmentId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: byte
+  /api/print-requests/{printRequestId}/pdf:
+    get:
+      tags:
+      - printing-controller
+      operationId: downloadPdf
+      parameters:
+      - name: printRequestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: byte
+  /api/presentation-configs/{contestId}:
+    get:
+      tags:
+      - presentation-controller
+      operationId: getConfig
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: mode
+        in: query
+        required: true
+        schema:
+          type: string
+          enum:
+          - SCREEN
+          - LIVE
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PresentationConfigResponse"
+  /api/health:
+    get:
+      tags:
+      - health-controller
+      operationId: health
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+  /api/events/contests/{contestId}:
+    get:
+      tags:
+      - realtime-event-controller
+      summary: Subscribe to staff contest invalidation events
+      operationId: subscribeStaff
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: Versioned staff SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/RealtimeEvent"
+  /api/contests/{contestId}/scoreboard:
+    get:
+      tags:
+      - scoreboard-controller
+      operationId: getPublicScoreboard
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScoreboardResponse"
+  /api/contests/{contestId}/scoreboard/groups/{groupName}:
+    get:
+      tags:
+      - scoreboard-controller
+      operationId: getGroupScoreboard
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: groupName
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScoreboardResponse"
+  /api/contests/{contestId}/scoreboard/admin:
+    get:
+      tags:
+      - scoreboard-controller
+      operationId: getAdminScoreboard
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScoreboardResponse"
+  /api/contests/{contestId}/resolver/current:
+    get:
+      tags:
+      - resolver-controller
+      operationId: getCurrent
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResolverRunResponse"
+  /api/contests/{contestId}/problems/overview:
+    get:
+      tags:
+      - contest-problem-controller
+      operationId: overview
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContestProblemOverviewResponse"
+  /api/contests/{contestId}/print-requests/mine:
+    get:
+      tags:
+      - printing-controller
+      operationId: listMine
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PrintRequestResponse"
+  /api/contests/{contestId}/print-requests/all:
+    get:
+      tags:
+      - printing-controller
+      operationId: listAll
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PrintRequestResponse"
+  /api/contests/{contestId}/clarifications/mine:
+    get:
+      tags:
+      - clarification-controller
+      operationId: listMine_1
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ClarificationResponse"
+  /api/contests/{contestId}/clarifications/all:
+    get:
+      tags:
+      - clarification-controller
+      operationId: listAll_1
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ClarificationResponse"
+  /api/contests/{contestId}/balloons:
+    get:
+      tags:
+      - balloon-controller
+      operationId: list_8
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BalloonTaskResponse"
+  /api/contests/{contestId}/balloons/{taskId}:
+    get:
+      tags:
+      - balloon-controller
+      operationId: get_3
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BalloonTaskResponse"
+  /api/contests/{contestId}/balloons/stats:
+    get:
+      tags:
+      - balloon-controller
+      operationId: stats
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BalloonStats"
+  /api/contests/{contestId}/awards:
+    get:
+      tags:
+      - award-controller
+      operationId: listRecipients
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AwardRecipientResponse"
+  /api/contests/{contestId}/awards/teams:
+    get:
+      tags:
+      - award-controller
+      operationId: listCandidates
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AwardCandidateResponse"
+  /api/contests/{contestId}/awards/export:
+    get:
+      tags:
+      - award-controller
+      operationId: exportCsv
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            text/csv:
+              schema:
+                type: string
+  /api/contests/{contestId}/awards/certificates/export:
+    get:
+      tags:
+      - award-controller
+      operationId: exportCertificateCsv
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            text/csv:
+              schema:
+                type: string
+  /api/clarifications/{clarificationId}:
+    get:
+      tags:
+      - clarification-controller
+      operationId: get_5
+      parameters:
+      - name: clarificationId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClarificationResponse"
+  /api/auth/me:
+    get:
+      tags:
+      - auth-controller
+      operationId: currentUser
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CurrentUserResponse"
+  /api/auth/csrf:
+    get:
+      tags:
+      - auth-controller
+      operationId: csrf
+      parameters:
+      - name: csrfToken
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/CsrfToken"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+  /api/announcements/{announcementId}:
+    get:
+      tags:
+      - announcement-controller
+      operationId: get_6
+      parameters:
+      - name: announcementId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AnnouncementResponse"
+  /api/admin/health:
+    get:
+      tags:
+      - health-controller
+      operationId: adminHealth
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+  /api/admin/contests/{contestId}/judge-queue/status:
+    get:
+      tags:
+      - rejudge-controller
+      operationId: judgeQueueStatus
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/JudgeQueueStatusResponse"
+  /api/admin/contests/{contestId}/exports/submissions.csv:
+    get:
+      tags:
+      - data-export-controller
+      operationId: submissions
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+  /api/admin/contests/{contestId}/exports/submission-sources.zip:
+    get:
+      tags:
+      - data-export-controller
+      operationId: sources
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+  /api/admin/contests/{contestId}/exports/scoreboard.csv:
+    get:
+      tags:
+      - data-export-controller
+      operationId: scoreboard
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+  /api/admin/contest-admins:
+    get:
+      tags:
+      - contest-admin-scope-controller
+      operationId: list_11
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContestAdminScopeResponse"
+  /api/admin/batch-rejudge/tasks/{taskId}:
+    get:
+      tags:
+      - batch-rejudge-controller
+      operationId: get_7
+      parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BatchRejudgeTaskResponse"
+  /api/admin/audit-logs:
+    get:
+      tags:
+      - audit-log-controller
+      operationId: list_13
+      parameters:
+      - name: actorUserId
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: action
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: result
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: pageable
+        in: query
+        required: true
+        schema:
+          $ref: "#/components/schemas/Pageable"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAuditLogResponse"
+  /api/screen-instances/{contestId}/{instanceId}:
+    delete:
+      tags:
+      - screen-instance-controller
+      operationId: revoke
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "204":
+          description: No Content
+  /api/presentation-configs/{contestId}/live/tokens/{tokenId}:
+    delete:
+      tags:
+      - presentation-controller
+      operationId: revokeBroadcastToken
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: tokenId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "204":
+          description: No Content
+  /api/contests/{contestId}/teams/{teamId}:
+    delete:
+      tags:
+      - contest-team-controller
+      operationId: unassign
+      parameters:
+      - name: contestId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: teamId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+  /api/awards/recipients/{recipientId}:
+    delete:
+      tags:
+      - award-controller
+      operationId: removeRecipient
+      parameters:
+      - name: recipientId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+components:
+  schemas:
+    ScreenPlaylistItemRequest:
+      required:
+      - targetView
+      type: object
+      properties:
+        targetView:
+          type: string
+          enum:
+          - SCOREBOARD
+          - FIRST_BLOOD
+          - BALLOONS
+          - FREEZE_COUNTDOWN
+          - STATISTICS
+          - RESOLVER
+          - AWARDS
+        durationSeconds:
+          maximum: 3600
+          minimum: 5
+          type: integer
+          format: int32
+    ScreenPlaylistRequest:
+      required:
+      - items
+      - name
+      type: object
+      properties:
+        name:
+          maxLength: 120
+          minLength: 0
+          type: string
+        loopEnabled:
+          type: boolean
+        items:
+          maxItems: 20
+          minItems: 0
+          type: array
+          items:
+            $ref: "#/components/schemas/ScreenPlaylistItemRequest"
+        expectedVersion:
+          type: integer
+          format: int64
+    ScreenPlaylistItemResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        targetView:
+          type: string
+          enum:
+          - SCOREBOARD
+          - FIRST_BLOOD
+          - BALLOONS
+          - FREEZE_COUNTDOWN
+          - STATISTICS
+          - RESOLVER
+          - AWARDS
+        durationSeconds:
+          type: integer
+          format: int32
+        displayOrder:
+          type: integer
+          format: int32
+    ScreenPlaylistResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        loopEnabled:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScreenPlaylistItemResponse"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ScreenGroupRequest:
+      required:
+      - instanceIds
+      - name
+      type: object
+      properties:
+        name:
+          maxLength: 120
+          minLength: 0
+          type: string
+        instanceIds:
+          maxItems: 100
+          minItems: 0
+          type: array
+          items:
+            type: integer
+            format: int64
+        expectedVersion:
+          type: integer
+          format: int64
+    ScreenGroupResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        instanceIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+        playlistId:
+          type: integer
+          format: int64
+        playbackStatus:
+          type: string
+          enum:
+          - STOPPED
+          - PLAYING
+          - PAUSED
+        playbackStartedAt:
+          type: string
+          format: date-time
+        pausedElapsedSeconds:
+          type: integer
+          format: int64
+        lockedView:
+          type: string
+          enum:
+          - SCOREBOARD
+          - FIRST_BLOOD
+          - BALLOONS
+          - FREEZE_COUNTDOWN
+          - STATISTICS
+          - RESOLVER
+          - AWARDS
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UpsertStatementCommand:
+      type: object
+      properties:
+        body:
+          type: string
+    ProblemAttachmentResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        kind:
+          type: string
+        originalFilename:
+          type: string
+        contentType:
+          type: string
+        bytes:
+          type: integer
+          format: int64
+        sha256:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    ProblemResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        slug:
+          type: string
+        title:
+          type: string
+        timeLimitMs:
+          type: integer
+          format: int32
+        memoryLimitMb:
+          type: integer
+          format: int32
+        outputLimitKb:
+          type: integer
+          format: int32
+        languages:
+          type: string
+        testdataVersion:
+          type: integer
+          format: int32
+        testdataSha256:
+          type: string
+        defaultLangCode:
+          type: string
+        createdBy:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        statements:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProblemStatementResponse"
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProblemAttachmentResponse"
+    ProblemStatementResponse:
+      type: object
+      properties:
+        langCode:
+          type: string
+        body:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    PresentationConfigRequest:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        title:
+          type: string
+        subtitle:
+          type: string
+        accentColor:
+          type: string
+        rowLimit:
+          type: integer
+          format: int32
+        showAnnouncements:
+          type: boolean
+        announcementIntervalSeconds:
+          type: integer
+          format: int32
+    PresentationConfigResponse:
+      type: object
+      properties:
+        contestId:
+          type: integer
+          format: int64
+        mode:
+          type: string
+          enum:
+          - SCREEN
+          - LIVE
+        enabled:
+          type: boolean
+        title:
+          type: string
+        subtitle:
+          type: string
+        accentColor:
+          type: string
+        rowLimit:
+          type: integer
+          format: int32
+        showAnnouncements:
+          type: boolean
+        announcementIntervalSeconds:
+          type: integer
+          format: int32
+        updatedAt:
+          type: string
+          format: date-time
+    ReorderEntry:
+      type: object
+      properties:
+        problemId:
+          type: integer
+          format: int64
+        displayOrder:
+          type: integer
+          format: int32
+    ContestProblemResponse:
+      type: object
+      properties:
+        contestId:
+          type: integer
+          format: int64
+        problemId:
+          type: integer
+          format: int64
+        alias:
+          type: string
+        displayOrder:
+          type: integer
+          format: int32
+        color:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    AwardPresentationRequest:
+      required:
+      - status
+      type: object
+      properties:
+        currentCategoryId:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum:
+          - WAITING
+          - PRESENTING
+          - COMPLETED
+        autoRotate:
+          type: boolean
+        intervalSeconds:
+          maximum: 120
+          minimum: 5
+          type: integer
+          format: int32
+    AwardPresentationCategory:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        code:
+          type: string
+        name:
+          type: string
+        displayOrder:
+          type: integer
+          format: int32
+        groupName:
+          type: string
+        firstBlood:
+          type: boolean
+        recipients:
+          type: array
+          items:
+            $ref: "#/components/schemas/AwardPresentationRecipient"
+    AwardPresentationRecipient:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        problemId:
+          type: integer
+          format: int64
+        problemAlias:
+          type: string
+        teamId:
+          type: integer
+          format: int64
+        teamName:
+          type: string
+        school:
+          type: string
+        seatNo:
+          type: string
+        groupName:
+          type: string
+        participationType:
+          type: string
+        star:
+          type: boolean
+        rank:
+          type: integer
+          format: int32
+        solved:
+          type: integer
+          format: int32
+        penaltyMinutes:
+          type: integer
+          format: int64
+    AwardPresentationResponse:
+      type: object
+      properties:
+        contestId:
+          type: integer
+          format: int64
+        contestName:
+          type: string
+        contestStatus:
+          type: string
+          enum:
+          - DRAFT
+          - FROZEN_CONFIG
+          - RUNNING
+          - PAUSED
+          - ENDED
+          - ARCHIVED
+        serverTime:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+          - WAITING
+          - PRESENTING
+          - COMPLETED
+        currentCategoryId:
+          type: integer
+          format: int64
+        autoRotate:
+          type: boolean
+        intervalSeconds:
+          type: integer
+          format: int32
+        stateUpdatedAt:
+          type: string
+          format: date-time
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/AwardPresentationCategory"
+    AwardHostScriptRequest:
+      required:
+      - closingText
+      - openingText
+      - sections
+      type: object
+      properties:
+        openingText:
+          maxLength: 4000
+          minLength: 0
+          type: string
+        closingText:
+          maxLength: 4000
+          minLength: 0
+          type: string
+        sections:
+          maxItems: 100
+          minItems: 0
+          type: array
+          items:
+            $ref: "#/components/schemas/AwardHostScriptSectionRequest"
+        expectedVersion:
+          type: integer
+          format: int64
+    AwardHostScriptSectionRequest:
+      required:
+      - categoryId
+      - cueText
+      type: object
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+        cueText:
+          maxLength: 2000
+          minLength: 0
+          type: string
+    AwardHostScriptResponse:
+      type: object
+      properties:
+        contestId:
+          type: integer
+          format: int64
+        contestName:
+          type: string
+        serverTime:
+          type: string
+          format: date-time
+        presentationStatus:
+          type: string
+          enum:
+          - WAITING
+          - PRESENTING
+          - COMPLETED
+        currentCategoryId:
+          type: integer
+          format: int64
+        nextCategoryId:
+          type: integer
+          format: int64
+        autoRotate:
+          type: boolean
+        intervalSeconds:
+          type: integer
+          format: int32
+        stateUpdatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+        updatedAt:
+          type: string
+          format: date-time
+        openingText:
+          type: string
+        closingText:
+          type: string
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/AwardHostScriptSection"
+    AwardHostScriptSection:
+      type: object
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+        code:
+          type: string
+        name:
+          type: string
+        firstBlood:
+          type: boolean
+        current:
+          type: boolean
+        cueText:
+          type: string
+        recipients:
+          type: array
+          items:
+            $ref: "#/components/schemas/AwardPresentationRecipient"
+    AwardCategoryRequest:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        displayOrder:
+          type: integer
+          format: int32
+        includeStar:
+          type: boolean
+        groupName:
+          type: string
+        participationType:
+          type: string
+        firstBlood:
+          type: boolean
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/AwardRuleDto"
+    AwardRuleDto:
+      type: object
+      properties:
+        ruleType:
+          type: string
+        ratio:
+          type: number
+        fixedCount:
+          type: integer
+          format: int32
+        rankFrom:
+          type: integer
+          format: int32
+        rankTo:
+          type: integer
+          format: int32
+    AwardCategoryResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        code:
+          type: string
+        name:
+          type: string
+        displayOrder:
+          type: integer
+          format: int32
+        includeStar:
+          type: boolean
+        groupName:
+          type: string
+        participationType:
+          type: string
+        firstBlood:
+          type: boolean
+        frozen:
+          type: boolean
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/AwardRuleResponse"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AwardRuleResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        ruleType:
+          type: string
+        ratio:
+          type: number
+        fixedCount:
+          type: integer
+          format: int32
+        rankFrom:
+          type: integer
+          format: int32
+        rankTo:
+          type: integer
+          format: int32
+    ContestAdminScopeRequest:
+      required:
+      - contestIds
+      type: object
+      properties:
+        contestIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+    ContestAdminScopeResponse:
+      type: object
+      properties:
+        userId:
+          type: integer
+          format: int64
+        username:
+          type: string
+        displayName:
+          type: string
+        enabled:
+          type: boolean
+        contestIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+    TeamRequest:
+      required:
+      - name
+      type: object
+      properties:
+        name:
+          type: string
+        school:
+          type: string
+        seatNo:
+          type: string
+        groupName:
+          type: string
+        star:
+          type: boolean
+        username:
+          type: string
+        initialPassword:
+          type: string
+    TeamResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        school:
+          type: string
+        seatNo:
+          type: string
+        groupName:
+          type: string
+        star:
+          type: boolean
+        deletedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    TeamMemberRequest:
+      required:
+      - name
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        roleName:
+          type: string
+    TeamMemberResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        teamId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        roleName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    TeamBatchImportRequest:
+      type: object
+      properties:
+        teams:
+          maxItems: 1000
+          minItems: 1
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamRequest"
+        contestId:
+          type: integer
+          format: int64
+        participationType:
+          type: string
+          enum:
+          - OFFICIAL
+          - STAR
+          - PRACTICE
+        idempotencyKey:
+          type: string
+    RowResult:
+      type: object
+      properties:
+        index:
+          type: integer
+          format: int32
+        status:
+          type: string
+        teamId:
+          type: integer
+          format: int64
+        userId:
+          type: integer
+          format: int64
+        username:
+          type: string
+        initialPassword:
+          type: string
+        error:
+          type: string
+    TeamBatchImportResponse:
+      type: object
+      properties:
+        batchId:
+          type: string
+        totalRequested:
+          type: integer
+          format: int32
+        succeeded:
+          type: integer
+          format: int32
+        failed:
+          type: integer
+          format: int32
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/RowResult"
+    ScreenCommandRequest:
+      required:
+      - targetView
+      type: object
+      properties:
+        targetView:
+          type: string
+          enum:
+          - SCOREBOARD
+          - FIRST_BLOOD
+          - BALLOONS
+          - FREEZE_COUNTDOWN
+          - STATISTICS
+          - RESOLVER
+          - AWARDS
+    ScreenCommandResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        screenInstanceId:
+          type: integer
+          format: int64
+        targetView:
+          type: string
+          enum:
+          - SCOREBOARD
+          - FIRST_BLOOD
+          - BALLOONS
+          - FREEZE_COUNTDOWN
+          - STATISTICS
+          - RESOLVER
+          - AWARDS
+        createdAt:
+          type: string
+          format: date-time
+    ScreenGroupControlRequest:
+      required:
+      - action
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+          - PLAY
+          - PAUSE
+          - RESUME
+          - STOP
+          - LOCK
+          - UNLOCK
+        playlistId:
+          type: integer
+          format: int64
+        targetView:
+          type: string
+          enum:
+          - SCOREBOARD
+          - FIRST_BLOOD
+          - BALLOONS
+          - FREEZE_COUNTDOWN
+          - STATISTICS
+          - RESOLVER
+          - AWARDS
+        expectedVersion:
+          type: integer
+          format: int64
+    ResolverControlRequest:
+      type: object
+      properties:
+        expectedStep:
+          type: integer
+          format: int32
+    ResolverRunResponse:
+      type: object
+      properties:
+        runId:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        official:
+          type: boolean
+        status:
+          type: string
+        currentStep:
+          type: integer
+          format: int32
+        totalSteps:
+          type: integer
+          format: int32
+        generatedAt:
+          type: string
+        currentState:
+          type: object
+        latestEvent:
+          type: object
+        events:
+          type: object
+    ScreenHeartbeatRequest:
+      required:
+      - clientToken
+      - currentView
+      type: object
+      properties:
+        clientToken:
+          type: string
+        currentView:
+          type: string
+          enum:
+          - SCOREBOARD
+          - FIRST_BLOOD
+          - BALLOONS
+          - FREEZE_COUNTDOWN
+          - STATISTICS
+          - RESOLVER
+          - AWARDS
+    ScreenGroupPlaybackResponse:
+      type: object
+      properties:
+        groupId:
+          type: integer
+          format: int64
+        groupName:
+          type: string
+        playlistId:
+          type: integer
+          format: int64
+        loopEnabled:
+          type: boolean
+        status:
+          type: string
+          enum:
+          - STOPPED
+          - PLAYING
+          - PAUSED
+        startedAt:
+          type: string
+          format: date-time
+        pausedElapsedSeconds:
+          type: integer
+          format: int64
+        lockedView:
+          type: string
+          enum:
+          - SCOREBOARD
+          - FIRST_BLOOD
+          - BALLOONS
+          - FREEZE_COUNTDOWN
+          - STATISTICS
+          - RESOLVER
+          - AWARDS
+        version:
+          type: integer
+          format: int64
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScreenPlaylistItemResponse"
+    ScreenHeartbeatResponse:
+      type: object
+      properties:
+        instanceId:
+          type: integer
+          format: int64
+        serverTime:
+          type: string
+          format: date-time
+        commandId:
+          type: integer
+          format: int64
+        targetView:
+          type: string
+          enum:
+          - SCOREBOARD
+          - FIRST_BLOOD
+          - BALLOONS
+          - FREEZE_COUNTDOWN
+          - STATISTICS
+          - RESOLVER
+          - AWARDS
+        groupPlayback:
+          $ref: "#/components/schemas/ScreenGroupPlaybackResponse"
+    ScreenRegistrationRequest:
+      required:
+      - contestId
+      - name
+      type: object
+      properties:
+        contestId:
+          type: integer
+          format: int64
+        name:
+          maxLength: 120
+          minLength: 0
+          type: string
+    ScreenRegistrationResponse:
+      type: object
+      properties:
+        instanceId:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        clientToken:
+          type: string
+        currentView:
+          type: string
+          enum:
+          - SCOREBOARD
+          - FIRST_BLOOD
+          - BALLOONS
+          - FREEZE_COUNTDOWN
+          - STATISTICS
+          - RESOLVER
+          - AWARDS
+        registeredAt:
+          type: string
+          format: date-time
+    CreateProblemCommand:
+      type: object
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        timeLimitMs:
+          type: integer
+          format: int32
+        memoryLimitMb:
+          type: integer
+          format: int32
+        outputLimitKb:
+          type: integer
+          format: int32
+        languages:
+          type: array
+          items:
+            type: string
+        defaultLangCode:
+          type: string
+    PrintRequestResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        teamId:
+          type: integer
+          format: int64
+        teamName:
+          type: string
+        seatNo:
+          type: string
+        contentHash:
+          type: string
+        pageCount:
+          type: integer
+          format: int32
+        status:
+          type: string
+        printerId:
+          type: string
+        cupsJobId:
+          type: string
+        requestedByUserId:
+          type: integer
+          format: int64
+        operatorUserId:
+          type: integer
+          format: int64
+        completedAt:
+          type: string
+          format: date-time
+        failedReason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PrintRejectRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+    BroadcastTokenRequest:
+      required:
+      - expiresAt
+      - label
+      type: object
+      properties:
+        label:
+          maxLength: 120
+          minLength: 0
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    BroadcastTokenCreatedResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        label:
+          type: string
+        token:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    ContestRequest:
+      required:
+      - name
+      - visibility
+      type: object
+      properties:
+        name:
+          type: string
+        visibility:
+          type: string
+          enum:
+          - PRIVATE
+          - PUBLIC
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        freezeAt:
+          type: string
+          format: date-time
+    ContestResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+          - DRAFT
+          - FROZEN_CONFIG
+          - RUNNING
+          - PAUSED
+          - ENDED
+          - ARCHIVED
+        visibility:
+          type: string
+          enum:
+          - PRIVATE
+          - PUBLIC
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        freezeAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+    ContestExtensionRequest:
+      required:
+      - expectedEndAt
+      - newEndAt
+      type: object
+      properties:
+        expectedEndAt:
+          type: string
+          format: date-time
+        newEndAt:
+          type: string
+          format: date-time
+    ContestExtensionResponse:
+      type: object
+      properties:
+        contestId:
+          type: integer
+          format: int64
+        previousEndAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+        updatedAt:
+          type: string
+          format: date-time
+    ContestCloneRequest:
+      required:
+      - name
+      - visibility
+      type: object
+      properties:
+        name:
+          maxLength: 120
+          minLength: 0
+          type: string
+        visibility:
+          type: string
+          enum:
+          - PRIVATE
+          - PUBLIC
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        freezeAt:
+          type: string
+          format: date-time
+        copyTeams:
+          type: boolean
+    ContestCloneResponse:
+      type: object
+      properties:
+        sourceContestId:
+          type: integer
+          format: int64
+        contest:
+          $ref: "#/components/schemas/ContestResponse"
+        problemsCopied:
+          type: integer
+          format: int32
+        teamsCopied:
+          type: integer
+          format: int32
+    LifecycleTransitionRequest:
+      required:
+      - to
+      type: object
+      properties:
+        to:
+          type: string
+          enum:
+          - DRAFT
+          - FROZEN_CONFIG
+          - RUNNING
+          - PAUSED
+          - ENDED
+          - ARCHIVED
+    LifecycleTransitionResponse:
+      type: object
+      properties:
+        contestId:
+          type: integer
+          format: int64
+        from:
+          type: string
+          enum:
+          - DRAFT
+          - FROZEN_CONFIG
+          - RUNNING
+          - PAUSED
+          - ENDED
+          - ARCHIVED
+        to:
+          type: string
+          enum:
+          - DRAFT
+          - FROZEN_CONFIG
+          - RUNNING
+          - PAUSED
+          - ENDED
+          - ARCHIVED
+        version:
+          type: integer
+          format: int64
+        transitionedAt:
+          type: string
+          format: date-time
+    ContestTeamAssignmentRequest:
+      type: object
+      properties:
+        teamId:
+          type: integer
+          format: int64
+        participationType:
+          type: string
+          enum:
+          - OFFICIAL
+          - STAR
+          - PRACTICE
+        groupName:
+          type: string
+    ContestTeamResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        teamId:
+          type: integer
+          format: int64
+        teamName:
+          type: string
+        participationType:
+          type: string
+          enum:
+          - OFFICIAL
+          - STAR
+          - PRACTICE
+        groupName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    SubmitResult:
+      type: object
+      properties:
+        submissionId:
+          type: integer
+          format: int64
+        judgementId:
+          type: string
+          format: uuid
+    AssignProblemRequest:
+      type: object
+      properties:
+        problemId:
+          type: integer
+          format: int64
+        alias:
+          type: string
+        displayOrder:
+          type: integer
+          format: int32
+        color:
+          type: string
+    PrintRequestCreateRequest:
+      type: object
+      properties:
+        content:
+          type: string
+    ClarificationRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+        problemId:
+          type: integer
+          format: int64
+        question:
+          type: string
+    ClarificationResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        teamId:
+          type: integer
+          format: int64
+        teamName:
+          type: string
+        scope:
+          type: string
+        problemId:
+          type: integer
+          format: int64
+        problemAlias:
+          type: string
+        question:
+          type: string
+        status:
+          type: string
+        reply:
+          type: string
+        replyVisibility:
+          type: string
+        askedByUserId:
+          type: integer
+          format: int64
+        repliedByUserId:
+          type: integer
+          format: int64
+        repliedAt:
+          type: string
+          format: date-time
+        convertedAnnouncementId:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    BalloonStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+        note:
+          type: string
+        cancelledReason:
+          type: string
+    BalloonTaskResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        teamId:
+          type: integer
+          format: int64
+        teamName:
+          type: string
+        seatNo:
+          type: string
+        problemId:
+          type: integer
+          format: int64
+        problemAlias:
+          type: string
+        color:
+          type: string
+        firstBlood:
+          type: boolean
+        status:
+          type: string
+        submissionId:
+          type: integer
+          format: int64
+        acceptedAt:
+          type: string
+          format: date-time
+        claimedBy:
+          type: integer
+          format: int64
+        claimedAt:
+          type: string
+          format: date-time
+        deliveredAt:
+          type: string
+          format: date-time
+        cancelledAt:
+          type: string
+          format: date-time
+        cancelledReason:
+          type: string
+        note:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    BalloonNoteRequest:
+      type: object
+      properties:
+        note:
+          type: string
+    AwardRecipientManualRequest:
+      type: object
+      properties:
+        categoryId:
+          type: integer
+          format: int64
+        teamId:
+          type: integer
+          format: int64
+    AwardRecipientResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        categoryId:
+          type: integer
+          format: int64
+        categoryCode:
+          type: string
+        categoryName:
+          type: string
+        problemId:
+          type: integer
+          format: int64
+        problemAlias:
+          type: string
+        teamId:
+          type: integer
+          format: int64
+        teamName:
+          type: string
+        school:
+          type: string
+        seatNo:
+          type: string
+        groupName:
+          type: string
+        participationType:
+          type: string
+        star:
+          type: boolean
+        manual:
+          type: boolean
+        rank:
+          type: integer
+          format: int32
+        solved:
+          type: integer
+          format: int32
+        penaltyMinutes:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AwardGenerationResponse:
+      type: object
+      properties:
+        categoriesProcessed:
+          type: integer
+          format: int32
+        categoriesSkipped:
+          type: integer
+          format: int32
+    AnnouncementRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+        pinned:
+          type: boolean
+        scheduledAt:
+          type: string
+          format: date-time
+    AnnouncementResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        title:
+          type: string
+        body:
+          type: string
+        pinned:
+          type: boolean
+        status:
+          type: string
+        createdByUserId:
+          type: integer
+          format: int64
+        publishedAt:
+          type: string
+          format: date-time
+        scheduledAt:
+          type: string
+          format: date-time
+        withdrawnAt:
+          type: string
+          format: date-time
+        withdrawnByUserId:
+          type: integer
+          format: int64
+        sourceClarificationId:
+          type: integer
+          format: int64
+        cancelledAt:
+          type: string
+          format: date-time
+        cancelledByUserId:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ClarificationReplyRequest:
+      type: object
+      properties:
+        reply:
+          type: string
+        visibility:
+          type: string
+    ClarificationConvertRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+    ChangePasswordRequest:
+      required:
+      - currentPassword
+      - newPassword
+      type: object
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          maxLength: 128
+          minLength: 8
+          type: string
+    CurrentUserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        displayName:
+          type: string
+        userType:
+          type: string
+          enum:
+          - SUPER_ADMIN
+          - CONTEST_ADMIN
+          - JUDGE
+          - TEAM
+          - PRINTER
+          - BALLOON_STAFF
+          - RESOLVER_OPERATOR
+          - AWARD_OPERATOR
+          - SCREEN_OPERATOR
+          - LIVE_OPERATOR
+        roles:
+          type: array
+          items:
+            type: string
+        passwordResetRequired:
+          type: boolean
+    LoginRequest:
+      required:
+      - password
+      - username
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    AnnouncementPinRequest:
+      type: object
+      properties:
+        pinned:
+          type: boolean
+    JudgementMapping:
+      type: object
+      properties:
+        submissionId:
+          type: integer
+          format: int64
+        oldJudgementId:
+          type: string
+          format: uuid
+        newJudgementId:
+          type: string
+          format: uuid
+    RejudgeResponse:
+      type: object
+      properties:
+        affectedSubmissions:
+          type: integer
+          format: int32
+        enqueuedTasks:
+          type: integer
+          format: int32
+        judgements:
+          type: array
+          items:
+            $ref: "#/components/schemas/JudgementMapping"
+    StaffAccountCreateRequest:
+      required:
+      - displayName
+      - initialPassword
+      - userType
+      - username
+      type: object
+      properties:
+        username:
+          maxLength: 64
+          minLength: 3
+          pattern: "[A-Za-z0-9._-]+"
+          type: string
+        displayName:
+          maxLength: 128
+          minLength: 0
+          type: string
+        userType:
+          type: string
+          enum:
+          - SUPER_ADMIN
+          - CONTEST_ADMIN
+          - JUDGE
+          - TEAM
+          - PRINTER
+          - BALLOON_STAFF
+          - RESOLVER_OPERATOR
+          - AWARD_OPERATOR
+          - SCREEN_OPERATOR
+          - LIVE_OPERATOR
+        initialPassword:
+          maxLength: 128
+          minLength: 8
+          type: string
+    StaffAccountResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        displayName:
+          type: string
+        userType:
+          type: string
+          enum:
+          - SUPER_ADMIN
+          - CONTEST_ADMIN
+          - JUDGE
+          - TEAM
+          - PRINTER
+          - BALLOON_STAFF
+          - RESOLVER_OPERATOR
+          - AWARD_OPERATOR
+          - SCREEN_OPERATOR
+          - LIVE_OPERATOR
+        enabled:
+          type: boolean
+        passwordResetRequired:
+          type: boolean
+        lastLoginAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    StaffPasswordResetRequest:
+      required:
+      - newPassword
+      type: object
+      properties:
+        newPassword:
+          maxLength: 128
+          minLength: 8
+          type: string
+    BatchRejudgeCreateRequest:
+      type: object
+      properties:
+        filter:
+          $ref: "#/components/schemas/BatchRejudgeFilter"
+        expectedCount:
+          type: integer
+          format: int32
+        confirmationText:
+          type: string
+        idempotencyKey:
+          type: string
+    BatchRejudgeFilter:
+      type: object
+      properties:
+        contestId:
+          type: integer
+          format: int64
+        problemId:
+          type: integer
+          format: int64
+        teamId:
+          type: integer
+          format: int64
+        language:
+          type: string
+        verdict:
+          type: string
+        submittedFrom:
+          type: string
+          format: date-time
+        submittedTo:
+          type: string
+          format: date-time
+    BatchRejudgeTaskResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        status:
+          type: string
+        totalItems:
+          type: integer
+          format: int32
+        processedItems:
+          type: integer
+          format: int32
+        succeededItems:
+          type: integer
+          format: int32
+        failedItems:
+          type: integer
+          format: int32
+        cancelRequested:
+          type: boolean
+        createdByUserId:
+          type: integer
+          format: int64
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItemResponse"
+    ItemResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        submissionId:
+          type: integer
+          format: int64
+        status:
+          type: string
+        oldJudgementId:
+          type: string
+          format: uuid
+        newJudgementId:
+          type: string
+          format: uuid
+        errorMessage:
+          type: string
+        processedAt:
+          type: string
+          format: date-time
+    BatchRejudgePreviewResponse:
+      type: object
+      properties:
+        matchedSubmissions:
+          type: integer
+          format: int32
+    TeamMemberPatchRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        roleName:
+          type: string
+    TeamPatchRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        school:
+          type: string
+        seatNo:
+          type: string
+        groupName:
+          type: string
+        star:
+          type: boolean
+    UpdateProblemCommand:
+      type: object
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        timeLimitMs:
+          type: integer
+          format: int32
+        memoryLimitMb:
+          type: integer
+          format: int32
+        outputLimitKb:
+          type: integer
+          format: int32
+        languages:
+          type: array
+          items:
+            type: string
+        defaultLangCode:
+          type: string
+    ContestPatchRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        visibility:
+          type: string
+          enum:
+          - PRIVATE
+          - PUBLIC
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        freezeAt:
+          type: string
+          format: date-time
+    UpdateContestProblemRequest:
+      type: object
+      properties:
+        alias:
+          type: string
+        displayOrder:
+          type: integer
+          format: int32
+        color:
+          type: string
+    StaffAccountUpdateRequest:
+      type: object
+      properties:
+        displayName:
+          maxLength: 128
+          minLength: 1
+          type: string
+        userType:
+          type: string
+          enum:
+          - SUPER_ADMIN
+          - CONTEST_ADMIN
+          - JUDGE
+          - TEAM
+          - PRINTER
+          - BALLOON_STAFF
+          - RESOLVER_OPERATOR
+          - AWARD_OPERATOR
+          - SCREEN_OPERATOR
+          - LIVE_OPERATOR
+        enabled:
+          type: boolean
+    Pageable:
+      type: object
+      properties:
+        page:
+          minimum: 0
+          type: integer
+          format: int32
+        size:
+          minimum: 1
+          type: integer
+          format: int32
+        sort:
+          type: array
+          items:
+            type: string
+    PageResponseTeamResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    RealtimeEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        version:
+          type: integer
+          format: int32
+        type:
+          type: string
+        scope:
+          type: string
+          enum:
+          - PUBLIC
+          - STAFF
+          - TEAM
+        contestId:
+          type: integer
+          format: int64
+        occurredAt:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties:
+            type: object
+    JudgementView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        verdict:
+          type: string
+        totalTimeMs:
+          type: integer
+          format: int32
+        peakMemoryKb:
+          type: integer
+          format: int32
+        compileLog:
+          type: string
+        workerId:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        superseded:
+          type: boolean
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/RunView"
+    RunView:
+      type: object
+      properties:
+        testIndex:
+          type: integer
+          format: int32
+        verdict:
+          type: string
+        timeMs:
+          type: integer
+          format: int32
+        memoryKb:
+          type: integer
+          format: int32
+        exitCode:
+          type: integer
+          format: int32
+        stderrTail:
+          type: string
+    SubmissionDetailView:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        problemId:
+          type: integer
+          format: int64
+        teamId:
+          type: integer
+          format: int64
+        language:
+          type: string
+        status:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        judgedAt:
+          type: string
+          format: date-time
+        activeJudgement:
+          $ref: "#/components/schemas/JudgementView"
+        judgementHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/JudgementView"
+    ScreenInstanceResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        currentView:
+          type: string
+          enum:
+          - SCOREBOARD
+          - FIRST_BLOOD
+          - BALLOONS
+          - FREEZE_COUNTDOWN
+          - STATISTICS
+          - RESOLVER
+          - AWARDS
+        online:
+          type: boolean
+        lastSeenAt:
+          type: string
+          format: date-time
+        lastIp:
+          type: string
+        revokedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    FirstBloodEntry:
+      type: object
+      properties:
+        problemId:
+          type: integer
+          format: int64
+        problemAlias:
+          type: string
+        teamId:
+          type: integer
+          format: int64
+        teamName:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+    PresentationAnnouncementResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        body:
+          type: string
+        pinned:
+          type: boolean
+        publishedAt:
+          type: string
+          format: date-time
+    PresentationResponse:
+      type: object
+      properties:
+        contestId:
+          type: integer
+          format: int64
+        contestName:
+          type: string
+        contestStatus:
+          type: string
+          enum:
+          - DRAFT
+          - FROZEN_CONFIG
+          - RUNNING
+          - PAUSED
+          - ENDED
+          - ARCHIVED
+        startAt:
+          type: string
+          format: date-time
+        freezeAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        serverTime:
+          type: string
+          format: date-time
+        config:
+          $ref: "#/components/schemas/PresentationConfigResponse"
+        scoreboard:
+          $ref: "#/components/schemas/ScoreboardResponse"
+        announcements:
+          type: array
+          items:
+            $ref: "#/components/schemas/PresentationAnnouncementResponse"
+    ScoreboardCell:
+      type: object
+      properties:
+        problemId:
+          type: integer
+          format: int64
+        alias:
+          type: string
+        solved:
+          type: boolean
+        attempts:
+          type: integer
+          format: int32
+        wrongAttempts:
+          type: integer
+          format: int32
+        firstAcceptedAt:
+          type: string
+          format: date-time
+        penaltyMinutes:
+          type: integer
+          format: int64
+        firstBlood:
+          type: boolean
+    ScoreboardProblem:
+      type: object
+      properties:
+        problemId:
+          type: integer
+          format: int64
+        alias:
+          type: string
+        name:
+          type: string
+    ScoreboardResponse:
+      type: object
+      properties:
+        contestId:
+          type: integer
+          format: int64
+        contestName:
+          type: string
+        variant:
+          type: string
+        groupName:
+          type: string
+        frozen:
+          type: boolean
+        freezeAt:
+          type: string
+          format: date-time
+        generatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+        problems:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScoreboardProblem"
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScoreboardRow"
+        firstBlood:
+          type: array
+          items:
+            $ref: "#/components/schemas/FirstBloodEntry"
+    ScoreboardRow:
+      type: object
+      properties:
+        rank:
+          type: integer
+          format: int32
+        teamId:
+          type: integer
+          format: int64
+        teamName:
+          type: string
+        school:
+          type: string
+        star:
+          type: boolean
+        participationType:
+          type: string
+        groupName:
+          type: string
+        solved:
+          type: integer
+          format: int32
+        penaltyMinutes:
+          type: integer
+          format: int64
+        latestAcceptedAt:
+          type: string
+          format: date-time
+        cells:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScoreboardCell"
+    PresentationBalloonColorCount:
+      type: object
+      properties:
+        color:
+          type: string
+        total:
+          type: integer
+          format: int64
+    PresentationBalloonStatistics:
+      type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+        firstBlood:
+          type: integer
+          format: int64
+        pending:
+          type: integer
+          format: int64
+        preparing:
+          type: integer
+          format: int64
+        delivering:
+          type: integer
+          format: int64
+        delivered:
+          type: integer
+          format: int64
+        cancelled:
+          type: integer
+          format: int64
+        colors:
+          type: array
+          items:
+            $ref: "#/components/schemas/PresentationBalloonColorCount"
+    PresentationLanguageCount:
+      type: object
+      properties:
+        language:
+          type: string
+        total:
+          type: integer
+          format: int64
+    PresentationMetricsResponse:
+      type: object
+      properties:
+        balloons:
+          $ref: "#/components/schemas/PresentationBalloonStatistics"
+        submissions:
+          $ref: "#/components/schemas/PresentationSubmissionStatistics"
+    PresentationSubmissionStatistics:
+      type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+        accepted:
+          type: integer
+          format: int64
+        pending:
+          type: integer
+          format: int64
+        languages:
+          type: array
+          items:
+            $ref: "#/components/schemas/PresentationLanguageCount"
+        trend:
+          type: array
+          items:
+            $ref: "#/components/schemas/PresentationSubmissionTrendPoint"
+    PresentationSubmissionTrendPoint:
+      type: object
+      properties:
+        bucket:
+          type: string
+          format: date-time
+        total:
+          type: integer
+          format: int64
+        accepted:
+          type: integer
+          format: int64
+    PageResponseProblemResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProblemResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    BroadcastTokenResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        label:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    PageResponseContestResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContestResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    PageResponseContestTeamResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContestTeamResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    PageResponseSubmissionView:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubmissionView"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    SubmissionView:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        contestId:
+          type: integer
+          format: int64
+        problemId:
+          type: integer
+          format: int64
+        teamId:
+          type: integer
+          format: int64
+        language:
+          type: string
+        status:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        judgedAt:
+          type: string
+          format: date-time
+    ContestProblemOverviewResponse:
+      type: object
+      properties:
+        contestId:
+          type: integer
+          format: int64
+        problemId:
+          type: integer
+          format: int64
+        alias:
+          type: string
+        displayOrder:
+          type: integer
+          format: int32
+        color:
+          type: string
+        slug:
+          type: string
+        title:
+          type: string
+        timeLimitMs:
+          type: integer
+          format: int32
+        memoryLimitMb:
+          type: integer
+          format: int32
+        outputLimitKb:
+          type: integer
+          format: int32
+        languages:
+          type: string
+        defaultLangCode:
+          type: string
+    BalloonStats:
+      type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+        firstBlood:
+          type: integer
+          format: int64
+        pending:
+          type: integer
+          format: int64
+        preparing:
+          type: integer
+          format: int64
+        delivering:
+          type: integer
+          format: int64
+        delivered:
+          type: integer
+          format: int64
+        cancelled:
+          type: integer
+          format: int64
+    AwardCandidateResponse:
+      type: object
+      properties:
+        teamId:
+          type: integer
+          format: int64
+        teamName:
+          type: string
+        school:
+          type: string
+        seatNo:
+          type: string
+        groupName:
+          type: string
+        participationType:
+          type: string
+        star:
+          type: boolean
+    CsrfToken:
+      type: object
+      properties:
+        parameterName:
+          type: string
+        token:
+          type: string
+        headerName:
+          type: string
+    PageResponseStaffAccountResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/StaffAccountResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    JudgeQueueStatusResponse:
+      type: object
+      properties:
+        contestId:
+          type: integer
+          format: int64
+        drained:
+          type: boolean
+        pendingSubmissions:
+          type: integer
+          format: int64
+        judgingSubmissions:
+          type: integer
+          format: int64
+        outboxPending:
+          type: integer
+          format: int64
+        outboxFailed:
+          type: integer
+          format: int64
+        checkedAt:
+          type: string
+          format: date-time
+    AuditLogResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        actorUserId:
+          type: integer
+          format: int64
+        action:
+          type: string
+        targetType:
+          type: string
+        targetId:
+          type: string
+        requestIp:
+          type: string
+        result:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    PageResponseAuditLogResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32

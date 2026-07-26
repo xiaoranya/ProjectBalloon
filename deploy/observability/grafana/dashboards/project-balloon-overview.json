@@ -1,0 +1,23 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {"type":"stat","title":"Judge Capacity","id":1,"gridPos":{"h":4,"w":6,"x":0,"y":0},"targets":[{"expr":"project_balloon_judge_worker_capacity","refId":"A"}]},
+    {"type":"stat","title":"Active Judge Tasks","id":2,"gridPos":{"h":4,"w":6,"x":6,"y":0},"targets":[{"expr":"project_balloon_judge_worker_active_tasks","refId":"A"}]},
+    {"type":"stat","title":"Judge Outbox Pending","id":3,"gridPos":{"h":4,"w":6,"x":12,"y":0},"targets":[{"expr":"project_balloon_judge_outbox_pending","refId":"A"}]},
+    {"type":"stat","title":"Realtime Outbox Pending","id":4,"gridPos":{"h":4,"w":6,"x":18,"y":0},"targets":[{"expr":"project_balloon_realtime_outbox_pending","refId":"A"}]},
+    {"type":"timeseries","title":"Operational Backlogs","id":5,"gridPos":{"h":8,"w":12,"x":0,"y":4},"targets":[{"expr":"project_balloon_judge_outbox_pending","legendFormat":"judge"},{"expr":"project_balloon_realtime_outbox_pending","legendFormat":"realtime"},{"expr":"project_balloon_object_cleanup_pending","legendFormat":"cleanup"}]},
+    {"type":"timeseries","title":"Export Tasks","id":6,"gridPos":{"h":8,"w":12,"x":12,"y":4},"targets":[{"expr":"project_balloon_export_tasks_queued","legendFormat":"queued"},{"expr":"project_balloon_export_tasks_processing","legendFormat":"processing"},{"expr":"project_balloon_export_tasks_failed","legendFormat":"failed"}]},
+    {"type":"logs","title":"API Logs","id":7,"gridPos":{"h":10,"w":24,"x":0,"y":12},"datasource":{"type":"loki","uid":"loki"},"targets":[{"expr":"{service=\"api\"}","refId":"A"}]}
+  ],
+  "refresh": "15s",
+  "schemaVersion": 40,
+  "tags": ["project-balloon"],
+  "templating": {"list": []},
+  "time": {"from":"now-1h","to":"now"},
+  "timezone": "browser",
+  "title": "ProjectBalloon Overview",
+  "uid": "project-balloon-overview",
+  "version": 1
+}

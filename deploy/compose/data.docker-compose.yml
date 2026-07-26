@@ -1,0 +1,85 @@
+name: project-balloon-data
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16.6}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-project_balloon}
+      POSTGRES_USER: ${POSTGRES_USER:-project_balloon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [project-balloon]
+    restart: unless-stopped
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7.4.2}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}"]
+    volumes:
+      - redis-data:/data
+    ports:
+      - "${REDIS_BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" --no-auth-warning ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    networks: [project-balloon]
+    restart: unless-stopped
+
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:3.13.7-management}
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-project_balloon}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-project_balloon}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - "${RABBITMQ_BIND_ADDRESS:-127.0.0.1}:${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_BIND_ADDRESS:-127.0.0.1}:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [project-balloon]
+    restart: unless-stopped
+
+  rustfs:
+    image: ${RUSTFS_IMAGE:-rustfs/rustfs:1.0.0-beta.8}
+    environment:
+      RUSTFS_ACCESS_KEY: ${PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY:?set object storage access key}
+      RUSTFS_SECRET_KEY: ${PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY:?set object storage secret key}
+    volumes:
+      - rustfs-data:/data
+    ports:
+      - "${RUSTFS_BIND_ADDRESS:-127.0.0.1}:${RUSTFS_PORT:-9000}:9000"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:9000/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [project-balloon]
+    restart: unless-stopped
+
+networks:
+  project-balloon:
+    name: project-balloon
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
+  rustfs-data:

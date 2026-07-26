@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: ProjectBalloon
+    orgId: 1
+    folder: ProjectBalloon
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

@@ -1,0 +1,50 @@
+groups:
+  - name: project-balloon
+    rules:
+      - alert: ProjectBalloonApiMetricsDown
+        expr: up{job="project-balloon-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: ProjectBalloon API metrics endpoint is unavailable
+
+      - alert: JudgeOutboxBacklog
+        expr: project_balloon_judge_outbox_pending > 100
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Judge task publication backlog exceeds 100
+
+      - alert: JudgeOutboxFailed
+        expr: project_balloon_judge_outbox_failed > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Judge task publication retries remain outstanding
+
+      - alert: NoJudgeCapacity
+        expr: project_balloon_judge_worker_capacity == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: No online Judge capacity is available
+
+      - alert: ObjectCleanupFailed
+        expr: project_balloon_object_cleanup_failed > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Object-storage cleanup retries remain outstanding
+
+      - alert: ExportTasksFailed
+        expr: project_balloon_export_tasks_failed > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Submission export tasks remain in retry state

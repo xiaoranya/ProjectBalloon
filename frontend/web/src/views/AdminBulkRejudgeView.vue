@@ -1,0 +1,603 @@
+<template>
+  <section class="admin-page rejudge-page">
+    <header class="admin-page-header compact">
+      <div>
+        <ElButton link :icon="ArrowLeft" @click="router.push(`/admin/contests/${contestId}`)">
+          返回比赛详情
+        </ElButton>
+        <p class="eyebrow">Bulk rejudge</p>
+        <h1>批量重判工作台</h1>
+        <p>{{ contest?.name ?? `比赛 #${contestId}` }} · 仅处理已有最终判定的提交</p>
+      </div>
+      <div class="admin-page-actions">
+        <ElButton :icon="Refresh" :loading="tasksLoading" @click="loadTasks(false)">刷新任务</ElButton>
+      </div>
+    </header>
+
+    <ElAlert
+      v-if="errorMessage"
+      class="page-alert"
+      type="error"
+      show-icon
+      :closable="false"
+      :title="errorMessage"
+    />
+
+    <div class="rejudge-workbench">
+      <ElCard shadow="never" class="admin-card rejudge-filter-card">
+        <template #header>
+          <div class="card-header">
+            <div>
+              <strong>1. 筛选与预览</strong>
+              <small>比赛范围由 URL 固定；全部筛选均可留空。</small>
+            </div>
+          </div>
+        </template>
+
+        <ElForm label-position="top">
+          <div class="rejudge-filter-grid">
+            <ElFormItem label="题目">
+              <ElSelect v-model="filter.problemId" clearable filterable placeholder="全部题目">
+                <ElOption
+                  v-for="problem in contestProblems"
+                  :key="problem.problemId"
+                  :label="`${problem.alias} · ${problem.title}`"
+                  :value="problem.problemId"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="队伍">
+              <ElSelect v-model="filter.teamId" clearable filterable placeholder="全部队伍">
+                <ElOption
+                  v-for="team in contestTeams"
+                  :key="team.teamId"
+                  :label="`${team.teamName} (#${team.teamId})`"
+                  :value="team.teamId"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="语言">
+              <ElSelect v-model="filter.language" clearable placeholder="全部语言">
+                <ElOption label="C" value="c" />
+                <ElOption label="C++" value="cpp" />
+                <ElOption label="Java" value="java" />
+                <ElOption label="Python" value="python" />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="当前判罚">
+              <ElSelect v-model="filter.verdict" clearable placeholder="全部最终判罚">
+                <ElOption
+                  v-for="option in verdictOptions"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="提交时间" class="rejudge-time-filter">
+              <ElDatePicker
+                v-model="filter.submittedRange"
+                type="datetimerange"
+                start-placeholder="起始时间"
+                end-placeholder="结束时间"
+                range-separator="至"
+              />
+            </ElFormItem>
+          </div>
+        </ElForm>
+
+        <div class="rejudge-preview-actions">
+          <ElButton type="primary" plain :loading="previewing" @click="preview">
+            预览影响范围
+          </ElButton>
+          <span class="muted-text">预览只统计，不创建判题任务。</span>
+        </div>
+
+        <ElAlert
+          v-if="previewResult && previewStale"
+          class="rejudge-inline-alert"
+          type="warning"
+          show-icon
+          :closable="false"
+          title="筛选条件已变化，当前预览已失效，请重新预览。"
+        />
+      </ElCard>
+
+      <ElCard shadow="never" class="admin-card rejudge-confirm-card">
+        <template #header>
+          <div class="card-header">
+            <div>
+              <strong>2. 确认创建</strong>
+              <small>数量快照与幂等键共同保护重复操作。</small>
+            </div>
+          </div>
+        </template>
+
+        <ElEmpty v-if="!previewResult" description="先预览筛选结果" :image-size="76" />
+        <template v-else>
+          <div class="rejudge-preview-count" aria-live="polite">
+            <span>匹配提交</span>
+            <strong>{{ previewResult.matchedSubmissions }}</strong>
+            <small>Rust 创建上限为 10,000 条</small>
+          </div>
+
+          <ElAlert
+            v-if="previewResult.matchedSubmissions === 0"
+            class="rejudge-inline-alert"
+            type="info"
+            show-icon
+            :closable="false"
+            title="当前筛选没有可重判的已完成提交。"
+          />
+          <ElAlert
+            v-else-if="previewResult.matchedSubmissions > 10_000"
+            class="rejudge-inline-alert"
+            type="warning"
+            show-icon
+            :closable="false"
+            title="匹配数量超过单任务上限，请缩小筛选范围。"
+          />
+
+          <ElForm label-position="top" class="rejudge-confirm-form">
+            <ElFormItem label="幂等键">
+              <ElInput v-model="idempotencyKey" maxlength="128" show-word-limit>
+                <template #append>
+                  <ElButton :icon="Refresh" aria-label="生成新幂等键" @click="regenerateIdempotencyKey" />
+                </template>
+              </ElInput>
+              <p class="form-help">需为 8–128 字节。网络重试时保留同一键；只在发起一项新操作时更换。</p>
+            </ElFormItem>
+            <ElFormItem :label="`输入 ${confirmationRequirement || '确认文本'} 以继续`">
+              <ElInput
+                v-model="confirmationText"
+                autocomplete="off"
+                :placeholder="confirmationRequirement"
+              />
+            </ElFormItem>
+          </ElForm>
+
+          <ElAlert
+            class="rejudge-inline-alert"
+            type="warning"
+            show-icon
+            :closable="false"
+            title="重判会让匹配提交重新进入评测队列，并可能短暂改变榜单；任务不能整体撤销。"
+          />
+          <ElButton
+            type="danger"
+            class="wide-button"
+            :loading="creating"
+            :disabled="!canCreate"
+            @click="createTask"
+          >
+            创建批量重判任务
+          </ElButton>
+        </template>
+      </ElCard>
+    </div>
+
+    <ElCard shadow="never" class="admin-card rejudge-tasks-card">
+      <template #header>
+        <div class="card-header">
+          <div>
+            <strong>任务列表</strong>
+            <small>最多显示本场比赛最近 100 项；活动任务自动轮询。</small>
+          </div>
+          <span class="rejudge-poll-state" aria-live="polite">
+            {{ polling ? '自动刷新中' : '暂无活动任务' }}
+          </span>
+        </div>
+      </template>
+
+      <ElTable v-loading="tasksLoading && tasks.length === 0" :data="tasks" row-key="id">
+        <ElTableColumn prop="id" label="任务 ID" width="100" />
+        <ElTableColumn label="状态" width="120">
+          <template #default="{ row }">
+            <ElTag :type="taskStatusType(row.status)">{{ taskStatusLabel(row.status) }}</ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="进度" min-width="250">
+          <template #default="{ row }">
+            <ElProgress
+              :percentage="progressPercentage(row as BatchRejudgeTask)"
+              :status="progressStatus(row as BatchRejudgeTask)"
+              :stroke-width="10"
+            />
+            <small class="rejudge-progress-copy">
+              {{ row.processedItems }} / {{ row.totalItems }} · 成功 {{ row.succeededItems }} · 失败 {{ row.failedItems }}
+            </small>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="创建时间" min-width="170">
+          <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+        </ElTableColumn>
+        <ElTableColumn label="操作" width="220" fixed="right">
+          <template #default="{ row }">
+            <ElButton link @click="selectTask(row.id)">查看明细</ElButton>
+            <ElButton
+              v-if="row.status === 'PENDING' || row.status === 'RUNNING'"
+              link
+              type="warning"
+              :loading="mutatingTaskId === row.id"
+              @click="pauseTask(row as BatchRejudgeTask)"
+            >
+              暂停
+            </ElButton>
+            <ElButton
+              v-if="row.status === 'PAUSED'"
+              link
+              type="primary"
+              :loading="mutatingTaskId === row.id"
+              @click="resumeTask(row as BatchRejudgeTask)"
+            >
+              恢复
+            </ElButton>
+          </template>
+        </ElTableColumn>
+        <template #empty><ElEmpty description="尚未创建批量重判任务" /></template>
+      </ElTable>
+    </ElCard>
+
+    <ElDialog v-model="detailVisible" title="批量重判任务明细" width="min(1100px, 94vw)" @closed="selectedTask = null">
+      <ElSkeleton v-if="detailLoading" :rows="8" animated />
+      <template v-else-if="selectedTask">
+        <div class="rejudge-detail-heading">
+          <ElDescriptions :column="2" border>
+            <ElDescriptionsItem label="任务">#{{ selectedTask.id }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="状态">
+              <ElTag :type="taskStatusType(selectedTask.status)">{{ taskStatusLabel(selectedTask.status) }}</ElTag>
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="进度">
+              {{ selectedTask.processedItems }} / {{ selectedTask.totalItems }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="成功 / 失败">
+              {{ selectedTask.succeededItems }} / {{ selectedTask.failedItems }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="开始">{{ formatDateTime(selectedTask.startedAt) }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="完成">{{ formatDateTime(selectedTask.completedAt) }}</ElDescriptionsItem>
+          </ElDescriptions>
+          <ElProgress
+            :percentage="progressPercentage(selectedTask)"
+            :status="progressStatus(selectedTask)"
+            :stroke-width="14"
+          />
+        </div>
+
+        <ElAlert
+          v-if="selectedTask.itemsTruncated"
+          class="rejudge-inline-alert"
+          type="warning"
+          show-icon
+          :closable="false"
+          :title="`任务共有 ${selectedTask.totalItems} 条，明细仅返回按 ID 排序的前 1,000 条。聚合进度仍是完整数据。`"
+        />
+
+        <ElTable :data="selectedTask.items" row-key="id" max-height="500">
+          <ElTableColumn prop="submissionId" label="提交 ID" width="110" />
+          <ElTableColumn label="状态" width="120">
+            <template #default="{ row }">
+              <ElTag :type="itemStatusType(row.status)" effect="plain">{{ itemStatusLabel(row.status) }}</ElTag>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn prop="attempts" label="尝试次数" width="100" />
+          <ElTableColumn prop="oldJudgementId" label="原判定 ID" min-width="250">
+            <template #default="{ row }"><code>{{ row.oldJudgementId ?? '—' }}</code></template>
+          </ElTableColumn>
+          <ElTableColumn prop="newJudgementId" label="新判定 ID" min-width="250">
+            <template #default="{ row }"><code>{{ row.newJudgementId ?? '—' }}</code></template>
+          </ElTableColumn>
+          <ElTableColumn label="处理时间" min-width="170">
+            <template #default="{ row }">{{ formatDateTime(row.processedAt) }}</template>
+          </ElTableColumn>
+          <ElTableColumn prop="errorMessage" label="错误" min-width="240">
+            <template #default="{ row }"><span class="error-text">{{ row.errorMessage ?? '—' }}</span></template>
+          </ElTableColumn>
+          <template #empty><ElEmpty description="任务明细尚未生成" /></template>
+        </ElTable>
+      </template>
+    </ElDialog>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { ArrowLeft, Refresh } from '@element-plus/icons-vue';
+import { useRoute, useRouter } from 'vue-router';
+import { adminContestApi } from '../api/admin-contests';
+import {
+  bulkRejudgeApi,
+  type BatchRejudgeFilter,
+  type BatchRejudgeItemStatus,
+  type BatchRejudgePreview,
+  type BatchRejudgeTask,
+  type BatchRejudgeTaskStatus,
+  type BatchRejudgeVerdict,
+} from '../api/bulk-rejudge';
+import { ApiError, getErrorMessage } from '../api/client';
+import type { Contest, ContestProblem, ContestTeam } from '../api/types';
+import { formatDateTime, submissionStatusLabel } from '../utils/format';
+
+const route = useRoute();
+const router = useRouter();
+const contestId = Number(route.params.contestId);
+const contest = ref<Contest | null>(null);
+const contestProblems = ref<ContestProblem[]>([]);
+const contestTeams = ref<ContestTeam[]>([]);
+const filter = reactive({
+  problemId: null as number | null,
+  teamId: null as number | null,
+  language: null as string | null,
+  verdict: null as BatchRejudgeVerdict | null,
+  submittedRange: null as [Date, Date] | null,
+});
+const previewResult = ref<BatchRejudgePreview | null>(null);
+const previewFingerprint = ref('');
+const idempotencyKey = ref('');
+const confirmationText = ref('');
+const tasks = ref<BatchRejudgeTask[]>([]);
+const selectedTask = ref<BatchRejudgeTask | null>(null);
+const detailVisible = ref(false);
+const detailLoading = ref(false);
+const previewing = ref(false);
+const creating = ref(false);
+const tasksLoading = ref(false);
+const mutatingTaskId = ref<number | null>(null);
+const errorMessage = ref('');
+let pollTimer: number | undefined;
+
+const verdictOptions: Array<{ value: BatchRejudgeVerdict; label: string }> = [
+  'ACCEPTED',
+  'WRONG_ANSWER',
+  'COMPILE_ERROR',
+  'RUNTIME_ERROR',
+  'TIME_LIMIT_EXCEEDED',
+  'MEMORY_LIMIT_EXCEEDED',
+  'OUTPUT_LIMIT_EXCEEDED',
+  'SYSTEM_ERROR',
+  'CANCELLED',
+].map((value) => ({ value: value as BatchRejudgeVerdict, label: submissionStatusLabel(value) }));
+
+const filterRequest = computed<BatchRejudgeFilter>(() => ({
+  problemId: filter.problemId,
+  teamId: filter.teamId,
+  language: filter.language,
+  verdict: filter.verdict,
+  submittedFrom: filter.submittedRange?.[0]?.toISOString() ?? null,
+  submittedTo: filter.submittedRange?.[1]?.toISOString() ?? null,
+}));
+const currentFingerprint = computed(() => JSON.stringify(filterRequest.value));
+const previewStale = computed(() => Boolean(previewResult.value && currentFingerprint.value !== previewFingerprint.value));
+const confirmationRequirement = computed(() => previewResult.value
+  ? `REJUDGE ${previewResult.value.matchedSubmissions}`
+  : '');
+const idempotencyKeyValid = computed(() => {
+  const bytes = new TextEncoder().encode(idempotencyKey.value.trim()).length;
+  return bytes >= 8 && bytes <= 128;
+});
+const canCreate = computed(() => Boolean(
+  previewResult.value
+  && !previewStale.value
+  && previewResult.value.matchedSubmissions >= 1
+  && previewResult.value.matchedSubmissions <= 10_000
+  && confirmationText.value === confirmationRequirement.value
+  && idempotencyKeyValid.value,
+));
+const polling = computed(() => tasks.value.some((task) => isActiveTask(task.status)));
+
+function regenerateIdempotencyKey() {
+  idempotencyKey.value = `batch-rejudge-${contestId}-${crypto.randomUUID()}`;
+}
+
+async function loadContext() {
+  errorMessage.value = '';
+  try {
+    const [contestValue, problemValues, teamValues] = await Promise.all([
+      adminContestApi.getContest(contestId),
+      adminContestApi.listContestProblems(contestId),
+      adminContestApi.listContestTeams(contestId),
+    ]);
+    contest.value = contestValue;
+    contestProblems.value = [...problemValues].sort((a, b) => a.displayOrder - b.displayOrder);
+    contestTeams.value = [...teamValues].sort((a, b) => a.teamName.localeCompare(b.teamName, 'zh-CN'));
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error);
+  }
+}
+
+async function preview() {
+  previewing.value = true;
+  errorMessage.value = '';
+  try {
+    const request = filterRequest.value;
+    previewResult.value = await bulkRejudgeApi.preview(contestId, request);
+    previewFingerprint.value = JSON.stringify(request);
+    confirmationText.value = '';
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error);
+  } finally {
+    previewing.value = false;
+  }
+}
+
+async function createTask() {
+  if (!previewResult.value || !canCreate.value) return;
+  creating.value = true;
+  errorMessage.value = '';
+  try {
+    const task = await bulkRejudgeApi.create(contestId, {
+      filter: filterRequest.value,
+      expectedCount: previewResult.value.matchedSubmissions,
+      confirmationText: confirmationText.value,
+      idempotencyKey: idempotencyKey.value.trim(),
+    });
+    ElMessage.success(`批量重判任务 #${task.id} 已创建`);
+    selectedTask.value = task;
+    detailVisible.value = true;
+    confirmationText.value = '';
+    await loadTasks(true);
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'BATCH_REJUDGE_COUNT_CHANGED') {
+      previewResult.value = null;
+      previewFingerprint.value = '';
+      confirmationText.value = '';
+      ElMessage.error('符合条件的提交集合已变化，请重新预览并确认');
+    } else if (error instanceof ApiError && error.code === 'IDEMPOTENCY_KEY_REUSED') {
+      ElMessage.error('该幂等键已用于其他批量重判，请生成新键后重试');
+    } else {
+      ElMessage.error(getErrorMessage(error));
+    }
+  } finally {
+    creating.value = false;
+  }
+}
+
+async function loadTasks(silent = true) {
+  if (!silent) tasksLoading.value = true;
+  try {
+    tasks.value = await bulkRejudgeApi.list(contestId);
+    if (detailVisible.value && selectedTask.value) {
+      selectedTask.value = await bulkRejudgeApi.get(contestId, selectedTask.value.id);
+    }
+    schedulePolling();
+  } catch (error) {
+    if (!silent) errorMessage.value = getErrorMessage(error);
+    schedulePolling(8_000);
+  } finally {
+    tasksLoading.value = false;
+  }
+}
+
+async function selectTask(taskId: number) {
+  detailVisible.value = true;
+  detailLoading.value = true;
+  selectedTask.value = null;
+  try {
+    selectedTask.value = await bulkRejudgeApi.get(contestId, taskId);
+  } catch (error) {
+    detailVisible.value = false;
+    ElMessage.error(getErrorMessage(error));
+  } finally {
+    detailLoading.value = false;
+  }
+}
+
+async function pauseTask(task: BatchRejudgeTask) {
+  try {
+    await ElMessageBox.confirm(
+      '暂停后不会再领取新条目；当前正在处理的条目可能仍会完成。',
+      `暂停任务 #${task.id}`,
+      { type: 'warning', confirmButtonText: '确认暂停' },
+    );
+  } catch {
+    return;
+  }
+  mutatingTaskId.value = task.id;
+  try {
+    const updated = await bulkRejudgeApi.pause(contestId, task.id);
+    replaceTask(updated);
+    ElMessage.success(`任务 #${task.id} 已暂停`);
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+  } finally {
+    mutatingTaskId.value = null;
+  }
+}
+
+async function resumeTask(task: BatchRejudgeTask) {
+  mutatingTaskId.value = task.id;
+  try {
+    const updated = await bulkRejudgeApi.resume(contestId, task.id);
+    replaceTask(updated);
+    ElMessage.success(`任务 #${task.id} 已恢复`);
+    schedulePolling(0);
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+  } finally {
+    mutatingTaskId.value = null;
+  }
+}
+
+function replaceTask(updated: BatchRejudgeTask) {
+  const index = tasks.value.findIndex((task) => task.id === updated.id);
+  if (index >= 0) tasks.value[index] = { ...updated, items: [] };
+  if (selectedTask.value?.id === updated.id) selectedTask.value = updated;
+}
+
+function schedulePolling(delay = 2_500) {
+  if (pollTimer) window.clearTimeout(pollTimer);
+  if (document.hidden || !polling.value) return;
+  pollTimer = window.setTimeout(() => void loadTasks(true), delay);
+}
+
+function handleVisibility() {
+  if (!document.hidden) void loadTasks(true);
+}
+
+function isActiveTask(status: BatchRejudgeTaskStatus) {
+  return status === 'PENDING' || status === 'RUNNING';
+}
+
+function progressPercentage(task: BatchRejudgeTask) {
+  if (task.totalItems === 0) return 0;
+  return Math.min(100, Math.round((task.processedItems / task.totalItems) * 100));
+}
+
+function progressStatus(task: BatchRejudgeTask): '' | 'success' | 'exception' | 'warning' {
+  if (task.failedItems > 0) return 'exception';
+  if (task.status === 'COMPLETED') return 'success';
+  if (task.status === 'PAUSED') return 'warning';
+  return '';
+}
+
+function taskStatusType(status: BatchRejudgeTaskStatus): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
+  return {
+    PENDING: 'info',
+    RUNNING: 'primary',
+    PAUSED: 'warning',
+    COMPLETED: 'success',
+    CANCELLED: 'danger',
+  }[status] as 'success' | 'warning' | 'danger' | 'info' | 'primary';
+}
+
+function taskStatusLabel(status: BatchRejudgeTaskStatus) {
+  return {
+    PENDING: '等待执行',
+    RUNNING: '执行中',
+    PAUSED: '已暂停',
+    COMPLETED: '已完成',
+    CANCELLED: '已终止',
+  }[status];
+}
+
+function itemStatusType(status: BatchRejudgeItemStatus): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
+  return {
+    PENDING: 'info',
+    PROCESSING: 'primary',
+    SUCCEEDED: 'success',
+    FAILED: 'danger',
+    CANCELLED: 'warning',
+  }[status] as 'success' | 'warning' | 'danger' | 'info' | 'primary';
+}
+
+function itemStatusLabel(status: BatchRejudgeItemStatus) {
+  return {
+    PENDING: '等待',
+    PROCESSING: '处理中',
+    SUCCEEDED: '成功',
+    FAILED: '失败',
+    CANCELLED: '已终止',
+  }[status];
+}
+
+onMounted(async () => {
+  regenerateIdempotencyKey();
+  document.addEventListener('visibilitychange', handleVisibility);
+  await Promise.all([loadContext(), loadTasks(false)]);
+});
+
+onUnmounted(() => {
+  if (pollTimer) window.clearTimeout(pollTimer);
+  document.removeEventListener('visibilitychange', handleVisibility);
+});
+</script>

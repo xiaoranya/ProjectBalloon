@@ -1,0 +1,8 @@
+.git
+.agents
+.codex
+ProjectBalloon
+build
+frontend/web/node_modules
+frontend/web/dist
+target

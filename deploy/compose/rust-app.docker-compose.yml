@@ -1,0 +1,81 @@
+name: project-balloon-app
+
+services:
+  api:
+    image: ${PROJECT_BALLOON_API_IMAGE:-project-balloon-api:0.1.0}
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      PROJECT_BALLOON_API_BIND: 0.0.0.0:8080
+      PROJECT_BALLOON_RUN_MIGRATIONS: ${PROJECT_BALLOON_RUN_MIGRATIONS:-true}
+      PROJECT_BALLOON_SECURE_COOKIES: ${PROJECT_BALLOON_SECURE_COOKIES:-true}
+      PROJECT_BALLOON_CSRF_SECRET: ${PROJECT_BALLOON_CSRF_SECRET:?set PROJECT_BALLOON_CSRF_SECRET}
+      PROJECT_BALLOON_REALTIME_REDIS_ENABLED: ${PROJECT_BALLOON_REALTIME_REDIS_ENABLED:-true}
+      PROJECT_BALLOON_SCOREBOARD_CACHE_ENABLED: ${PROJECT_BALLOON_SCOREBOARD_CACHE_ENABLED:-true}
+      REDIS_URL: ${REDIS_URL:?set REDIS_URL}
+      PROJECT_BALLOON_OBJECT_STORAGE_ENABLED: ${PROJECT_BALLOON_OBJECT_STORAGE_ENABLED:-true}
+      PROJECT_BALLOON_OBJECT_STORAGE_ENDPOINT: ${PROJECT_BALLOON_OBJECT_STORAGE_ENDPOINT:?set object storage endpoint}
+      PROJECT_BALLOON_OBJECT_STORAGE_REGION: ${PROJECT_BALLOON_OBJECT_STORAGE_REGION:-us-east-1}
+      PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY: ${PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY:?set object storage access key}
+      PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY: ${PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY:?set object storage secret key}
+      PROJECT_BALLOON_OBJECT_STORAGE_PROBLEM_BUCKET: ${PROJECT_BALLOON_OBJECT_STORAGE_PROBLEM_BUCKET:-xcpc-problems}
+      PROJECT_BALLOON_OBJECT_STORAGE_SOURCE_BUCKET: ${PROJECT_BALLOON_OBJECT_STORAGE_SOURCE_BUCKET:-xcpc-sources}
+      PROJECT_BALLOON_RABBITMQ_ENABLED: ${PROJECT_BALLOON_RABBITMQ_ENABLED:-true}
+      PROJECT_BALLOON_RABBITMQ_URL: ${PROJECT_BALLOON_RABBITMQ_URL:?set RabbitMQ URL}
+    expose: ["8080"]
+    networks: [project-balloon]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:8080/livez"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  judge-worker:
+    image: ${PROJECT_BALLOON_JUDGE_IMAGE:-project-balloon-judge-worker:0.1.0}
+    build:
+      context: ../..
+      dockerfile: apps/judge-worker/Dockerfile
+    environment:
+      WORKER_ID: ${WORKER_ID:-judge-worker-1}
+      JUDGE_CACHE_DIR: ${JUDGE_CACHE_DIR:-/var/lib/project-balloon/judge-cache}
+      XCPC_SANDBOX_SOCKET: ${XCPC_SANDBOX_SOCKET:-/var/run/docker.sock}
+      XCPC_SANDBOX_RUNTIME: ${XCPC_SANDBOX_RUNTIME:-}
+      XCPC_SANDBOX_USER: ${XCPC_SANDBOX_USER:-1000:1000}
+      JUDGE_C_IMAGE: ${JUDGE_C_IMAGE:-judge-runtime-c:12.2.0}
+      JUDGE_CPP_IMAGE: ${JUDGE_CPP_IMAGE:-judge-runtime-cpp:12.2.0}
+      JUDGE_JAVA_IMAGE: ${JUDGE_JAVA_IMAGE:-judge-runtime-java:21}
+      JUDGE_PYTHON_IMAGE: ${JUDGE_PYTHON_IMAGE:-judge-runtime-python:3.12.13}
+      PROJECT_BALLOON_RABBITMQ_URL: ${PROJECT_BALLOON_RABBITMQ_URL:?set RabbitMQ URL}
+      PROJECT_BALLOON_OBJECT_STORAGE_ENDPOINT: ${PROJECT_BALLOON_OBJECT_STORAGE_ENDPOINT:?set object storage endpoint}
+      PROJECT_BALLOON_OBJECT_STORAGE_REGION: ${PROJECT_BALLOON_OBJECT_STORAGE_REGION:-us-east-1}
+      PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY: ${PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY:?set object storage access key}
+      PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY: ${PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY:?set object storage secret key}
+      PROJECT_BALLOON_OBJECT_STORAGE_PROBLEM_BUCKET: ${PROJECT_BALLOON_OBJECT_STORAGE_PROBLEM_BUCKET:-xcpc-problems}
+      PROJECT_BALLOON_OBJECT_STORAGE_SOURCE_BUCKET: ${PROJECT_BALLOON_OBJECT_STORAGE_SOURCE_BUCKET:-xcpc-sources}
+    volumes:
+      - ${XCPC_SANDBOX_SOCKET_HOST:-/var/run/docker.sock}:${XCPC_SANDBOX_SOCKET:-/var/run/docker.sock}
+      - ${JUDGE_CACHE_DIR:-/var/lib/project-balloon/judge-cache}:${JUDGE_CACHE_DIR:-/var/lib/project-balloon/judge-cache}
+    group_add:
+      - ${XCPC_SANDBOX_SOCKET_GID:-${DOCKER_GID:-999}}
+    networks: [project-balloon]
+    restart: unless-stopped
+
+  web:
+    image: ${PROJECT_BALLOON_WEB_IMAGE:-project-balloon-web:0.1.0}
+    build:
+      context: ../..
+      dockerfile: frontend/web/Dockerfile
+    ports:
+      - "${WEB_BIND_ADDRESS:-0.0.0.0}:${WEB_PORT:-8088}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [project-balloon]
+    restart: unless-stopped
+
+networks:
+  project-balloon:
+    external: true

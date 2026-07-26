@@ -1,0 +1,305 @@
+<template>
+  <section class="admin-page team-import-page">
+    <header class="admin-page-header">
+      <div>
+        <p class="eyebrow">Team batch import</p>
+        <h1>队伍批量导入</h1>
+        <p>按 Rust 原子批次创建队伍与账号；每个后台批次最多 100 支队伍。</p>
+      </div>
+      <ElButton @click="fillExample">填入示例</ElButton>
+    </header>
+
+    <ElAlert
+      v-if="session.isContestAdmin.value"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="page-alert"
+      title="比赛管理员只能导入到已授权比赛。下拉框已请求可管理比赛；后端权限校验始终是最终边界。"
+    />
+    <ElAlert v-if="errorMessage" type="error" show-icon :closable="false" class="page-alert" :title="errorMessage" />
+
+    <ElCard shadow="never" class="admin-card">
+      <template #header><strong>批次设置</strong></template>
+      <div class="team-import-options">
+        <ElFormItem label="比赛">
+          <ElSelect v-model="contestId" :clearable="!session.isContestAdmin.value" filterable placeholder="超级管理员可不分配比赛">
+            <ElOption v-for="contest in contests" :key="contest.id" :label="`${contest.name} (#${contest.id})`" :value="contest.id" />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem label="参赛类型">
+          <ElSelect v-model="participationType" :disabled="contestId === null">
+            <ElOption label="正式队" value="OFFICIAL" />
+            <ElOption label="打星队" value="STAR" />
+            <ElOption label="练习队" value="PRACTICE" />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem label="幂等键前缀">
+          <ElInput v-model="idempotencyKey" maxlength="96" show-word-limit placeholder="留空时生成 UUID" />
+        </ElFormItem>
+      </div>
+      <p class="form-hint">超过 100 行会拆成独立原子批次；批间不具备原子性。每批使用“前缀-part-N-UUID”唯一键。成员不属于 Rust 批次契约，将在队伍创建成功后逐个添加，成员失败不会伪装成队伍行失败。</p>
+    </ElCard>
+
+    <ElCard shadow="never" class="admin-card">
+      <template #header>
+        <div class="card-header"><strong>粘贴 / 编辑 JSON</strong><small>{{ drafts.length }} 支队伍，预计 {{ plannedBatchCount }} 个后台批次</small></div>
+      </template>
+      <ElInput v-model="source" type="textarea" :rows="14" :disabled="importing" placeholder="粘贴 JSON 数组" />
+      <div class="team-import-source-actions">
+        <ElButton :disabled="importing || !source.trim()" @click="parseSource">解析并编辑</ElButton>
+        <ElButton :disabled="importing || !drafts.length" @click="syncSource">同步编辑到 JSON</ElButton>
+        <ElButton type="primary" :loading="importing" :disabled="invalidCount > 0 || drafts.length === 0" @click="submitImport">开始导入</ElButton>
+      </div>
+    </ElCard>
+
+    <ElCard v-if="drafts.length" shadow="never" class="admin-card">
+      <template #header>
+        <div class="card-header"><strong>队伍与成员</strong><small>{{ invalidCount ? `${invalidCount} 项待修正` : '字段校验通过' }}</small></div>
+      </template>
+      <div v-for="(team, index) in drafts" :key="team.clientId" class="team-import-editor">
+        <div class="team-import-editor-heading">
+          <strong>第 {{ index + 1 }} 支：{{ team.name || '未命名' }}</strong>
+          <ElButton text type="danger" :disabled="importing" @click="removeTeam(index)">删除</ElButton>
+        </div>
+        <div class="team-import-grid">
+          <ElInput v-model="team.name" placeholder="队名 *" />
+          <ElInput v-model="team.school" placeholder="学校" />
+          <ElInput v-model="team.seatNo" placeholder="座位号" />
+          <ElInput v-model="team.groupName" placeholder="分组" />
+          <ElInput v-model="team.username" placeholder="登录名 *" />
+          <ElInput v-model="team.initialPassword" placeholder="初始密码 *" show-password />
+          <ElCheckbox v-model="team.star">该队强制按打星队导入</ElCheckbox>
+        </div>
+        <div v-if="teamErrors(team).length" class="field-error">{{ teamErrors(team).join('；') }}</div>
+        <div class="team-import-members">
+          <div v-for="(member, memberIndex) in team.members" :key="member.clientId" class="team-import-member-row">
+            <ElInput v-model="member.name" placeholder="成员姓名 *" />
+            <ElInput v-model="member.email" placeholder="邮箱" />
+            <ElInput v-model="member.phone" placeholder="电话" />
+            <ElInput v-model="member.roleName" placeholder="角色（如教练/队员）" />
+            <ElButton text type="danger" @click="team.members.splice(memberIndex, 1)">移除</ElButton>
+          </div>
+          <ElButton text @click="addMember(team)">添加成员</ElButton>
+        </div>
+      </div>
+      <ElButton @click="addTeam">添加队伍</ElButton>
+    </ElCard>
+
+    <ElCard v-if="batchResults.length" shadow="never" class="admin-card">
+      <template #header>
+        <div class="card-header">
+          <div><strong>后台批次结果</strong><small>成功 {{ successfulBatchCount }} / {{ batchResults.length }}</small></div>
+          <div>
+            <ElButton v-if="credentials.length" @click="copyCredentials">一次性复制账号</ElButton>
+            <ElButton v-if="credentials.length" @click="downloadCredentials">一次性下载 CSV</ElButton>
+            <ElButton v-if="credentials.length" type="danger" plain @click="clearCredentials">清除密码</ElButton>
+          </div>
+        </div>
+      </template>
+      <ElTable :data="batchResults" row-key="number">
+        <ElTableColumn prop="number" label="批次" width="70" />
+        <ElTableColumn prop="range" label="输入范围" width="120" />
+        <ElTableColumn prop="idempotencyKey" label="幂等键" min-width="300" />
+        <ElTableColumn prop="batchId" label="后台 batchId" min-width="220" />
+        <ElTableColumn label="状态" width="130"><template #default="{ row }"><ElTag :type="row.status === 'SUCCESS' ? 'success' : row.status === 'FAILED' ? 'danger' : 'info'">{{ resultStatusLabel(row.status) }}</ElTag></template></ElTableColumn>
+        <ElTableColumn prop="message" label="结果" min-width="260" />
+      </ElTable>
+      <ElAlert v-if="credentials.length" type="warning" show-icon :closable="false" title="密码只保存在当前页面内存中；复制、下载或清除后即从结果中移除，不写入 localStorage/sessionStorage。" />
+      <ElTable v-if="credentials.length" :data="credentials" row-key="inputIndex">
+        <ElTableColumn prop="inputIndex" label="原始行" width="90"><template #default="{ row }">{{ row.inputIndex + 1 }}</template></ElTableColumn>
+        <ElTableColumn prop="teamName" label="队伍" />
+        <ElTableColumn prop="username" label="账号" />
+        <ElTableColumn prop="initialPassword" label="初始密码" />
+      </ElTable>
+    </ElCard>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { adminApi } from '../api/admin';
+import { getErrorMessage } from '../api/client';
+import { teamImportApi } from '../api/team-import';
+import type { Contest } from '../api/types';
+import type { ParticipationType, TeamBatchImportRequest, TeamMemberRequest } from '../api/team-import';
+import { useSession } from '../auth/session';
+
+interface MemberDraft extends TeamMemberRequest { clientId: string }
+interface TeamDraft {
+  clientId: string;
+  name: string;
+  school: string;
+  seatNo: string;
+  groupName: string;
+  star: boolean;
+  username: string;
+  initialPassword: string;
+  members: MemberDraft[];
+}
+interface BatchResult {
+  number: number;
+  range: string;
+  idempotencyKey: string;
+  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
+  batchId: string;
+  message: string;
+}
+interface CredentialResult {
+  inputIndex: number;
+  teamName: string;
+  username: string;
+  initialPassword: string;
+  teamId: number;
+  userId: number | null;
+}
+
+const session = useSession();
+const contests = ref<Contest[]>([]);
+const contestId = ref<number | null>(null);
+const participationType = ref<ParticipationType>('OFFICIAL');
+const idempotencyKey = ref('');
+const source = ref('');
+const drafts = ref<TeamDraft[]>([]);
+const batchResults = ref<BatchResult[]>([]);
+const credentials = ref<CredentialResult[]>([]);
+const importing = ref(false);
+const errorMessage = ref('');
+const plannedBatchCount = computed(() => Math.ceil(drafts.value.length / 100));
+const invalidCount = computed(() => drafts.value.reduce((count, team) => count + teamErrors(team).length + team.members.filter((member) => !member.name.trim()).length, 0));
+const successfulBatchCount = computed(() => batchResults.value.filter((batch) => batch.status === 'SUCCESS').length);
+
+onMounted(async () => {
+  try {
+    contests.value = await adminApi.listAllManageableContests();
+    if (session.isContestAdmin.value) contestId.value = contests.value[0]?.id ?? null;
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error);
+  }
+});
+
+function newId() { return crypto.randomUUID(); }
+function blankMember(): MemberDraft { return { clientId: newId(), name: '', email: null, phone: null, roleName: null }; }
+function blankTeam(): TeamDraft {
+  return { clientId: newId(), name: '', school: '', seatNo: '', groupName: '', star: false, username: '', initialPassword: '', members: [] };
+}
+function text(value: unknown) { return typeof value === 'string' ? value : ''; }
+function optionalText(value: unknown) { return typeof value === 'string' ? value : ''; }
+
+function normalizeTeam(value: unknown): TeamDraft {
+  const row = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const members = Array.isArray(row.members) ? row.members : [];
+  return {
+    clientId: newId(),
+    name: text(row.name), school: optionalText(row.school), seatNo: optionalText(row.seatNo), groupName: optionalText(row.groupName),
+    star: row.star === true, username: text(row.username), initialPassword: text(row.initialPassword),
+    members: members.map((value) => {
+      const member = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+      return { clientId: newId(), name: text(member.name), email: nullable(text(member.email)), phone: nullable(text(member.phone)), roleName: nullable(text(member.roleName)) };
+    }),
+  };
+}
+
+function parseSource() {
+  errorMessage.value = '';
+  try {
+    const parsed: unknown = JSON.parse(source.value);
+    if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('请输入至少一支队伍的 JSON 数组');
+    drafts.value = parsed.map(normalizeTeam);
+    batchResults.value = [];
+    credentials.value = [];
+  } catch (error) { errorMessage.value = getErrorMessage(error); }
+}
+
+function syncSource() {
+  source.value = JSON.stringify(drafts.value.map(({ clientId: _id, members, ...team }) => ({
+    ...team,
+    members: members.map(({ clientId: _memberId, ...member }) => member),
+  })), null, 2);
+}
+
+function fillExample() {
+  source.value = JSON.stringify([{ name: 'Alpha', school: 'Example University', seatNo: 'A-01', groupName: 'Regional', star: false, username: 'alpha-team', initialPassword: 'ChangeMe123!', members: [{ name: 'Alice', email: 'alice@example.com', phone: '', roleName: '队员' }] }], null, 2);
+  parseSource();
+}
+
+function addTeam() { drafts.value.push(blankTeam()); syncSource(); }
+function removeTeam(index: number) { drafts.value.splice(index, 1); syncSource(); }
+function addMember(team: TeamDraft) { team.members.push(blankMember()); }
+function nullable(value: string) { return value.trim() || null; }
+function teamErrors(team: TeamDraft) {
+  const errors: string[] = [];
+  if (!team.name.trim()) errors.push('队名必填');
+  if (team.name.trim().length > 255) errors.push('队名最多 255 字符');
+  if (!/^[A-Za-z0-9._-]{3,64}$/.test(team.username.trim())) errors.push('登录名需为 3–64 位字母、数字、点、下划线或横线');
+  if (team.initialPassword.length < 8 || team.initialPassword.length > 128) errors.push('初始密码需为 8–128 字符');
+  if (team.groupName.trim().length > 128) errors.push('分组最多 128 字符');
+  return errors;
+}
+
+function requestRows(chunk: TeamDraft[]): TeamBatchImportRequest['teams'] {
+  return chunk.map((team) => ({
+    name: team.name.trim(), school: nullable(team.school), seatNo: nullable(team.seatNo), groupName: nullable(team.groupName),
+    star: team.star, username: team.username.trim().toLowerCase(), initialPassword: team.initialPassword,
+  }));
+}
+
+async function submitImport() {
+  if (session.isContestAdmin.value && contestId.value === null) { errorMessage.value = '比赛管理员必须选择一个可管理比赛'; return; }
+  try {
+    await ElMessageBox.confirm(`将 ${drafts.value.length} 支队伍拆为 ${plannedBatchCount.value} 个独立原子批次。若后续批次失败，已成功批次不会回滚。`, '确认批量导入', { type: 'warning' });
+  } catch { return; }
+  importing.value = true;
+  errorMessage.value = '';
+  credentials.value = [];
+  const importId = crypto.randomUUID();
+  const prefix = idempotencyKey.value.trim() || `team-import-${importId}`;
+  const chunks = Array.from({ length: plannedBatchCount.value }, (_, index) => drafts.value.slice(index * 100, (index + 1) * 100));
+  batchResults.value = chunks.map((chunk, index) => ({ number: index + 1, range: `${index * 100 + 1}–${index * 100 + chunk.length}`, idempotencyKey: makeBatchKey(prefix, index + 1), status: 'PENDING', batchId: '', message: '等待提交' }));
+  for (let index = 0; index < chunks.length; index++) {
+    const chunk = chunks[index];
+    const resultRow = batchResults.value[index];
+    let response;
+    try {
+      response = await teamImportApi.importTeams({ teams: requestRows(chunk), contestId: contestId.value, participationType: contestId.value === null ? null : participationType.value, idempotencyKey: resultRow.idempotencyKey });
+    } catch (error) {
+      resultRow.status = 'FAILED'; resultRow.message = getErrorMessage(error);
+      for (let later = index + 1; later < batchResults.value.length; later++) { batchResults.value[later].status = 'SKIPPED'; batchResults.value[later].message = '前序批次失败，未提交'; }
+      errorMessage.value = `第 ${index + 1} 批失败：${resultRow.message}。输入已保留，可核对幂等键后重试。`;
+      break;
+    }
+    resultRow.status = 'SUCCESS'; resultRow.batchId = response.batchId; resultRow.message = `已创建 ${response.created.length} 支队伍`;
+    const memberErrors: string[] = [];
+    for (const created of response.created) {
+      const inputIndex = index * 100 + created.index;
+      const draft = drafts.value[inputIndex];
+      if (created.username) credentials.value.push({ inputIndex, teamName: draft.name, username: created.username, initialPassword: draft.initialPassword, teamId: created.teamId, userId: created.userId });
+      for (const member of draft.members) {
+        try {
+          await teamImportApi.addMember(created.teamId, { name: member.name.trim(), email: member.email ? nullable(member.email) : null, phone: member.phone ? nullable(member.phone) : null, roleName: member.roleName ? nullable(member.roleName) : null });
+        } catch (error) { memberErrors.push(`${draft.name}/${member.name}: ${getErrorMessage(error)}`); }
+      }
+    }
+    if (memberErrors.length) resultRow.message += `；成员添加失败 ${memberErrors.length} 项：${memberErrors.join('；')}`;
+  }
+  importing.value = false;
+  if (!errorMessage.value) ElMessage.success(`导入完成，共创建 ${credentials.value.length} 个账号`);
+}
+
+function credentialCsv() {
+  const rows = credentials.value.map((row) => [row.inputIndex + 1, row.teamName, row.username, row.initialPassword, row.teamId, row.userId]);
+  return [['inputIndex', 'teamName', 'username', 'initialPassword', 'teamId', 'userId'], ...rows].map((row) => row.map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`).join(',')).join('\n');
+}
+async function copyCredentials() { await navigator.clipboard.writeText(credentialCsv()); clearCredentials(); ElMessage.success('账号已复制，页面中的密码已清除'); }
+function downloadCredentials() {
+  const url = URL.createObjectURL(new Blob([`﻿${credentialCsv()}`], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a'); link.href = url; link.download = `team-accounts-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(url); clearCredentials(); ElMessage.success('CSV 已下载，页面中的密码已清除');
+}
+function clearCredentials() { credentials.value = []; }
+function makeBatchKey(prefix: string, batchNumber: number) {
+  const suffix = `-part-${batchNumber}-${crypto.randomUUID()}`;
+  return `${prefix.slice(0, 128 - suffix.length)}${suffix}`;
+}
+function resultStatusLabel(status: BatchResult['status']) { return { PENDING: '等待', SUCCESS: '成功', FAILED: '失败', SKIPPED: '未提交' }[status]; }
+</script>
