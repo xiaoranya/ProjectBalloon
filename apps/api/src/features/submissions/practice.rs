@@ -338,7 +338,7 @@ async fn validate_virtual_session_pool(
     user: i64,
 ) -> Result<(), AppError> {
     if let Some(id) = id {
-        let valid=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM practice_virtual_sessions s JOIN practice_virtual_items i ON i.session_id=s.id AND i.problem_id=$2 WHERE s.id=$1 AND s.user_id=$3 AND now()>=s.start_at AND now()<s.end_at)").bind(id).bind(problem).bind(user).fetch_one(database).await.map_err(|e|AppError::internal("validate virtual practice session",e))?;
+        let valid=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM practice_virtual_sessions s JOIN practice_virtual_items i ON i.session_id=s.id AND i.problem_id=$2 WHERE s.id=$1 AND s.user_id=$3 AND s.archived_at IS NULL AND now()>=s.start_at AND now()<s.end_at)").bind(id).bind(problem).bind(user).fetch_one(database).await.map_err(|e|AppError::internal("validate virtual practice session",e))?;
         if !valid {
             return Err(AppError::conflict(
                 "VIRTUAL_SESSION_NOT_ACTIVE",
@@ -355,7 +355,7 @@ async fn validate_virtual_session_tx(
     user: i64,
 ) -> Result<(), AppError> {
     if let Some(id) = id {
-        let valid=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM practice_virtual_sessions s JOIN practice_virtual_items i ON i.session_id=s.id AND i.problem_id=$2 WHERE s.id=$1 AND s.user_id=$3 AND now()>=s.start_at AND now()<s.end_at)").bind(id).bind(problem).bind(user).fetch_one(&mut **tx).await.map_err(|e|AppError::internal("revalidate virtual practice session",e))?;
+        let valid=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM practice_virtual_sessions s JOIN practice_virtual_items i ON i.session_id=s.id AND i.problem_id=$2 WHERE s.id=$1 AND s.user_id=$3 AND s.archived_at IS NULL AND now()>=s.start_at AND now()<s.end_at)").bind(id).bind(problem).bind(user).fetch_one(&mut **tx).await.map_err(|e|AppError::internal("revalidate virtual practice session",e))?;
         if !valid {
             return Err(AppError::conflict(
                 "VIRTUAL_SESSION_NOT_ACTIVE",

@@ -47,7 +47,7 @@ pub struct VirtualSessionDetail {
     problems: Vec<VirtualProblemResponse>,
 }
 
-const SESSION_SELECT: &str = "SELECT s.id,s.title,s.start_at,s.end_at,now() AS server_time,CASE WHEN now()<s.start_at THEN 'SCHEDULED' WHEN now()<s.end_at THEN 'RUNNING' ELSE 'ENDED' END AS status,count(DISTINCT i.problem_id)::bigint AS total_problems,count(DISTINCT sub.problem_id) FILTER(WHERE sub.status='ACCEPTED')::bigint AS solved_problems FROM practice_virtual_sessions s JOIN practice_virtual_items i ON i.session_id=s.id LEFT JOIN submissions sub ON sub.virtual_session_id=s.id AND sub.participant_user_id=s.user_id";
+const SESSION_SELECT: &str = "SELECT s.id,s.title,s.start_at,s.end_at,now() AS server_time,CASE WHEN s.archived_at IS NOT NULL THEN 'ARCHIVED' WHEN now()<s.start_at THEN 'SCHEDULED' WHEN now()<s.end_at THEN 'RUNNING' ELSE 'ENDED' END AS status,count(DISTINCT i.problem_id)::bigint AS total_problems,count(DISTINCT sub.problem_id) FILTER(WHERE sub.status='ACCEPTED')::bigint AS solved_problems FROM practice_virtual_sessions s JOIN practice_virtual_items i ON i.session_id=s.id LEFT JOIN submissions sub ON sub.virtual_session_id=s.id AND sub.participant_user_id=s.user_id";
 
 #[utoipa::path(post,path="/api/practice/virtual-sessions",operation_id="createPracticeVirtualSession",tag="practice",request_body=CreateVirtualSessionRequest,responses((status=201,body=VirtualSessionResponse)),security(("session_cookie"=[],"csrf_cookie"=[],"csrf_header"=[])))]
 pub async fn create(
@@ -127,6 +127,27 @@ pub async fn get(
     let session = load_session(&state, id, context.user().id).await?;
     let problems=sqlx::query_as::<_,VirtualProblemResponse>("SELECT i.problem_id,p.slug,p.title,i.position,EXISTS(SELECT 1 FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2 AND s.status='ACCEPTED') AS solved,(SELECT count(*) FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2)::bigint AS attempts FROM practice_virtual_items i JOIN problems p ON p.id=i.problem_id WHERE i.session_id=$1 ORDER BY i.position").bind(id).bind(context.user().id).fetch_all(state.database()).await.map_err(|e|AppError::internal("load virtual problems",e))?;
     Ok(Json(VirtualSessionDetail { session, problems }))
+}
+
+#[utoipa::path(post,path="/api/practice/virtual-sessions/{session_id}/archive",operation_id="archivePracticeVirtualSession",tag="practice",params(("session_id"=i64,Path)),responses((status=200,body=VirtualSessionResponse),(status=404,body=crate::error::ApiErrorBody)),security(("session_cookie"=[] ,"csrf_cookie"=[] ,"csrf_header"=[])))]
+pub async fn archive(
+    context: AuthContext,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<VirtualSessionResponse>, AppError> {
+    context.require_password_ready()?;
+    let changed = sqlx::query(
+        "UPDATE practice_virtual_sessions SET archived_at=coalesce(archived_at,now()) WHERE id=$1 AND user_id=$2",
+    )
+    .bind(id)
+    .bind(context.user().id)
+    .execute(state.database())
+    .await
+    .map_err(|e| AppError::internal("archive virtual session", e))?;
+    if changed.rows_affected() != 1 {
+        return Err(AppError::not_found("VIRTUAL_SESSION_NOT_FOUND", "Virtual session not found"));
+    }
+    Ok(Json(load_session(&state, id, context.user().id).await?))
 }
 
 async fn load_session(

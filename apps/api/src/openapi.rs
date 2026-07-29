@@ -108,6 +108,7 @@ const SWAGGER_UI_PATH: &str = "/api/docs";
         virtual_practice::create,
         virtual_practice::list,
         virtual_practice::get,
+        virtual_practice::archive,
         submissions::handlers::export_metadata_csv,
         submissions::handlers::export_sources_zip,
         submissions::handlers::preview_batch_rejudge,

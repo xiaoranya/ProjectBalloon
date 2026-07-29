@@ -92,7 +92,7 @@ export interface PracticeProgress {
   updatedAt: string;
 }
 export interface Editorial { problemId: number; langCode: string; title: string; bodyHtml: string; bodyMarkdown?: string; unlockPolicy: string; unlocked: boolean; updatedAt: string; }
-export interface VirtualSession { id:number;title:string;startAt:string;endAt:string;serverTime:string;status:'SCHEDULED'|'RUNNING'|'ENDED';totalProblems:number;solvedProblems:number; }
+export interface VirtualSession { id:number;title:string;startAt:string;endAt:string;serverTime:string;status:'SCHEDULED'|'RUNNING'|'ENDED'|'ARCHIVED';totalProblems:number;solvedProblems:number; }
 export interface VirtualProblem { problemId:number;slug:string;title:string;position:number;solved:boolean;attempts:number; }
 export interface VirtualSessionDetail { session:VirtualSession;problems:VirtualProblem[]; }
 export interface PracticeSettings { dailySubmissionLimit:number; concurrentJudgingLimit:number; sourceRetentionDays:number; updatedAt:string; }
@@ -137,6 +137,7 @@ export const trainingApi = {
   editorial(problemId: number, lang = 'en') { return apiRequest<Editorial>(`/api/practice/problems/${problemId}/editorial?lang=${encodeURIComponent(lang)}`); },
   virtualSessions() { return apiRequest<VirtualSession[]>('/api/practice/virtual-sessions'); },
   virtualSession(id:number) { return apiRequest<VirtualSessionDetail>(`/api/practice/virtual-sessions/${id}`); },
+  archiveVirtualSession(id:number) { return apiRequest<VirtualSession>(`/api/practice/virtual-sessions/${id}/archive`,{method:'POST'}); },
   createVirtualSession(payload:{title:string;durationMinutes:number;problemIds:number[]}) { return apiRequest<VirtualSession>('/api/practice/virtual-sessions',{method:'POST',body:payload}); },
   practiceSettings() { return apiRequest<PracticeSettings>('/api/admin/practice/settings'); },
   updatePracticeSettings(payload:Omit<PracticeSettings,'updatedAt'>) { return apiRequest<PracticeSettings>('/api/admin/practice/settings',{method:'PUT',body:payload}); },
