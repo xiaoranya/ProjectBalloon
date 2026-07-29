@@ -2,8 +2,10 @@ import { apiRequest } from './client';
 import type { Scoreboard } from './types';
 
 export type PresentationMode = 'SCREEN' | 'LIVE';
-export interface PresentationConfig { contestId: number; mode: PresentationMode; enabled: boolean; title: string | null; subtitle: string | null; accentColor: string; rowLimit: number; showAnnouncements: boolean; announcementIntervalSeconds: number; template: 'DEFAULT' | 'CINEMATIC' | 'MINIMAL' | 'SPLIT'; updatedAt: string | null; }
-export type PresentationConfigPayload = Omit<PresentationConfig, 'contestId' | 'mode' | 'updatedAt'>;
+export interface PresentationConfig { contestId: number; mode: PresentationMode; enabled: boolean; title: string | null; subtitle: string | null; accentColor: string; rowLimit: number; showAnnouncements: boolean; announcementIntervalSeconds: number; template: 'DEFAULT' | 'CINEMATIC' | 'MINIMAL' | 'SPLIT' | 'CUSTOM'; customTemplateId?: number | null; customTemplateName?: string | null; customBackgroundColor?: string | null; customForegroundColor?: string | null; customAccentColor?: string | null; customFontFamily?: string | null; customDensity?: 'COMPACT' | 'COMFORTABLE' | 'SPACIOUS' | null; customShowClock?: boolean | null; customShowLogo?: boolean | null; customLogoObjectKey?: string | null; updatedAt: string | null; }
+export type PresentationConfigPayload = Pick<PresentationConfig, 'enabled' | 'title' | 'subtitle' | 'accentColor' | 'rowLimit' | 'showAnnouncements' | 'announcementIntervalSeconds' | 'template'> & { customTemplateId?: number | null };
+export interface PresentationTemplate { id: number; name: string; description: string; backgroundColor: string; foregroundColor: string; accentColor: string; fontFamily: string; density: 'COMPACT' | 'COMFORTABLE' | 'SPACIOUS'; showClock: boolean; showLogo: boolean; logoObjectKey: string | null; updatedAt: string; }
+export type PresentationTemplatePayload = Omit<PresentationTemplate, 'id' | 'updatedAt'>;
 export interface BroadcastToken { id: number; label: string; expiresAt: string; revokedAt: string | null; lastUsedAt: string | null; createdAt: string; }
 export interface BroadcastTokenCreated { id: number; label: string; token: string; expiresAt: string; createdAt: string; }
 export interface PublishedPresentation { contestId: number; contestName: string; contestStatus: string; startAt: string | null; freezeAt: string | null; endAt: string | null; serverTime: string; config: PresentationConfig; scoreboard: Scoreboard; announcements: Array<{ id: number; title: string; body: string; pinned: boolean; publishedAt: string | null }>; }
@@ -17,4 +19,7 @@ export const presentationApi = {
   tokens(contestId: number) { return apiRequest<BroadcastToken[]>(`/api/presentation-configs/${contestId}/live/tokens`); },
   createToken(contestId: number, payload: { label: string; expiresAt: string }) { return apiRequest<BroadcastTokenCreated>(`/api/presentation-configs/${contestId}/live/tokens`, { method: 'POST', body: payload }); },
   revokeToken(contestId: number, id: number) { return apiRequest<void>(`/api/presentation-configs/${contestId}/live/tokens/${id}`, { method: 'DELETE' }); },
+  templates() { return apiRequest<PresentationTemplate[]>('/api/presentation-templates'); },
+  createTemplate(payload: PresentationTemplatePayload) { return apiRequest<PresentationTemplate>('/api/presentation-templates', { method: 'POST', body: payload }); },
+  updateTemplate(id: number, payload: PresentationTemplatePayload) { return apiRequest<PresentationTemplate>(`/api/presentation-templates/${id}`, { method: 'PUT', body: payload }); },
 };

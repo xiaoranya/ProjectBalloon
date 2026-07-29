@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED = (147, 176, 108, 39, 68)
+EXPECTED = (147, 191, 108, 39, 83)
 
 
 def normalize(path: str) -> str:

@@ -95,6 +95,11 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         .route("/api/print-requests/{id}/reject", post(printing::reject))
         .route("/api/contests/{contest_id}/balloons", get(balloons::list))
         .route("/api/contests/{contest_id}/balloons/stats", get(balloons::stats))
+        .route(
+            "/api/contests/{contest_id}/balloons/dispatch-policy",
+            get(balloons::dispatch_policy).put(balloons::update_dispatch_policy),
+        )
+        .route("/api/contests/{contest_id}/balloons/dispatch", post(balloons::dispatch))
         .route("/api/balloons/{id}/claim", post(balloons::claim))
         .route("/api/balloons/{id}/deliver", post(balloons::deliver))
         .route("/api/balloons/{id}/cancel", post(balloons::cancel))
@@ -148,6 +153,11 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
             get(awards::certificate_export),
         )
         .route("/api/presentation-configs/{contest_id}", get(presentation::get_config))
+        .route(
+            "/api/presentation-templates",
+            get(presentation::list_templates).post(presentation::create_template),
+        )
+        .route("/api/presentation-templates/{template_id}", put(presentation::update_template))
         .route("/api/presentation-configs/{contest_id}/screen", put(presentation::update_screen))
         .route("/api/presentation-configs/{contest_id}/live", put(presentation::update_live))
         .route("/api/public/presentations/{contest_id}", get(presentation::published))

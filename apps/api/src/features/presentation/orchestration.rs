@@ -771,6 +771,7 @@ mod tests {
                     show_announcements: true,
                     announcement_interval_seconds: 10,
                     template: None,
+                    custom_template_id: None,
                 },
                 &actor,
                 ip,

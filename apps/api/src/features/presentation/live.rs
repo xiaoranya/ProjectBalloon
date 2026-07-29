@@ -188,7 +188,7 @@ async fn require_access(
             ));
         }
     }
-    sqlx::query_as("SELECT contest_id,mode,enabled,title,subtitle,accent_color,row_limit,show_announcements,announcement_interval_seconds,template,updated_at FROM presentation_configs WHERE contest_id=$1 AND mode=$2 AND enabled")
+    sqlx::query_as("SELECT c.contest_id,c.mode,c.enabled,c.title,c.subtitle,c.accent_color,c.row_limit,c.show_announcements,c.announcement_interval_seconds,c.template,c.custom_template_id,t.name AS custom_template_name,t.background_color AS custom_background_color,t.foreground_color AS custom_foreground_color,t.accent_color AS custom_accent_color,t.font_family AS custom_font_family,t.density AS custom_density,t.show_clock AS custom_show_clock,t.show_logo AS custom_show_logo,t.logo_object_key AS custom_logo_object_key,c.updated_at FROM presentation_configs c LEFT JOIN presentation_templates t ON t.id=c.custom_template_id WHERE c.contest_id=$1 AND c.mode=$2 AND c.enabled")
         .bind(contest).bind(mode).fetch_optional(database).await.map_err(|e| AppError::internal("load published presentation", e))?.ok_or_else(|| AppError::not_found("PRESENTATION_NOT_PUBLISHED", "Presentation is not published"))
 }
 

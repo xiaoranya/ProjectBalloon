@@ -28,6 +28,33 @@ pub struct ListQuery {
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DispatchQuery {
+    pub limit: Option<i32>,
+    pub zone: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct DispatchPolicyResponse {
+    contest_id: i64,
+    strategy: String,
+    max_batch: i32,
+    cooldown_seconds: i32,
+    zone_order: serde_json::Value,
+    updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DispatchPolicyRequest {
+    pub strategy: String,
+    pub max_batch: i32,
+    pub cooldown_seconds: i32,
+    pub zone_order: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VersionRequest {
     expected_version: i32,
 }
@@ -75,6 +102,11 @@ pub struct BalloonTaskResponse {
     updated_at: OffsetDateTime,
     version: i32,
     reopened_count: i32,
+    priority: i32,
+    delivery_zone: String,
+    dispatch_attempts: i32,
+    #[serde(with = "time::serde::rfc3339::option")]
+    last_dispatched_at: Option<OffsetDateTime>,
 }
 
 #[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
@@ -254,6 +286,83 @@ impl BalloonService {
         tx.commit().await.map_err(|error| AppError::internal("commit balloon note", error))?;
         load(&self.database, id).await
     }
+
+    async fn dispatch_policy(
+        &self,
+        contest_id: i64,
+        actor: &AuthUser,
+    ) -> Result<DispatchPolicyResponse, AppError> {
+        require_operator(actor)?;
+        ensure_contest(&self.database, contest_id).await?;
+        Ok(sqlx::query_as::<_, DispatchPolicyResponse>("SELECT contest_id,strategy,max_batch,cooldown_seconds,zone_order::jsonb AS zone_order,updated_at FROM balloon_dispatch_policies WHERE contest_id=$1")
+            .bind(contest_id).fetch_optional(&self.database).await.map_err(|e|AppError::internal("load balloon dispatch policy",e))?
+            .unwrap_or(DispatchPolicyResponse { contest_id, strategy: "PRIORITY".into(), max_batch: 10, cooldown_seconds: 0, zone_order: json!([]), updated_at: OffsetDateTime::now_utc() }))
+    }
+
+    async fn update_dispatch_policy(
+        &self,
+        contest_id: i64,
+        request: DispatchPolicyRequest,
+        actor: &AuthUser,
+    ) -> Result<DispatchPolicyResponse, AppError> {
+        if !actor.has_role("SUPER_ADMIN") && !actor.has_role("CONTEST_ADMIN") {
+            return Err(AppError::forbidden(
+                "BALLOON_POLICY_ADMIN_REQUIRED",
+                "Contest administrator access is required",
+            ));
+        }
+        if !matches!(request.strategy.as_str(), "FIFO" | "PRIORITY" | "ZONE")
+            || !(1..=100).contains(&request.max_batch)
+            || !(0..=3600).contains(&request.cooldown_seconds)
+            || request.zone_order.len() > 100
+            || request.zone_order.iter().any(|v| v.trim().is_empty() || v.len() > 64)
+        {
+            return Err(AppError::validation(
+                "dispatchPolicy",
+                "strategy, limits, or zones are invalid",
+            ));
+        }
+        ensure_contest(&self.database, contest_id).await?;
+        let zones = serde_json::to_string(&request.zone_order)
+            .map_err(|e| AppError::internal("encode balloon zones", e))?;
+        sqlx::query("INSERT INTO balloon_dispatch_policies(contest_id,strategy,max_batch,cooldown_seconds,zone_order,updated_by_user_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(contest_id) DO UPDATE SET strategy=EXCLUDED.strategy,max_batch=EXCLUDED.max_batch,cooldown_seconds=EXCLUDED.cooldown_seconds,zone_order=EXCLUDED.zone_order,updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=now()")
+            .bind(contest_id).bind(request.strategy).bind(request.max_batch).bind(request.cooldown_seconds).bind(zones).bind(actor.id).execute(&self.database).await.map_err(|e|AppError::internal("save balloon dispatch policy",e))?;
+        self.dispatch_policy(contest_id, actor).await
+    }
+
+    async fn dispatch(
+        &self,
+        contest_id: i64,
+        query: DispatchQuery,
+        actor: &AuthUser,
+    ) -> Result<Vec<BalloonTaskResponse>, AppError> {
+        require_operator(actor)?;
+        let policy = self.dispatch_policy(contest_id, actor).await?;
+        let limit = query.limit.unwrap_or(policy.max_batch);
+        if limit < 1 || limit > policy.max_batch {
+            return Err(AppError::validation("limit", "must be within the configured batch limit"));
+        }
+        let zone = query.zone.as_deref().map(str::trim).filter(|v| !v.is_empty());
+        if zone.is_some_and(|value| value.len() > 64) {
+            return Err(AppError::validation("zone", "must not exceed 64 characters"));
+        }
+        let zones: Vec<String> =
+            serde_json::from_value(policy.zone_order.clone()).unwrap_or_default();
+        let sql = format!(
+            "WITH candidates AS (SELECT id FROM balloon_tasks WHERE contest_id=$1 AND status='PENDING' AND ($2::text IS NULL OR delivery_zone=$2) AND (last_dispatched_at IS NULL OR last_dispatched_at<=now()-make_interval(secs=>$3)) ORDER BY CASE WHEN $4='ZONE' THEN coalesce(array_position($5::text[],delivery_zone),2147483647) ELSE 0 END, CASE WHEN $4='PRIORITY' THEN priority ELSE 0 END DESC, is_first_blood DESC, created_at,id LIMIT $6 FOR UPDATE SKIP LOCKED), claimed AS (UPDATE balloon_tasks SET status='CLAIMED',claimed_by=$7,claimed_at=now(),last_dispatched_at=now(),dispatch_attempts=dispatch_attempts+1,updated_at=now(),version=version+1 WHERE id IN(SELECT id FROM candidates) RETURNING id) {SELECT_COLUMNS} JOIN claimed ON claimed.id=task.id ORDER BY task.priority DESC,task.created_at,task.id"
+        );
+        sqlx::query_as::<_, BalloonTaskResponse>(&sql)
+            .bind(contest_id)
+            .bind(zone)
+            .bind(policy.cooldown_seconds)
+            .bind(policy.strategy)
+            .bind(zones)
+            .bind(limit)
+            .bind(actor.id)
+            .fetch_all(&self.database)
+            .await
+            .map_err(|e| AppError::internal("dispatch balloon tasks", e))
+    }
 }
 
 const SELECT_COLUMNS: &str = r#"SELECT task.id, task.contest_id, task.team_id, task.problem_id,
@@ -261,7 +370,8 @@ const SELECT_COLUMNS: &str = r#"SELECT task.id, task.contest_id, task.team_id, t
  coalesce(task.team_name, '') AS team_name, coalesce(task.problem_alias, '') AS problem_alias,
  task.note, task.claimed_by AS claimed_by_user_id, task.claimed_at, task.delivered_at,
  task.cancelled_at, task.cancelled_reason, task.created_at, task.updated_at,
- task.version, task.reopened_count FROM balloon_tasks task"#;
+ task.version, task.reopened_count, task.priority, task.delivery_zone, task.dispatch_attempts,
+ task.last_dispatched_at FROM balloon_tasks task"#;
 
 pub(crate) async fn generate_for_accepted(
     tx: &mut Transaction<'_, Postgres>,
@@ -453,6 +563,42 @@ pub async fn stats(
 ) -> Result<Json<BalloonStatsResponse>, AppError> {
     context.require_password_ready()?;
     Ok(Json(state.balloons().stats(contest_id, context.user()).await?))
+}
+
+#[utoipa::path(get, path = "/api/contests/{contest_id}/balloons/dispatch-policy", operation_id = "getBalloonDispatchPolicy", tag = "balloons", params(("contest_id" = i64, Path)), responses((status = 200, body = DispatchPolicyResponse)), security(("session_cookie" = [])))]
+pub async fn dispatch_policy(
+    context: AuthContext,
+    State(state): State<AppState>,
+    Path(contest_id): Path<i64>,
+) -> Result<Json<DispatchPolicyResponse>, AppError> {
+    context.require_password_ready()?;
+    Ok(Json(state.balloons().dispatch_policy(contest_id, context.user()).await?))
+}
+
+#[utoipa::path(put, path = "/api/contests/{contest_id}/balloons/dispatch-policy", operation_id = "updateBalloonDispatchPolicy", tag = "balloons", params(("contest_id" = i64, Path)), request_body = DispatchPolicyRequest, responses((status = 200, body = DispatchPolicyResponse)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
+pub async fn update_dispatch_policy(
+    context: AuthContext,
+    State(state): State<AppState>,
+    Path(contest_id): Path<i64>,
+    payload: Result<Json<DispatchPolicyRequest>, JsonRejection>,
+) -> Result<Json<DispatchPolicyResponse>, AppError> {
+    context.require_password_ready()?;
+    let Json(request) =
+        payload.map_err(|_| AppError::validation("request", "invalid dispatch policy"))?;
+    Ok(Json(state.balloons().update_dispatch_policy(contest_id, request, context.user()).await?))
+}
+
+#[utoipa::path(post, path = "/api/contests/{contest_id}/balloons/dispatch", operation_id = "dispatchBalloonTasks", tag = "balloons", params(("contest_id" = i64, Path), ("limit" = Option<i32>, Query), ("zone" = Option<String>, Query)), responses((status = 200, body = [BalloonTaskResponse])), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
+pub async fn dispatch(
+    context: AuthContext,
+    State(state): State<AppState>,
+    Path(contest_id): Path<i64>,
+    query: Result<Query<DispatchQuery>, QueryRejection>,
+) -> Result<Json<Vec<BalloonTaskResponse>>, AppError> {
+    context.require_password_ready()?;
+    let Query(query) =
+        query.map_err(|_| AppError::validation("query", "invalid dispatch request"))?;
+    Ok(Json(state.balloons().dispatch(contest_id, query, context.user()).await?))
 }
 
 async fn version_payload(

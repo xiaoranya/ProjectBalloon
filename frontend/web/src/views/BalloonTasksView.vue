@@ -34,6 +34,7 @@
           <ElOption v-for="problem in problemOptions" :key="problem" :label="`题目 ${problem}`" :value="problem" />
         </ElSelect>
         <ElInput v-model="keyword" clearable placeholder="搜索队伍或座位号" :prefix-icon="Search" />
+        <ElButton type="primary" :loading="action === 'dispatch'" :disabled="!selectedContestId" @click="dispatchTasks">智能领取</ElButton>
         <ElButton :icon="Refresh" :loading="loading" :disabled="!selectedContestId" @click="loadData(false)">刷新</ElButton>
       </div>
     </ElCard>
@@ -124,7 +125,7 @@ const note = ref('');
 const cancelReason = ref('');
 const loading = ref(false);
 const loaded = ref(false);
-const action = ref<'claim' | 'deliver' | 'cancel' | 'reopen' | 'note' | ''>('');
+const action = ref<'claim' | 'deliver' | 'cancel' | 'reopen' | 'note' | 'dispatch' | ''>('');
 const errorMessage = ref('');
 const detailVisible = ref(false);
 const cancelVisible = ref(false);
@@ -220,6 +221,7 @@ function openCancel() { cancelReason.value = ''; cancelVisible.value = true; }
 async function cancelTask() { if (!selected.value || cancelError.value) return; if (await runMutation('cancel', () => balloonApi.cancel(selected.value!.id, selected.value!.version, cancelReason.value.trim()), '任务已取消')) cancelVisible.value = false; }
 async function reopenTask() { if (selected.value) await runMutation('reopen', () => balloonApi.reopen(selected.value!.id, selected.value!.version), '任务已重新打开'); }
 async function saveNote() { if (selected.value) await runMutation('note', () => balloonApi.note(selected.value!.id, selected.value!.version, note.value.trim() || null), '配送备注已保存'); }
+async function dispatchTasks() { if (!selectedContestId.value) return; action.value = 'dispatch'; try { const claimed = await balloonApi.dispatch(selectedContestId.value); await loadData(false); if (claimed.length) ElMessage.success(`已按调度策略领取 ${claimed.length} 个任务`); else ElMessage.info('当前没有可调度任务'); } catch (error) { ElMessage.error(getErrorMessage(error)); } finally { action.value = ''; } }
 
 onMounted(async () => {
   try {

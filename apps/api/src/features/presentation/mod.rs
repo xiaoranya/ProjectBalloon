@@ -45,6 +45,8 @@ pub struct ConfigRequest {
     announcement_interval_seconds: i32,
     #[serde(default)]
     template: Option<String>,
+    #[serde(default)]
+    custom_template_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
@@ -60,6 +62,16 @@ pub struct ConfigResponse {
     show_announcements: bool,
     announcement_interval_seconds: i32,
     template: String,
+    custom_template_id: Option<i64>,
+    custom_template_name: Option<String>,
+    custom_background_color: Option<String>,
+    custom_foreground_color: Option<String>,
+    custom_accent_color: Option<String>,
+    custom_font_family: Option<String>,
+    custom_density: Option<String>,
+    custom_show_clock: Option<bool>,
+    custom_show_logo: Option<bool>,
+    custom_logo_object_key: Option<String>,
     #[serde(with = "time::serde::rfc3339::option")]
     updated_at: Option<OffsetDateTime>,
 }
@@ -139,6 +151,54 @@ pub struct ModeQuery {
     mode: String,
 }
 
+#[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct PresentationTemplateResponse {
+    id: i64,
+    name: String,
+    description: String,
+    background_color: String,
+    foreground_color: String,
+    accent_color: String,
+    font_family: String,
+    density: String,
+    show_clock: bool,
+    show_logo: bool,
+    logo_object_key: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
+    updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PresentationTemplateRequest {
+    name: String,
+    #[serde(default)]
+    description: String,
+    background_color: String,
+    foreground_color: String,
+    accent_color: String,
+    #[serde(default = "default_font")]
+    font_family: String,
+    #[serde(default = "default_density")]
+    density: String,
+    #[serde(default = "default_true")]
+    show_clock: bool,
+    #[serde(default)]
+    show_logo: bool,
+    logo_object_key: Option<String>,
+}
+
+fn default_font() -> String {
+    "Inter".to_owned()
+}
+fn default_density() -> String {
+    "COMFORTABLE".to_owned()
+}
+const fn default_true() -> bool {
+    true
+}
+
 pub struct PresentationService {
     database: PgPool,
 }
@@ -158,9 +218,9 @@ impl PresentationService {
         require_presentation_operator(actor)?;
         let mode = validate_mode(mode)?;
         require_contest(&self.database, contest).await?;
-        Ok(sqlx::query_as::<_, ConfigResponse>("SELECT contest_id,mode,enabled,title,subtitle,accent_color,row_limit,show_announcements,announcement_interval_seconds,template,updated_at FROM presentation_configs WHERE contest_id=$1 AND mode=$2")
+        Ok(sqlx::query_as::<_, ConfigResponse>("SELECT c.contest_id,c.mode,c.enabled,c.title,c.subtitle,c.accent_color,c.row_limit,c.show_announcements,c.announcement_interval_seconds,c.template,c.custom_template_id,t.name AS custom_template_name,t.background_color AS custom_background_color,t.foreground_color AS custom_foreground_color,t.accent_color AS custom_accent_color,t.font_family AS custom_font_family,t.density AS custom_density,t.show_clock AS custom_show_clock,t.show_logo AS custom_show_logo,t.logo_object_key AS custom_logo_object_key,c.updated_at FROM presentation_configs c LEFT JOIN presentation_templates t ON t.id=c.custom_template_id WHERE c.contest_id=$1 AND c.mode=$2")
             .bind(contest).bind(mode).fetch_optional(&self.database).await.map_err(|error| AppError::internal("load presentation config", error))?
-            .unwrap_or(ConfigResponse { contest_id: contest, mode: mode.to_owned(), enabled: false, title: None, subtitle: None, accent_color: "#22c55e".into(), row_limit: 12, show_announcements: true, announcement_interval_seconds: 10, template: "DEFAULT".into(), updated_at: None }))
+            .unwrap_or(ConfigResponse { contest_id: contest, mode: mode.to_owned(), enabled: false, title: None, subtitle: None, accent_color: "#22c55e".into(), row_limit: 12, show_announcements: true, announcement_interval_seconds: 10, template: "DEFAULT".into(), custom_template_id: None, custom_template_name: None, custom_background_color: None, custom_foreground_color: None, custom_accent_color: None, custom_font_family: None, custom_density: None, custom_show_clock: None, custom_show_logo: None, custom_logo_object_key: None, updated_at: None }))
     }
 
     async fn update_config(
@@ -181,8 +241,31 @@ impl PresentationService {
             .await
             .map_err(|error| AppError::internal("begin presentation config", error))?;
         let template = validate_template(request.template.as_deref().unwrap_or("DEFAULT"))?;
-        sqlx::query("INSERT INTO presentation_configs(contest_id,mode,enabled,title,subtitle,accent_color,row_limit,show_announcements,announcement_interval_seconds,template,updated_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(contest_id,mode) DO UPDATE SET enabled=excluded.enabled,title=excluded.title,subtitle=excluded.subtitle,accent_color=excluded.accent_color,row_limit=excluded.row_limit,show_announcements=excluded.show_announcements,announcement_interval_seconds=excluded.announcement_interval_seconds,template=excluded.template,updated_by_user_id=excluded.updated_by_user_id,updated_at=now()")
-            .bind(contest).bind(mode).bind(request.enabled).bind(request.title.as_deref()).bind(request.subtitle.as_deref()).bind(&request.accent_color).bind(request.row_limit).bind(request.show_announcements).bind(request.announcement_interval_seconds).bind(template).bind(actor.id)
+        if template == "CUSTOM" {
+            let id = request.custom_template_id.ok_or_else(|| {
+                AppError::validation("customTemplateId", "is required for a custom template")
+            })?;
+            let exists = sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM presentation_templates WHERE id=$1)",
+            )
+            .bind(id)
+            .fetch_one(&self.database)
+            .await
+            .map_err(|e| AppError::internal("check custom presentation template", e))?;
+            if !exists {
+                return Err(AppError::not_found(
+                    "PRESENTATION_TEMPLATE_NOT_FOUND",
+                    "Custom template not found",
+                ));
+            }
+        } else if request.custom_template_id.is_some() {
+            return Err(AppError::validation(
+                "customTemplateId",
+                "is only valid with the CUSTOM template",
+            ));
+        }
+        sqlx::query("INSERT INTO presentation_configs(contest_id,mode,enabled,title,subtitle,accent_color,row_limit,show_announcements,announcement_interval_seconds,template,custom_template_id,updated_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(contest_id,mode) DO UPDATE SET enabled=excluded.enabled,title=excluded.title,subtitle=excluded.subtitle,accent_color=excluded.accent_color,row_limit=excluded.row_limit,show_announcements=excluded.show_announcements,announcement_interval_seconds=excluded.announcement_interval_seconds,template=excluded.template,custom_template_id=excluded.custom_template_id,updated_by_user_id=excluded.updated_by_user_id,updated_at=now()")
+            .bind(contest).bind(mode).bind(request.enabled).bind(request.title.as_deref()).bind(request.subtitle.as_deref()).bind(&request.accent_color).bind(request.row_limit).bind(request.show_announcements).bind(request.announcement_interval_seconds).bind(template).bind(request.custom_template_id).bind(actor.id)
             .execute(&mut *tx).await.map_err(|error| AppError::internal("save presentation config", error))?;
         audit(&mut tx, actor.id, "PRESENTATION_CONFIG_UPDATED", "CONTEST", contest, ip).await?;
         sqlx::query("INSERT INTO realtime_outbox(event_id,contest_id,event_type,scope,payload_json) VALUES($1,$2,'PRESENTATION_UPDATED','PUBLIC',$3)")
@@ -413,8 +496,11 @@ fn validate_config(request: &ConfigRequest) -> Result<(), AppError> {
 
 fn validate_template(template: &str) -> Result<&str, AppError> {
     match template.trim() {
-        "DEFAULT" | "CINEMATIC" | "MINIMAL" | "SPLIT" => Ok(template.trim()),
-        _ => Err(AppError::validation("template", "must be DEFAULT, CINEMATIC, MINIMAL, or SPLIT")),
+        "DEFAULT" | "CINEMATIC" | "MINIMAL" | "SPLIT" | "CUSTOM" => Ok(template.trim()),
+        _ => Err(AppError::validation(
+            "template",
+            "must be DEFAULT, CINEMATIC, MINIMAL, SPLIT, or CUSTOM",
+        )),
     }
 }
 
@@ -578,6 +664,74 @@ pub async fn revoke(
     Ok(StatusCode::NO_CONTENT)
 }
 
+fn validate_template_request(request: &PresentationTemplateRequest) -> Result<(), AppError> {
+    if request.name.trim().is_empty() || request.name.len() > 120 || request.description.len() > 500
+    {
+        return Err(AppError::validation("name", "name and description are out of bounds"));
+    }
+    for (field, color) in [
+        ("backgroundColor", &request.background_color),
+        ("foregroundColor", &request.foreground_color),
+        ("accentColor", &request.accent_color),
+    ] {
+        if color.len() != 7
+            || !color.starts_with('#')
+            || !color[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(AppError::validation(field, "must be a six-digit hexadecimal color"));
+        }
+    }
+    if request.font_family.trim().is_empty()
+        || request.font_family.len() > 120
+        || !matches!(request.density.as_str(), "COMPACT" | "COMFORTABLE" | "SPACIOUS")
+    {
+        return Err(AppError::validation("template", "font or density is invalid"));
+    }
+    if request.show_logo && request.logo_object_key.as_deref().is_none_or(str::is_empty) {
+        return Err(AppError::validation("logoObjectKey", "is required when showLogo is enabled"));
+    }
+    Ok(())
+}
+
+#[utoipa::path(get, path = "/api/presentation-templates", operation_id = "listPresentationTemplates", tag = "live", responses((status = 200, body = [PresentationTemplateResponse])), security(("session_cookie" = [])))]
+pub async fn list_templates(
+    context: AuthContext,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<PresentationTemplateResponse>>, AppError> {
+    context.require_password_ready()?;
+    require_presentation_operator(context.user())?;
+    Ok(Json(sqlx::query_as::<_, PresentationTemplateResponse>("SELECT id,name,description,background_color,foreground_color,accent_color,font_family,density,show_clock,show_logo,logo_object_key,updated_at FROM presentation_templates ORDER BY updated_at DESC,id DESC").fetch_all(state.database()).await.map_err(|e| AppError::internal("list presentation templates",e))?))
+}
+
+#[utoipa::path(post, path = "/api/presentation-templates", operation_id = "createPresentationTemplate", tag = "live", request_body = PresentationTemplateRequest, responses((status = 201, body = PresentationTemplateResponse)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
+pub async fn create_template(
+    context: AuthContext,
+    State(state): State<AppState>,
+    payload: Result<Json<PresentationTemplateRequest>, JsonRejection>,
+) -> Result<(StatusCode, Json<PresentationTemplateResponse>), AppError> {
+    context.require_password_ready()?;
+    require_presentation_operator(context.user())?;
+    let Json(request) = payload.map_err(|_| AppError::validation("request", "invalid template"))?;
+    validate_template_request(&request)?;
+    let row=sqlx::query_as::<_,PresentationTemplateResponse>("INSERT INTO presentation_templates(name,description,background_color,foreground_color,accent_color,font_family,density,show_clock,show_logo,logo_object_key,created_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id,name,description,background_color,foreground_color,accent_color,font_family,density,show_clock,show_logo,logo_object_key,updated_at").bind(request.name.trim()).bind(request.description.trim()).bind(request.background_color).bind(request.foreground_color).bind(request.accent_color).bind(request.font_family.trim()).bind(request.density).bind(request.show_clock).bind(request.show_logo).bind(request.logo_object_key).bind(context.user().id).fetch_one(state.database()).await.map_err(|e|AppError::internal("create presentation template",e))?;
+    Ok((StatusCode::CREATED, Json(row)))
+}
+
+#[utoipa::path(put, path = "/api/presentation-templates/{template_id}", operation_id = "updatePresentationTemplate", tag = "live", params(("template_id" = i64, Path)), request_body = PresentationTemplateRequest, responses((status = 200, body = PresentationTemplateResponse)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
+pub async fn update_template(
+    context: AuthContext,
+    State(state): State<AppState>,
+    Path(template_id): Path<i64>,
+    payload: Result<Json<PresentationTemplateRequest>, JsonRejection>,
+) -> Result<Json<PresentationTemplateResponse>, AppError> {
+    context.require_password_ready()?;
+    require_presentation_operator(context.user())?;
+    let Json(request) = payload.map_err(|_| AppError::validation("request", "invalid template"))?;
+    validate_template_request(&request)?;
+    let row=sqlx::query_as::<_,PresentationTemplateResponse>("UPDATE presentation_templates SET name=$2,description=$3,background_color=$4,foreground_color=$5,accent_color=$6,font_family=$7,density=$8,show_clock=$9,show_logo=$10,logo_object_key=$11,updated_at=now() WHERE id=$1 RETURNING id,name,description,background_color,foreground_color,accent_color,font_family,density,show_clock,show_logo,logo_object_key,updated_at").bind(template_id).bind(request.name.trim()).bind(request.description.trim()).bind(request.background_color).bind(request.foreground_color).bind(request.accent_color).bind(request.font_family.trim()).bind(request.density).bind(request.show_clock).bind(request.show_logo).bind(request.logo_object_key).fetch_optional(state.database()).await.map_err(|e|AppError::internal("update presentation template",e))?.ok_or_else(||AppError::not_found("PRESENTATION_TEMPLATE_NOT_FOUND","Template not found"))?;
+    Ok(Json(row))
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr};
@@ -633,6 +787,7 @@ mod tests {
                     show_announcements: true,
                     announcement_interval_seconds: 10,
                     template: Some("CINEMATIC".into()),
+                    custom_template_id: None,
                 },
                 &actor,
                 ip,

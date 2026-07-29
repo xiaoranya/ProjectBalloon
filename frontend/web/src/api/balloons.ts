@@ -25,6 +25,10 @@ export interface BalloonTask {
   updatedAt: string;
   version: number;
   reopenedCount: number;
+  priority?: number;
+  deliveryZone?: string;
+  dispatchAttempts?: number;
+  lastDispatchedAt?: string | null;
 }
 
 export interface BalloonStats {
@@ -47,6 +51,11 @@ export const balloonApi = {
   },
   stats(contestId: number) {
     return apiRequest<BalloonStats>(`/api/contests/${contestId}/balloons/stats`);
+  },
+  dispatch(contestId: number, limit = 10, zone?: string) {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (zone) query.set('zone', zone);
+    return apiRequest<BalloonTask[]>(`/api/contests/${contestId}/balloons/dispatch?${query}`, { method: 'POST' });
   },
   claim(id: number, expectedVersion: number) {
     return apiRequest<BalloonTask>(taskPath(id, 'claim'), { method: 'POST', body: { expectedVersion } });
