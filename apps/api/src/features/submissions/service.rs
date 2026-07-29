@@ -1,6 +1,6 @@
 use std::net::IpAddr;
 
-use project_balloon_contracts::{JUDGE_TASK_SCHEMA_VERSION, JudgeTask};
+use project_balloon_contracts::{JUDGE_TASK_SCHEMA_VERSION, JudgeMode, JudgeTask};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -34,6 +34,9 @@ struct SubmissionContext {
     testdata_version: i32,
     testdata_object_key: String,
     testdata_sha256: String,
+    judge_mode: String,
+    interactor_object_key: Option<String>,
+    interactor_sha256: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -51,6 +54,9 @@ struct RejudgeContext {
     testdata_version: i32,
     testdata_object_key: String,
     testdata_sha256: String,
+    judge_mode: String,
+    interactor_object_key: Option<String>,
+    interactor_sha256: Option<String>,
     active_judgement_id: Uuid,
     active_completed_at: Option<OffsetDateTime>,
 }
@@ -243,6 +249,9 @@ impl SubmissionService {
                    version.version AS testdata_version,
                    version.object_key AS testdata_object_key,
                    version.sha256 AS testdata_sha256,
+                   problem.judge_mode,
+                   problem.interactor_object_key,
+                   problem.interactor_sha256,
                    judgement.id AS active_judgement_id,
                    judgement.completed_at AS active_completed_at
             FROM submissions submission
@@ -353,6 +362,9 @@ impl SubmissionService {
             memory_limit_mb: context.memory_limit_mb,
             output_limit_kb: context.output_limit_kb,
             language_multiplier: language_multiplier(&context.language),
+            judge_mode: parse_judge_mode(&context.judge_mode)?,
+            interactor_object_key: context.interactor_object_key.clone(),
+            interactor_sha256: context.interactor_sha256.clone(),
         };
         task.validate().map_err(|error| AppError::internal("validate rejudge task", error))?;
         let payload = serde_json::to_string(&task)
@@ -484,6 +496,9 @@ impl SubmissionService {
             memory_limit_mb: context.memory_limit_mb,
             output_limit_kb: context.output_limit_kb,
             language_multiplier: language_multiplier(language),
+            judge_mode: parse_judge_mode(&context.judge_mode)?,
+            interactor_object_key: context.interactor_object_key.clone(),
+            interactor_sha256: context.interactor_sha256.clone(),
         };
         task.validate()
             .map_err(|error| AppError::internal("validate generated judge task", error))?;
@@ -549,6 +564,15 @@ fn language_multiplier(language: &str) -> f64 {
     }
 }
 
+fn parse_judge_mode(value: &str) -> Result<JudgeMode, AppError> {
+    match value {
+        "STANDARD" => Ok(JudgeMode::Standard),
+        "INTERACTIVE" => Ok(JudgeMode::Interactive),
+        "OUTPUT_ONLY" => Ok(JudgeMode::OutputOnly),
+        invalid => Err(AppError::internal("invalid problems.judge_mode", invalid)),
+    }
+}
+
 const CONTEXT_QUERY: &str = r#"
     SELECT
         account.team_id,
@@ -556,6 +580,9 @@ const CONTEXT_QUERY: &str = r#"
         problem.memory_limit_mb,
         problem.output_limit_kb,
         problem.languages,
+        problem.judge_mode,
+        problem.interactor_object_key,
+        problem.interactor_sha256,
         version.version AS testdata_version,
         version.object_key AS testdata_object_key,
         version.sha256 AS testdata_sha256

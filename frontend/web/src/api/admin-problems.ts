@@ -18,6 +18,9 @@ export interface ProblemPayload {
   outputLimitKb: number;
   languages: JudgeLanguage[];
   defaultLangCode: string;
+  judgeMode?: 'STANDARD' | 'INTERACTIVE' | 'OUTPUT_ONLY';
+  interactorObjectKey?: string | null;
+  interactorSha256?: string | null;
 }
 
 export interface UpdateProblemPayload extends Partial<ProblemPayload> {
@@ -119,6 +122,11 @@ export const adminProblemApi = {
         body,
       }),
     );
+  },
+  uploadInteractor(problemId: number, file: File) {
+    const body = new FormData();
+    body.append('file', file);
+    return apiRequest<Problem>(`/api/problems/${problemId}/interactor`, { method: 'POST', body });
   },
   downloadTestdata(problemId: number) {
     return apiRequest<Blob>(`/api/problems/${problemId}/testdata`, { responseType: 'blob' });

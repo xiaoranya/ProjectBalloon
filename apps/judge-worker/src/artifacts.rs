@@ -113,6 +113,7 @@ impl ArtifactSource for S3ArtifactSource {
 pub struct PreparedArtifacts {
     pub source: Bytes,
     pub testdata_archive: PathBuf,
+    pub interactor: Option<Bytes>,
 }
 
 #[derive(Clone)]
@@ -151,7 +152,17 @@ impl ArtifactManager {
         self.validate_size(source.len())?;
         verify_hash("source", &source, &task.source_sha256)?;
         let testdata_archive = self.cached_testdata(task).await?;
-        Ok(PreparedArtifacts { source, testdata_archive })
+        let interactor = match (&task.interactor_object_key, &task.interactor_sha256) {
+            (Some(key), Some(expected)) => {
+                let content = self.source.get(&self.problem_bucket, key).await?;
+                self.validate_size(content.len())?;
+                verify_hash("interactor", &content, expected)?;
+                Some(content)
+            }
+            (None, None) => None,
+            _ => return Err(ArtifactError::Request("incomplete interactor reference".to_owned())),
+        };
+        Ok(PreparedArtifacts { source, testdata_archive, interactor })
     }
 
     fn testdata_cache_dir(&self) -> PathBuf {

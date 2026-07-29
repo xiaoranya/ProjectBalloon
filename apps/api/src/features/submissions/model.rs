@@ -248,13 +248,13 @@ impl SubmitMetadata {
         if self.problem_id <= 0 {
             return Err(AppError::validation("problemId", "must be positive"));
         }
-        if source.is_empty() || source.len() > 64 * 1024 {
-            return Err(AppError::validation("source", "must contain between 1 byte and 64 KiB"));
-        }
-        if std::str::from_utf8(&source).is_err() {
-            return Err(AppError::validation("source", "must be valid UTF-8 text"));
+        if source.is_empty() || source.len() > 256 * 1024 {
+            return Err(AppError::validation("source", "must contain between 1 byte and 256 KiB"));
         }
         let language = self.language.trim().to_ascii_lowercase();
+        if language != "output" && std::str::from_utf8(&source).is_err() {
+            return Err(AppError::validation("source", "must be valid UTF-8 text"));
+        }
         let filename =
             original_filename.rsplit(['/', '\\']).next().unwrap_or_default().to_ascii_lowercase();
         let allowed = match language.as_str() {
@@ -262,7 +262,13 @@ impl SubmitMetadata {
             "cpp" => &[".cpp", ".cc", ".cxx"][..],
             "java" => &[".java"][..],
             "python" => &[".py"][..],
-            _ => return Err(AppError::validation("language", "must be c, cpp, java, or python")),
+            "output" => &[".zip"][..],
+            _ => {
+                return Err(AppError::validation(
+                    "language",
+                    "must be c, cpp, java, python, or output",
+                ));
+            }
         };
         let extension =
             allowed.iter().copied().find(|extension| filename.ends_with(extension)).ok_or_else(
@@ -377,11 +383,13 @@ impl SubmissionListQuery {
             ));
         }
         let language = self.language.map(|value| value.trim().to_ascii_lowercase());
-        if language
-            .as_ref()
-            .is_some_and(|value| !matches!(value.as_str(), "c" | "cpp" | "java" | "python"))
-        {
-            return Err(AppError::validation("language", "must be c, cpp, java, or python"));
+        if language.as_ref().is_some_and(|value| {
+            !matches!(value.as_str(), "c" | "cpp" | "java" | "python" | "output")
+        }) {
+            return Err(AppError::validation(
+                "language",
+                "must be c, cpp, java, python, or output",
+            ));
         }
         Ok(ValidatedSubmissionListQuery {
             team_id: self.team_id,

@@ -64,6 +64,7 @@ const SWAGGER_UI_PATH: &str = "/api/docs";
         problems::handlers::download_attachment,
         problems::handlers::delete_attachment,
         problems::handlers::upload_testdata,
+        problems::handlers::upload_interactor,
         problems::handlers::download_testdata,
         problems::handlers::list_testdata_versions,
         problems::handlers::download_testdata_version,
@@ -286,7 +287,7 @@ mod tests {
             .values()
             .map(|item| item.as_object().expect("path item").len())
             .sum::<usize>();
-        assert_eq!(operation_count, 175);
+        assert_eq!(operation_count, 176);
         assert!(document["paths"]["/livez"]["get"].is_object());
         assert!(document["paths"]["/api/health"]["get"].is_object());
         assert!(document["paths"]["/metrics"]["get"].is_object());

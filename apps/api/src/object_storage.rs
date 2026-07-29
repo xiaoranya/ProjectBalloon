@@ -377,6 +377,11 @@ pub mod keys {
     }
 
     #[must_use]
+    pub fn interactor(problem_id: i64) -> String {
+        format!("problems/{problem_id}/interactors/{}", Uuid::new_v4())
+    }
+
+    #[must_use]
     pub fn submission_source(contest_id: i64, team_id: i64, extension: &str) -> String {
         format!("submissions/{contest_id}/{team_id}/{}{extension}", Uuid::new_v4())
     }

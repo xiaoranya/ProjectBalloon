@@ -25,7 +25,8 @@ use super::testdata_archive;
 const PROBLEM_COLUMNS: &str = r#"
     id, slug, title, time_limit_ms, memory_limit_mb, output_limit_kb,
     languages, testdata_version, testdata_sha256, default_lang_code,
-    created_by, created_at, updated_at, version
+    created_by, created_at, updated_at, version, judge_mode,
+    interactor_object_key, interactor_sha256
 "#;
 
 pub struct ProblemService {
@@ -130,8 +131,9 @@ impl ProblemService {
             r#"
             INSERT INTO problems
                 (slug, title, time_limit_ms, memory_limit_mb, output_limit_kb,
-                 languages, default_lang_code, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 languages, default_lang_code, judge_mode, interactor_object_key,
+                 interactor_sha256, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING {PROBLEM_COLUMNS}
             "#
         );
@@ -143,6 +145,9 @@ impl ProblemService {
             .bind(request.output_limit_kb)
             .bind(request.languages_json)
             .bind(request.default_lang_code)
+            .bind(request.judge_mode)
+            .bind(request.interactor_object_key)
+            .bind(request.interactor_sha256)
             .bind(actor_user_id)
             .fetch_one(&mut *transaction)
             .await
@@ -180,9 +185,12 @@ impl ProblemService {
                 output_limit_kb = COALESCE($5, output_limit_kb),
                 languages = COALESCE($6, languages),
                 default_lang_code = COALESCE($7, default_lang_code),
+                judge_mode = COALESCE($8, judge_mode),
+                interactor_object_key = CASE WHEN $8 IS NULL THEN interactor_object_key WHEN $8 = 'INTERACTIVE' THEN COALESCE($9, interactor_object_key) ELSE NULL END,
+                interactor_sha256 = CASE WHEN $8 IS NULL THEN interactor_sha256 WHEN $8 = 'INTERACTIVE' THEN COALESCE($10, interactor_sha256) ELSE NULL END,
                 updated_at = now(),
                 version = version + 1
-            WHERE id = $8 AND deleted_at IS NULL AND version = $9
+            WHERE id = $11 AND deleted_at IS NULL AND version = $12
             RETURNING {PROBLEM_COLUMNS}
             "#
         );
@@ -194,6 +202,9 @@ impl ProblemService {
             .bind(request.output_limit_kb)
             .bind(request.languages_json)
             .bind(request.default_lang_code)
+            .bind(request.judge_mode)
+            .bind(request.interactor_object_key)
+            .bind(request.interactor_sha256)
             .bind(problem_id)
             .bind(request.expected_version)
             .fetch_optional(&mut *transaction)
@@ -441,6 +452,68 @@ impl ProblemService {
                 storage.problem_bucket(),
                 &object_key,
                 "PROBLEM_ATTACHMENT_UPLOAD_COMPENSATION",
+                cleanup_error.to_string(),
+            )
+            .await;
+        }
+        persisted
+    }
+
+    pub async fn upload_interactor(
+        &self,
+        problem_id: i64,
+        content: Bytes,
+        actor: &AuthUser,
+        request_ip: IpAddr,
+        storage: &ObjectStorageHandle,
+    ) -> Result<ProblemResponse, AppError> {
+        require_positive_id(problem_id)?;
+        if content.len() < 4 || content.len() > 20 * 1024 * 1024 || &content[..4] != b"\x7fELF" {
+            return Err(AppError::validation(
+                "file",
+                "must be a Linux ELF executable of at most 20 MiB",
+            ));
+        }
+        preflight_attachment_change(&self.database, problem_id, actor).await?;
+        let sha256 = hex::encode(Sha256::digest(&content));
+        let object_key = keys::interactor(problem_id);
+        storage
+            .backend()
+            .put(storage.problem_bucket(), &object_key, Some("application/x-executable"), content)
+            .await
+            .map_err(|error| AppError::internal("upload problem interactor", error))?;
+        let mut transaction = self
+            .database
+            .begin()
+            .await
+            .map_err(|error| AppError::internal("begin interactor update", error))?;
+        let persisted = async {
+            lock_attachment_change(&mut transaction, problem_id, actor).await?;
+            let old_key = sqlx::query_scalar::<_, Option<String>>("SELECT interactor_object_key FROM problems WHERE id=$1")
+                .bind(problem_id).fetch_one(&mut *transaction).await
+                .map_err(|error| AppError::internal("load previous interactor", error))?;
+            sqlx::query("UPDATE problems SET judge_mode='INTERACTIVE',interactor_object_key=$2,interactor_sha256=$3,updated_at=now(),version=version+1 WHERE id=$1")
+                .bind(problem_id).bind(&object_key).bind(&sha256).execute(&mut *transaction).await
+                .map_err(|error| AppError::internal("persist problem interactor", error))?;
+            if let Some(old_key) = old_key.filter(|key| key != &object_key) {
+                enqueue_cleanup_transaction(&mut transaction, storage.problem_bucket(), &old_key, "PROBLEM_INTERACTOR_REPLACED").await
+                    .map_err(|error| AppError::internal("queue previous interactor cleanup", error))?;
+            }
+            record_audit(&mut transaction, actor.id, "PROBLEM_INTERACTOR_UPLOADED", problem_id, request_ip).await?;
+            transaction.commit().await.map_err(|error| AppError::internal("commit interactor update", error))?;
+            let sql = format!("SELECT {PROBLEM_COLUMNS} FROM problems WHERE id=$1");
+            sqlx::query_as::<_, ProblemRow>(&sql).bind(problem_id).fetch_one(&self.database).await
+                .map_err(|error| AppError::internal("load updated interactor problem", error))?.response()
+        }.await;
+        if persisted.is_err()
+            && let Err(cleanup_error) =
+                storage.backend().delete(storage.problem_bucket(), &object_key).await
+        {
+            defer_failed_cleanup(
+                &self.database,
+                storage.problem_bucket(),
+                &object_key,
+                "PROBLEM_INTERACTOR_UPLOAD_COMPENSATION",
                 cleanup_error.to_string(),
             )
             .await;
@@ -1424,6 +1497,9 @@ mod tests {
                     output_limit_kb: None,
                     languages_json: None,
                     default_lang_code: None,
+                    judge_mode: None,
+                    interactor_object_key: None,
+                    interactor_sha256: None,
                 },
                 &actor,
                 IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -1506,6 +1582,9 @@ mod tests {
                     output_limit_kb: 65_536,
                     languages_json: "[\"cpp\"]".into(),
                     default_lang_code: "en".into(),
+                    judge_mode: "STANDARD".into(),
+                    interactor_object_key: None,
+                    interactor_sha256: None,
                 },
                 actor.id,
                 IpAddr::V4(Ipv4Addr::LOCALHOST),

@@ -18,6 +18,9 @@ pub fn valid_judge_task() -> JudgeTask {
         memory_limit_mb: 256,
         output_limit_kb: 64,
         language_multiplier: 1.0,
+        judge_mode: project_balloon_contracts::JudgeMode::Standard,
+        interactor_object_key: None,
+        interactor_sha256: None,
     }
 }
 

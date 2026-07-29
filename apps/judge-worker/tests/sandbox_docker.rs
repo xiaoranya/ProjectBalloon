@@ -1,6 +1,6 @@
 use std::io::{Cursor, Write};
 
-use project_balloon_contracts::JudgeVerdict;
+use project_balloon_contracts::{JudgeMode, JudgeVerdict};
 use project_balloon_judge_worker::sandbox::{DockerSandbox, DockerSandboxConfig, SandboxJudgement};
 use project_balloon_test_support::valid_judge_task;
 use uuid::Uuid;
@@ -157,6 +157,60 @@ async fn expected_outputs_are_not_visible_inside_the_judgement_container() {
     assert_accepted(&judgement);
 }
 
+#[tokio::test]
+#[ignore = "requires Docker runtime images"]
+async fn output_only_zip_is_scored_without_executing_participant_content() {
+    let root = std::env::temp_dir().join(format!("project-balloon-output-{}", Uuid::new_v4()));
+    tokio::fs::create_dir_all(&root).await.expect("root");
+    let archive = root.join("testdata.zip");
+    tokio::fs::write(&archive, fixture_archive()).await.expect("test data");
+    let mut task = valid_judge_task();
+    task.judgement_id = Uuid::new_v4();
+    task.judge_mode = JudgeMode::OutputOnly;
+    task.language = "output".to_owned();
+    let sandbox = test_sandbox(root.clone());
+    sandbox.preflight().await.expect("preflight");
+    let judgement =
+        sandbox.judge(&task, &output_archive(), &archive, None).await.expect("judge output");
+    assert_accepted(&judgement);
+    tokio::fs::remove_dir_all(root).await.expect("cleanup");
+}
+
+#[tokio::test]
+#[ignore = "requires Docker, cc, and the fixed C runtime image"]
+async fn interactive_program_and_interactor_exchange_over_pipes() {
+    let root = std::env::temp_dir().join(format!("project-balloon-interactive-{}", Uuid::new_v4()));
+    tokio::fs::create_dir_all(&root).await.expect("root");
+    let archive = root.join("testdata.zip");
+    tokio::fs::write(&archive, fixture_archive()).await.expect("test data");
+    let interactor_source = root.join("interactor.c");
+    let interactor_binary = root.join("interactor-bin");
+    tokio::fs::write(&interactor_source, br#"#include <stdio.h>
+int main(int argc,char**argv){long long a,b,answer;FILE*f=argc>1?fopen(argv[1],"r"):0;if(!f||fscanf(f,"%lld%lld",&a,&b)!=2)return 2;fclose(f);printf("%lld %lld\n",a,b);fflush(stdout);if(scanf("%lld",&answer)!=1)return 3;return answer==a+b?0:1;}
+"#).await.expect("interactor source");
+    let status = std::process::Command::new("cc")
+        .args(["-O2", "-static", "-o"])
+        .arg(&interactor_binary)
+        .arg(&interactor_source)
+        .status()
+        .expect("compile interactor");
+    assert!(status.success());
+    let interactor = tokio::fs::read(&interactor_binary).await.expect("interactor");
+    let mut task = valid_judge_task();
+    task.judgement_id = Uuid::new_v4();
+    task.language = "c".to_owned();
+    task.judge_mode = JudgeMode::Interactive;
+    task.interactor_object_key = Some("problems/7/interactor".to_owned());
+    task.interactor_sha256 = Some("a".repeat(64));
+    let source = b"#include <stdio.h>\nint main(void){long long a,b;if(scanf(\"%lld%lld\",&a,&b)!=2)return 1;printf(\"%lld\\n\",a+b);fflush(stdout);return 0;}\n";
+    let sandbox = test_sandbox(root.clone());
+    sandbox.preflight().await.expect("preflight");
+    let judgement =
+        sandbox.judge(&task, source, &archive, Some(&interactor)).await.expect("interactive judge");
+    assert_accepted(&judgement);
+    tokio::fs::remove_dir_all(root).await.expect("cleanup");
+}
+
 async fn judge(language: &str, source: &[u8], memory_limit_mb: i32) -> SandboxJudgement {
     judge_with_limits(language, source, memory_limit_mb, 1_000, 64).await
 }
@@ -178,7 +232,16 @@ async fn judge_with_limits(
     task.time_limit_ms = time_limit_ms;
     task.memory_limit_mb = memory_limit_mb;
     task.output_limit_kb = output_limit_kb;
-    let sandbox = DockerSandbox::connect(DockerSandboxConfig {
+    let sandbox = test_sandbox(root.clone());
+    sandbox.preflight().await.expect("sandbox preflight");
+
+    let judgement = sandbox.judge(&task, source, &archive, None).await.expect("execute submission");
+    tokio::fs::remove_dir_all(root).await.expect("remove sandbox test root");
+    judgement
+}
+
+fn test_sandbox(root: std::path::PathBuf) -> DockerSandbox {
+    DockerSandbox::connect(DockerSandboxConfig {
         socket: "/var/run/docker.sock".into(),
         cache_dir: root.clone(),
         runtime: None,
@@ -188,12 +251,7 @@ async fn judge_with_limits(
         java_image: "judge-runtime-java:21".to_owned(),
         python_image: "judge-runtime-python:3.12.13".to_owned(),
     })
-    .expect("connect sandbox client");
-    sandbox.preflight().await.expect("sandbox preflight");
-
-    let judgement = sandbox.judge(&task, source, &archive).await.expect("execute submission");
-    tokio::fs::remove_dir_all(root).await.expect("remove sandbox test root");
-    judgement
+    .expect("connect sandbox client")
 }
 
 fn assert_accepted(judgement: &SandboxJudgement) {
@@ -215,4 +273,14 @@ fn fixture_archive() -> Vec<u8> {
         writer.write_all(content).expect("write fixture file");
     }
     writer.finish().expect("finish fixture archive").into_inner()
+}
+
+fn output_archive() -> Vec<u8> {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    for (name, content) in [("1.out", b"3\n".as_slice()), ("2.out", b"123\n".as_slice())] {
+        writer.start_file(name, options).expect("start output");
+        writer.write_all(content).expect("write output");
+    }
+    writer.finish().expect("finish output").into_inner()
 }

@@ -107,11 +107,12 @@ impl DockerSandbox {
         task: &JudgeTask,
         source: &[u8],
         archive: &Path,
+        interactor: Option<&[u8]>,
     ) -> Result<SandboxJudgement, SandboxError> {
         let job_dir = self.cache_dir.join("jobs").join(task.judgement_id.to_string());
         remove_dir_if_present(&job_dir).await?;
         create_private_dir(&job_dir).await?;
-        let result = self.judge_in_dir(task, source, archive, &job_dir).await;
+        let result = self.judge_in_dir(task, source, archive, interactor, &job_dir).await;
         let cleanup = remove_dir_if_present(&job_dir).await;
         match (result, cleanup) {
             (Ok(judgement), Ok(())) => Ok(judgement),
@@ -125,14 +126,23 @@ impl DockerSandbox {
         task: &JudgeTask,
         source: &[u8],
         archive: &Path,
+        interactor: Option<&[u8]>,
         job_dir: &Path,
     ) -> Result<SandboxJudgement, SandboxError> {
+        if task.judge_mode == project_balloon_contracts::JudgeMode::OutputOnly {
+            return self.judge_output_only(task, source, archive, job_dir).await;
+        }
         let language = LanguageConfig::for_task(task)?;
         let work_dir = job_dir.join("work");
         create_private_dir(&work_dir).await?;
         let source_path = work_dir.join(language.source_filename());
         tokio::fs::write(&source_path, source).await?;
         set_private_file_permissions(&source_path).await?;
+        if let Some(interactor) = interactor {
+            let path = work_dir.join("interactor");
+            tokio::fs::write(&path, interactor).await?;
+            set_executable_file_permissions(&path).await?;
+        }
         let data_dir = job_dir.join("data");
         create_private_dir(&data_dir).await?;
         let case_count = extract_cases(archive.to_owned(), data_dir.clone()).await?;
@@ -160,6 +170,7 @@ impl DockerSandbox {
                 &data_dir,
                 case_count,
                 run_memory_bytes,
+                task.judge_mode == project_balloon_contracts::JudgeMode::Interactive,
             )
             .await;
         let cleanup = self
@@ -176,6 +187,54 @@ impl DockerSandbox {
         }
     }
 
+    async fn judge_output_only(
+        &self,
+        _task: &JudgeTask,
+        source: &[u8],
+        archive: &Path,
+        job_dir: &Path,
+    ) -> Result<SandboxJudgement, SandboxError> {
+        let data_dir = job_dir.join("data");
+        create_private_dir(&data_dir).await?;
+        let case_count = extract_cases(archive.to_owned(), data_dir.clone()).await?;
+        let output_dir = job_dir.join("outputs");
+        create_private_dir(&output_dir).await?;
+        extract_output_cases(source.to_owned(), output_dir.clone()).await?;
+        let mut runs = Vec::with_capacity(case_count);
+        for test_index in 1..=case_count {
+            let expected = tokio::fs::read(data_dir.join(format!("{test_index}.out"))).await?;
+            let actual = tokio::fs::read(output_dir.join(format!("{test_index}.out"))).await.ok();
+            let verdict = if actual
+                .as_deref()
+                .is_some_and(|actual| standard_output_matches(&expected, actual))
+            {
+                JudgeVerdict::Accepted
+            } else {
+                JudgeVerdict::WrongAnswer
+            };
+            runs.push(JudgeRunResult {
+                test_index: i32::try_from(test_index).unwrap_or(i32::MAX),
+                verdict,
+                time_ms: 0,
+                memory_kb: 0,
+                exit_code: Some(0),
+                stderr_tail: None,
+            });
+        }
+        let verdict = if runs.iter().all(|run| run.verdict == JudgeVerdict::Accepted) {
+            JudgeVerdict::Accepted
+        } else {
+            JudgeVerdict::WrongAnswer
+        };
+        Ok(SandboxJudgement {
+            verdict,
+            total_time_ms: 0,
+            peak_memory_kb: 0,
+            compile_log: None,
+            runs,
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn judge_in_container(
         &self,
@@ -186,6 +245,7 @@ impl DockerSandbox {
         data_dir: &Path,
         case_count: usize,
         run_memory_bytes: i64,
+        interactive: bool,
     ) -> Result<SandboxJudgement, SandboxError> {
         let compile = self
             .run_exec(container_id, language.compile_command(), Duration::from_secs(30))
@@ -233,13 +293,16 @@ impl DockerSandbox {
             // KiB. Keep the kernel file limit and the post-run byte check on the same boundary.
             let output_blocks = i64::from(task.output_limit_kb).saturating_mul(2).max(1);
             let program = language.run_command(task.memory_limit_mb);
-            let command = vec![
-                "/bin/sh".to_owned(),
-                "-c".to_owned(),
+            let shell = if interactive {
+                format!(
+                    "export LC_ALL=C; rm -f /work/to_program /work/to_interactor; mkfifo /work/to_program /work/to_interactor; exec 3<>/work/to_program; exec 4<>/work/to_interactor; /work/interactor /work/current.in <&4 >&3 2>/work/interactor.err & interactor_pid=$!; /usr/bin/time --quiet --format '__PROJECT_BALLOON_GNU_TIME__ %U %S %M' {program} <&3 >&4 & program_pid=$!; exec 3>&- 4>&-; wait $program_pid; program_status=$?; wait $interactor_pid; interactor_status=$?; cat /work/interactor.err >&2; [ $program_status -eq 0 ] || exit 10; [ $interactor_status -eq 0 ] || exit 20"
+                )
+            } else {
                 format!(
                     "export LC_ALL=C; ulimit -f {output_blocks}; exec /usr/bin/time --quiet --format '__PROJECT_BALLOON_GNU_TIME__ %U %S %M' {program} < /work/current.in > /work/actual.out"
-                ),
-            ];
+                )
+            };
+            let command = vec!["/bin/sh".to_owned(), "-c".to_owned(), shell];
             let mut run = self.run_exec(container_id, command, wall_limit).await?;
             self.kill_contestant_processes(container_id).await?;
             let (sanitized_logs, gnu_time) = extract_gnu_time_metrics(&run.logs);
@@ -260,12 +323,16 @@ impl DockerSandbox {
             // Keep the opened descriptor for the later comparison. A path check followed
             // by a separate read is racy: a surviving child can replace the path after the
             // check. O_NOFOLLOW also prevents a host-side symlink escape.
-            let output = tokio::task::spawn_blocking({
-                let actual_path = actual_path.clone();
-                move || read_regular_output_no_follow(&actual_path)
-            })
-            .await
-            .map_err(|error| SandboxError::Api(error.to_string()))??;
+            let output = if interactive {
+                Some(Vec::new())
+            } else {
+                tokio::task::spawn_blocking({
+                    let actual_path = actual_path.clone();
+                    move || read_regular_output_no_follow(&actual_path)
+                })
+                .await
+                .map_err(|error| SandboxError::Api(error.to_string()))??
+            };
             let output_bytes = output.as_ref().map_or(0, |output| output.len() as u64);
             let output_limit_bytes = u64::try_from(task.output_limit_kb).unwrap_or(0) * 1024;
             let verdict = if run.oom_killed || (run.exit_code == 137 && !run.timed_out) {
@@ -276,8 +343,12 @@ impl DockerSandbox {
                 JudgeVerdict::OutputLimitExceeded
             } else if run.timed_out || charged_time_ms > effective_time_limit_ms {
                 JudgeVerdict::TimeLimitExceeded
+            } else if interactive && run.exit_code == 20 {
+                JudgeVerdict::WrongAnswer
             } else if run.exit_code != 0 || output.is_none() {
                 JudgeVerdict::RuntimeError
+            } else if interactive {
+                JudgeVerdict::Accepted
             } else {
                 let expected = tokio::fs::read(data_dir.join(format!("{test_index}.out"))).await?;
                 if standard_output_matches(&expected, output.as_deref().unwrap_or_default()) {
@@ -729,6 +800,54 @@ async fn extract_cases(
         .map_err(|error| SandboxError::InvalidTestdata(error.to_string()))?
 }
 
+async fn extract_output_cases(
+    archive: Vec<u8>,
+    destination: std::path::PathBuf,
+) -> Result<(), SandboxError> {
+    tokio::task::spawn_blocking(move || extract_output_cases_blocking(&archive, &destination))
+        .await
+        .map_err(|error| SandboxError::InvalidTestdata(error.to_string()))?
+}
+
+fn extract_output_cases_blocking(archive: &[u8], destination: &Path) -> Result<(), SandboxError> {
+    use std::io::Read;
+    let reader = std::io::Cursor::new(archive);
+    let mut zip = zip::ZipArchive::new(reader).map_err(|error| {
+        SandboxError::InvalidTestdata(format!("invalid output archive: {error}"))
+    })?;
+    if zip.len() > MAX_TESTDATA_FILES {
+        return Err(SandboxError::InvalidTestdata("output archive has too many files".to_owned()));
+    }
+    for index in 0..zip.len() {
+        let mut entry = zip
+            .by_index(index)
+            .map_err(|error| SandboxError::InvalidTestdata(error.to_string()))?;
+        if entry.is_dir() {
+            continue;
+        }
+        let name = entry.enclosed_name().ok_or_else(|| {
+            SandboxError::InvalidTestdata("unsafe output archive path".to_owned())
+        })?;
+        if name.components().count() != 1
+            || name.extension().and_then(std::ffi::OsStr::to_str) != Some("out")
+        {
+            return Err(SandboxError::InvalidTestdata(
+                "output archive must contain only root-level .out files".to_owned(),
+            ));
+        }
+        if entry.size() > MAX_TESTDATA_EXTRACTED_BYTES {
+            return Err(SandboxError::InvalidTestdata("output file is too large".to_owned()));
+        }
+        let mut content = Vec::new();
+        entry
+            .read_to_end(&mut content)
+            .map_err(|error| SandboxError::InvalidTestdata(error.to_string()))?;
+        std::fs::write(destination.join(name.file_name().expect("file name")), content)
+            .map_err(SandboxError::Io)?;
+    }
+    Ok(())
+}
+
 fn extract_cases_blocking(archive: &Path, destination: &Path) -> Result<usize, SandboxError> {
     use std::io::Read;
 
@@ -889,9 +1008,20 @@ async fn set_private_file_permissions(path: &Path) -> Result<(), std::io::Error>
     Ok(())
 }
 
+async fn set_executable_file_permissions(path: &Path) -> Result<(), std::io::Error> {
+    #[cfg(unix)]
+    tokio::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o700)).await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{GnuTimeMetrics, extract_gnu_time_metrics, standard_output_matches};
+    use std::io::Write;
+
+    use super::{
+        GnuTimeMetrics, extract_gnu_time_metrics, extract_output_cases_blocking,
+        standard_output_matches,
+    };
 
     #[test]
     fn standard_comparison_normalizes_line_endings_and_trailing_line_space() {
@@ -914,5 +1044,22 @@ mod tests {
         let (logs, metrics) = extract_gnu_time_metrics(original);
         assert_eq!(logs, original);
         assert_eq!(metrics, None);
+    }
+
+    #[test]
+    fn output_only_archive_accepts_root_level_outputs() {
+        let mut bytes = Vec::new();
+        {
+            let cursor = std::io::Cursor::new(&mut bytes);
+            let mut zip = zip::ZipWriter::new(cursor);
+            zip.start_file("1.out", zip::write::SimpleFileOptions::default()).expect("entry");
+            zip.write_all(b"42\n").expect("output");
+            zip.finish().expect("zip");
+        }
+        let destination = std::env::temp_dir().join(format!("pb-output-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&destination).expect("destination");
+        extract_output_cases_blocking(&bytes, &destination).expect("extract output");
+        assert_eq!(std::fs::read(destination.join("1.out")).expect("read"), b"42\n");
+        std::fs::remove_dir_all(destination).expect("cleanup");
     }
 }

@@ -586,26 +586,66 @@ mod tests {
         ).fetch_one(&pool).await.expect("contest");
         let problem_id = sqlx::query_scalar::<_, i64>(
             "INSERT INTO problems(slug,title) VALUES('ioi-score','IOI score') RETURNING id",
-        ).fetch_one(&pool).await.expect("problem");
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("problem");
         sqlx::query("INSERT INTO contest_problems(contest_id,problem_id,alias,display_order,max_score_milli) VALUES($1,$2,'A',1,100000)")
             .bind(contest_id).bind(problem_id).execute(&pool).await.expect("assignment");
         let subtask_id = sqlx::query_scalar::<_, i64>(
             "INSERT INTO contest_problem_subtasks(contest_id,problem_id,subtask_key,name,display_order,score_milli) VALUES($1,$2,'BASIC','Basic',1,100000) RETURNING id",
         ).bind(contest_id).bind(problem_id).fetch_one(&pool).await.expect("subtask");
-        sqlx::query("INSERT INTO contest_problem_subtask_tests(subtask_id,test_index) VALUES($1,1),($1,2)")
-            .bind(subtask_id).execute(&pool).await.expect("tests");
-        let team_id = sqlx::query_scalar::<_, i64>("INSERT INTO teams(name) VALUES('IOI score team') RETURNING id")
-            .fetch_one(&pool).await.expect("team");
+        sqlx::query(
+            "INSERT INTO contest_problem_subtask_tests(subtask_id,test_index) VALUES($1,1),($1,2)",
+        )
+        .bind(subtask_id)
+        .execute(&pool)
+        .await
+        .expect("tests");
+        let team_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO teams(name) VALUES('IOI score team') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("team");
         let judgement_id = Uuid::new_v4();
         let submission_id = sqlx::query_scalar::<_, i64>(
             "INSERT INTO submissions(contest_id,problem_id,team_id,language,source_object_key,source_size_bytes,source_sha256,status) VALUES($1,$2,$3,'cpp','sources/ioi.cpp',1,$4,'JUDGING') RETURNING id",
         ).bind(contest_id).bind(problem_id).bind(team_id).bind("a".repeat(64)).fetch_one(&pool).await.expect("submission query");
-        sqlx::query("INSERT INTO judgements(id,submission_id) VALUES($1,$2)").bind(judgement_id).bind(submission_id).execute(&pool).await.expect("judgement");
+        sqlx::query("INSERT INTO judgements(id,submission_id) VALUES($1,$2)")
+            .bind(judgement_id)
+            .bind(submission_id)
+            .execute(&pool)
+            .await
+            .expect("judgement");
         let mut tx = pool.begin().await.expect("transaction");
-        let score = score_judgement(&mut tx, judgement_id, contest_id, problem_id, JudgeVerdict::WrongAnswer, &[
-            JudgeRunResult { test_index: 1, verdict: JudgeVerdict::Accepted, time_ms: 1, memory_kb: 1, exit_code: Some(0), stderr_tail: None },
-            JudgeRunResult { test_index: 2, verdict: JudgeVerdict::WrongAnswer, time_ms: 1, memory_kb: 1, exit_code: Some(1), stderr_tail: None },
-        ]).await.expect("score");
+        let score = score_judgement(
+            &mut tx,
+            judgement_id,
+            contest_id,
+            problem_id,
+            JudgeVerdict::WrongAnswer,
+            &[
+                JudgeRunResult {
+                    test_index: 1,
+                    verdict: JudgeVerdict::Accepted,
+                    time_ms: 1,
+                    memory_kb: 1,
+                    exit_code: Some(0),
+                    stderr_tail: None,
+                },
+                JudgeRunResult {
+                    test_index: 2,
+                    verdict: JudgeVerdict::WrongAnswer,
+                    time_ms: 1,
+                    memory_kb: 1,
+                    exit_code: Some(1),
+                    stderr_tail: None,
+                },
+            ],
+        )
+        .await
+        .expect("score");
         assert_eq!(score, 0);
         tx.rollback().await.expect("rollback");
     }

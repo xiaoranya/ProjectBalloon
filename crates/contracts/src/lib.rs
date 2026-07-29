@@ -20,6 +20,26 @@ pub const JUDGE_HEARTBEATS_QUEUE: &str = "judge.heartbeats";
 pub const JUDGE_HEARTBEATS_EXCHANGE: &str = "judge.heartbeats.exchange";
 pub const JUDGE_HEARTBEAT_ROUTING_KEY: &str = "heartbeat";
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum JudgeMode {
+    #[default]
+    Standard,
+    Interactive,
+    OutputOnly,
+}
+
+impl JudgeMode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Standard => "STANDARD",
+            Self::Interactive => "INTERACTIVE",
+            Self::OutputOnly => "OUTPUT_ONLY",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RealtimeScope {
@@ -89,6 +109,12 @@ pub struct JudgeTask {
     pub memory_limit_mb: i32,
     pub output_limit_kb: i32,
     pub language_multiplier: f64,
+    #[serde(default)]
+    pub judge_mode: JudgeMode,
+    #[serde(default)]
+    pub interactor_object_key: Option<String>,
+    #[serde(default)]
+    pub interactor_sha256: Option<String>,
 }
 
 impl JudgeTask {
@@ -129,7 +155,28 @@ impl JudgeTask {
                 return Err(ContractError::InvalidSha256(name));
             }
         }
-        if !matches!(self.language.as_str(), "c" | "cpp" | "java" | "python") {
+        if !matches!(self.language.as_str(), "c" | "cpp" | "java" | "python" | "output") {
+            return Err(ContractError::UnsupportedLanguage);
+        }
+        if self.judge_mode == JudgeMode::Interactive {
+            let valid_interactor = self.interactor_object_key.as_ref().is_some_and(|key| {
+                !key.is_empty() && key.len() <= 512 && !key.chars().any(char::is_control)
+            }) && self.interactor_sha256.as_ref().is_some_and(|hash| {
+                hash.len() == 64
+                    && hash
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            });
+            if !valid_interactor {
+                return Err(ContractError::InvalidObjectKey("interactorObjectKey"));
+            }
+        } else if self.interactor_object_key.is_some() || self.interactor_sha256.is_some() {
+            return Err(ContractError::InvalidObjectKey("interactorObjectKey"));
+        }
+        if self.judge_mode == JudgeMode::OutputOnly && self.language != "output" {
+            return Err(ContractError::UnsupportedLanguage);
+        }
+        if self.judge_mode != JudgeMode::OutputOnly && self.language == "output" {
             return Err(ContractError::UnsupportedLanguage);
         }
         Ok(())

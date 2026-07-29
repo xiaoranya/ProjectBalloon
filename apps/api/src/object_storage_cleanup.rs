@@ -440,6 +440,8 @@ pub async fn referenced_object_keys(
              UNION SELECT object_key FROM problem_testdata_versions
              UNION SELECT testdata_object_key FROM problems
              WHERE testdata_object_key IS NOT NULL
+             UNION SELECT interactor_object_key FROM problems
+             WHERE interactor_object_key IS NOT NULL
              UNION SELECT source_object_key FROM submissions
              UNION SELECT pdf_object_key FROM print_requests
              WHERE pdf_bucket = $1 AND pdf_object_key IS NOT NULL",
@@ -452,7 +454,9 @@ pub async fn referenced_object_keys(
                 "SELECT object_key FROM problem_attachments
              UNION SELECT object_key FROM problem_testdata_versions
              UNION SELECT testdata_object_key FROM problems
-             WHERE testdata_object_key IS NOT NULL",
+             WHERE testdata_object_key IS NOT NULL
+             UNION SELECT interactor_object_key FROM problems
+             WHERE interactor_object_key IS NOT NULL",
             )
             .fetch_all(database)
             .await?

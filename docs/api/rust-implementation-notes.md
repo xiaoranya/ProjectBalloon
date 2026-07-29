@@ -14,7 +14,7 @@ annotations:
 | `GET /api/openapi.json` | Machine-readable generated contract |
 | `GET /api/docs` | Offline-capable Swagger UI using vendored assets |
 
-The generated contract currently covers all 175 Rust operations: process/readiness
+The generated contract currently covers all 176 Rust operations: process/readiness
 health, all five authentication endpoints, the eight contest core endpoints,
 the fourteen team and contest-roster endpoints, sixteen problem catalog and
 test-data endpoints, seventeen submission,
@@ -77,6 +77,19 @@ results persist the total and each subtask score, and the scoreboard ranks by
 total score. Contest-level `FULL`, `SCORE_ONLY`, and `NONE` feedback policies
 redact team-facing test details during a running contest while administrators
 retain the complete audit view.
+
+## P2 Interactive and Output-only Judging
+
+Judge tasks carry a backward-compatible `judgeMode` field. `OUTPUT_ONLY`
+submissions upload a bounded ZIP containing root-level `1.out`, `2.out`, and so
+on; the Worker validates the archive without compiling or executing participant
+content and scores every expected case. `INTERACTIVE` problems reference a
+SHA-256-verified Linux ELF interactor stored in the problem bucket. The Worker
+runs the interactor and contestant in the same network-disabled, read-only-root
+sandbox with named pipes, a wall timeout, process cleanup, and separate exit
+interpretation. Problem administrators can upload a replacement interactor;
+old objects enter the durable cleanup queue and all references participate in
+orphan reconciliation.
 
 ## Object Storage Orphan Compensation
 

@@ -97,7 +97,16 @@ impl JudgeTaskHandler for JudgeEngine {
             }
             Err(error) => return Err(TaskFailure::retry(error.to_string())),
         };
-        match self.sandbox.judge(&task, &artifacts.source, &artifacts.testdata_archive).await {
+        match self
+            .sandbox
+            .judge(
+                &task,
+                &artifacts.source,
+                &artifacts.testdata_archive,
+                artifacts.interactor.as_deref(),
+            )
+            .await
+        {
             Ok(judgement) => Ok(self.completed_result(&task, started_at, judgement)),
             Err(error @ SandboxError::InvalidTestdata(_)) => {
                 Ok(self.system_error_result(&task, started_at, error.to_string()))

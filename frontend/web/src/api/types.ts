@@ -189,7 +189,7 @@ export interface ContestTeam {
   createdAt: string;
 }
 
-export type JudgeLanguage = 'c' | 'cpp' | 'java' | 'python';
+export type JudgeLanguage = 'c' | 'cpp' | 'java' | 'python' | 'output';
 export type ProblemAttachmentKind = 'SAMPLE' | 'SUPPLEMENT';
 
 export interface Problem {
@@ -207,6 +207,9 @@ export interface Problem {
   version: number;
   createdAt: string;
   updatedAt: string;
+  judgeMode: 'STANDARD' | 'INTERACTIVE' | 'OUTPUT_ONLY';
+  interactorObjectKey: string | null;
+  interactorSha256: string | null;
 }
 
 export interface ProblemStatement {

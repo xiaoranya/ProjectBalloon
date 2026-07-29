@@ -30,7 +30,7 @@
         <aside class="submit-card">
           <div>
             <p class="eyebrow">Submit</p>
-            <h2>提交代码</h2>
+            <h2>{{ language === 'output' ? '提交输出' : '提交代码' }}</h2>
           </div>
           <ElAlert
             v-if="contest?.status !== 'RUNNING'"
@@ -50,7 +50,7 @@
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="源码文件">
+            <ElFormItem :label="language === 'output' ? '输出 ZIP' : '源码文件'">
               <ElUpload
                 ref="uploadRef"
                 :auto-upload="false"
@@ -63,7 +63,7 @@
                 <ElIcon class="upload-icon"><UploadFilled /></ElIcon>
                 <div>拖放源码到这里，或点击选择</div>
                 <template #tip>
-                  <span>最大 64 KiB，扩展名需与语言匹配</span>
+                  <span>最大 256 KiB，扩展名需与提交类型匹配</span>
                 </template>
               </ElUpload>
             </ElFormItem>
@@ -83,7 +83,7 @@
               :loading="submitting"
               :disabled="contest?.status !== 'RUNNING' || !sourceFile || !language"
             >
-              提交代码
+              {{ language === 'output' ? '提交输出' : '提交代码' }}
             </ElButton>
           </ElForm>
         </aside>
@@ -124,6 +124,7 @@ const acceptedExtensions = computed(() => {
     cpp: '.cc,.cpp,.cxx',
     java: '.java',
     python: '.py',
+    output: '.zip',
   };
   return extensions[language.value] ?? '';
 });
@@ -151,8 +152,8 @@ async function loadProblem() {
 function onFileChange(uploadFile: UploadFile) {
   const file = uploadFile.raw ?? null;
   submitError.value = '';
-  if (file && file.size > 65_536) {
-    submitError.value = '源码文件不能超过 64 KiB';
+  if (file && file.size > 262_144) {
+    submitError.value = '提交文件不能超过 256 KiB';
     sourceFile.value = null;
     uploadRef.value?.clearFiles();
     return;

@@ -518,12 +518,16 @@ async fn detail(
         .get(storage.source_bucket(), &source_object_key)
         .await
         .map_err(|error| AppError::internal("download submission source", error))?;
-    let source = String::from_utf8(source.to_vec()).map_err(|_| {
-        AppError::conflict(
-            "SUBMISSION_SOURCE_INVALID",
-            "Stored submission source is not valid UTF-8",
-        )
-    })?;
+    let source = if summary.language == "output" {
+        "[Output-only ZIP archive]".to_owned()
+    } else {
+        String::from_utf8(source.to_vec()).map_err(|_| {
+            AppError::conflict(
+                "SUBMISSION_SOURCE_INVALID",
+                "Stored submission source is not valid UTF-8",
+            )
+        })?
+    };
     let mut judgements = sqlx::query_as::<_, JudgementDetail>(
         r#"
         SELECT id, verdict, total_time_ms, peak_memory_kb, compile_log, worker_id,

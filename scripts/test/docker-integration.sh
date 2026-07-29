@@ -176,6 +176,6 @@ purge_judge_queues
 log 'running RabbitMQ restart recovery test'
 cargo test -p project-balloon-judge-worker --test rabbit_concurrency \
   broker_restart_requeues_unacknowledged_in_flight_task -- --ignored --exact --test-threads=1
-log 'running 11 real Docker sandbox tests'
+log 'running 13 real Docker sandbox tests'
 cargo test -p project-balloon-judge-worker --test sandbox_docker -- --ignored --test-threads=1
-log 'all 48 Docker-backed integration tests passed'
+log 'all 50 Docker-backed integration tests passed'

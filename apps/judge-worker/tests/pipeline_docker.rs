@@ -70,6 +70,9 @@ async fn rabbit_rustfs_cpp_pipeline_publishes_confirmed_result() {
         memory_limit_mb: 128,
         output_limit_kb: 64,
         language_multiplier: 1.0,
+        judge_mode: project_balloon_contracts::JudgeMode::Standard,
+        interactor_object_key: None,
+        interactor_sha256: None,
     };
     task.validate().expect("valid integration task");
     let cache = std::env::temp_dir().join(format!("project-balloon-pipeline-{judgement_id}"));

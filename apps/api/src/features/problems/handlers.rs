@@ -17,10 +17,10 @@ use crate::{
 
 use super::model::{
     ActivateTestdataVersionRequest, AttachmentKind, AttachmentUploadRequest, CreateProblemRequest,
-    ProblemAttachmentResponse, ProblemListQuery, ProblemResponse, ProblemStatementResponse,
-    ProblemTestdataResponse, ProblemTestdataVersionResponse, TestdataUploadRequest,
-    UpdateProblemRequest, UpsertStatementRequest, validate_attachment_filename,
-    validate_lang_code_field,
+    InteractorUploadRequest, ProblemAttachmentResponse, ProblemListQuery, ProblemResponse,
+    ProblemStatementResponse, ProblemTestdataResponse, ProblemTestdataVersionResponse,
+    TestdataUploadRequest, UpdateProblemRequest, UpsertStatementRequest,
+    validate_attachment_filename, validate_lang_code_field,
 };
 
 #[utoipa::path(
@@ -478,6 +478,38 @@ pub async fn upload_testdata(
         .upload_testdata(problem_id, content, context.user(), peer.ip(), storage)
         .await?;
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+#[utoipa::path(post, path = "/api/problems/{problem_id}/interactor", operation_id = "uploadProblemInteractor", tag = "problems", params(("problem_id" = i64, Path)), request_body(content = inline(InteractorUploadRequest), content_type = "multipart/form-data"), responses((status = 200, body = ProblemResponse), (status = 400, body = crate::error::ApiErrorBody), (status = 401, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody), (status = 409, body = crate::error::ApiErrorBody), (status = 503, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
+pub async fn upload_interactor(
+    context: ContestManagerContext,
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(problem_id): Path<i64>,
+    mut multipart: Multipart,
+) -> Result<Json<ProblemResponse>, AppError> {
+    let mut upload = None;
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| AppError::validation("request", "must be valid multipart data"))?
+    {
+        if field.name() != Some("file") || upload.is_some() {
+            return Err(AppError::validation("request", "must contain exactly one file field"));
+        }
+        upload = Some(
+            field.bytes().await.map_err(|_| AppError::validation("file", "could not be read"))?,
+        );
+    }
+    let content = upload
+        .ok_or_else(|| AppError::validation("request", "must contain exactly one file field"))?;
+    let storage = require_storage(&state)?;
+    Ok(Json(
+        state
+            .problems()
+            .upload_interactor(problem_id, content, context.user(), peer.ip(), storage)
+            .await?,
+    ))
 }
 
 #[utoipa::path(

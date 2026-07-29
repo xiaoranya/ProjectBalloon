@@ -34,6 +34,7 @@ export function languageLabel(language: string): string {
     cpp: 'C++',
     java: 'Java',
     python: 'Python',
+    output: 'Output-only',
   }[language] ?? language;
 }
 
