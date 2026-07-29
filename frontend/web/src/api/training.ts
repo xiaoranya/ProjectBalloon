@@ -91,10 +91,11 @@ export interface PracticeProgress {
   solvedAt: string | null;
   updatedAt: string;
 }
-export interface Editorial { problemId: number; langCode: string; title: string; bodyHtml: string; unlockPolicy: string; unlocked: boolean; updatedAt: string; }
+export interface Editorial { problemId: number; langCode: string; title: string; bodyHtml: string; bodyMarkdown?: string; unlockPolicy: string; unlocked: boolean; updatedAt: string; }
 export interface VirtualSession { id:number;title:string;startAt:string;endAt:string;serverTime:string;status:'SCHEDULED'|'RUNNING'|'ENDED';totalProblems:number;solvedProblems:number; }
 export interface VirtualProblem { problemId:number;slug:string;title:string;position:number;solved:boolean;attempts:number; }
 export interface VirtualSessionDetail { session:VirtualSession;problems:VirtualProblem[]; }
+export interface PracticeSettings { dailySubmissionLimit:number; concurrentJudgingLimit:number; sourceRetentionDays:number; updatedAt:string; }
 
 export const trainingApi = {
   problemBank(page = 0, size = 50, tag?: string, difficulty?: number) {
@@ -137,4 +138,8 @@ export const trainingApi = {
   virtualSessions() { return apiRequest<VirtualSession[]>('/api/practice/virtual-sessions'); },
   virtualSession(id:number) { return apiRequest<VirtualSessionDetail>(`/api/practice/virtual-sessions/${id}`); },
   createVirtualSession(payload:{title:string;durationMinutes:number;problemIds:number[]}) { return apiRequest<VirtualSession>('/api/practice/virtual-sessions',{method:'POST',body:payload}); },
+  practiceSettings() { return apiRequest<PracticeSettings>('/api/admin/practice/settings'); },
+  updatePracticeSettings(payload:Omit<PracticeSettings,'updatedAt'>) { return apiRequest<PracticeSettings>('/api/admin/practice/settings',{method:'PUT',body:payload}); },
+  adminEditorial(problemId:number, lang='en') { return apiRequest<Editorial>(`/api/admin/problems/${problemId}/editorials/${encodeURIComponent(lang)}`); },
+  saveEditorial(problemId:number, lang:string, payload:{title:string;body:string;unlockPolicy:string;published:boolean}) { return apiRequest<Editorial>(`/api/admin/problems/${problemId}/editorials/${encodeURIComponent(lang)}`,{method:'PUT',body:payload}); },
 };

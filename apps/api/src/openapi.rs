@@ -100,6 +100,7 @@ const SWAGGER_UI_PATH: &str = "/api/docs";
         training::list_favorites,
         training::set_favorite,
         training::get_editorial,
+        training::get_admin_editorial,
         training::upsert_editorial,
         training::get_practice_settings,
         training::update_practice_settings,

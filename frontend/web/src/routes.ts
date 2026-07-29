@@ -149,6 +149,12 @@ export const routes: RouteRecordRaw[] = [
         meta: { requiresSuperAdmin: true },
       },
       {
+        path: 'practice',
+        name: 'admin-practice',
+        component: () => import('./views/AdminPracticeView.vue'),
+        meta: { requiresSuperAdmin: true },
+      },
+      {
         path: 'problems/:problemId',
         name: 'admin-problem-editor',
         component: () => import('./views/AdminProblemEditorView.vue'),

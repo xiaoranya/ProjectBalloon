@@ -92,7 +92,7 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         .route("/api/practice/virtual-sessions/{session_id}", get(virtual_practice::get))
         .route(
             "/api/admin/problems/{problem_id}/editorials/{lang_code}",
-            put(training::upsert_editorial),
+            get(training::get_admin_editorial).put(training::upsert_editorial),
         )
         .route("/api/auth/password", post(auth::change_password))
         .route("/api/contests/{contest_id}/clarifications", post(clarifications::ask))

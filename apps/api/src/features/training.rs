@@ -135,6 +135,8 @@ pub struct EditorialResponse {
     lang_code: String,
     title: String,
     body_html: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body_markdown: Option<String>,
     unlock_policy: String,
     unlocked: bool,
     updated_at: time::OffsetDateTime,
@@ -462,6 +464,7 @@ pub async fn get_editorial(
         lang_code: lang.to_owned(),
         title: row.0,
         body_html: crate::features::problems::render_safe_statement(&row.1),
+        body_markdown: None,
         unlock_policy: row.2,
         unlocked,
         updated_at: row.3,
@@ -497,9 +500,37 @@ pub async fn upsert_editorial(
         lang_code: lang_code.trim().to_owned(),
         title: request.title.trim().to_owned(),
         body_html: crate::features::problems::render_safe_statement(&request.body),
+        body_markdown: Some(request.body),
         unlock_policy: request.unlock_policy,
         unlocked: true,
         updated_at: updated,
+    }))
+}
+
+#[utoipa::path(get, path = "/api/admin/problems/{problem_id}/editorials/{lang_code}", operation_id = "getAdminProblemEditorial", tag = "practice", params(("problem_id" = i64, Path), ("lang_code" = String, Path)), responses((status = 200, body = EditorialResponse), (status = 404, body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
+pub async fn get_admin_editorial(
+    _context: SuperAdminContext,
+    State(state): State<AppState>,
+    Path((problem_id, lang_code)): Path<(i64, String)>,
+) -> Result<Json<EditorialResponse>, AppError> {
+    let row = sqlx::query_as::<_, (String, String, String, bool, time::OffsetDateTime)>(
+        "SELECT title,body,unlock_policy,published,updated_at FROM problem_editorials WHERE problem_id=$1 AND lang_code=$2",
+    )
+    .bind(problem_id)
+    .bind(lang_code.trim())
+    .fetch_optional(state.database())
+    .await
+    .map_err(|e| AppError::internal("load admin problem editorial", e))?
+    .ok_or_else(|| AppError::not_found("EDITORIAL_NOT_FOUND", "Editorial not found"))?;
+    Ok(Json(EditorialResponse {
+        problem_id,
+        lang_code: lang_code.trim().to_owned(),
+        title: row.0,
+        body_html: crate::features::problems::render_safe_statement(&row.1),
+        body_markdown: Some(row.1),
+        unlock_policy: row.2,
+        unlocked: row.3,
+        updated_at: row.4,
     }))
 }
 

@@ -26,6 +26,10 @@
           <ElIcon><Collection /></ElIcon>
           题库管理
         </RouterLink>
+        <RouterLink v-if="session.isSuperAdmin.value" to="/admin/practice">
+          <ElIcon><EditPen /></ElIcon>
+          日常练习
+        </RouterLink>
         <RouterLink v-if="session.isSuperAdmin.value" to="/admin/staff-accounts">
           <ElIcon><UserFilled /></ElIcon>
           工作人员账号
@@ -54,7 +58,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { SwitchButton } from '@element-plus/icons-vue';
+import { EditPen, SwitchButton } from '@element-plus/icons-vue';
 import { useSession } from '../auth/session';
 
 const router = useRouter();
