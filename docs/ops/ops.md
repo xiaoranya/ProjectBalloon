@@ -71,8 +71,9 @@ retried because S3-compatible object deletion is idempotent.
 The Rust API exposes Prometheus text format at `GET /metrics`. The endpoint is
 unauthenticated for scraper compatibility and must be restricted to the
 monitoring network by the reverse proxy or firewall. It currently exports
-realtime and Judge outbox backlog/failures, object cleanup backlog/failures,
-asynchronous export states, and online Judge capacity/active slots.
+ realtime and Judge outbox backlog/failures, object cleanup backlog/failures,
+ asynchronous export states, online Judge capacity/active slots, and daily
+ practice submission/judging counts.
 
 Example scrape job:
 
@@ -95,6 +96,9 @@ Critical dashboard panels:
 - Judge worker online count and occupied slots.
 - Judge task wait time.
 - Submission rate.
+- Practice submissions today and practice jobs currently judging. Compare the
+  daily count with `practice_platform_settings.daily_submission_limit` and
+  investigate sustained judging backlog before users hit the concurrent limit.
 - Scoreboard update latency.
 - Host CPU, memory, load, and disk usage.
 - Printer state and pending print tasks.
@@ -142,6 +146,17 @@ scripts/backup/restore.sh <backup-run-dir>  # restore in order, then healthcheck
 ```
 
 See `docs/ops/backup-restore.md` for mandatory backup points, contents, retention, and post-restore verification. Take a backup before rehearsal, after data freeze, immediately before contest start, and after the judge queue drains.
+
+Daily practice operations:
+
+- Review the `practice_submissions_today` and `practice_judging` Prometheus
+  gauges during normal load.
+- Configure limits from the admin console under `日常练习`; the source
+  retention setting is enforced by the API cleanup runner.
+- A source past its retention window is marked expired after the submission is
+  final. Do not treat an expired source as a cleanup failure; inspect
+  `objectCleanup.failed` and `object_storage_cleanup_failed` for actual retry
+  problems.
 
 Prepare resolver:
 

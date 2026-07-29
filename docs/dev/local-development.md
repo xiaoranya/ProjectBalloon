@@ -157,6 +157,13 @@ Important API environment variables:
 | `PROJECT_BALLOON_SCOREBOARD_CACHE_TTL_SECONDS` | `30` | Expiry for revision-scoped scoreboard cache entries |
 | `PROJECT_BALLOON_SCOREBOARD_CACHE_TIMEOUT_MILLISECONDS` | `200` | Maximum Redis connect/read/write wait before PostgreSQL fallback |
 
+Practice defaults are stored in PostgreSQL and can be changed by a super
+administrator from `/admin/practice`: daily submissions `200`, concurrent
+judging `3`, and source retention `365` days. The API exposes the active
+practice workload through Prometheus metrics; source deletion is disabled for
+pending or judging submissions and is retried through the object cleanup
+runner.
+
 Probe behavior:
 
 - `GET /livez` verifies that the Rust process and HTTP runtime are alive without

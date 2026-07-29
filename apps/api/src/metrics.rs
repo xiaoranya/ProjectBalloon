@@ -21,6 +21,8 @@ struct MetricsSnapshot {
     exports_failed: i64,
     worker_capacity: i64,
     worker_active: i64,
+    practice_submissions_today: i64,
+    practice_judging: i64,
 }
 
 #[utoipa::path(
@@ -47,6 +49,8 @@ pub(crate) async fn prometheus(State(state): State<AppState>) -> Result<Response
             (SELECT count(*) FROM submission_export_tasks WHERE status = 'FAILED') AS exports_failed,
             (SELECT COALESCE(sum(capacity), 0) FROM judge_workers WHERE last_seen_at >= now() - interval '30 seconds') AS worker_capacity,
             (SELECT COALESCE(sum(active_tasks), 0) FROM judge_workers WHERE last_seen_at >= now() - interval '30 seconds') AS worker_active
+            ,(SELECT count(*) FROM submissions WHERE submission_scope='PRACTICE' AND submitted_at >= date_trunc('day', now())) AS practice_submissions_today
+            ,(SELECT count(*) FROM submissions WHERE submission_scope='PRACTICE' AND status IN ('PENDING','JUDGING')) AS practice_judging
         "#,
     )
     .fetch_one(state.database())
@@ -121,6 +125,16 @@ fn render(value: &MetricsSnapshot) -> String {
             "Active tasks reported by online judge workers",
             value.worker_active,
         ),
+        (
+            "project_balloon_practice_submissions_today",
+            "Practice submissions created since the start of the current day",
+            value.practice_submissions_today,
+        ),
+        (
+            "project_balloon_practice_judging",
+            "Practice submissions currently waiting for or receiving a judgement",
+            value.practice_judging,
+        ),
     ];
     let mut output = String::with_capacity(gauges.len() * 180);
     for (name, help, metric) in gauges {
@@ -159,10 +173,13 @@ mod tests {
             exports_failed: 0,
             worker_capacity: 30,
             worker_active: 7,
+            practice_submissions_today: 12,
+            practice_judging: 2,
         });
         assert!(output.contains("# TYPE project_balloon_judge_worker_capacity gauge"));
         assert!(output.contains("project_balloon_judge_worker_capacity 30\n"));
         assert!(output.contains("project_balloon_object_storage_missing_references 2\n"));
+        assert!(output.contains("project_balloon_practice_submissions_today 12\n"));
         assert!(output.ends_with('\n'));
     }
 }
