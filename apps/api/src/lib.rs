@@ -23,7 +23,7 @@ use crate::{
     features::{
         announcements, audit_logs, auth, awards, balloons, clarifications, contest_admin_scopes,
         contest_problems, contests, presentation, printing, problems, realtime, resolver,
-        scoreboard, scoring, staff_accounts, submissions, teams,
+        scoreboard, scoring, staff_accounts, submissions, teams, training,
     },
     health::{liveness, readiness},
     state::AppState,
@@ -55,6 +55,15 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         .merge(openapi::swagger_ui())
         .route("/livez", get(liveness))
         .route("/api/health", get(readiness))
+        .route("/api/public/problem-bank", get(training::list_bank))
+        .route("/api/public/problem-bank/{slug}", get(training::get_bank))
+        .route("/api/admin/problems/{problem_id}/publication", put(training::update_publication))
+        .route("/api/admin/training/sets", post(training::create_set))
+        .route("/api/admin/training/sets/{set_id}", put(training::update_set))
+        .route("/api/training/sets", get(training::list_sets))
+        .route("/api/training/sets/{set_id}", get(training::get_set))
+        .route("/api/training/sets/{set_id}/enroll", post(training::enroll))
+        .route("/api/training/enrollments/{enrollment_id}/progress", put(training::progress))
         .route("/metrics", get(metrics::prometheus))
         .route("/api/auth/csrf", get(auth::csrf))
         .route("/api/auth/login", post(auth::login))

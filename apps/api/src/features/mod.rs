@@ -18,3 +18,4 @@ pub mod scoring;
 pub mod staff_accounts;
 pub mod submissions;
 pub mod teams;
+pub mod training;

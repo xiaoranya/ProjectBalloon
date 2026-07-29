@@ -2,6 +2,8 @@ import type { RouteRecordRaw } from 'vue-router';
 
 export const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/contests' },
+  { path: '/problem-bank', name: 'problem-bank', component: () => import('./views/ProblemBankView.vue') },
+  { path: '/training', name: 'training', component: () => import('./views/TrainingView.vue'), meta: { requiresAuth: true, requiresTeam: true } },
   {
     path: '/login',
     name: 'login',
