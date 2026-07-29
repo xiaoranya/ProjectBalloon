@@ -21,6 +21,7 @@ export interface PageResponse<T> {
 
 export type UserType =
   | 'TEAM'
+  | 'INDIVIDUAL'
   | 'SUPER_ADMIN'
   | 'CONTEST_ADMIN'
   | 'BALLOON_STAFF'
@@ -31,7 +32,7 @@ export type UserType =
   | 'SCREEN_OPERATOR'
   | 'LIVE_OPERATOR';
 
-export type StaffUserType = Exclude<UserType, 'TEAM'>;
+export type StaffUserType = Exclude<UserType, 'TEAM' | 'INDIVIDUAL'>;
 
 export interface AuditLog {
   id: number;

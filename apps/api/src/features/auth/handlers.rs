@@ -12,7 +12,7 @@ use crate::{error::AppError, state::AppState};
 use super::{
     SESSION_COOKIE_NAME,
     context::AuthContext,
-    model::{ChangePasswordRequest, CurrentUserResponse, LoginRequest},
+    model::{ChangePasswordRequest, CurrentUserResponse, LoginRequest, RegisterRequest},
 };
 
 #[utoipa::path(
@@ -42,6 +42,24 @@ pub async fn login(
     if let Some(previous) = jar.get(SESSION_COOKIE_NAME) {
         state.auth().logout_token(previous.value()).await?;
     }
+    let cookie = session_cookie(
+        outcome.session_token,
+        state.auth().session_ttl(),
+        state.auth().secure_cookies(),
+    );
+    Ok((jar.add(cookie), Json(outcome.user.response())))
+}
+
+#[utoipa::path(post, path = "/api/auth/register", operation_id = "registerIndividual", tag = "auth", request_body = RegisterRequest, responses((status = 200, body = CurrentUserResponse), (status = 400, body = crate::error::ApiErrorBody), (status = 409, body = crate::error::ApiErrorBody)), security(("csrf_cookie" = [], "csrf_header" = [])))]
+pub async fn register(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    jar: CookieJar,
+    payload: Result<Json<RegisterRequest>, JsonRejection>,
+) -> Result<(CookieJar, Json<CurrentUserResponse>), AppError> {
+    let Json(request) = payload
+        .map_err(|_| AppError::validation("request", "must be a valid registration object"))?;
+    let outcome = state.auth().register(request, peer.ip()).await?;
     let cookie = session_cookie(
         outcome.session_token,
         state.auth().session_ttl(),

@@ -44,6 +44,34 @@ export interface TrainingEnrollment {
   completedAt: string | null;
 }
 
+export interface PracticeSubmission {
+  id: number;
+  problemId: number;
+  problemSlug: string;
+  problemTitle: string;
+  trainingEnrollmentId: number | null;
+  language: string;
+  sourceSizeBytes: number;
+  status: string;
+  submittedAt: string;
+  judgedAt: string | null;
+  activeJudgementId: string | null;
+  verdict: string | null;
+  totalTimeMs: number | null;
+  peakMemoryKb: number | null;
+  score: number | null;
+}
+
+export interface PracticeProgress {
+  problemId: number;
+  attempts: number;
+  bestScore: number;
+  solved: boolean;
+  lastSubmissionId: number | null;
+  solvedAt: string | null;
+  updatedAt: string;
+}
+
 export const trainingApi = {
   problemBank(page = 0, size = 50, tag?: string, difficulty?: number) {
     const query = new URLSearchParams({ page: String(page), size: String(size) });
@@ -62,5 +90,18 @@ export const trainingApi = {
   },
   enroll(id: number) {
     return apiRequest<TrainingEnrollment>(`/api/training/sets/${id}/enroll`, { method: 'POST' });
+  },
+  submit(problemId: number, language: string, source: string, trainingEnrollmentId?: number) {
+    const body = new FormData();
+    body.append('metadata', JSON.stringify({ problemId, language, ...(trainingEnrollmentId ? { trainingEnrollmentId } : {}) }));
+    const extension = language === 'cpp' ? 'cpp' : language === 'java' ? 'java' : language === 'python' ? 'py' : language === 'output' ? 'zip' : 'c';
+    body.append('source', new File([source], `Main.${extension}`, { type: language === 'output' ? 'application/zip' : 'text/plain' }));
+    return apiRequest<{ submissionId: number; judgementId: string; status: string; submittedAt: string }>('/api/practice/submissions', { method: 'POST', body });
+  },
+  submissions() {
+    return apiRequest<PageResponse<PracticeSubmission>>('/api/practice/submissions?page=0&size=100');
+  },
+  progress() {
+    return apiRequest<PracticeProgress[]>('/api/practice/progress');
   },
 };

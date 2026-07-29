@@ -111,7 +111,8 @@ pub struct ProgressRequest {
 pub struct Enrollment {
     pub id: i64,
     pub set_id: i64,
-    pub team_id: i64,
+    pub team_id: Option<i64>,
+    pub user_id: Option<i64>,
     pub status: String,
     pub started_at: time::OffsetDateTime,
     pub completed_at: Option<time::OffsetDateTime>,
@@ -177,15 +178,14 @@ pub async fn update_publication(
     Ok(Json(row))
 }
 
-async fn team_for_user(state: &AppState, user_id: i64) -> Result<i64, AppError> {
+async fn team_for_user(state: &AppState, user_id: i64) -> Result<Option<i64>, AppError> {
     sqlx::query_scalar::<_, i64>(
         "SELECT team_id FROM team_accounts WHERE user_id=$1 ORDER BY team_id LIMIT 1",
     )
     .bind(user_id)
     .fetch_optional(state.database())
     .await
-    .map_err(|e| AppError::internal("load training team", e))?
-    .ok_or_else(|| AppError::forbidden("TEAM_REQUIRED", "A team account is required"))
+    .map_err(|e| AppError::internal("load training team", e))
 }
 
 #[utoipa::path(get, path = "/api/training/sets", operation_id = "listTrainingSets", tag = "training", responses((status = 200, body = [TrainingSet]), (status = 401, body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
@@ -310,7 +310,11 @@ pub async fn enroll(
     Path(set_id): Path<i64>,
 ) -> Result<(axum::http::StatusCode, Json<Enrollment>), AppError> {
     let team_id = team_for_user(&state, context.user().id).await?;
-    let row=sqlx::query_as::<_,Enrollment>("INSERT INTO training_enrollments(set_id,team_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM training_sets WHERE id=$1 AND visibility='PUBLIC') ON CONFLICT(set_id,team_id) DO UPDATE SET status='ACTIVE',updated_at=now() RETURNING id,set_id,team_id,status,started_at,completed_at").bind(set_id).bind(team_id).fetch_optional(state.database()).await.map_err(|e| AppError::internal("enroll training set",e))?.ok_or_else(|| AppError::not_found("TRAINING_SET_NOT_FOUND","Training set not found"))?;
+    let row = if let Some(team_id) = team_id {
+        sqlx::query_as::<_,Enrollment>("INSERT INTO training_enrollments(set_id,team_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM training_sets WHERE id=$1 AND visibility='PUBLIC') ON CONFLICT(set_id,team_id) DO UPDATE SET status='ACTIVE',updated_at=now() RETURNING id,set_id,team_id,user_id,status,started_at,completed_at").bind(set_id).bind(team_id).fetch_optional(state.database()).await
+    } else {
+        sqlx::query_as::<_,Enrollment>("INSERT INTO training_enrollments(set_id,user_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM training_sets WHERE id=$1 AND visibility='PUBLIC') ON CONFLICT(set_id,user_id) WHERE user_id IS NOT NULL DO UPDATE SET status='ACTIVE',updated_at=now() RETURNING id,set_id,team_id,user_id,status,started_at,completed_at").bind(set_id).bind(context.user().id).fetch_optional(state.database()).await
+    }.map_err(|e| AppError::internal("enroll training set",e))?.ok_or_else(|| AppError::not_found("TRAINING_SET_NOT_FOUND","Training set not found"))?;
     Ok((axum::http::StatusCode::CREATED, Json(row)))
 }
 
@@ -329,6 +333,8 @@ pub async fn progress(
         return Err(AppError::validation("progress", "invalid status, problem, or score"));
     }
     let team_id = team_for_user(&state, context.user().id).await?;
-    let result=sqlx::query_as::<_,Enrollment>("WITH e AS (SELECT * FROM training_enrollments WHERE id=$1 AND team_id=$2), p AS (INSERT INTO training_progress(enrollment_id,problem_id,status,attempts,best_score,solved_at) SELECT $1,$3,$4,1,$5,CASE WHEN $4='SOLVED' THEN now() ELSE NULL END FROM e ON CONFLICT(enrollment_id,problem_id) DO UPDATE SET status=EXCLUDED.status,attempts=training_progress.attempts+1,best_score=GREATEST(training_progress.best_score,EXCLUDED.best_score),solved_at=coalesce(training_progress.solved_at,EXCLUDED.solved_at),updated_at=now() RETURNING enrollment_id) UPDATE training_enrollments SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN 'COMPLETED' ELSE 'ACTIVE' END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN coalesce(completed_at,now()) ELSE NULL END,updated_at=now() FROM e WHERE training_enrollments.id=e.id RETURNING training_enrollments.id,training_enrollments.set_id,training_enrollments.team_id,training_enrollments.status,training_enrollments.started_at,training_enrollments.completed_at").bind(enrollment_id).bind(team_id).bind(request.problem_id).bind(&request.status).bind(request.score).fetch_optional(state.database()).await.map_err(|e|AppError::internal("update training progress",e))?.ok_or_else(||AppError::not_found("ENROLLMENT_NOT_FOUND","Enrollment not found"))?;
+    let owner_id = team_id.unwrap_or(context.user().id);
+    let is_team = team_id.is_some();
+    let result=sqlx::query_as::<_,Enrollment>("WITH e AS (SELECT * FROM training_enrollments WHERE id=$1 AND (($3 AND team_id=$2) OR (NOT $3 AND user_id=$2))), p AS (INSERT INTO training_progress(enrollment_id,problem_id,status,attempts,best_score,solved_at) SELECT $1,$4,$5,1,$6,CASE WHEN $5='SOLVED' THEN now() ELSE NULL END FROM e ON CONFLICT(enrollment_id,problem_id) DO UPDATE SET status=EXCLUDED.status,attempts=training_progress.attempts+1,best_score=GREATEST(training_progress.best_score,EXCLUDED.best_score),solved_at=coalesce(training_progress.solved_at,EXCLUDED.solved_at),updated_at=now() RETURNING enrollment_id) UPDATE training_enrollments SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN 'COMPLETED' ELSE 'ACTIVE' END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN coalesce(training_enrollments.completed_at,now()) ELSE NULL END,updated_at=now() FROM e WHERE training_enrollments.id=e.id RETURNING training_enrollments.id,training_enrollments.set_id,training_enrollments.team_id,training_enrollments.user_id,training_enrollments.status,training_enrollments.started_at,training_enrollments.completed_at").bind(enrollment_id).bind(owner_id).bind(is_team).bind(request.problem_id).bind(&request.status).bind(request.score).fetch_optional(state.database()).await.map_err(|e|AppError::internal("update training progress",e))?.ok_or_else(||AppError::not_found("ENROLLMENT_NOT_FOUND","Enrollment not found"))?;
     Ok(Json(result))
 }

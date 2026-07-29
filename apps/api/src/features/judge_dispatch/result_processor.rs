@@ -35,6 +35,20 @@ pub struct JudgeResultProcessor {
     database: PgPool,
 }
 
+#[derive(sqlx::FromRow)]
+struct ResultContext {
+    submission_id: i64,
+    result_message_id: Option<Uuid>,
+    completed: bool,
+    superseded: bool,
+    submission_scope: String,
+    contest_id: Option<i64>,
+    team_id: Option<i64>,
+    problem_id: i64,
+    participant_user_id: Option<i64>,
+    training_enrollment_id: Option<i64>,
+}
+
 impl JudgeResultProcessor {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
@@ -47,15 +61,18 @@ impl JudgeResultProcessor {
     ) -> Result<ApplyResultOutcome, ApplyResultError> {
         result.validate().map_err(|error| ApplyResultError::Invalid(error.to_string()))?;
         let mut transaction = self.database.begin().await?;
-        let persisted = sqlx::query_as::<_, (i64, Option<Uuid>, bool, bool, i64, i64, i64)>(
+        let persisted = sqlx::query_as::<_, ResultContext>(
             r#"
             SELECT j.submission_id,
                    j.result_message_id,
-                   j.completed_at IS NOT NULL,
+                   j.completed_at IS NOT NULL AS completed,
                    j.superseded,
+                   s.submission_scope,
                    s.contest_id,
                    s.team_id,
-                   s.problem_id
+                   s.problem_id,
+                   s.participant_user_id,
+                   s.training_enrollment_id
             FROM judgements j
             JOIN submissions s ON s.id = j.submission_id
             WHERE j.id = $1
@@ -65,33 +82,24 @@ impl JudgeResultProcessor {
         .bind(result.judgement_id)
         .fetch_optional(&mut *transaction)
         .await?;
-        let Some((
-            submission_id,
-            result_message_id,
-            completed,
-            superseded,
-            contest_id,
-            team_id,
-            problem_id,
-        )) = persisted
-        else {
+        let Some(context) = persisted else {
             return Err(ApplyResultError::Conflict(format!(
                 "unknown judgement {}",
                 result.judgement_id
             )));
         };
-        if submission_id != result.submission_id {
+        if context.submission_id != result.submission_id {
             return Err(ApplyResultError::Conflict(format!(
-                "judgement belongs to submission {submission_id}, not {}",
-                result.submission_id
+                "judgement belongs to submission {}, not {}",
+                context.submission_id, result.submission_id
             )));
         }
-        if superseded {
+        if context.superseded {
             transaction.commit().await?;
             return Ok(ApplyResultOutcome::Superseded);
         }
-        if completed || result_message_id.is_some() {
-            if result_message_id == Some(result.message_id) {
+        if context.completed || context.result_message_id.is_some() {
+            if context.result_message_id == Some(result.message_id) {
                 transaction.commit().await?;
                 return Ok(ApplyResultOutcome::Duplicate);
             }
@@ -145,15 +153,33 @@ impl JudgeResultProcessor {
             .execute(&mut *transaction)
             .await?;
         }
-        let score_milli = scoring::score_judgement(
-            &mut transaction,
-            result.judgement_id,
-            contest_id,
-            problem_id,
-            result.verdict,
-            &result.runs,
-        )
-        .await?;
+        let score_milli = if context.submission_scope == "CONTEST" {
+            let contest_id = context.contest_id.ok_or_else(|| {
+                ApplyResultError::Conflict("contest submission has no contest".into())
+            })?;
+            scoring::score_judgement(
+                &mut transaction,
+                result.judgement_id,
+                contest_id,
+                context.problem_id,
+                result.verdict,
+                &result.runs,
+            )
+            .await?
+        } else if context.submission_scope == "PRACTICE" {
+            let score = if result.verdict.as_str() == "ACCEPTED" { 100_000 } else { 0 };
+            sqlx::query("UPDATE judgements SET score_milli=$2 WHERE id=$1")
+                .bind(result.judgement_id)
+                .bind(score)
+                .execute(&mut *transaction)
+                .await?;
+            score
+        } else {
+            return Err(ApplyResultError::Conflict(format!(
+                "unknown submission scope {}",
+                context.submission_scope
+            )));
+        };
         sqlx::query(
             r#"
             UPDATE submissions
@@ -161,44 +187,99 @@ impl JudgeResultProcessor {
             WHERE id = $1
             "#,
         )
-        .bind(submission_id)
+        .bind(context.submission_id)
         .bind(result.verdict.as_str())
         .bind(result.completed_at)
         .execute(&mut *transaction)
         .await?;
-        scoreboard::rebuild_cell(&mut transaction, contest_id, team_id, problem_id).await?;
-        balloons::generate_for_accepted(
-            &mut transaction,
-            submission_id,
-            contest_id,
-            team_id,
-            problem_id,
-            result.verdict.as_str() == "ACCEPTED",
-        )
-        .await?;
-        sqlx::query(
-            r#"
+        if context.submission_scope == "CONTEST" {
+            let contest_id = context.contest_id.ok_or_else(|| {
+                ApplyResultError::Conflict("contest submission has no contest".into())
+            })?;
+            let team_id = context.team_id.ok_or_else(|| {
+                ApplyResultError::Conflict("contest submission has no team".into())
+            })?;
+            scoreboard::rebuild_cell(&mut transaction, contest_id, team_id, context.problem_id)
+                .await?;
+            balloons::generate_for_accepted(
+                &mut transaction,
+                context.submission_id,
+                contest_id,
+                team_id,
+                context.problem_id,
+                result.verdict.as_str() == "ACCEPTED",
+            )
+            .await?;
+            sqlx::query(
+                r#"
             INSERT INTO realtime_outbox
                 (event_id, contest_id, event_type, scope, team_id, payload_json)
             VALUES ($1, $2, 'SUBMISSION_STATUS_CHANGED', 'TEAM', $3, $4)
             "#,
-        )
-        .bind(Uuid::new_v4())
-        .bind(contest_id)
-        .bind(team_id)
-        .bind(json!({
-            "submissionId": submission_id,
-            "judgementId": result.judgement_id,
-            "status": result.verdict.as_str(),
-            "totalTimeMs": result.total_time_ms,
-            "peakMemoryKb": result.peak_memory_kb
-            ,"scoreMilli": score_milli
-        }))
-        .execute(&mut *transaction)
-        .await?;
+            )
+            .bind(Uuid::new_v4())
+            .bind(contest_id)
+            .bind(team_id)
+            .bind(json!({
+                "submissionId": context.submission_id,
+                "judgementId": result.judgement_id,
+                "status": result.verdict.as_str(),
+                "totalTimeMs": result.total_time_ms,
+                "peakMemoryKb": result.peak_memory_kb
+                ,"scoreMilli": score_milli
+            }))
+            .execute(&mut *transaction)
+            .await?;
+        } else {
+            apply_practice_progress(
+                &mut transaction,
+                &context,
+                result.verdict.as_str() == "ACCEPTED",
+            )
+            .await?;
+        }
         transaction.commit().await?;
         Ok(ApplyResultOutcome::Applied)
     }
+}
+
+async fn apply_practice_progress(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    context: &ResultContext,
+    accepted: bool,
+) -> Result<(), sqlx::Error> {
+    let user_id = context
+        .participant_user_id
+        .ok_or_else(|| sqlx::Error::Protocol("practice submission has no participant".into()))?;
+    let score = if accepted { 100 } else { 0 };
+    sqlx::query(
+        "INSERT INTO practice_problem_progress(user_id,problem_id,attempts,best_score,solved,last_submission_id,solved_at) VALUES($1,$2,1,$3,$4,$5,CASE WHEN $4 THEN now() ELSE NULL END) ON CONFLICT(user_id,problem_id) DO UPDATE SET attempts=practice_problem_progress.attempts+1,best_score=GREATEST(practice_problem_progress.best_score,EXCLUDED.best_score),solved=practice_problem_progress.solved OR EXCLUDED.solved,last_submission_id=EXCLUDED.last_submission_id,solved_at=coalesce(practice_problem_progress.solved_at,EXCLUDED.solved_at),updated_at=now()",
+    )
+    .bind(user_id)
+    .bind(context.problem_id)
+    .bind(score)
+    .bind(accepted)
+    .bind(context.submission_id)
+    .execute(&mut **transaction)
+    .await?;
+    if let Some(enrollment_id) = context.training_enrollment_id {
+        sqlx::query(
+            "INSERT INTO training_progress(enrollment_id,problem_id,status,attempts,best_score,solved_at) VALUES($1,$2,$3,1,$4,CASE WHEN $3='SOLVED' THEN now() ELSE NULL END) ON CONFLICT(enrollment_id,problem_id) DO UPDATE SET status=CASE WHEN training_progress.status='SOLVED' OR EXCLUDED.status='SOLVED' THEN 'SOLVED' ELSE 'IN_PROGRESS' END,attempts=training_progress.attempts+1,best_score=GREATEST(training_progress.best_score,EXCLUDED.best_score),solved_at=coalesce(training_progress.solved_at,EXCLUDED.solved_at),updated_at=now()",
+        )
+        .bind(enrollment_id)
+        .bind(context.problem_id)
+        .bind(if accepted { "SOLVED" } else { "IN_PROGRESS" })
+        .bind(score)
+        .execute(&mut **transaction)
+        .await?;
+        sqlx::query(
+            "UPDATE training_enrollments e SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress p WHERE p.enrollment_id=e.id AND p.problem_id=i.problem_id AND p.status='SOLVED')) THEN 'COMPLETED' ELSE 'ACTIVE' END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress p WHERE p.enrollment_id=e.id AND p.problem_id=i.problem_id AND p.status='SOLVED')) THEN coalesce(e.completed_at,now()) ELSE NULL END,updated_at=now() WHERE e.id=$1",
+        )
+        .bind(enrollment_id)
+        .execute(&mut **transaction)
+        .await?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

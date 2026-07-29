@@ -16,6 +16,31 @@ pub struct SubmitMetadata {
     pub language: String,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PracticeSubmitMetadata {
+    pub problem_id: i64,
+    pub language: String,
+    #[serde(default)]
+    pub training_enrollment_id: Option<i64>,
+}
+
+impl PracticeSubmitMetadata {
+    pub fn validate(
+        self,
+        original_filename: &str,
+        source: bytes::Bytes,
+    ) -> Result<(ValidatedSubmission, Option<i64>), AppError> {
+        if self.training_enrollment_id.is_some_and(|id| id <= 0) {
+            return Err(AppError::validation("trainingEnrollmentId", "must be positive"));
+        }
+        let enrollment_id = self.training_enrollment_id;
+        let command = SubmitMetadata { problem_id: self.problem_id, language: self.language }
+            .validate(original_filename, source)?;
+        Ok((command, enrollment_id))
+    }
+}
+
 #[derive(Debug, ToSchema)]
 #[allow(dead_code)]
 #[schema(as = SubmissionUploadRequest)]
@@ -424,6 +449,42 @@ pub struct SubmissionSummary {
     pub total_time_ms: Option<i32>,
     pub peak_memory_kb: Option<i32>,
     pub score_milli: Option<i32>,
+}
+
+#[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct PracticeSubmissionSummary {
+    pub id: i64,
+    pub problem_id: i64,
+    pub problem_slug: String,
+    pub problem_title: String,
+    pub training_enrollment_id: Option<i64>,
+    pub language: String,
+    pub source_size_bytes: i32,
+    pub status: String,
+    #[serde(with = "time::serde::rfc3339")]
+    pub submitted_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub judged_at: Option<OffsetDateTime>,
+    pub active_judgement_id: Option<Uuid>,
+    pub verdict: Option<String>,
+    pub total_time_ms: Option<i32>,
+    pub peak_memory_kb: Option<i32>,
+    pub score: Option<i32>,
+}
+
+#[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct PracticeProblemStatus {
+    pub problem_id: i64,
+    pub attempts: i32,
+    pub best_score: i32,
+    pub solved: bool,
+    pub last_submission_id: Option<i64>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub solved_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub updated_at: OffsetDateTime,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

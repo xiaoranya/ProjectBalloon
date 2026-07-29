@@ -48,8 +48,9 @@
           class="form-alert"
         />
         <ElButton type="primary" size="large" native-type="submit" :loading="session.state.loading" class="wide-button">
-          登录比赛
+          登录
         </ElButton>
+        <RouterLink class="register-link" to="/register">注册个人练习账号</RouterLink>
       </ElForm>
     </ElCard>
   </main>
@@ -79,7 +80,7 @@ async function submit() {
   errorMessage.value = '';
   try {
     const user = await session.login(form.username.trim(), form.password);
-    if (user.userType !== 'TEAM') {
+    if (!['TEAM', 'INDIVIDUAL'].includes(user.userType)) {
       errorMessage.value = '该账号不是参赛队账号，请使用对应的管理入口';
       await session.logout();
       return;
@@ -88,7 +89,7 @@ async function submit() {
       await router.replace('/change-password');
       return;
     }
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/contests';
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : (user.userType === 'INDIVIDUAL' ? '/practice' : '/contests');
     await router.replace(redirect);
   } catch (error) {
     errorMessage.value = getErrorMessage(error);

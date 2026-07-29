@@ -130,7 +130,7 @@ impl SubmissionOutboxDispatcher {
         .fetch_optional(&mut *transaction)
         .await?;
         if let Some((submission_id, judgement_id)) = sent {
-            let context = sqlx::query_as::<_, (i64, i64)>(
+            let context = sqlx::query_as::<_, (Option<i64>, Option<i64>)>(
                 r#"
                 UPDATE submissions
                 SET status = 'JUDGING'
@@ -141,7 +141,7 @@ impl SubmissionOutboxDispatcher {
             .bind(submission_id)
             .fetch_optional(&mut *transaction)
             .await?;
-            if let Some((contest_id, team_id)) = context {
+            if let Some((Some(contest_id), Some(team_id))) = context {
                 sqlx::query(
                     r#"
                     INSERT INTO realtime_outbox

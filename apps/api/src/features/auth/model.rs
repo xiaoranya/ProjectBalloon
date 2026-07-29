@@ -12,6 +12,7 @@ pub enum UserType {
     ContestAdmin,
     Judge,
     Team,
+    Individual,
     Printer,
     BalloonStaff,
     ResolverOperator,
@@ -28,6 +29,7 @@ impl UserType {
             Self::ContestAdmin => "CONTEST_ADMIN",
             Self::Judge => "JUDGE",
             Self::Team => "TEAM",
+            Self::Individual => "INDIVIDUAL",
             Self::Printer => "PRINTER",
             Self::BalloonStaff => "BALLOON_STAFF",
             Self::ResolverOperator => "RESOLVER_OPERATOR",
@@ -39,7 +41,7 @@ impl UserType {
 
     #[must_use]
     pub const fn is_staff(self) -> bool {
-        !matches!(self, Self::Team)
+        !matches!(self, Self::Team | Self::Individual)
     }
 }
 
@@ -52,6 +54,7 @@ impl FromStr for UserType {
             "CONTEST_ADMIN" => Ok(Self::ContestAdmin),
             "JUDGE" => Ok(Self::Judge),
             "TEAM" => Ok(Self::Team),
+            "INDIVIDUAL" => Ok(Self::Individual),
             "PRINTER" => Ok(Self::Printer),
             "BALLOON_STAFF" => Ok(Self::BalloonStaff),
             "RESOLVER_OPERATOR" => Ok(Self::ResolverOperator),
@@ -109,6 +112,49 @@ pub struct LoginRequest {
     pub username: String,
     #[schema(min_length = 1, max_length = 128, write_only)]
     pub password: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RegisterRequest {
+    #[schema(min_length = 3, max_length = 64)]
+    pub username: String,
+    #[schema(min_length = 8, max_length = 128, write_only)]
+    pub password: String,
+    #[schema(min_length = 1, max_length = 128)]
+    pub display_name: String,
+}
+
+impl RegisterRequest {
+    pub fn validate(&self) -> Result<(), AppError> {
+        if self.username.trim().len() < 3
+            || self.username.trim().len() > 64
+            || !self
+                .username
+                .trim()
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
+        {
+            return Err(AppError::validation(
+                "username",
+                "must use 3-64 letters, digits, dots, hyphens, or underscores",
+            ));
+        }
+        let length = self.password.chars().count();
+        if !(8..=128).contains(&length) {
+            return Err(AppError::validation(
+                "password",
+                "must contain between 8 and 128 characters",
+            ));
+        }
+        if self.display_name.trim().is_empty() || self.display_name.trim().chars().count() > 128 {
+            return Err(AppError::validation(
+                "displayName",
+                "must be non-empty and at most 128 characters",
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl LoginRequest {

@@ -555,7 +555,7 @@ impl SubmissionService {
     }
 }
 
-fn language_multiplier(language: &str) -> f64 {
+pub(super) fn language_multiplier(language: &str) -> f64 {
     match language {
         "java" => 2.0,
         "python" => 3.0,
@@ -564,7 +564,7 @@ fn language_multiplier(language: &str) -> f64 {
     }
 }
 
-fn parse_judge_mode(value: &str) -> Result<JudgeMode, AppError> {
+pub(super) fn parse_judge_mode(value: &str) -> Result<JudgeMode, AppError> {
     match value {
         "STANDARD" => Ok(JudgeMode::Standard),
         "INTERACTIVE" => Ok(JudgeMode::Interactive),

@@ -8,7 +8,7 @@ use subtle::ConstantTimeEq;
 use crate::error::AppError;
 
 use super::{
-    model::{AuthUser, ChangePasswordRequest, LoginRequest, UserRow},
+    model::{AuthUser, ChangePasswordRequest, LoginRequest, RegisterRequest, UserRow},
     password,
 };
 
@@ -180,6 +180,30 @@ impl AuthService {
             .map_err(|error| AppError::internal("commit login transaction", error))?;
 
         Ok(LoginOutcome { user, session_token })
+    }
+
+    pub async fn register(
+        &self,
+        request: RegisterRequest,
+        request_ip: IpAddr,
+    ) -> Result<LoginOutcome, AppError> {
+        request.validate()?;
+        let username = request.username.trim().to_owned();
+        let display_name = request.display_name.trim().to_owned();
+        let password_hash = password::hash(request.password.clone())
+            .await
+            .map_err(|e| AppError::internal("hash registration password", e))?;
+        let inserted=sqlx::query("INSERT INTO users(username,password_hash,display_name,user_type) VALUES($1,$2,$3,'INDIVIDUAL')")
+            .bind(&username).bind(password_hash).bind(&display_name).execute(&self.database).await;
+        match inserted {
+            Ok(_) => {
+                self.login(LoginRequest { username, password: request.password }, request_ip).await
+            }
+            Err(sqlx::Error::Database(error)) if error.constraint().is_some() => {
+                Err(AppError::conflict("USERNAME_TAKEN", "Username is already registered"))
+            }
+            Err(error) => Err(AppError::internal("create individual account", error)),
+        }
     }
 
     pub async fn authenticate(

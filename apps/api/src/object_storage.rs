@@ -385,6 +385,11 @@ pub mod keys {
     pub fn submission_source(contest_id: i64, team_id: i64, extension: &str) -> String {
         format!("submissions/{contest_id}/{team_id}/{}{extension}", Uuid::new_v4())
     }
+
+    #[must_use]
+    pub fn practice_submission_source(user_id: i64, extension: &str) -> String {
+        format!("practice-submissions/{user_id}/{}{extension}", Uuid::new_v4())
+    }
 }
 
 #[cfg(test)]

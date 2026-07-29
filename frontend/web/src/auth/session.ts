@@ -46,6 +46,15 @@ async function login(username: string, password: string) {
   }
 }
 
+async function register(username: string, password: string, displayName: string) {
+  state.loading = true;
+  try {
+    state.user = await apiRequest<CurrentUser>('/api/auth/register', { method: 'POST', body: { username, password, displayName } });
+    state.initialized = true;
+    return state.user;
+  } finally { state.loading = false; }
+}
+
 async function logout() {
   try {
     await apiRequest<void>('/api/auth/logout', { method: 'POST' });
@@ -83,7 +92,8 @@ export function useSession() {
     state: readonly(state),
     isAuthenticated: computed(() => state.user !== null),
     isTeam: computed(() => state.user?.userType === 'TEAM'),
-    isStaff: computed(() => state.user !== null && state.user.userType !== 'TEAM'),
+    isStaff: computed(() => state.user !== null && !['TEAM', 'INDIVIDUAL'].includes(state.user.userType)),
+    isIndividual: computed(() => state.user?.userType === 'INDIVIDUAL'),
     isAdmin: computed(() => ['SUPER_ADMIN', 'CONTEST_ADMIN'].includes(state.user?.userType ?? '')),
     isSuperAdmin: computed(() => state.user?.userType === 'SUPER_ADMIN'),
     isContestAdmin: computed(() => state.user?.userType === 'CONTEST_ADMIN'),
@@ -96,6 +106,7 @@ export function useSession() {
     isLiveOperator: computed(() => hasPermission('LIVE_OPERATOR')),
     initialize,
     login,
+    register,
     changePassword,
     logout,
     clearSession,

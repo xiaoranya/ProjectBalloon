@@ -67,8 +67,16 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         .route("/metrics", get(metrics::prometheus))
         .route("/api/auth/csrf", get(auth::csrf))
         .route("/api/auth/login", post(auth::login))
+        .route("/api/auth/register", post(auth::register))
         .route("/api/auth/logout", post(auth::logout))
         .route("/api/auth/me", get(auth::current_user))
+        .route(
+            "/api/practice/submissions",
+            get(submissions::list_practice)
+                .post(submissions::submit_practice)
+                .layer(DefaultBodyLimit::max(70 * 1024)),
+        )
+        .route("/api/practice/progress", get(submissions::practice_progress))
         .route("/api/auth/password", post(auth::change_password))
         .route("/api/contests/{contest_id}/clarifications", post(clarifications::ask))
         .route("/api/contests/{contest_id}/clarifications/mine", get(clarifications::list_mine))

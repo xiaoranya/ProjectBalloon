@@ -1,7 +1,7 @@
 import type { RouteLocationRaw } from 'vue-router';
 import type { UserType } from '../api/types';
 
-export const staffHomeByUserType: Record<Exclude<UserType, 'TEAM'>, string> = {
+export const staffHomeByUserType: Record<Exclude<UserType, 'TEAM' | 'INDIVIDUAL'>, string> = {
   SUPER_ADMIN: '/admin',
   CONTEST_ADMIN: '/admin',
   JUDGE: '/judge',
@@ -15,5 +15,6 @@ export const staffHomeByUserType: Record<Exclude<UserType, 'TEAM'>, string> = {
 
 export function homeForUserType(userType: UserType | undefined): RouteLocationRaw {
   if (!userType || userType === 'TEAM') return '/contests';
+  if (userType === 'INDIVIDUAL') return '/practice';
   return staffHomeByUserType[userType];
 }
