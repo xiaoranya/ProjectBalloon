@@ -95,7 +95,7 @@ impl ObjectStorageCleanupRunner {
             } else {
                 &["submissions/", "prints/"]
             };
-            total += scan_orphaned_objects(
+            let report = scan_object_integrity(
                 &self.database,
                 &self.storage,
                 bucket,
@@ -104,6 +104,14 @@ impl ObjectStorageCleanupRunner {
                 ORPHAN_SCAN_GRACE,
             )
             .await?;
+            total += report.queued_orphans;
+            if report.missing_references > 0 {
+                warn!(
+                    bucket,
+                    missing_references = report.missing_references,
+                    "object-storage scan found missing referenced objects"
+                );
+            }
         }
         Ok(total)
     }
@@ -306,6 +314,29 @@ pub async fn scan_orphaned_objects(
     referenced_keys: &HashSet<String>,
     grace: Duration,
 ) -> Result<usize, sqlx::Error> {
+    scan_object_integrity(database, storage, bucket, prefixes, referenced_keys, grace)
+        .await
+        .map(|report| report.queued_orphans)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObjectStorageIntegrityReport {
+    pub queued_orphans: usize,
+    pub missing_references: usize,
+}
+
+/// Reconciles both directions of the database/object-storage relationship.
+/// Unreferenced owned objects are queued for deletion, while references whose
+/// objects are absent are retained as operational findings until a later scan
+/// observes recovery or removal of the database reference.
+pub async fn scan_object_integrity(
+    database: &PgPool,
+    storage: &ObjectStorageHandle,
+    bucket: &str,
+    prefixes: &[&str],
+    referenced_keys: &HashSet<String>,
+    grace: Duration,
+) -> Result<ObjectStorageIntegrityReport, sqlx::Error> {
     let mut token = None;
     let mut candidates = Vec::<ObjectStorageObject>::new();
     loop {
@@ -320,15 +351,64 @@ pub async fn scan_orphaned_objects(
             break;
         }
     }
-    let mut queued = 0;
-    for object in candidates {
-        if !is_orphan_candidate(&object, prefixes, referenced_keys, grace) {
+    let listed_keys: HashSet<&str> = candidates.iter().map(|object| object.key.as_str()).collect();
+    let missing = missing_object_keys(referenced_keys, &listed_keys);
+    reconcile_missing_references(database, bucket, &missing).await?;
+
+    let mut queued_orphans = 0;
+    for object in &candidates {
+        if !is_orphan_candidate(object, prefixes, referenced_keys, grace) {
             continue;
         }
         enqueue_cleanup(database, bucket, &object.key, "ORPHAN_SCAN").await?;
-        queued += 1;
+        queued_orphans += 1;
     }
-    Ok(queued)
+    Ok(ObjectStorageIntegrityReport { queued_orphans, missing_references: missing.len() })
+}
+
+fn missing_object_keys(
+    referenced_keys: &HashSet<String>,
+    listed_keys: &HashSet<&str>,
+) -> Vec<String> {
+    let mut missing: Vec<String> =
+        referenced_keys.iter().filter(|key| !listed_keys.contains(key.as_str())).cloned().collect();
+    missing.sort_unstable();
+    missing
+}
+
+async fn reconcile_missing_references(
+    database: &PgPool,
+    bucket: &str,
+    missing: &[String],
+) -> Result<(), sqlx::Error> {
+    let mut transaction = database.begin().await?;
+    sqlx::query(
+        r#"
+        INSERT INTO object_storage_integrity_findings (bucket, object_key)
+        SELECT $1, object_key
+        FROM unnest($2::text[]) AS object_key
+        ON CONFLICT (bucket, object_key) DO UPDATE
+        SET last_detected_at = now(), resolved_at = NULL
+        "#,
+    )
+    .bind(bucket)
+    .bind(missing)
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE object_storage_integrity_findings
+        SET resolved_at = now()
+        WHERE bucket = $1
+          AND resolved_at IS NULL
+          AND NOT (object_key = ANY($2::text[]))
+        "#,
+    )
+    .bind(bucket)
+    .bind(missing)
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await
 }
 
 fn is_orphan_candidate(
@@ -414,7 +494,7 @@ mod tests {
 
     use super::{
         ObjectStorageCleanupConfig, ObjectStorageCleanupRunner, enqueue_cleanup,
-        is_orphan_candidate, retry_delay,
+        is_orphan_candidate, missing_object_keys, reconcile_missing_references, retry_delay,
     };
     use crate::object_storage::{
         ObjectStorage, ObjectStorageError, ObjectStorageHandle, ObjectStorageObject,
@@ -445,6 +525,20 @@ mod tests {
             &HashSet::new(),
             Duration::from_secs(900),
         ));
+    }
+
+    #[test]
+    fn missing_reference_detection_is_complete_and_deterministic() {
+        let references = HashSet::from([
+            "problems/2/testdata.zip".to_owned(),
+            "problems/1/statement.pdf".to_owned(),
+        ]);
+        let listed = HashSet::from(["problems/2/testdata.zip", "operator/unmanaged"]);
+
+        assert_eq!(
+            missing_object_keys(&references, &listed),
+            vec!["problems/1/statement.pdf".to_owned()]
+        );
     }
 
     struct RecoveringStorage {
@@ -550,5 +644,38 @@ mod tests {
             *backend.deleted.lock().expect("deleted object lock"),
             vec![("test-bucket".to_owned(), "orphans/object.txt".to_owned())]
         );
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn missing_reference_findings_reopen_and_resolve(pool: PgPool) {
+        let key = "problems/1/missing.zip".to_owned();
+        reconcile_missing_references(&pool, "problem-bucket", std::slice::from_ref(&key))
+            .await
+            .expect("missing reference is recorded");
+        reconcile_missing_references(&pool, "problem-bucket", std::slice::from_ref(&key))
+            .await
+            .expect("repeated scan is idempotent");
+
+        let finding = sqlx::query_as::<_, (i64, bool)>(
+            "SELECT count(*), bool_and(resolved_at IS NULL) FROM object_storage_integrity_findings",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("finding can be loaded");
+        assert_eq!(finding, (1, true));
+
+        reconcile_missing_references(&pool, "problem-bucket", &[])
+            .await
+            .expect("restored reference resolves finding");
+        let resolved: bool = sqlx::query_scalar(
+            "SELECT resolved_at IS NOT NULL FROM object_storage_integrity_findings WHERE bucket = $1 AND object_key = $2",
+        )
+        .bind("problem-bucket")
+        .bind(key)
+        .fetch_one(&pool)
+        .await
+        .expect("resolved finding can be loaded");
+        assert!(resolved);
     }
 }

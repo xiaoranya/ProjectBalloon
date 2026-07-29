@@ -187,16 +187,15 @@ impl SubmissionOutboxDispatcher {
         .bind(delay_milliseconds)
         .fetch_optional(&mut *transaction)
         .await?;
-        if terminal {
-            if let Some(submission_id) = submission_id {
-                let context = sqlx::query_as::<_, (i64, i64)>(
+        if terminal && let Some(submission_id) = submission_id {
+            let context = sqlx::query_as::<_, (i64, i64)>(
                     "UPDATE submissions SET status='SYSTEM_ERROR', judged_at=now() WHERE id=$1 AND status='PENDING' RETURNING contest_id, team_id",
                 )
                 .bind(submission_id)
                 .fetch_optional(&mut *transaction)
                 .await?;
-                if let Some((contest_id, team_id)) = context {
-                    sqlx::query(
+            if let Some((contest_id, team_id)) = context {
+                sqlx::query(
                         "INSERT INTO realtime_outbox(event_id,contest_id,event_type,scope,team_id,payload_json) VALUES($1,$2,'SUBMISSION_STATUS_CHANGED','TEAM',$3,$4)",
                     )
                     .bind(Uuid::new_v4())
@@ -208,7 +207,6 @@ impl SubmissionOutboxDispatcher {
                     }))
                     .execute(&mut *transaction)
                     .await?;
-                }
             }
         }
         transaction.commit().await

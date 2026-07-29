@@ -75,6 +75,12 @@ export interface DependencyHealth {
   status: 'up' | 'down';
 }
 
+export interface ObjectCleanupHealth {
+  pending: number;
+  failed: number;
+  missingReferences: number;
+}
+
 export interface HealthResponse {
   status: 'up' | 'down';
   service: string;
@@ -82,6 +88,7 @@ export interface HealthResponse {
   realtimeOutbox?: RealtimeOutboxHealth;
   judgeDispatch?: JudgeDispatchHealth;
   objectStorage?: DependencyHealth;
+  objectCleanup?: ObjectCleanupHealth;
   cups?: DependencyHealth;
 }
 

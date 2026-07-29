@@ -47,6 +47,7 @@ struct RealtimeOutboxHealth {
 struct ObjectCleanupHealth {
     pending: i64,
     failed: i64,
+    missing_references: i64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -108,7 +109,7 @@ pub(crate) async fn liveness() -> Json<HealthResponse> {
 pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Json<HealthResponse>) {
     let probe = timeout(
         state.readiness_timeout(),
-        sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64)>(
+        sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64)>(
             r#"
             SELECT
                 (SELECT count(*) FROM realtime_outbox
@@ -127,7 +128,9 @@ pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Jso
                  WHERE last_seen_at >= now() - interval '15 seconds'),
                 (SELECT count(*) FROM object_storage_cleanup_tasks
                  WHERE status IN ('PENDING', 'PROCESSING')),
-                (SELECT count(*) FROM object_storage_cleanup_tasks WHERE status = 'FAILED')
+                (SELECT count(*) FROM object_storage_cleanup_tasks WHERE status = 'FAILED'),
+                (SELECT count(*) FROM object_storage_integrity_findings
+                 WHERE resolved_at IS NULL)
             "#,
         )
         .fetch_one(state.database()),
@@ -146,6 +149,7 @@ pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Jso
             worker_active_tasks,
             cleanup_pending,
             cleanup_failed,
+            missing_references,
         ))) => {
             let redis_connected = state.realtime().redis_status();
             let object_storage = match state.object_storage() {
@@ -227,7 +231,11 @@ pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Jso
                     status,
                     Some(RealtimeOutboxHealth { pending, failed, redis_connected }),
                     object_storage,
-                    Some(ObjectCleanupHealth { pending: cleanup_pending, failed: cleanup_failed }),
+                    Some(ObjectCleanupHealth {
+                        pending: cleanup_pending,
+                        failed: cleanup_failed,
+                        missing_references,
+                    }),
                     Some(JudgeDispatchHealth {
                         pending: judge_pending,
                         failed: judge_failed,

@@ -212,6 +212,18 @@ const healthComponents = computed<HealthCard[]>(() => {
     });
   }
   cards.push(dependencyCard('对象存储', health.value.objectStorage));
+  const cleanup = health.value.objectCleanup;
+  cards.push({
+    name: '对象存储一致性',
+    status: cleanup && (cleanup.failed > 0 || cleanup.missingReferences > 0) ? 'down' : cleanup ? 'up' : 'neutral',
+    details: cleanup
+      ? [
+          { label: '待清理', value: cleanup.pending },
+          { label: '清理失败', value: cleanup.failed },
+          { label: '缺失引用', value: cleanup.missingReferences },
+        ]
+      : [{ label: '状态', value: '数据库探测不可用' }],
+  });
   cards.push(dependencyCard('CUPS 打印', health.value.cups));
   return cards;
 });

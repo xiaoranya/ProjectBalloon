@@ -98,8 +98,9 @@ deletes are persisted for multi-instance-safe background retry. Attachment
 metadata deletion registers its cleanup task in the same database transaction,
 closing the commit-to-RustFS-delete crash window. Attachment HTTP downloads now
 use the S3 stream directly; test-data downloads still buffer while verifying the
-immutable SHA-256. Full bucket-to-database reconciliation remains follow-up
-hardening work. The Worker already performs bounded, policy-compatible
+immutable SHA-256. Bidirectional bucket-to-database reconciliation now persists
+missing-reference findings and exposes their unresolved count operationally.
+The Worker already performs bounded, policy-compatible
 extraction.
 
 Judge Task dispatch and Judge Result consumption are verified behind

@@ -51,6 +51,15 @@ Unknown prefixes are never touched, newly listed objects remain protected by
 a fifteen-minute grace period, and adapters without listing support keep the
 safe deletion-only behavior.
 
+The same scan also performs reverse reconciliation. Durable database references
+that are absent from a complete bucket listing are recorded in
+`object_storage_integrity_findings`; a later successful scan marks a finding
+resolved when the object is restored or its database reference is removed.
+Unresolved counts are exposed in readiness JSON, Prometheus, and the
+administrator health dashboard. Missing references are never repaired or
+deleted automatically because the database does not contain enough information
+to reconstruct their contents safely.
+
 ## Staff Accounts
 
 All endpoints require the `SUPER_ADMIN` role and a completed mandatory password

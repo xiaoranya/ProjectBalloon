@@ -29,6 +29,7 @@ describe('AdminView', () => {
         rabbitmq: { status: 'up', queuedTasks: 2, queuedResults: 1, deadTasks: 0 },
       },
       objectStorage: { status: 'up' },
+      objectCleanup: { pending: 2, failed: 1, missingReferences: 3 },
     });
     listAuditLogs.mockResolvedValue({
       content: [{
@@ -58,6 +59,9 @@ describe('AdminView', () => {
     expect(wrapper.text()).toContain('判题调度与 Worker');
     expect(wrapper.text()).toContain('RabbitMQ');
     expect(wrapper.text()).toContain('对象存储');
+    expect(wrapper.text()).toContain('对象存储一致性');
+    expect(wrapper.text()).toContain('缺失引用');
+    expect(wrapper.text()).toContain('3');
     expect(wrapper.text()).toContain('CUPS 打印');
     expect(wrapper.text()).toContain('未配置');
     expect(wrapper.text()).toContain('STAFF_ACCOUNT_UPDATED');

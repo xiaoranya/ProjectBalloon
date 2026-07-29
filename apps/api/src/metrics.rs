@@ -15,6 +15,7 @@ struct MetricsSnapshot {
     judge_failed: i64,
     cleanup_pending: i64,
     cleanup_failed: i64,
+    storage_missing_references: i64,
     exports_queued: i64,
     exports_processing: i64,
     exports_failed: i64,
@@ -40,6 +41,7 @@ pub(crate) async fn prometheus(State(state): State<AppState>) -> Result<Response
             (SELECT count(*) FROM submission_outbox WHERE status = 'FAILED') AS judge_failed,
             (SELECT count(*) FROM object_storage_cleanup_tasks WHERE status IN ('PENDING', 'PROCESSING')) AS cleanup_pending,
             (SELECT count(*) FROM object_storage_cleanup_tasks WHERE status = 'FAILED') AS cleanup_failed,
+            (SELECT count(*) FROM object_storage_integrity_findings WHERE resolved_at IS NULL) AS storage_missing_references,
             (SELECT count(*) FROM submission_export_tasks WHERE status = 'QUEUED') AS exports_queued,
             (SELECT count(*) FROM submission_export_tasks WHERE status = 'PROCESSING') AS exports_processing,
             (SELECT count(*) FROM submission_export_tasks WHERE status = 'FAILED') AS exports_failed,
@@ -92,6 +94,11 @@ fn render(value: &MetricsSnapshot) -> String {
             "project_balloon_object_cleanup_failed",
             "Object cleanup rows waiting for retry",
             value.cleanup_failed,
+        ),
+        (
+            "project_balloon_object_storage_missing_references",
+            "Database object references missing from object storage",
+            value.storage_missing_references,
         ),
         ("project_balloon_export_tasks_queued", "Submission exports queued", value.exports_queued),
         (
@@ -146,6 +153,7 @@ mod tests {
             judge_failed: 1,
             cleanup_pending: 4,
             cleanup_failed: 0,
+            storage_missing_references: 2,
             exports_queued: 5,
             exports_processing: 1,
             exports_failed: 0,
@@ -154,6 +162,7 @@ mod tests {
         });
         assert!(output.contains("# TYPE project_balloon_judge_worker_capacity gauge"));
         assert!(output.contains("project_balloon_judge_worker_capacity 30\n"));
+        assert!(output.contains("project_balloon_object_storage_missing_references 2\n"));
         assert!(output.ends_with('\n'));
     }
 }

@@ -244,10 +244,11 @@ impl DockerSandbox {
             self.kill_contestant_processes(container_id).await?;
             let (sanitized_logs, gnu_time) = extract_gnu_time_metrics(&run.logs);
             run.logs = sanitized_logs;
-            if gnu_time.is_none() && !run.timed_out && !run.oom_killed {
-                return Err(SandboxError::Api(
-                    "GNU time did not produce resource metrics for a completed run".to_owned(),
-                ));
+            if gnu_time.is_none() && !run.timed_out && !run.oom_killed && run.exit_code != 137 {
+                return Err(SandboxError::Api(format!(
+                    "GNU time did not produce resource metrics for a completed run (exit_code={}, stderr={:?})",
+                    run.exit_code, run.logs
+                )));
             }
             let charged_time_ms = gnu_time
                 .map(|metrics| metrics.cpu_time_ms)
@@ -267,7 +268,7 @@ impl DockerSandbox {
             .map_err(|error| SandboxError::Api(error.to_string()))??;
             let output_bytes = output.as_ref().map_or(0, |output| output.len() as u64);
             let output_limit_bytes = u64::try_from(task.output_limit_kb).unwrap_or(0) * 1024;
-            let verdict = if run.oom_killed {
+            let verdict = if run.oom_killed || (run.exit_code == 137 && !run.timed_out) {
                 JudgeVerdict::MemoryLimitExceeded
             } else if output_bytes > output_limit_bytes
                 || (run.exit_code != 0 && output_bytes >= output_limit_bytes)
@@ -275,9 +276,7 @@ impl DockerSandbox {
                 JudgeVerdict::OutputLimitExceeded
             } else if run.timed_out || charged_time_ms > effective_time_limit_ms {
                 JudgeVerdict::TimeLimitExceeded
-            } else if run.exit_code != 0 {
-                JudgeVerdict::RuntimeError
-            } else if output.is_none() {
+            } else if run.exit_code != 0 || output.is_none() {
                 JudgeVerdict::RuntimeError
             } else {
                 let expected = tokio::fs::read(data_dir.join(format!("{test_index}.out"))).await?;
@@ -491,6 +490,19 @@ impl DockerSandbox {
     }
 
     async fn kill_contestant_processes(&self, container_id: &str) -> Result<(), SandboxError> {
+        let state = self
+            .docker
+            .inspect_container(container_id, None::<InspectContainerOptions>)
+            .await
+            .map_err(|error| SandboxError::Api(error.to_string()))?
+            .state;
+        if state
+            .as_ref()
+            .and_then(|state| state.status.as_ref())
+            .is_none_or(|status| status.as_ref() != "running")
+        {
+            return Ok(());
+        }
         let exec = self
             .docker
             .create_exec(
@@ -510,10 +522,19 @@ impl DockerSandbox {
             .map_err(|error| SandboxError::Api(error.to_string()))?;
         // Linux excludes the calling process from kill(-1, ...); PID 1 runs as root,
         // so this removes only processes owned by the unprivileged contestant user.
-        self.docker
+        let started = self
+            .docker
             .start_exec(&exec.id, Some(StartExecOptions::default()))
             .await
             .map_err(|error| SandboxError::Api(error.to_string()))?;
+        let StartExecResults::Attached { mut output, .. } = started else {
+            return Err(SandboxError::Api(
+                "contestant process cleanup unexpectedly detached".to_owned(),
+            ));
+        };
+        while let Some(chunk) = output.next().await {
+            chunk.map_err(|error| SandboxError::Api(error.to_string()))?;
+        }
         Ok(())
     }
 }
