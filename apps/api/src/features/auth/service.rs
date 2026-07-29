@@ -83,7 +83,9 @@ impl AuthService {
             password::hash(password)
                 .await
                 .map_err(|error| AppError::internal("dummy password hashing failed", error))?;
-            self.record_failed_login(&username, &request_ip).await?;
+            if !self.record_failed_login(&username, &request_ip).await? {
+                return Err(rate_limited());
+            }
             return Err(invalid_credentials());
         };
 
@@ -91,7 +93,9 @@ impl AuthService {
             .await
             .map_err(|error| AppError::internal("password verification failed", error))?;
         if !password_matches || !row.enabled {
-            self.record_failed_login(&username, &request_ip).await?;
+            if !self.record_failed_login(&username, &request_ip).await? {
+                return Err(rate_limited());
+            }
             return Err(invalid_credentials());
         }
 
@@ -138,7 +142,9 @@ impl AuthService {
                 .rollback()
                 .await
                 .map_err(|error| AppError::internal("rollback stale login", error))?;
-            self.record_failed_login(&username, &request_ip).await?;
+            if !self.record_failed_login(&username, &request_ip).await? {
+                return Err(rate_limited());
+            }
             return Err(invalid_credentials());
         }
 
@@ -381,20 +387,39 @@ impl AuthService {
         .map_err(|error| AppError::internal("check login rate limit", error))
     }
 
-    async fn record_failed_login(&self, username: &str, request_ip: &str) -> Result<(), AppError> {
-        sqlx::query(
+    async fn record_failed_login(
+        &self,
+        username: &str,
+        request_ip: &str,
+    ) -> Result<bool, AppError> {
+        sqlx::query_scalar(
             r#"
+            WITH locked AS (
+                SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))
+            ), attempts AS (
+                SELECT count(*) AS count
+                FROM audit_logs, locked
+                WHERE action = 'auth.login'
+                  AND result = 'failed'
+                  AND target_id = $1
+                  AND request_ip = $2
+                  AND created_at > now() - interval '5 minutes'
+            ), inserted AS (
             INSERT INTO audit_logs
                 (actor_user_id, action, target_type, target_id, request_ip, result)
-            VALUES
-                (NULL, 'auth.login', 'user', $1, $2, 'failed')
+            SELECT NULL, 'auth.login', 'user', $1, $2, 'failed'
+            FROM attempts
+            WHERE count < $3
+            RETURNING id
+            )
+            SELECT EXISTS(SELECT 1 FROM inserted)
             "#,
         )
         .bind(username.to_lowercase())
         .bind(request_ip)
-        .execute(&self.database)
+        .bind(LOGIN_ATTEMPT_LIMIT)
+        .fetch_one(&self.database)
         .await
-        .map(|_| ())
         .map_err(|error| AppError::internal("record failed login", error))
     }
 
@@ -462,6 +487,10 @@ fn constant_time_equal(left: &str, right: &str) -> bool {
 
 fn invalid_credentials() -> AppError {
     AppError::unauthorized("INVALID_CREDENTIALS", "Invalid username or password")
+}
+
+fn rate_limited() -> AppError {
+    AppError::too_many_requests("RATE_LIMIT_EXCEEDED", "Too many login attempts; try again later")
 }
 
 fn not_authenticated() -> AppError {

@@ -242,10 +242,6 @@ impl Modify for SecuritySchemes {
             "broadcast_token_header",
             SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("X-Broadcast-Token"))),
         );
-        components.add_security_scheme(
-            "broadcast_token_query",
-            SecurityScheme::ApiKey(ApiKey::Query(ApiKeyValue::new("token"))),
-        );
     }
 }
 
@@ -508,7 +504,7 @@ mod tests {
                 .is_array()
         );
         assert!(document["paths"]["/api/public/presentations/{contest_id}"]["get"]["security"][1]["broadcast_token_header"].is_array());
-        assert!(document["components"]["securitySchemes"]["broadcast_token_query"].is_object());
+        assert!(document["components"]["securitySchemes"]["broadcast_token_query"].is_null());
         for (path, method) in [
             ("/api/admin/contests/{contest_id}/award-categories", "get"),
             ("/api/admin/contests/{contest_id}/award-categories", "post"),

@@ -26,7 +26,6 @@ use super::{ConfigResponse, audit, require_contest};
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PublishedQuery {
     mode: String,
-    token: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
@@ -163,6 +162,19 @@ async fn require_access(
         _ => return Err(AppError::validation("mode", "must be SCREEN or LIVE")),
     };
     require_contest(database, contest).await?;
+    let public = sqlx::query_scalar::<_, bool>(
+        "SELECT visibility = 'PUBLIC' FROM contests WHERE id=$1 AND deleted_at IS NULL",
+    )
+    .bind(contest)
+    .fetch_one(database)
+    .await
+    .map_err(|error| AppError::internal("check presentation visibility", error))?;
+    if !public {
+        return Err(AppError::not_found(
+            "PRESENTATION_NOT_PUBLISHED",
+            "Presentation is not published",
+        ));
+    }
     if mode == "LIVE" {
         let raw = token.filter(|value| !value.trim().is_empty()).ok_or_else(|| {
             AppError::unauthorized("BROADCAST_TOKEN_INVALID", "Broadcast token is invalid")
@@ -180,15 +192,14 @@ async fn require_access(
         .bind(contest).bind(mode).fetch_optional(database).await.map_err(|e| AppError::internal("load published presentation", e))?.ok_or_else(|| AppError::not_found("PRESENTATION_NOT_PUBLISHED", "Presentation is not published"))
 }
 
-fn supplied_token<'a>(headers: &'a HeaderMap, query: &'a PublishedQuery) -> Option<&'a str> {
+fn supplied_token(headers: &HeaderMap) -> Option<&str> {
     headers
         .get("x-broadcast-token")
         .and_then(|value| value.to_str().ok())
         .filter(|value| !value.trim().is_empty())
-        .or(query.token.as_deref())
 }
 
-#[utoipa::path(get, path = "/api/public/presentations/{contest_id}", operation_id = "getPublishedPresentation", tag = "live", params(("contest_id" = i64, Path), ("mode" = String, Query), ("token" = Option<String>, Query)), responses((status = 200, body = PublishedPresentation), (status = 401, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody)), security((), ("broadcast_token_header" = []), ("broadcast_token_query" = [])))]
+#[utoipa::path(get, path = "/api/public/presentations/{contest_id}", operation_id = "getPublishedPresentation", tag = "live", params(("contest_id" = i64, Path), ("mode" = String, Query)), responses((status = 200, body = PublishedPresentation), (status = 401, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody)), security((), ("broadcast_token_header" = [])))]
 pub async fn published(
     State(state): State<AppState>,
     Path(contest): Path<i64>,
@@ -196,8 +207,7 @@ pub async fn published(
     headers: HeaderMap,
 ) -> Result<Json<PublishedPresentation>, AppError> {
     let config =
-        require_access(state.database(), contest, &query.mode, supplied_token(&headers, &query))
-            .await?;
+        require_access(state.database(), contest, &query.mode, supplied_token(&headers)).await?;
     let row = sqlx::query_as::<
         _,
         (String, String, Option<OffsetDateTime>, Option<OffsetDateTime>, Option<OffsetDateTime>),
@@ -229,15 +239,14 @@ pub async fn published(
     }))
 }
 
-#[utoipa::path(get, path = "/api/public/presentations/{contest_id}/metrics", operation_id = "getPresentationMetrics", tag = "live", params(("contest_id" = i64, Path), ("mode" = String, Query), ("token" = Option<String>, Query)), responses((status = 200, body = PresentationMetrics), (status = 401, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody)), security((), ("broadcast_token_header" = []), ("broadcast_token_query" = [])))]
+#[utoipa::path(get, path = "/api/public/presentations/{contest_id}/metrics", operation_id = "getPresentationMetrics", tag = "live", params(("contest_id" = i64, Path), ("mode" = String, Query)), responses((status = 200, body = PresentationMetrics), (status = 401, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody)), security((), ("broadcast_token_header" = [])))]
 pub async fn metrics(
     State(state): State<AppState>,
     Path(contest): Path<i64>,
     Query(query): Query<PublishedQuery>,
     headers: HeaderMap,
 ) -> Result<Json<PresentationMetrics>, AppError> {
-    require_access(state.database(), contest, &query.mode, supplied_token(&headers, &query))
-        .await?;
+    require_access(state.database(), contest, &query.mode, supplied_token(&headers)).await?;
     Ok(Json(load_metrics(state.database(), contest).await?))
 }
 
@@ -365,11 +374,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn broadcast_header_takes_precedence_over_query_token() {
+    fn broadcast_token_is_accepted_only_from_a_header() {
         let mut headers = HeaderMap::new();
         headers.insert("x-broadcast-token", "header-token".parse().expect("header"));
-        let query = PublishedQuery { mode: "LIVE".into(), token: Some("query-token".into()) };
-        assert_eq!(supplied_token(&headers, &query), Some("header-token"));
+        assert_eq!(supplied_token(&headers), Some("header-token"));
     }
 
     #[sqlx::test(migrations = "../../migrations")]

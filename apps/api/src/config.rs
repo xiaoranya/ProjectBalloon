@@ -1,5 +1,6 @@
 use std::{env, net::SocketAddr, time::Duration};
 
+use ipnet::IpNet;
 use thiserror::Error;
 
 const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1:8080";
@@ -40,10 +41,12 @@ const DEFAULT_JUDGE_RESULT_PREFETCH: u16 = 32;
 const DEFAULT_JUDGE_RESULT_RECONNECT_MILLISECONDS: u64 = 1_000;
 const DEFAULT_CUPS_PRINTER: &str = "xcpc";
 const DEFAULT_CUPS_COMMAND_TIMEOUT_MILLISECONDS: u64 = 5_000;
+const DEFAULT_TRUSTED_PROXY_CIDRS: &str = "127.0.0.1/32,::1/128";
 
 #[derive(Clone)]
 pub struct AppConfig {
     pub bind_address: SocketAddr,
+    pub trusted_proxy_cidrs: Vec<IpNet>,
     pub database_url: String,
     pub database_max_connections: u32,
     pub database_acquire_timeout: Duration,
@@ -111,6 +114,10 @@ impl AppConfig {
             "PROJECT_BALLOON_API_BIND",
             lookup("PROJECT_BALLOON_API_BIND").unwrap_or_else(|| DEFAULT_BIND_ADDRESS.to_owned()),
             "expected a socket address such as 127.0.0.1:8080",
+        )?;
+        let trusted_proxy_cidrs = parse_proxy_cidrs(
+            lookup("PROJECT_BALLOON_TRUSTED_PROXY_CIDRS")
+                .unwrap_or_else(|| DEFAULT_TRUSTED_PROXY_CIDRS.to_owned()),
         )?;
         let database_url =
             lookup("DATABASE_URL").unwrap_or_else(|| DEFAULT_DATABASE_URL.to_owned());
@@ -435,6 +442,7 @@ impl AppConfig {
 
         Ok(Self {
             bind_address,
+            trusted_proxy_cidrs,
             database_url,
             database_max_connections,
             database_acquire_timeout: Duration::from_secs(acquire_timeout_seconds),
@@ -496,6 +504,24 @@ impl AppConfig {
             cups_command_timeout: Duration::from_millis(cups_command_timeout_milliseconds),
         })
     }
+}
+
+fn parse_proxy_cidrs(value: String) -> Result<Vec<IpNet>, ConfigError> {
+    let parsed: Result<Vec<_>, _> =
+        value.split(',').map(str::trim).filter(|item| !item.is_empty()).map(str::parse).collect();
+    let parsed = parsed.map_err(|_| ConfigError::Invalid {
+        name: "PROJECT_BALLOON_TRUSTED_PROXY_CIDRS",
+        value: value.clone(),
+        reason: "expected a comma-separated list of IP CIDRs",
+    })?;
+    if parsed.is_empty() {
+        return Err(ConfigError::Invalid {
+            name: "PROJECT_BALLOON_TRUSTED_PROXY_CIDRS",
+            value,
+            reason: "must contain at least one CIDR",
+        });
+    }
+    Ok(parsed)
 }
 
 fn parse<T>(name: &'static str, value: String, reason: &'static str) -> Result<T, ConfigError>

@@ -379,7 +379,14 @@ impl ResolverService {
 
     async fn public_state(&self, id: i64) -> Result<ResolverPublicStateResponse, AppError> {
         let run = load_run(&self.database, id).await?;
-        if !run.official || run.status == "READY" {
+        let visible = sqlx::query_scalar::<_, bool>(
+            "SELECT visibility = 'PUBLIC' FROM contests WHERE id=$1 AND deleted_at IS NULL",
+        )
+        .bind(run.contest_id)
+        .fetch_one(&self.database)
+        .await
+        .map_err(|error| AppError::internal("check Resolver contest visibility", error))?;
+        if !visible || !run.official || run.status == "READY" {
             return Err(resolver_not_found());
         }
         Ok(ResolverPublicStateResponse {

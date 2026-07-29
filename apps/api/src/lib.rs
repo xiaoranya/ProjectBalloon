@@ -13,7 +13,7 @@ pub mod state;
 use axum::{
     Router,
     body::Body,
-    extract::{ConnectInfo, DefaultBodyLimit},
+    extract::{ConnectInfo, DefaultBodyLimit, State},
     http::Request,
     middleware,
     routing::{delete, get, patch, post, put},
@@ -28,15 +28,17 @@ use crate::{
     health::{liveness, readiness},
     state::AppState,
 };
+use ipnet::IpNet;
 
 async fn apply_forwarded_client_ip(
+    State(trusted_proxy_cidrs): State<Vec<IpNet>>,
     mut request: Request<Body>,
     next: middleware::Next,
 ) -> axum::response::Response {
-    // The API is only reachable through the bundled reverse proxy in the
-    // deployment topology. Preserve the peer port while replacing the proxy
-    // address with the validated X-Real-IP address for audit/rate-limit data.
+    // Never accept a forwarding header from an arbitrary peer. Deployments must
+    // explicitly configure the CIDRs in which their reverse proxies run.
     if let Some(peer) = request.extensions().get::<ConnectInfo<std::net::SocketAddr>>().copied()
+        && trusted_proxy_cidrs.iter().any(|cidr| cidr.contains(&peer.0.ip()))
         && let Some(value) =
             request.headers().get("x-real-ip").and_then(|value| value.to_str().ok())
         && let Ok(ip) = value.parse::<std::net::IpAddr>()
@@ -48,7 +50,7 @@ async fn apply_forwarded_client_ip(
 
 pub const SERVICE_NAME: &str = "xcpc-platform";
 
-pub fn router(state: AppState) -> Router {
+pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
     Router::new()
         .merge(openapi::swagger_ui())
         .route("/livez", get(liveness))
@@ -334,6 +336,6 @@ pub fn router(state: AppState) -> Router {
         .route("/api/events/contests/{contest_id}", get(realtime::subscribe_staff))
         .route("/api/team/events/contests/{contest_id}", get(realtime::subscribe_team))
         .layer(middleware::from_fn_with_state(state.clone(), auth::protect_csrf))
-        .layer(middleware::from_fn(apply_forwarded_client_ip))
+        .layer(middleware::from_fn_with_state(trusted_proxy_cidrs, apply_forwarded_client_ip))
         .with_state(state)
 }

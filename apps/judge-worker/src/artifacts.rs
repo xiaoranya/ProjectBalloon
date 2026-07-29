@@ -5,7 +5,7 @@ use aws_sdk_s3::{
     Client,
     config::{Credentials, Region},
 };
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use project_balloon_contracts::JudgeTask;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -91,11 +91,21 @@ impl ArtifactSource for S3ArtifactSource {
         if !declared_size_is_allowed(response.content_length()) {
             return Err(ArtifactError::TooLarge(MAX_S3_RESPONSE_BYTES as u64));
         }
-        timeout(self.request_timeout, response.body.collect())
-            .await
-            .map_err(|_| ArtifactError::Timeout)?
-            .map(|body| body.into_bytes())
-            .map_err(|error| ArtifactError::Request(error.to_string()))
+        let mut stream = response.body;
+        let mut body = BytesMut::new();
+        loop {
+            let chunk = timeout(self.request_timeout, stream.next())
+                .await
+                .map_err(|_| ArtifactError::Timeout)?
+                .transpose()
+                .map_err(|error| ArtifactError::Request(error.to_string()))?;
+            let Some(chunk) = chunk else { break };
+            if body.len().saturating_add(chunk.len()) > MAX_S3_RESPONSE_BYTES as usize {
+                return Err(ArtifactError::TooLarge(MAX_S3_RESPONSE_BYTES as u64));
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(body.freeze())
     }
 }
 

@@ -326,15 +326,18 @@ mod tests {
             .acquire_timeout(Duration::from_millis(5))
             .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/unavailable")
             .expect("test database URL must parse");
-        router(AppState::new(
-            pool,
-            Duration::from_millis(10),
-            Duration::from_secs(60),
-            false,
-            b"test-csrf-secret-with-at-least-32-bytes",
-            16,
-            false,
-        ))
+        router(
+            AppState::new(
+                pool,
+                Duration::from_millis(10),
+                Duration::from_secs(60),
+                false,
+                b"test-csrf-secret-with-at-least-32-bytes",
+                16,
+                false,
+            ),
+            vec!["127.0.0.1/32".parse().expect("CIDR")],
+        )
     }
 
     async fn json_body(response: axum::response::Response) -> Value {

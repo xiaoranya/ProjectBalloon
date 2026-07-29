@@ -46,7 +46,7 @@ impl TaskFailure {
 
 #[async_trait]
 pub trait JudgeTaskHandler: Send + Sync {
-    async fn handle(&self, task: JudgeTask) -> Result<JudgeResult, TaskFailure>;
+    async fn handle(&self, task: JudgeTask, retry_count: u32) -> Result<JudgeResult, TaskFailure>;
 }
 
 pub struct RabbitJudgeWorker {
@@ -255,7 +255,7 @@ async fn process_delivery(
     }
 
     let activity_guard = activity.begin_task();
-    let handled = handler.handle(task.clone()).await;
+    let handled = handler.handle(task.clone(), retry_count(delivery)).await;
     drop(activity_guard);
     match handled {
         Ok(result) => {
@@ -301,6 +301,29 @@ async fn process_delivery(
             Ok(())
         }
     }
+}
+
+/// RabbitMQ records each dead-letter cycle in `x-death`.  Count those cycles
+/// before handing the task to the engine so permanent infrastructure failures
+/// eventually become a terminal result instead of leaving a submission judging.
+fn retry_count(delivery: &Delivery) -> u32 {
+    let Some(headers) = delivery.properties.headers().as_ref() else { return 0 };
+    let Some(AMQPValue::FieldArray(deaths)) = headers.inner().get("x-death") else {
+        return 0;
+    };
+    deaths
+        .as_slice()
+        .iter()
+        .filter_map(|entry| match entry {
+            AMQPValue::FieldTable(death) => death.inner().get("count"),
+            _ => None,
+        })
+        .filter_map(|count| match count {
+            AMQPValue::LongInt(value) => u32::try_from(*value).ok(),
+            AMQPValue::LongLongInt(value) => u32::try_from(*value).ok(),
+            _ => None,
+        })
+        .sum()
 }
 
 fn validate_handler_result(task: &JudgeTask, result: &JudgeResult) -> Result<(), String> {

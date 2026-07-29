@@ -204,6 +204,7 @@ pub async fn list_own(
     Path(contest_id): Path<i64>,
     query: Result<Query<SubmissionListQuery>, QueryRejection>,
 ) -> Result<Json<PageResponse<SubmissionSummary>>, AppError> {
+    context.require_password_ready()?;
     let Query(query) =
         query.map_err(|_| AppError::validation("query", "contains invalid submission filters"))?;
     Ok(Json(state.submissions().list_own(contest_id, context.user(), query.validate()?).await?))
@@ -284,6 +285,7 @@ pub async fn detail_own(
     State(state): State<AppState>,
     Path((contest_id, submission_id)): Path<(i64, i64)>,
 ) -> Result<Json<SubmissionDetail>, AppError> {
+    context.require_password_ready()?;
     let storage = required_storage(&state)?;
     Ok(Json(
         state.submissions().detail_own(contest_id, submission_id, context.user(), storage).await?,

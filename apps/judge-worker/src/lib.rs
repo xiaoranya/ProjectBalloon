@@ -107,6 +107,7 @@ impl WorkerConfig {
 
         validate_text("WORKER_ID", &worker_id)?;
         validate_text("JUDGE_TASK_QUEUE", &task_queue)?;
+        validate_sandbox_user(&sandbox_user)?;
         for (name, value) in [
             ("PROJECT_BALLOON_OBJECT_STORAGE_REGION", &object_storage_region),
             ("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY", &object_storage_access_key),
@@ -183,6 +184,17 @@ fn validate_text(name: &'static str, value: &str) -> Result<(), ConfigError> {
     if value.chars().any(char::is_control) {
         return Err(ConfigError::ControlCharacter { name });
     }
+    if name == "WORKER_ID" && value.len() > 64 {
+        return Err(ConfigError::Invalid { name, reason: "must contain at most 64 bytes" });
+    }
+    Ok(())
+}
+
+fn validate_sandbox_user(value: &str) -> Result<(), ConfigError> {
+    let uid = value.trim().split(':').next().unwrap_or_default();
+    if uid == "0" || uid.eq_ignore_ascii_case("root") {
+        return Err(ConfigError::Invalid { name: "XCPC_SANDBOX_USER", reason: "must not be root" });
+    }
     Ok(())
 }
 
@@ -214,5 +226,27 @@ mod tests {
             .expect_err("empty worker ID must fail");
 
         assert_eq!(error, ConfigError::Empty { name: "WORKER_ID" });
+    }
+
+    #[test]
+    fn configuration_rejects_worker_id_longer_than_protocol_limit() {
+        let values = HashMap::from([("WORKER_ID", "x".repeat(65))]);
+        let error =
+            WorkerConfig::from_lookup(|name| values.get(name).cloned()).expect_err("invalid");
+        assert_eq!(
+            error,
+            ConfigError::Invalid { name: "WORKER_ID", reason: "must contain at most 64 bytes" }
+        );
+    }
+
+    #[test]
+    fn configuration_rejects_root_sandbox_user() {
+        let values = HashMap::from([("XCPC_SANDBOX_USER", "0:0".to_owned())]);
+        let error =
+            WorkerConfig::from_lookup(|name| values.get(name).cloned()).expect_err("invalid");
+        assert_eq!(
+            error,
+            ConfigError::Invalid { name: "XCPC_SANDBOX_USER", reason: "must not be root" }
+        );
     }
 }

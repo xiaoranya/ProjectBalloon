@@ -169,22 +169,49 @@ impl SubmissionOutboxDispatcher {
         let delay = retry_delay(self.config.retry_base, attempts);
         let delay_milliseconds = i64::try_from(delay.as_millis()).unwrap_or(i64::MAX);
         let safe_message: String = message.chars().take(1_000).collect();
-        sqlx::query(
+        let terminal = attempts >= self.config.max_attempts;
+        let mut transaction = self.database.begin().await?;
+        let submission_id = sqlx::query_scalar::<_, i64>(
             r#"
             UPDATE submission_outbox
             SET status = 'FAILED', last_error = $3,
                 available_at = now() + $4 * interval '1 millisecond',
                 lease_owner = NULL, lease_until = NULL, version = version + 1
             WHERE id = $1 AND status = 'PUBLISHING' AND lease_owner = $2
+            RETURNING submission_id
             "#,
         )
         .bind(id)
         .bind(self.instance_id)
         .bind(safe_message)
         .bind(delay_milliseconds)
-        .execute(&self.database)
-        .await
-        .map(|_| ())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if terminal {
+            if let Some(submission_id) = submission_id {
+                let context = sqlx::query_as::<_, (i64, i64)>(
+                    "UPDATE submissions SET status='SYSTEM_ERROR', judged_at=now() WHERE id=$1 AND status='PENDING' RETURNING contest_id, team_id",
+                )
+                .bind(submission_id)
+                .fetch_optional(&mut *transaction)
+                .await?;
+                if let Some((contest_id, team_id)) = context {
+                    sqlx::query(
+                        "INSERT INTO realtime_outbox(event_id,contest_id,event_type,scope,team_id,payload_json) VALUES($1,$2,'SUBMISSION_STATUS_CHANGED','TEAM',$3,$4)",
+                    )
+                    .bind(Uuid::new_v4())
+                    .bind(contest_id)
+                    .bind(team_id)
+                    .bind(serde_json::json!({
+                        "submissionId": submission_id,
+                        "status": "SYSTEM_ERROR"
+                    }))
+                    .execute(&mut *transaction)
+                    .await?;
+                }
+            }
+        }
+        transaction.commit().await
     }
 }
 

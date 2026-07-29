@@ -262,7 +262,8 @@ async fn main() -> Result<()> {
     info!(address = %config.bind_address, "API listening");
     let server_result = axum::serve(
         listener,
-        router(state).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        router(state, config.trusted_proxy_cidrs.clone())
+            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown_signal())
     .await;

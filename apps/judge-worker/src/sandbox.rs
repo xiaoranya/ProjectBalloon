@@ -22,6 +22,11 @@ use project_balloon_contracts::{JudgeRunResult, JudgeTask, JudgeVerdict};
 use thiserror::Error;
 use tokio::time::{Instant, timeout};
 
+const MAX_EXEC_LOG_BYTES: usize = 64 * 1024;
+const MAX_TESTDATA_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_TESTDATA_FILES: usize = 10_000;
+const MAX_TESTDATA_EXTRACTED_BYTES: u64 = 512 * 1024 * 1024;
+
 #[derive(Debug, Error)]
 pub enum SandboxError {
     #[error("sandbox API failed: {0}")]
@@ -185,6 +190,7 @@ impl DockerSandbox {
         let compile = self
             .run_exec(container_id, language.compile_command(), Duration::from_secs(30))
             .await?;
+        self.kill_contestant_processes(container_id).await?;
         let compile_log = truncate_log(&compile.logs, 64 * 1024);
         if compile.timed_out || compile.exit_code != 0 {
             return Ok(SandboxJudgement {
@@ -235,9 +241,10 @@ impl DockerSandbox {
                 ),
             ];
             let mut run = self.run_exec(container_id, command, wall_limit).await?;
+            self.kill_contestant_processes(container_id).await?;
             let (sanitized_logs, gnu_time) = extract_gnu_time_metrics(&run.logs);
             run.logs = sanitized_logs;
-            if gnu_time.is_none() && !run.timed_out && !run.oom_killed && run.exit_code != 137 {
+            if gnu_time.is_none() && !run.timed_out && !run.oom_killed {
                 return Err(SandboxError::Api(
                     "GNU time did not produce resource metrics for a completed run".to_owned(),
                 ));
@@ -249,10 +256,18 @@ impl DockerSandbox {
             let peak_memory_kb =
                 gnu_time.map_or(run.peak_memory_kb, |metrics| metrics.peak_memory_kb);
             total_time_ms = total_time_ms.saturating_add(charged_time_ms);
-            let output_bytes =
-                tokio::fs::metadata(&actual_path).await.map_or(0, |value| value.len());
+            // Keep the opened descriptor for the later comparison. A path check followed
+            // by a separate read is racy: a surviving child can replace the path after the
+            // check. O_NOFOLLOW also prevents a host-side symlink escape.
+            let output = tokio::task::spawn_blocking({
+                let actual_path = actual_path.clone();
+                move || read_regular_output_no_follow(&actual_path)
+            })
+            .await
+            .map_err(|error| SandboxError::Api(error.to_string()))??;
+            let output_bytes = output.as_ref().map_or(0, |output| output.len() as u64);
             let output_limit_bytes = u64::try_from(task.output_limit_kb).unwrap_or(0) * 1024;
-            let verdict = if run.oom_killed || (run.exit_code == 137 && !run.timed_out) {
+            let verdict = if run.oom_killed {
                 JudgeVerdict::MemoryLimitExceeded
             } else if output_bytes > output_limit_bytes
                 || (run.exit_code != 0 && output_bytes >= output_limit_bytes)
@@ -262,10 +277,11 @@ impl DockerSandbox {
                 JudgeVerdict::TimeLimitExceeded
             } else if run.exit_code != 0 {
                 JudgeVerdict::RuntimeError
+            } else if output.is_none() {
+                JudgeVerdict::RuntimeError
             } else {
-                let actual = tokio::fs::read(actual_path).await?;
                 let expected = tokio::fs::read(data_dir.join(format!("{test_index}.out"))).await?;
-                if standard_output_matches(&expected, &actual) {
+                if standard_output_matches(&expected, output.as_deref().unwrap_or_default()) {
                     JudgeVerdict::Accepted
                 } else {
                     JudgeVerdict::WrongAnswer
@@ -331,7 +347,10 @@ impl DockerSandbox {
         };
         let body = ContainerCreateBody {
             image: Some(image.to_owned()),
-            user: Some(self.user.clone()),
+            // Keep PID 1 outside the contestant UID. This lets the cleanup exec kill
+            // all descendant/background contestant processes without stopping the
+            // reusable container itself.
+            user: Some("0:0".to_owned()),
             cmd: Some(vec!["sleep".to_owned(), "infinity".to_owned()]),
             entrypoint: Some(vec![String::new()]),
             working_dir: Some("/work".to_owned()),
@@ -407,7 +426,19 @@ impl DockerSandbox {
         let output_result = loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             match timeout(remaining, output.next()).await {
-                Ok(Some(Ok(chunk))) => logs.push_str(&chunk.to_string()),
+                Ok(Some(Ok(chunk))) => {
+                    // Docker multiplexes stdout/stderr here.  Retaining an unlimited
+                    // diagnostic stream lets a contestant exhaust worker memory.
+                    if logs.len() < MAX_EXEC_LOG_BYTES {
+                        let chunk = chunk.to_string();
+                        let remaining = MAX_EXEC_LOG_BYTES - logs.len();
+                        let mut end = chunk.len().min(remaining);
+                        while end > 0 && !chunk.is_char_boundary(end) {
+                            end -= 1;
+                        }
+                        logs.push_str(&chunk[..end]);
+                    }
+                }
                 Ok(Some(Err(error))) => break Err(SandboxError::Api(error.to_string())),
                 Ok(None) => break Ok(false),
                 Err(_) => {
@@ -458,6 +489,51 @@ impl DockerSandbox {
             logs,
         })
     }
+
+    async fn kill_contestant_processes(&self, container_id: &str) -> Result<(), SandboxError> {
+        let exec = self
+            .docker
+            .create_exec(
+                container_id,
+                ExecConfig {
+                    cmd: Some(vec![
+                        "/bin/sh".to_owned(),
+                        "-c".to_owned(),
+                        "kill -KILL -1".to_owned(),
+                    ]),
+                    user: Some(self.user.clone()),
+                    working_dir: Some("/work".to_owned()),
+                    ..ExecConfig::default()
+                },
+            )
+            .await
+            .map_err(|error| SandboxError::Api(error.to_string()))?;
+        // Linux excludes the calling process from kill(-1, ...); PID 1 runs as root,
+        // so this removes only processes owned by the unprivileged contestant user.
+        self.docker
+            .start_exec(&exec.id, Some(StartExecOptions::default()))
+            .await
+            .map_err(|error| SandboxError::Api(error.to_string()))?;
+        Ok(())
+    }
+}
+
+fn read_regular_output_no_follow(path: &Path) -> Result<Option<Vec<u8>>, std::io::Error> {
+    use std::{fs::OpenOptions, io::Read, os::unix::fs::OpenOptionsExt};
+
+    let mut file = match OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW).open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        // Linux returns ELOOP for O_NOFOLLOW on a symbolic link. Treat it as invalid output.
+        Err(error) if error.raw_os_error() == Some(libc::ELOOP) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if !file.metadata()?.file_type().is_file() {
+        return Ok(None);
+    }
+    let mut contents = Vec::new();
+    file.read_to_end(&mut contents)?;
+    Ok(Some(contents))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -637,10 +713,19 @@ fn extract_cases_blocking(archive: &Path, destination: &Path) -> Result<usize, S
 
     type CasePair = (Option<Vec<u8>>, Option<Vec<u8>>);
 
+    if std::fs::metadata(archive)?.len() > MAX_TESTDATA_ARCHIVE_BYTES {
+        return Err(SandboxError::InvalidTestdata("test-data archive is too large".to_owned()));
+    }
     let file = std::fs::File::open(archive)?;
     let mut zip = zip::ZipArchive::new(file)
         .map_err(|error| SandboxError::InvalidTestdata(error.to_string()))?;
+    if zip.len() > MAX_TESTDATA_FILES {
+        return Err(SandboxError::InvalidTestdata(
+            "test-data archive has too many files".to_owned(),
+        ));
+    }
     let mut cases: HashMap<String, CasePair> = HashMap::new();
+    let mut extracted_bytes = 0_u64;
     for index in 0..zip.len() {
         let mut entry = zip
             .by_index(index)
@@ -659,6 +744,12 @@ fn extract_cases_blocking(archive: &Path, destination: &Path) -> Result<usize, S
         let extension = enclosed.extension().and_then(std::ffi::OsStr::to_str);
         if !matches!(extension, Some("in" | "out")) {
             continue;
+        }
+        extracted_bytes = extracted_bytes.saturating_add(entry.size());
+        if extracted_bytes > MAX_TESTDATA_EXTRACTED_BYTES {
+            return Err(SandboxError::InvalidTestdata(
+                "test-data archive expands beyond the limit".to_owned(),
+            ));
         }
         let stem = enclosed
             .file_stem()

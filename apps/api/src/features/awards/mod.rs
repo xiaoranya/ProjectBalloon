@@ -751,7 +751,7 @@ impl AwardService {
 
     async fn presentation(&self, contest: i64) -> Result<PresentationResponse, AppError> {
         let (contest_name, contest_status) = sqlx::query_as::<_, (String, String)>(
-            "SELECT name,status FROM contests WHERE id=$1 AND deleted_at IS NULL",
+            "SELECT name,status FROM contests WHERE id=$1 AND deleted_at IS NULL AND visibility='PUBLIC'",
         )
         .bind(contest)
         .fetch_optional(&self.database)
