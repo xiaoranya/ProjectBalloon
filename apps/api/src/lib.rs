@@ -23,7 +23,7 @@ use crate::{
     features::{
         announcements, audit_logs, auth, awards, balloons, clarifications, contest_admin_scopes,
         contest_problems, contests, presentation, printing, problems, realtime, resolver,
-        scoreboard, scoring, staff_accounts, submissions, teams, training,
+        scoreboard, scoring, staff_accounts, submissions, teams, training, virtual_practice,
     },
     health::{liveness, readiness},
     state::AppState,
@@ -60,6 +60,10 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         .route("/api/admin/problems/{problem_id}/publication", put(training::update_publication))
         .route("/api/admin/training/sets", post(training::create_set))
         .route("/api/admin/training/sets/{set_id}", put(training::update_set))
+        .route(
+            "/api/admin/practice/settings",
+            get(training::get_practice_settings).put(training::update_practice_settings),
+        )
         .route("/api/training/sets", get(training::list_sets))
         .route("/api/training/sets/{set_id}", get(training::get_set))
         .route("/api/training/sets/{set_id}/enroll", post(training::enroll))
@@ -76,7 +80,20 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
                 .post(submissions::submit_practice)
                 .layer(DefaultBodyLimit::max(70 * 1024)),
         )
+        .route("/api/practice/submissions/{submission_id}", get(submissions::practice_detail))
         .route("/api/practice/progress", get(submissions::practice_progress))
+        .route("/api/practice/favorites", get(training::list_favorites))
+        .route("/api/practice/problems/{problem_id}/favorite", put(training::set_favorite))
+        .route("/api/practice/problems/{problem_id}/editorial", get(training::get_editorial))
+        .route(
+            "/api/practice/virtual-sessions",
+            get(virtual_practice::list).post(virtual_practice::create),
+        )
+        .route("/api/practice/virtual-sessions/{session_id}", get(virtual_practice::get))
+        .route(
+            "/api/admin/problems/{problem_id}/editorials/{lang_code}",
+            put(training::upsert_editorial),
+        )
         .route("/api/auth/password", post(auth::change_password))
         .route("/api/contests/{contest_id}/clarifications", post(clarifications::ask))
         .route("/api/contests/{contest_id}/clarifications/mine", get(clarifications::list_mine))

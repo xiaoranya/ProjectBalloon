@@ -61,6 +61,26 @@ export interface PracticeSubmission {
   peakMemoryKb: number | null;
   score: number | null;
 }
+export interface PracticeJudgement {
+  id: string;
+  verdict: string | null;
+  totalTimeMs: number | null;
+  peakMemoryKb: number | null;
+  compileLog: string | null;
+  workerId: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  version: number;
+  superseded: boolean;
+  active: boolean;
+  scoreMilli: number | null;
+}
+export interface PracticeSubmissionDetail extends PracticeSubmission {
+  source: string;
+  sourceSha256: string | null;
+  judgements: PracticeJudgement[];
+}
 
 export interface PracticeProgress {
   problemId: number;
@@ -71,6 +91,10 @@ export interface PracticeProgress {
   solvedAt: string | null;
   updatedAt: string;
 }
+export interface Editorial { problemId: number; langCode: string; title: string; bodyHtml: string; unlockPolicy: string; unlocked: boolean; updatedAt: string; }
+export interface VirtualSession { id:number;title:string;startAt:string;endAt:string;serverTime:string;status:'SCHEDULED'|'RUNNING'|'ENDED';totalProblems:number;solvedProblems:number; }
+export interface VirtualProblem { problemId:number;slug:string;title:string;position:number;solved:boolean;attempts:number; }
+export interface VirtualSessionDetail { session:VirtualSession;problems:VirtualProblem[]; }
 
 export const trainingApi = {
   problemBank(page = 0, size = 50, tag?: string, difficulty?: number) {
@@ -91,9 +115,9 @@ export const trainingApi = {
   enroll(id: number) {
     return apiRequest<TrainingEnrollment>(`/api/training/sets/${id}/enroll`, { method: 'POST' });
   },
-  submit(problemId: number, language: string, source: string, trainingEnrollmentId?: number) {
+  submit(problemId: number, language: string, source: string, trainingEnrollmentId?: number, virtualSessionId?: number) {
     const body = new FormData();
-    body.append('metadata', JSON.stringify({ problemId, language, ...(trainingEnrollmentId ? { trainingEnrollmentId } : {}) }));
+    body.append('metadata', JSON.stringify({ problemId, language, ...(trainingEnrollmentId ? { trainingEnrollmentId } : {}), ...(virtualSessionId ? { virtualSessionId } : {}) }));
     const extension = language === 'cpp' ? 'cpp' : language === 'java' ? 'java' : language === 'python' ? 'py' : language === 'output' ? 'zip' : 'c';
     body.append('source', new File([source], `Main.${extension}`, { type: language === 'output' ? 'application/zip' : 'text/plain' }));
     return apiRequest<{ submissionId: number; judgementId: string; status: string; submittedAt: string }>('/api/practice/submissions', { method: 'POST', body });
@@ -101,7 +125,16 @@ export const trainingApi = {
   submissions() {
     return apiRequest<PageResponse<PracticeSubmission>>('/api/practice/submissions?page=0&size=100');
   },
+  submission(id: number) {
+    return apiRequest<PracticeSubmissionDetail>(`/api/practice/submissions/${id}`);
+  },
   progress() {
     return apiRequest<PracticeProgress[]>('/api/practice/progress');
   },
+  favorites() { return apiRequest<BankProblem[]>('/api/practice/favorites'); },
+  favorite(problemId: number, favorite: boolean) { return apiRequest<{ problemId: number; favorite: boolean }>(`/api/practice/problems/${problemId}/favorite`, { method: 'PUT', body: { favorite } }); },
+  editorial(problemId: number, lang = 'en') { return apiRequest<Editorial>(`/api/practice/problems/${problemId}/editorial?lang=${encodeURIComponent(lang)}`); },
+  virtualSessions() { return apiRequest<VirtualSession[]>('/api/practice/virtual-sessions'); },
+  virtualSession(id:number) { return apiRequest<VirtualSessionDetail>(`/api/practice/virtual-sessions/${id}`); },
+  createVirtualSession(payload:{title:string;durationMinutes:number;problemIds:number[]}) { return apiRequest<VirtualSession>('/api/practice/virtual-sessions',{method:'POST',body:payload}); },
 };

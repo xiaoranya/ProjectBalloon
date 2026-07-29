@@ -106,6 +106,57 @@ pub struct ProgressRequest {
     pub score: i32,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FavoriteRequest {
+    pub favorite: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FavoriteResponse {
+    problem_id: i64,
+    favorite: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditorialRequest {
+    pub title: String,
+    pub body: String,
+    pub unlock_policy: String,
+    pub published: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorialResponse {
+    problem_id: i64,
+    lang_code: String,
+    title: String,
+    body_html: String,
+    unlock_policy: String,
+    unlocked: bool,
+    updated_at: time::OffsetDateTime,
+}
+
+#[derive(Debug, Serialize, ToSchema, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct PracticeSettingsResponse {
+    daily_submission_limit: i32,
+    concurrent_judging_limit: i32,
+    source_retention_days: i32,
+    updated_at: time::OffsetDateTime,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PracticeSettingsRequest {
+    daily_submission_limit: i32,
+    concurrent_judging_limit: i32,
+    source_retention_days: i32,
+}
+
 #[derive(Debug, Serialize, ToSchema, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct Enrollment {
@@ -337,4 +388,161 @@ pub async fn progress(
     let is_team = team_id.is_some();
     let result=sqlx::query_as::<_,Enrollment>("WITH e AS (SELECT * FROM training_enrollments WHERE id=$1 AND (($3 AND team_id=$2) OR (NOT $3 AND user_id=$2))), p AS (INSERT INTO training_progress(enrollment_id,problem_id,status,attempts,best_score,solved_at) SELECT $1,$4,$5,1,$6,CASE WHEN $5='SOLVED' THEN now() ELSE NULL END FROM e ON CONFLICT(enrollment_id,problem_id) DO UPDATE SET status=EXCLUDED.status,attempts=training_progress.attempts+1,best_score=GREATEST(training_progress.best_score,EXCLUDED.best_score),solved_at=coalesce(training_progress.solved_at,EXCLUDED.solved_at),updated_at=now() RETURNING enrollment_id) UPDATE training_enrollments SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN 'COMPLETED' ELSE 'ACTIVE' END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN coalesce(training_enrollments.completed_at,now()) ELSE NULL END,updated_at=now() FROM e WHERE training_enrollments.id=e.id RETURNING training_enrollments.id,training_enrollments.set_id,training_enrollments.team_id,training_enrollments.user_id,training_enrollments.status,training_enrollments.started_at,training_enrollments.completed_at").bind(enrollment_id).bind(owner_id).bind(is_team).bind(request.problem_id).bind(&request.status).bind(request.score).fetch_optional(state.database()).await.map_err(|e|AppError::internal("update training progress",e))?.ok_or_else(||AppError::not_found("ENROLLMENT_NOT_FOUND","Enrollment not found"))?;
     Ok(Json(result))
+}
+
+#[utoipa::path(get, path = "/api/practice/favorites", operation_id = "listPracticeFavorites", tag = "practice", responses((status = 200, body = [BankProblem])), security(("session_cookie" = [])))]
+pub async fn list_favorites(
+    context: AuthContext,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<BankProblem>>, AppError> {
+    let rows=sqlx::query_as::<_,BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM practice_problem_favorites f JOIN problems p ON p.id=f.problem_id JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE f.user_id=$1 ORDER BY f.created_at DESC").bind(context.user().id).fetch_all(state.database()).await.map_err(|e|AppError::internal("list practice favorites",e))?;
+    Ok(Json(rows))
+}
+
+#[utoipa::path(put, path = "/api/practice/problems/{problem_id}/favorite", operation_id = "setPracticeFavorite", tag = "practice", params(("problem_id" = i64, Path)), request_body = FavoriteRequest, responses((status = 200, body = FavoriteResponse)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
+pub async fn set_favorite(
+    context: AuthContext,
+    State(state): State<AppState>,
+    Path(problem_id): Path<i64>,
+    payload: Result<Json<FavoriteRequest>, JsonRejection>,
+) -> Result<Json<FavoriteResponse>, AppError> {
+    let Json(request) =
+        payload.map_err(|_| AppError::validation("request", "invalid favorite state"))?;
+    if request.favorite {
+        let changed=sqlx::query("INSERT INTO practice_problem_favorites(user_id,problem_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM problem_bank_entries WHERE problem_id=$2 AND visibility='PUBLIC') ON CONFLICT DO NOTHING").bind(context.user().id).bind(problem_id).execute(state.database()).await.map_err(|e|AppError::internal("favorite problem",e))?.rows_affected();
+        if changed == 0 {
+            let public=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM problem_bank_entries WHERE problem_id=$1 AND visibility='PUBLIC')").bind(problem_id).fetch_one(state.database()).await.map_err(|e|AppError::internal("check favorite problem",e))?;
+            if !public {
+                return Err(AppError::not_found("PROBLEM_NOT_FOUND", "Public problem not found"));
+            }
+        }
+    } else {
+        sqlx::query("DELETE FROM practice_problem_favorites WHERE user_id=$1 AND problem_id=$2")
+            .bind(context.user().id)
+            .bind(problem_id)
+            .execute(state.database())
+            .await
+            .map_err(|e| AppError::internal("unfavorite problem", e))?;
+    }
+    Ok(Json(FavoriteResponse { problem_id, favorite: request.favorite }))
+}
+
+#[utoipa::path(get, path = "/api/practice/problems/{problem_id}/editorial", operation_id = "getPracticeEditorial", tag = "practice", params(("problem_id" = i64, Path), ("lang" = Option<String>, Query)), responses((status = 200, body = EditorialResponse), (status = 403, body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
+pub async fn get_editorial(
+    context: AuthContext,
+    State(state): State<AppState>,
+    Path(problem_id): Path<i64>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<EditorialResponse>, AppError> {
+    let lang = query.get("lang").map_or("en", String::as_str);
+    let row=sqlx::query_as::<_,(String,String,String,time::OffsetDateTime)>("SELECT title,body,unlock_policy,updated_at FROM problem_editorials WHERE problem_id=$1 AND lang_code=$2 AND published").bind(problem_id).bind(lang).fetch_optional(state.database()).await.map_err(|e|AppError::internal("load practice editorial",e))?.ok_or_else(||AppError::not_found("EDITORIAL_NOT_FOUND","Editorial not found"))?;
+    let progress = sqlx::query_as::<_, (i32, bool)>(
+        "SELECT attempts,solved FROM practice_problem_progress WHERE user_id=$1 AND problem_id=$2",
+    )
+    .bind(context.user().id)
+    .bind(problem_id)
+    .fetch_optional(state.database())
+    .await
+    .map_err(|e| AppError::internal("check editorial unlock", e))?
+    .unwrap_or((0, false));
+    let unlocked = match row.2.as_str() {
+        "ALWAYS" => true,
+        "AFTER_ATTEMPT" => progress.0 > 0,
+        "AFTER_ACCEPTED" => progress.1,
+        _ => false,
+    };
+    if !unlocked {
+        return Err(AppError::forbidden(
+            "EDITORIAL_LOCKED",
+            "Editorial unlock condition is not met",
+        ));
+    }
+    Ok(Json(EditorialResponse {
+        problem_id,
+        lang_code: lang.to_owned(),
+        title: row.0,
+        body_html: crate::features::problems::render_safe_statement(&row.1),
+        unlock_policy: row.2,
+        unlocked,
+        updated_at: row.3,
+    }))
+}
+
+#[utoipa::path(put, path = "/api/admin/problems/{problem_id}/editorials/{lang_code}", operation_id = "upsertProblemEditorial", tag = "practice", params(("problem_id" = i64, Path), ("lang_code" = String, Path)), request_body = EditorialRequest, responses((status = 200, body = EditorialResponse)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
+pub async fn upsert_editorial(
+    context: SuperAdminContext,
+    State(state): State<AppState>,
+    Path((problem_id, lang_code)): Path<(i64, String)>,
+    payload: Result<Json<EditorialRequest>, JsonRejection>,
+) -> Result<Json<EditorialResponse>, AppError> {
+    let Json(request) =
+        payload.map_err(|_| AppError::validation("request", "invalid editorial"))?;
+    if problem_id <= 0
+        || lang_code.trim().is_empty()
+        || lang_code.len() > 8
+        || request.title.trim().is_empty()
+        || request.title.len() > 255
+        || request.body.trim().is_empty()
+        || request.body.len() > 1024 * 1024
+        || !matches!(request.unlock_policy.as_str(), "ALWAYS" | "AFTER_ATTEMPT" | "AFTER_ACCEPTED")
+    {
+        return Err(AppError::validation(
+            "editorial",
+            "invalid language, content, or unlock policy",
+        ));
+    }
+    let updated=sqlx::query_as::<_,(time::OffsetDateTime,)>("INSERT INTO problem_editorials(problem_id,lang_code,title,body,unlock_policy,published,updated_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(problem_id,lang_code) DO UPDATE SET title=EXCLUDED.title,body=EXCLUDED.body,unlock_policy=EXCLUDED.unlock_policy,published=EXCLUDED.published,updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=now() RETURNING updated_at").bind(problem_id).bind(lang_code.trim()).bind(request.title.trim()).bind(&request.body).bind(&request.unlock_policy).bind(request.published).bind(context.user().id).fetch_one(state.database()).await.map_err(|e|AppError::internal("save problem editorial",e))?.0;
+    Ok(Json(EditorialResponse {
+        problem_id,
+        lang_code: lang_code.trim().to_owned(),
+        title: request.title.trim().to_owned(),
+        body_html: crate::features::problems::render_safe_statement(&request.body),
+        unlock_policy: request.unlock_policy,
+        unlocked: true,
+        updated_at: updated,
+    }))
+}
+
+#[utoipa::path(get, path = "/api/admin/practice/settings", operation_id = "getPracticeSettings", tag = "practice", responses((status = 200, body = PracticeSettingsResponse)), security(("session_cookie" = [])))]
+pub async fn get_practice_settings(
+    _context: SuperAdminContext,
+    State(state): State<AppState>,
+) -> Result<Json<PracticeSettingsResponse>, AppError> {
+    let settings = sqlx::query_as::<_, PracticeSettingsResponse>(
+        "SELECT daily_submission_limit,concurrent_judging_limit,source_retention_days,updated_at FROM practice_platform_settings WHERE singleton=true",
+    )
+    .fetch_one(state.database())
+    .await
+    .map_err(|e| AppError::internal("load practice settings", e))?;
+    Ok(Json(settings))
+}
+
+#[utoipa::path(put, path = "/api/admin/practice/settings", operation_id = "updatePracticeSettings", tag = "practice", request_body = PracticeSettingsRequest, responses((status = 200, body = PracticeSettingsResponse), (status = 400, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
+pub async fn update_practice_settings(
+    context: SuperAdminContext,
+    State(state): State<AppState>,
+    payload: Result<Json<PracticeSettingsRequest>, JsonRejection>,
+) -> Result<Json<PracticeSettingsResponse>, AppError> {
+    let Json(request) =
+        payload.map_err(|_| AppError::validation("request", "invalid practice settings"))?;
+    if !(1..=10_000).contains(&request.daily_submission_limit) {
+        return Err(AppError::validation("dailySubmissionLimit", "must be between 1 and 10000"));
+    }
+    if !(1..=20).contains(&request.concurrent_judging_limit) {
+        return Err(AppError::validation("concurrentJudgingLimit", "must be between 1 and 20"));
+    }
+    if !(1..=3_650).contains(&request.source_retention_days) {
+        return Err(AppError::validation("sourceRetentionDays", "must be between 1 and 3650"));
+    }
+    let settings = sqlx::query_as::<_, PracticeSettingsResponse>(
+        "UPDATE practice_platform_settings SET daily_submission_limit=$1,concurrent_judging_limit=$2,source_retention_days=$3,updated_by_user_id=$4,updated_at=now() WHERE singleton=true RETURNING daily_submission_limit,concurrent_judging_limit,source_retention_days,updated_at",
+    )
+    .bind(request.daily_submission_limit)
+    .bind(request.concurrent_judging_limit)
+    .bind(request.source_retention_days)
+    .bind(context.user().id)
+    .fetch_one(state.database())
+    .await
+    .map_err(|e| AppError::internal("update practice settings", e))?;
+    Ok(Json(settings))
 }

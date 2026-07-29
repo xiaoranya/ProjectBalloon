@@ -20,6 +20,7 @@ pub struct ObjectStorageCleanupConfig {
 
 const ORPHAN_SCAN_INTERVAL: Duration = Duration::from_secs(3_600);
 const ORPHAN_SCAN_GRACE: Duration = Duration::from_secs(900);
+const SOURCE_PURGE_INTERVAL: Duration = Duration::from_secs(3_600);
 
 #[derive(Clone)]
 pub struct ObjectStorageCleanupRunner {
@@ -51,6 +52,7 @@ impl ObjectStorageCleanupRunner {
         let mut ticker = tokio::time::interval(self.config.poll_interval);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
         let mut last_orphan_scan = SystemTime::now();
+        let mut last_source_purge = SystemTime::now();
         info!(instance_id = %self.instance_id, "object-storage cleanup runner started");
         loop {
             tokio::select! {
@@ -62,6 +64,14 @@ impl ObjectStorageCleanupRunner {
                             Err(scan_error) => warn!(%scan_error, "object-storage orphan scan failed"),
                         }
                         last_orphan_scan = SystemTime::now();
+                    }
+                    if last_source_purge.elapsed().is_ok_and(|elapsed| elapsed >= SOURCE_PURGE_INTERVAL) {
+                        match self.purge_expired_practice_sources_once().await {
+                            Ok(count) if count > 0 => info!(count, "expired practice sources purged"),
+                            Ok(_) => {}
+                            Err(purge_error) => warn!(%purge_error, "expired practice source purge failed"),
+                        }
+                        last_source_purge = SystemTime::now();
                     }
                     match self.run_once().await {
                         Ok(count) if count > 0 => info!(count, "object-storage cleanup batch processed"),
@@ -135,6 +145,36 @@ impl ObjectStorageCleanupRunner {
             }
         }
         Ok(count)
+    }
+
+    /// Deletes source objects for completed practice submissions after the
+    /// administrator-configured retention window. A failed object deletion is
+    /// left untouched so the next run can retry it safely.
+    pub async fn purge_expired_practice_sources_once(&self) -> Result<usize, sqlx::Error> {
+        let days = sqlx::query_scalar::<_, i32>(
+            "SELECT source_retention_days FROM practice_platform_settings WHERE singleton=true",
+        )
+        .fetch_one(&self.database)
+        .await?;
+        let candidates = sqlx::query_as::<_, (i64, String)>(
+            "SELECT id,source_object_key FROM submissions WHERE submission_scope='PRACTICE' AND source_deleted_at IS NULL AND submitted_at < now() - make_interval(days => $1) AND status NOT IN ('PENDING','JUDGING') ORDER BY submitted_at,id LIMIT $2",
+        )
+        .bind(days)
+        .bind(self.config.batch_size)
+        .fetch_all(&self.database)
+        .await?;
+        let mut purged = 0;
+        for (id, key) in candidates {
+            if self.storage.backend().delete(self.storage.source_bucket(), &key).await.is_err() {
+                continue;
+            }
+            let updated = sqlx::query("UPDATE submissions SET source_deleted_at=now() WHERE id=$1 AND source_deleted_at IS NULL")
+                .bind(id)
+                .execute(&self.database)
+                .await?;
+            purged += usize::try_from(updated.rows_affected()).unwrap_or(0);
+        }
+        Ok(purged)
     }
 
     async fn claim(&self) -> Result<Vec<ClaimedCleanup>, sqlx::Error> {
@@ -442,7 +482,7 @@ pub async fn referenced_object_keys(
              WHERE testdata_object_key IS NOT NULL
              UNION SELECT interactor_object_key FROM problems
              WHERE interactor_object_key IS NOT NULL
-             UNION SELECT source_object_key FROM submissions
+             UNION SELECT source_object_key FROM submissions WHERE source_deleted_at IS NULL
              UNION SELECT pdf_object_key FROM print_requests
              WHERE pdf_bucket = $1 AND pdf_object_key IS NOT NULL",
             )
@@ -462,7 +502,7 @@ pub async fn referenced_object_keys(
             .await?
         } else if bucket == storage.source_bucket() {
             sqlx::query_scalar(
-                "SELECT source_object_key FROM submissions
+                "SELECT source_object_key FROM submissions WHERE source_deleted_at IS NULL
              UNION SELECT pdf_object_key FROM print_requests
              WHERE pdf_bucket = $1 AND pdf_object_key IS NOT NULL",
             )

@@ -17,7 +17,8 @@ use crate::{
 use super::{
     SubmissionService,
     model::{
-        PracticeProblemStatus, PracticeSubmissionSummary, SubmitResponse, ValidatedSubmission,
+        JudgementDetail, PracticeProblemStatus, PracticeSubmissionDetail,
+        PracticeSubmissionSummary, SubmitResponse, ValidatedSubmission,
         ValidatedSubmissionListQuery, source_fingerprint, source_similarity_signature,
     },
     service::{language_multiplier, parse_judge_mode},
@@ -58,6 +59,7 @@ impl SubmissionService {
         &self,
         command: ValidatedSubmission,
         training_enrollment_id: Option<i64>,
+        virtual_session_id: Option<i64>,
         actor: &AuthUser,
         request_ip: IpAddr,
         storage: &ObjectStorageHandle,
@@ -67,6 +69,13 @@ impl SubmissionService {
         validate_enrollment_pool(
             &self.database,
             training_enrollment_id,
+            command.problem_id,
+            actor.id,
+        )
+        .await?;
+        validate_virtual_session_pool(
+            &self.database,
+            virtual_session_id,
             command.problem_id,
             actor.id,
         )
@@ -89,6 +98,7 @@ impl SubmissionService {
             .persist_practice(
                 &command,
                 training_enrollment_id,
+                virtual_session_id,
                 actor,
                 request_ip,
                 &context,
@@ -119,6 +129,7 @@ impl SubmissionService {
         &self,
         command: &ValidatedSubmission,
         training_enrollment_id: Option<i64>,
+        virtual_session_id: Option<i64>,
         actor: &AuthUser,
         request_ip: IpAddr,
         _preflight: &PracticeContext,
@@ -137,6 +148,8 @@ impl SubmissionService {
         require_language(&context.languages, &command.language)?;
         validate_enrollment_tx(&mut tx, training_enrollment_id, command.problem_id, actor.id)
             .await?;
+        validate_virtual_session_tx(&mut tx, virtual_session_id, command.problem_id, actor.id)
+            .await?;
         enforce_practice_rate_limit(&mut tx, actor.id).await?;
         let team_id = sqlx::query_scalar::<_, i64>(
             "SELECT team_id FROM team_accounts WHERE user_id=$1 ORDER BY team_id LIMIT 1",
@@ -145,8 +158,8 @@ impl SubmissionService {
         .fetch_optional(&mut *tx)
         .await
         .map_err(|e| AppError::internal("load optional practice team", e))?;
-        let (submission_id,submitted_at)=sqlx::query_as::<_,(i64,OffsetDateTime)>("INSERT INTO submissions(contest_id,problem_id,team_id,language,source_object_key,source_size_bytes,source_sha256,source_fingerprint,source_simhash,source_token_count,status,submission_scope,participant_user_id,training_enrollment_id) VALUES(NULL,$1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING','PRACTICE',$10,$11) RETURNING id,submitted_at")
-            .bind(command.problem_id).bind(team_id).bind(&command.language).bind(object_key).bind(i32::try_from(command.source.len()).map_err(|e|AppError::internal("convert source size",e))?).bind(source_sha256).bind(fingerprint).bind(simhash).bind(token_count).bind(actor.id).bind(training_enrollment_id).fetch_one(&mut *tx).await.map_err(|e|AppError::internal("insert practice submission",e))?;
+        let (submission_id,submitted_at)=sqlx::query_as::<_,(i64,OffsetDateTime)>("INSERT INTO submissions(contest_id,problem_id,team_id,language,source_object_key,source_size_bytes,source_sha256,source_fingerprint,source_simhash,source_token_count,status,submission_scope,participant_user_id,training_enrollment_id,virtual_session_id) VALUES(NULL,$1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING','PRACTICE',$10,$11,$12) RETURNING id,submitted_at")
+            .bind(command.problem_id).bind(team_id).bind(&command.language).bind(object_key).bind(i32::try_from(command.source.len()).map_err(|e|AppError::internal("convert source size",e))?).bind(source_sha256).bind(fingerprint).bind(simhash).bind(token_count).bind(actor.id).bind(training_enrollment_id).bind(virtual_session_id).fetch_one(&mut *tx).await.map_err(|e|AppError::internal("insert practice submission",e))?;
         let judgement_id = Uuid::new_v4();
         sqlx::query("INSERT INTO judgements(id,submission_id) VALUES($1,$2)")
             .bind(judgement_id)
@@ -211,6 +224,44 @@ impl SubmissionService {
         actor: &AuthUser,
     ) -> Result<Vec<PracticeProblemStatus>, AppError> {
         sqlx::query_as::<_,PracticeProblemStatus>("SELECT user_id,problem_id,attempts,best_score,solved,last_submission_id,solved_at,updated_at FROM practice_problem_progress WHERE user_id=$1 ORDER BY updated_at DESC,problem_id").bind(actor.id).fetch_all(&self.database).await.map_err(|e|AppError::internal("list practice progress",e))
+    }
+
+    pub async fn practice_detail(
+        &self,
+        submission_id: i64,
+        actor: &AuthUser,
+        storage: &ObjectStorageHandle,
+    ) -> Result<PracticeSubmissionDetail, AppError> {
+        let summary=sqlx::query_as::<_,PracticeSubmissionSummary>("SELECT s.id,s.problem_id,p.slug AS problem_slug,p.title AS problem_title,s.training_enrollment_id,s.language,s.source_size_bytes,s.status,s.submitted_at,s.judged_at,j.id AS active_judgement_id,j.verdict,j.total_time_ms,j.peak_memory_kb,CASE WHEN j.verdict='ACCEPTED' THEN 100 WHEN j.completed_at IS NOT NULL THEN 0 ELSE NULL END AS score FROM submissions s JOIN problems p ON p.id=s.problem_id LEFT JOIN judgements j ON j.submission_id=s.id AND j.active_marker IS TRUE WHERE s.id=$1 AND s.submission_scope='PRACTICE' AND s.participant_user_id=$2").bind(submission_id).bind(actor.id).fetch_optional(&self.database).await.map_err(|e|AppError::internal("load practice submission",e))?.ok_or_else(||AppError::not_found("SUBMISSION_NOT_FOUND","Practice submission not found"))?;
+        let (key, hash, deleted_at) = sqlx::query_as::<
+            _,
+            (String, Option<String>, Option<OffsetDateTime>),
+        >(
+            "SELECT source_object_key,source_sha256,source_deleted_at FROM submissions WHERE id=$1",
+        )
+        .bind(submission_id)
+        .fetch_one(&self.database)
+        .await
+        .map_err(|e| AppError::internal("load practice source metadata", e))?;
+        let source = if deleted_at.is_some() {
+            "[Source expired according to platform retention policy]".into()
+        } else if summary.language == "output" {
+            "[Output-only ZIP archive]".into()
+        } else {
+            let bytes = storage
+                .backend()
+                .get(storage.source_bucket(), &key)
+                .await
+                .map_err(|e| AppError::internal("download practice source", e))?;
+            String::from_utf8(bytes.to_vec()).map_err(|_| {
+                AppError::conflict(
+                    "SUBMISSION_SOURCE_INVALID",
+                    "Stored practice source is not UTF-8",
+                )
+            })?
+        };
+        let judgements=sqlx::query_as::<_,JudgementDetail>("SELECT id,verdict,total_time_ms,peak_memory_kb,compile_log,worker_id,started_at,completed_at,created_at,version,superseded,active_marker IS TRUE AS active,score_milli FROM judgements WHERE submission_id=$1 ORDER BY created_at DESC,id DESC").bind(submission_id).fetch_all(&self.database).await.map_err(|e|AppError::internal("load practice judgements",e))?;
+        Ok(PracticeSubmissionDetail { summary, source, source_sha256: hash, judgements })
     }
 }
 
@@ -280,6 +331,40 @@ async fn validate_enrollment_tx(
     }
     Ok(())
 }
+async fn validate_virtual_session_pool(
+    database: &PgPool,
+    id: Option<i64>,
+    problem: i64,
+    user: i64,
+) -> Result<(), AppError> {
+    if let Some(id) = id {
+        let valid=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM practice_virtual_sessions s JOIN practice_virtual_items i ON i.session_id=s.id AND i.problem_id=$2 WHERE s.id=$1 AND s.user_id=$3 AND now()>=s.start_at AND now()<s.end_at)").bind(id).bind(problem).bind(user).fetch_one(database).await.map_err(|e|AppError::internal("validate virtual practice session",e))?;
+        if !valid {
+            return Err(AppError::conflict(
+                "VIRTUAL_SESSION_NOT_ACTIVE",
+                "Virtual session is inactive or does not contain this problem",
+            ));
+        }
+    }
+    Ok(())
+}
+async fn validate_virtual_session_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Option<i64>,
+    problem: i64,
+    user: i64,
+) -> Result<(), AppError> {
+    if let Some(id) = id {
+        let valid=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM practice_virtual_sessions s JOIN practice_virtual_items i ON i.session_id=s.id AND i.problem_id=$2 WHERE s.id=$1 AND s.user_id=$3 AND now()>=s.start_at AND now()<s.end_at)").bind(id).bind(problem).bind(user).fetch_one(&mut **tx).await.map_err(|e|AppError::internal("revalidate virtual practice session",e))?;
+        if !valid {
+            return Err(AppError::conflict(
+                "VIRTUAL_SESSION_NOT_ACTIVE",
+                "Virtual session is inactive or does not contain this problem",
+            ));
+        }
+    }
+    Ok(())
+}
 async fn enforce_practice_rate_limit(
     tx: &mut Transaction<'_, Postgres>,
     user: i64,
@@ -291,13 +376,26 @@ async fn enforce_practice_rate_limit(
         .map_err(|e| AppError::internal("lock practice rate limit", e))?;
     let recent=sqlx::query_scalar::<_,i64>("SELECT count(*) FROM submissions WHERE submission_scope='PRACTICE' AND participant_user_id=$1 AND submitted_at>now()-interval '1 minute'").bind(user).fetch_one(&mut **tx).await.map_err(|e|AppError::internal("check practice rate limit",e))?;
     if recent >= PRACTICE_LIMIT_PER_MINUTE {
-        Err(AppError::too_many_requests(
+        return Err(AppError::too_many_requests(
             "PRACTICE_SUBMISSION_RATE_LIMITED",
             "Too many practice submissions; try again later",
-        ))
-    } else {
-        Ok(())
+        ));
     }
+    let limits=sqlx::query_as::<_,(i32,i32)>("SELECT daily_submission_limit,concurrent_judging_limit FROM practice_platform_settings WHERE singleton").fetch_one(&mut **tx).await.map_err(|e|AppError::internal("load practice limits",e))?;
+    let usage=sqlx::query_as::<_,(i64,i64)>("SELECT count(*) FILTER(WHERE submitted_at>=date_trunc('day',now())),count(*) FILTER(WHERE status IN('PENDING','JUDGING')) FROM submissions WHERE submission_scope='PRACTICE' AND participant_user_id=$1").bind(user).fetch_one(&mut **tx).await.map_err(|e|AppError::internal("load practice usage",e))?;
+    if usage.0 >= i64::from(limits.0) {
+        return Err(AppError::too_many_requests(
+            "PRACTICE_DAILY_QUOTA_EXCEEDED",
+            "Daily practice submission quota is exhausted",
+        ));
+    }
+    if usage.1 >= i64::from(limits.1) {
+        return Err(AppError::conflict(
+            "PRACTICE_CONCURRENCY_LIMIT",
+            "Too many practice submissions are still being judged",
+        ));
+    }
+    Ok(())
 }
 fn practice_not_allowed() -> AppError {
     AppError::conflict(

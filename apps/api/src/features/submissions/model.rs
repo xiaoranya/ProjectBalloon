@@ -23,6 +23,8 @@ pub struct PracticeSubmitMetadata {
     pub language: String,
     #[serde(default)]
     pub training_enrollment_id: Option<i64>,
+    #[serde(default)]
+    pub virtual_session_id: Option<i64>,
 }
 
 impl PracticeSubmitMetadata {
@@ -30,14 +32,18 @@ impl PracticeSubmitMetadata {
         self,
         original_filename: &str,
         source: bytes::Bytes,
-    ) -> Result<(ValidatedSubmission, Option<i64>), AppError> {
+    ) -> Result<(ValidatedSubmission, Option<i64>, Option<i64>), AppError> {
         if self.training_enrollment_id.is_some_and(|id| id <= 0) {
             return Err(AppError::validation("trainingEnrollmentId", "must be positive"));
         }
         let enrollment_id = self.training_enrollment_id;
+        if self.virtual_session_id.is_some_and(|id| id <= 0) {
+            return Err(AppError::validation("virtualSessionId", "must be positive"));
+        }
+        let virtual_session_id = self.virtual_session_id;
         let command = SubmitMetadata { problem_id: self.problem_id, language: self.language }
             .validate(original_filename, source)?;
-        Ok((command, enrollment_id))
+        Ok((command, enrollment_id, virtual_session_id))
     }
 }
 
@@ -485,6 +491,16 @@ pub struct PracticeProblemStatus {
     pub solved_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
     pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PracticeSubmissionDetail {
+    #[serde(flatten)]
+    pub summary: PracticeSubmissionSummary,
+    pub source: String,
+    pub source_sha256: Option<String>,
+    pub judgements: Vec<JudgementDetail>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

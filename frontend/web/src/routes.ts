@@ -4,6 +4,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/contests' },
   { path: '/problem-bank', name: 'problem-bank', component: () => import('./views/ProblemBankView.vue') },
   { path: '/practice', name: 'practice', component: () => import('./views/PracticeView.vue'), meta: { requiresAuth: true } },
+  { path: '/practice/virtual', name: 'practice-virtual', component: () => import('./views/VirtualPracticeView.vue'), meta: { requiresAuth: true } },
   { path: '/training', name: 'training', component: () => import('./views/TrainingView.vue'), meta: { requiresAuth: true, requiresTeam: true } },
   {
     path: '/login',

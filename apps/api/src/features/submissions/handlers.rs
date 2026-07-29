@@ -19,9 +19,10 @@ use crate::{
 };
 
 use super::model::{
-    JudgeQueueStatusResponse, PracticeProblemStatus, PracticeSubmissionSummary,
-    PracticeSubmitMetadata, RejudgeRequest, RejudgeResponse, SubmissionDetail, SubmissionListQuery,
-    SubmissionSummary, SubmissionUploadRequest, SubmitMetadata, SubmitResponse,
+    JudgeQueueStatusResponse, PracticeProblemStatus, PracticeSubmissionDetail,
+    PracticeSubmissionSummary, PracticeSubmitMetadata, RejudgeRequest, RejudgeResponse,
+    SubmissionDetail, SubmissionListQuery, SubmissionSummary, SubmissionUploadRequest,
+    SubmitMetadata, SubmitResponse,
 };
 use super::query::{SimilarityPairQuery, SimilarityQuery};
 use super::{
@@ -507,14 +508,21 @@ pub async fn submit_practice(
     }
     let metadata = metadata.ok_or_else(|| AppError::validation("metadata", "is required"))?;
     let (filename, source) = source.ok_or_else(|| AppError::validation("source", "is required"))?;
-    let (command, enrollment_id) = metadata.validate(&filename, source)?;
+    let (command, enrollment_id, virtual_session_id) = metadata.validate(&filename, source)?;
     let storage = required_storage(&state)?;
     Ok((
         StatusCode::ACCEPTED,
         Json(
             state
                 .submissions()
-                .submit_practice(command, enrollment_id, context.user(), peer.ip(), storage)
+                .submit_practice(
+                    command,
+                    enrollment_id,
+                    virtual_session_id,
+                    context.user(),
+                    peer.ip(),
+                    storage,
+                )
                 .await?,
         ),
     ))
@@ -539,6 +547,17 @@ pub async fn practice_progress(
 ) -> Result<Json<Vec<PracticeProblemStatus>>, AppError> {
     context.require_password_ready()?;
     Ok(Json(state.submissions().practice_progress(context.user()).await?))
+}
+
+#[utoipa::path(get, path = "/api/practice/submissions/{submission_id}", operation_id = "getPracticeSubmission", tag = "practice", params(("submission_id" = i64, Path)), responses((status = 200, body = PracticeSubmissionDetail)), security(("session_cookie" = [])))]
+pub async fn practice_detail(
+    context: AuthContext,
+    State(state): State<AppState>,
+    Path(submission_id): Path<i64>,
+) -> Result<Json<PracticeSubmissionDetail>, AppError> {
+    context.require_password_ready()?;
+    let storage = required_storage(&state)?;
+    Ok(Json(state.submissions().practice_detail(submission_id, context.user(), storage).await?))
 }
 
 fn required_storage(

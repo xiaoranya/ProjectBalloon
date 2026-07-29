@@ -19,3 +19,4 @@ pub mod staff_accounts;
 pub mod submissions;
 pub mod teams;
 pub mod training;
+pub mod virtual_practice;
