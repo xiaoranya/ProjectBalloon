@@ -188,7 +188,7 @@ async fn require_access(
             ));
         }
     }
-    sqlx::query_as("SELECT contest_id,mode,enabled,title,subtitle,accent_color,row_limit,show_announcements,announcement_interval_seconds,updated_at FROM presentation_configs WHERE contest_id=$1 AND mode=$2 AND enabled")
+    sqlx::query_as("SELECT contest_id,mode,enabled,title,subtitle,accent_color,row_limit,show_announcements,announcement_interval_seconds,template,updated_at FROM presentation_configs WHERE contest_id=$1 AND mode=$2 AND enabled")
         .bind(contest).bind(mode).fetch_optional(database).await.map_err(|e| AppError::internal("load published presentation", e))?.ok_or_else(|| AppError::not_found("PRESENTATION_NOT_PUBLISHED", "Presentation is not published"))
 }
 

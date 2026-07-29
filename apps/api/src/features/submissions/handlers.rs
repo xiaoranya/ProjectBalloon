@@ -23,6 +23,7 @@ use super::model::{
     SubmissionListQuery, SubmissionSummary, SubmissionUploadRequest, SubmitMetadata,
     SubmitResponse,
 };
+use super::query::{SimilarityPairQuery, SimilarityQuery};
 use super::{
     BatchRejudgeCreateRequest, BatchRejudgeFilter, BatchRejudgePreviewResponse,
     BatchRejudgeTaskResponse, CreateExportTaskRequest, ExportTaskResponse,
@@ -243,6 +244,70 @@ pub async fn list_admin(
     let Query(query) =
         query.map_err(|_| AppError::validation("query", "contains invalid submission filters"))?;
     Ok(Json(state.submissions().list_admin(contest_id, context.user(), query.validate()?).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/contests/{contest_id}/submission-similarity",
+    operation_id = "listSubmissionSimilarity",
+    tag = "submissions",
+    params(("contest_id" = i64, Path), ("problemId" = Option<i64>, Query), ("language" = Option<String>, Query), ("minGroupSize" = Option<u32>, Query)),
+    responses((status = 200, description = "Exact normalized duplicate submission groups", body = [super::query::SimilarityGroupResponse]),
+        (status = 400, body = crate::error::ApiErrorBody), (status = 401, body = crate::error::ApiErrorBody),
+        (status = 403, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody)),
+    security(("session_cookie" = []))
+)]
+pub async fn list_similarity(
+    context: ContestManagerContext,
+    State(state): State<AppState>,
+    Path(contest_id): Path<i64>,
+    query: Result<Query<SimilarityQuery>, QueryRejection>,
+) -> Result<Json<Vec<super::query::SimilarityGroupResponse>>, AppError> {
+    let Query(query) =
+        query.map_err(|_| AppError::validation("query", "contains invalid similarity filters"))?;
+    Ok(Json(state.submissions().list_similarity(contest_id, context.user(), query).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/contests/{contest_id}/submission-similarity/pairs",
+    operation_id = "listSubmissionSimilarityPairs",
+    tag = "submissions",
+    params(("contest_id" = i64, Path), ("problemId" = Option<i64>, Query), ("language" = Option<String>, Query), ("minSimilarityPercent" = Option<u32>, Query)),
+    responses((status = 200, description = "Approximate similar submission pairs", body = [super::query::SimilarityPairResponse]),
+        (status = 400, body = crate::error::ApiErrorBody), (status = 401, body = crate::error::ApiErrorBody),
+        (status = 403, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody)),
+    security(("session_cookie" = []))
+)]
+pub async fn list_similarity_pairs(
+    context: ContestManagerContext,
+    State(state): State<AppState>,
+    Path(contest_id): Path<i64>,
+    query: Result<Query<SimilarityPairQuery>, QueryRejection>,
+) -> Result<Json<Vec<super::query::SimilarityPairResponse>>, AppError> {
+    let Query(query) =
+        query.map_err(|_| AppError::validation("query", "contains invalid similarity filters"))?;
+    Ok(Json(state.submissions().list_similarity_pairs(contest_id, context.user(), query).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/contests/{contest_id}/submission-similarity/backfill",
+    operation_id = "backfillSubmissionSimilarity",
+    tag = "submissions",
+    params(("contest_id" = i64, Path)),
+    responses((status = 200, description = "Bounded historical similarity backfill", body = super::query::SimilarityBackfillResponse),
+        (status = 401, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody),
+        (status = 404, body = crate::error::ApiErrorBody), (status = 503, body = crate::error::ApiErrorBody)),
+    security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = []))
+)]
+pub async fn backfill_similarity(
+    context: ContestManagerContext,
+    State(state): State<AppState>,
+    Path(contest_id): Path<i64>,
+) -> Result<Json<super::query::SimilarityBackfillResponse>, AppError> {
+    let storage = required_storage(&state)?;
+    Ok(Json(state.submissions().backfill_similarity(contest_id, context.user(), storage).await?))
 }
 
 #[utoipa::path(

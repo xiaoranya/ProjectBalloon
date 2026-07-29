@@ -17,7 +17,10 @@ use crate::{
     object_storage_cleanup::defer_failed_cleanup,
 };
 
-use super::model::{RejudgeRequest, RejudgeResponse, SubmitResponse, ValidatedSubmission};
+use super::model::{
+    RejudgeRequest, RejudgeResponse, SubmitResponse, ValidatedSubmission, source_fingerprint,
+    source_similarity_signature,
+};
 
 const SUBMISSION_LIMIT_PER_MINUTE: i64 = 20;
 
@@ -84,6 +87,8 @@ impl SubmissionService {
         require_language(&preflight.languages, &command.language)?;
 
         let source_sha256 = hex::encode(Sha256::digest(&command.source));
+        let source_fingerprint = source_fingerprint(&command.source);
+        let similarity = source_similarity_signature(&command.source);
         let source_object_key =
             keys::submission_source(contest_id, preflight.team_id, command.extension);
         storage
@@ -106,6 +111,9 @@ impl SubmissionService {
                     .map_err(|error| AppError::internal("convert source size", error))?,
                 &source_object_key,
                 &source_sha256,
+                &source_fingerprint,
+                similarity.simhash,
+                similarity.token_count,
                 actor,
                 request_ip,
             )
@@ -415,6 +423,9 @@ impl SubmissionService {
         source_size: i32,
         source_object_key: &str,
         source_sha256: &str,
+        source_fingerprint: &str,
+        source_simhash: i64,
+        source_token_count: i32,
         actor: &AuthUser,
         request_ip: IpAddr,
     ) -> Result<SubmitResponse, AppError> {
@@ -432,8 +443,9 @@ impl SubmissionService {
             r#"
             INSERT INTO submissions
                 (contest_id, problem_id, team_id, language, source_object_key,
-                 source_size_bytes, source_sha256, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING')
+                 source_size_bytes, source_sha256, source_fingerprint,
+                 source_simhash, source_token_count, status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'PENDING')
             RETURNING id, submitted_at
             "#,
         )
@@ -444,6 +456,9 @@ impl SubmissionService {
         .bind(source_object_key)
         .bind(source_size)
         .bind(source_sha256)
+        .bind(source_fingerprint)
+        .bind(source_simhash)
+        .bind(source_token_count)
         .fetch_one(&mut *transaction)
         .await
         .map_err(|error| AppError::internal("insert submission", error))?;
@@ -678,7 +693,9 @@ mod tests {
             scoreboard,
             submissions::model::{
                 RejudgeRequest, ValidatedSubmission, ValidatedSubmissionListQuery,
+                source_fingerprint,
             },
+            submissions::query::SimilarityPairQuery,
         },
         object_storage::{ObjectStorage, ObjectStorageError, ObjectStorageHandle},
     };
@@ -846,23 +863,26 @@ mod tests {
             .await
             .expect("create submission");
         assert_eq!(response.status, "PENDING");
-        let (source_key, source_hash, payload) = sqlx::query_as::<_, (String, String, String)>(
-            r#"
-            SELECT submission.source_object_key, submission.source_sha256, outbox.payload
+        let (source_key, source_hash, fingerprint, payload) =
+            sqlx::query_as::<_, (String, String, String, String)>(
+                r#"
+            SELECT submission.source_object_key, submission.source_sha256,
+                   submission.source_fingerprint, outbox.payload
             FROM submissions submission
             JOIN submission_outbox outbox ON outbox.submission_id = submission.id
             WHERE submission.id = $1
             "#,
-        )
-        .bind(response.submission_id)
-        .fetch_one(&pool)
-        .await
-        .expect("load submission and outbox");
+            )
+            .bind(response.submission_id)
+            .fetch_one(&pool)
+            .await
+            .expect("load submission and outbox");
         let task: JudgeTask = serde_json::from_str(&payload).expect("deserialize judge task");
         task.validate().expect("valid judge task");
         assert_eq!(task.judgement_id, response.judgement_id);
         assert_eq!(task.source_object_key, source_key);
         assert_eq!(task.source_sha256, source_hash);
+        assert_eq!(fingerprint, source_fingerprint(b"int main() { return 0; }"));
         assert_eq!(task.testdata_version, 1);
         assert_eq!(task.testdata_sha256, "a".repeat(64));
         assert!(
@@ -872,6 +892,53 @@ mod tests {
                 .expect("stored source")
                 .starts_with(b"int main")
         );
+        let second_user_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO users (username, password_hash, display_name, user_type, enabled, password_reset_required) VALUES ('submit-team-2', 'test-hash', 'Submit Team 2', 'TEAM', true, false) RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert second team user");
+        let second_team_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO teams (name) VALUES ('Submit Team 2') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert second team");
+        sqlx::query("INSERT INTO team_accounts (user_id, team_id) VALUES ($1, $2)")
+            .bind(second_user_id)
+            .bind(second_team_id)
+            .execute(&pool)
+            .await
+            .expect("link second team account");
+        sqlx::query("INSERT INTO contest_teams (contest_id, team_id, participation_type) VALUES ($1, $2, 'OFFICIAL')")
+            .bind(contest_id)
+            .bind(second_team_id)
+            .execute(&pool)
+            .await
+            .expect("roster second team");
+        let second_actor = AuthUser {
+            id: second_user_id,
+            username: "submit-team-2".into(),
+            display_name: "Submit Team 2".into(),
+            user_type: UserType::Team,
+            roles: vec!["TEAM_LEADER".into()],
+            password_reset_required: false,
+        };
+        let second_response = service
+            .submit(
+                contest_id,
+                ValidatedSubmission {
+                    problem_id,
+                    language: "cpp".into(),
+                    extension: ".cpp",
+                    source: Bytes::from_static(b"int main(){ return 1; }"),
+                },
+                &second_actor,
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                &storage,
+            )
+            .await
+            .expect("create similar second-team submission");
         let team_event = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS (
@@ -941,6 +1008,53 @@ mod tests {
             roles: Vec::new(),
             password_reset_required: false,
         };
+        sqlx::query(
+            "UPDATE submissions SET source_fingerprint = NULL, source_simhash = NULL, source_token_count = NULL WHERE id = $1",
+        )
+        .bind(response.submission_id)
+        .execute(&pool)
+        .await
+        .expect("simulate a pre-similarity submission");
+        let backfill = service
+            .backfill_similarity(contest_id, &admin, &storage)
+            .await
+            .expect("backfill historical source similarity");
+        assert_eq!((backfill.scanned, backfill.updated, backfill.failed), (1, 1, 0));
+        assert!(
+            sqlx::query_scalar::<_, bool>(
+                "SELECT source_simhash IS NOT NULL AND source_token_count > 0 FROM submissions WHERE id = $1",
+            )
+            .bind(response.submission_id)
+            .fetch_one(&pool)
+            .await
+            .expect("load backfilled similarity")
+        );
+        let similar_pairs = service
+            .list_similarity_pairs(
+                contest_id,
+                &admin,
+                SimilarityPairQuery {
+                    problem_id: Some(problem_id),
+                    language: Some("cpp".into()),
+                    min_similarity_percent: 85,
+                },
+            )
+            .await
+            .expect("list approximate submission pairs");
+        assert!(similar_pairs.iter().any(|pair| {
+            pair.submission_id == response.submission_id
+                && pair.other_submission_id == second_response.submission_id
+        }));
+        sqlx::query("UPDATE submissions SET status = 'CANCELLED' WHERE id = $1")
+            .bind(second_response.submission_id)
+            .execute(&pool)
+            .await
+            .expect("remove similarity fixture from pending assertions");
+        sqlx::query("UPDATE submission_outbox SET status = 'CANCELLED' WHERE submission_id = $1")
+            .bind(second_response.submission_id)
+            .execute(&pool)
+            .await
+            .expect("cancel similarity fixture task");
         let expected_judgement_id = response.judgement_id;
         let (first_rejudge, concurrent_rejudge) = tokio::join!(
             service.rejudge(

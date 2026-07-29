@@ -1,3 +1,4 @@
+use sha2::Digest;
 use sqlx::PgPool;
 
 use crate::{
@@ -15,7 +16,242 @@ use super::{
     service::SubmissionService,
 };
 
+#[derive(Debug, serde::Serialize, sqlx::FromRow, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SimilarityGroupResponse {
+    pub problem_id: i64,
+    pub language: String,
+    pub fingerprint: String,
+    pub submission_ids: Vec<i64>,
+    pub team_ids: Vec<i64>,
+    pub submission_count: i64,
+}
+
+#[derive(Debug, serde::Serialize, sqlx::FromRow, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SimilarityPairResponse {
+    pub problem_id: i64,
+    pub language: String,
+    pub submission_id: i64,
+    pub team_id: i64,
+    pub other_submission_id: i64,
+    pub other_team_id: i64,
+    pub hamming_distance: i32,
+    pub similarity_percent: i32,
+}
+
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SimilarityBackfillResponse {
+    pub scanned: i64,
+    pub updated: i64,
+    pub failed: i64,
+}
+
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SimilarityQuery {
+    pub problem_id: Option<i64>,
+    pub language: Option<String>,
+    #[serde(default = "default_similarity_group_size")]
+    pub min_group_size: u32,
+}
+
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SimilarityPairQuery {
+    pub problem_id: Option<i64>,
+    pub language: Option<String>,
+    #[serde(default = "default_similarity_percent")]
+    pub min_similarity_percent: u32,
+}
+
+const fn default_similarity_group_size() -> u32 {
+    2
+}
+
+const fn default_similarity_percent() -> u32 {
+    85
+}
+
+impl SimilarityQuery {
+    fn validate(self) -> Result<(Option<i64>, Option<String>, i64), AppError> {
+        if self.problem_id.is_some_and(|id| id <= 0) {
+            return Err(AppError::validation("problemId", "must be positive"));
+        }
+        if !(2..=100).contains(&self.min_group_size) {
+            return Err(AppError::validation(
+                "minGroupSize",
+                "must contain a value between 2 and 100",
+            ));
+        }
+        let language = self.language.map(|value| value.trim().to_ascii_lowercase());
+        if language
+            .as_ref()
+            .is_some_and(|value| !matches!(value.as_str(), "c" | "cpp" | "java" | "python"))
+        {
+            return Err(AppError::validation("language", "must be c, cpp, java, or python"));
+        }
+        Ok((
+            self.problem_id,
+            language.filter(|value| !value.is_empty()),
+            i64::from(self.min_group_size),
+        ))
+    }
+}
+
+impl SimilarityPairQuery {
+    fn validate(self) -> Result<(Option<i64>, Option<String>, i32), AppError> {
+        if self.problem_id.is_some_and(|id| id <= 0) {
+            return Err(AppError::validation("problemId", "must be positive"));
+        }
+        if !(50..=100).contains(&self.min_similarity_percent) {
+            return Err(AppError::validation(
+                "minSimilarityPercent",
+                "must contain a value between 50 and 100",
+            ));
+        }
+        let language = self.language.map(|value| value.trim().to_ascii_lowercase());
+        if language
+            .as_ref()
+            .is_some_and(|value| !matches!(value.as_str(), "c" | "cpp" | "java" | "python"))
+        {
+            return Err(AppError::validation("language", "must be c, cpp, java, or python"));
+        }
+        let max_distance =
+            64 - i32::try_from((self.min_similarity_percent * 64) / 100).unwrap_or(64);
+        Ok((self.problem_id, language.filter(|value| !value.is_empty()), max_distance))
+    }
+}
+
 impl SubmissionService {
+    pub async fn backfill_similarity(
+        &self,
+        contest_id: i64,
+        actor: &AuthUser,
+        storage: &ObjectStorageHandle,
+    ) -> Result<SimilarityBackfillResponse, AppError> {
+        require_admin_access(&self.database, contest_id, actor).await?;
+        let candidates = sqlx::query_as::<_, (i64, String, String)>(
+            r#"
+            SELECT id, source_object_key, source_sha256
+            FROM submissions
+            WHERE contest_id = $1 AND source_simhash IS NULL AND source_sha256 IS NOT NULL
+            ORDER BY id
+            LIMIT 1000
+            "#,
+        )
+        .bind(contest_id)
+        .fetch_all(&self.database)
+        .await
+        .map_err(|error| AppError::internal("load submissions for similarity backfill", error))?;
+        let scanned = i64::try_from(candidates.len()).unwrap_or(i64::MAX);
+        let mut updated = 0_i64;
+        let mut failed = 0_i64;
+        for (submission_id, object_key, expected_hash) in candidates {
+            let source = match storage.backend().get(storage.source_bucket(), &object_key).await {
+                Ok(source) if hex::encode(sha2::Sha256::digest(&source)) == expected_hash => source,
+                _ => {
+                    failed += 1;
+                    continue;
+                }
+            };
+            let signature = super::model::source_similarity_signature(&source);
+            let fingerprint = super::model::source_fingerprint(&source);
+            let changed = sqlx::query(
+                "UPDATE submissions SET source_fingerprint = $2, source_simhash = $3, source_token_count = $4 WHERE id = $1 AND source_simhash IS NULL",
+            )
+            .bind(submission_id)
+            .bind(fingerprint)
+            .bind(signature.simhash)
+            .bind(signature.token_count)
+            .execute(&self.database)
+            .await
+            .map_err(|error| AppError::internal("persist similarity backfill", error))?
+            .rows_affected();
+            updated += i64::try_from(changed).unwrap_or(i64::MAX);
+        }
+        Ok(SimilarityBackfillResponse { scanned, updated, failed })
+    }
+
+    pub async fn list_similarity(
+        &self,
+        contest_id: i64,
+        actor: &AuthUser,
+        query: SimilarityQuery,
+    ) -> Result<Vec<SimilarityGroupResponse>, AppError> {
+        require_admin_access(&self.database, contest_id, actor).await?;
+        let (problem_id, language, min_group_size) = query.validate()?;
+        sqlx::query_as::<_, SimilarityGroupResponse>(
+            r#"
+            SELECT problem_id, language, source_fingerprint AS fingerprint,
+                   array_agg(id ORDER BY submitted_at, id) AS submission_ids,
+                   array_agg(team_id ORDER BY submitted_at, id) AS team_ids,
+                   count(*) AS submission_count
+            FROM submissions
+            WHERE contest_id = $1 AND source_fingerprint IS NOT NULL
+              AND ($2::bigint IS NULL OR problem_id = $2)
+              AND ($3::text IS NULL OR language = $3)
+            GROUP BY problem_id, language, source_fingerprint
+            HAVING count(*) >= $4
+            ORDER BY count(*) DESC, min(submitted_at), problem_id, language, source_fingerprint
+            LIMIT 500
+            "#,
+        )
+        .bind(contest_id)
+        .bind(problem_id)
+        .bind(language)
+        .bind(min_group_size)
+        .fetch_all(&self.database)
+        .await
+        .map_err(|error| AppError::internal("list submission similarity groups", error))
+    }
+
+    pub async fn list_similarity_pairs(
+        &self,
+        contest_id: i64,
+        actor: &AuthUser,
+        query: SimilarityPairQuery,
+    ) -> Result<Vec<SimilarityPairResponse>, AppError> {
+        require_admin_access(&self.database, contest_id, actor).await?;
+        let (problem_id, language, max_distance) = query.validate()?;
+        sqlx::query_as::<_, SimilarityPairResponse>(
+            r#"
+            WITH pairs AS (
+                SELECT a.problem_id, a.language,
+                       a.id AS submission_id, a.team_id,
+                       b.id AS other_submission_id, b.team_id AS other_team_id,
+                       bit_count((a.source_simhash # b.source_simhash)::bit(64))::int AS hamming_distance
+                FROM submissions a
+                JOIN submissions b
+                  ON b.contest_id = a.contest_id
+                 AND b.problem_id = a.problem_id
+                 AND b.language = a.language
+                 AND b.id > a.id
+                 AND b.team_id <> a.team_id
+                WHERE a.contest_id = $1
+                  AND a.source_simhash IS NOT NULL AND b.source_simhash IS NOT NULL
+                  AND ($2::bigint IS NULL OR a.problem_id = $2)
+                  AND ($3::text IS NULL OR a.language = $3)
+            )
+            SELECT problem_id, language, submission_id, team_id,
+                   other_submission_id, other_team_id, hamming_distance,
+                   round((100.0 * (64 - hamming_distance) / 64.0))::int AS similarity_percent
+            FROM pairs
+            WHERE hamming_distance <= $4
+            ORDER BY hamming_distance, problem_id, language, submission_id, other_submission_id
+            LIMIT 1000
+            "#,
+        )
+        .bind(contest_id)
+        .bind(problem_id)
+        .bind(language)
+        .bind(max_distance)
+        .fetch_all(&self.database)
+        .await
+        .map_err(|error| AppError::internal("list submission similarity pairs", error))
+    }
+
     pub async fn list_own(
         &self,
         contest_id: i64,
@@ -334,4 +570,45 @@ fn safe_text(value: Option<String>, limit: usize) -> Option<String> {
 
 fn submission_not_found() -> AppError {
     AppError::not_found("SUBMISSION_NOT_FOUND", "Submission was not found")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SimilarityPairQuery, SimilarityQuery};
+
+    #[test]
+    fn similarity_filters_are_bounded_and_normalized() {
+        let (problem_id, language, minimum) = SimilarityQuery {
+            problem_id: Some(7),
+            language: Some(" Cpp ".to_owned()),
+            min_group_size: 3,
+        }
+        .validate()
+        .expect("valid similarity filters");
+        assert_eq!(problem_id, Some(7));
+        assert_eq!(language.as_deref(), Some("cpp"));
+        assert_eq!(minimum, 3);
+        assert!(
+            SimilarityQuery { problem_id: None, language: None, min_group_size: 1 }
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn similarity_pair_threshold_maps_to_hamming_distance() {
+        let (_, _, max_distance) = SimilarityPairQuery {
+            problem_id: None,
+            language: Some("CPP".to_owned()),
+            min_similarity_percent: 85,
+        }
+        .validate()
+        .expect("valid pair filters");
+        assert_eq!(max_distance, 10);
+        assert!(
+            SimilarityPairQuery { problem_id: None, language: None, min_similarity_percent: 49 }
+                .validate()
+                .is_err()
+        );
+    }
 }

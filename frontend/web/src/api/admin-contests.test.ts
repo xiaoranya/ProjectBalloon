@@ -33,6 +33,50 @@ describe('Rust contest administration API contract', () => {
     );
   });
 
+  it('loads normalized duplicate submission groups with bounded filters', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse([]));
+
+    await adminContestApi.listSubmissionSimilarity(42, {
+      problemId: 7,
+      language: 'cpp',
+      minGroupSize: 3,
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/admin/contests/42/submission-similarity?problemId=7&language=cpp&minGroupSize=3',
+      expect.any(Object),
+    );
+  });
+
+  it('loads approximate cross-team similarity pairs', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse([]));
+
+    await adminContestApi.listSubmissionSimilarityPairs(42, {
+      problemId: 7,
+      language: 'cpp',
+      minSimilarityPercent: 90,
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/admin/contests/42/submission-similarity/pairs?problemId=7&language=cpp&minSimilarityPercent=90',
+      expect.any(Object),
+    );
+  });
+
+  it('starts a CSRF-protected bounded similarity backfill', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }))
+      .mockResolvedValueOnce(jsonResponse({ scanned: 10, updated: 9, failed: 1 }));
+
+    await adminContestApi.backfillSubmissionSimilarity(42);
+
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      '/api/admin/contests/42/submission-similarity/backfill',
+    );
+    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'POST' }));
+  });
+
   it('preserves the Java-compatible contest judge queue status route', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ contestId: 42, drained: true }));
 

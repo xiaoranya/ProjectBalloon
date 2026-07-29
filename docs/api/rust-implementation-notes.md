@@ -14,10 +14,10 @@ annotations:
 | `GET /api/openapi.json` | Machine-readable generated contract |
 | `GET /api/docs` | Offline-capable Swagger UI using vendored assets |
 
-The generated contract currently covers all 168 Rust operations: process/readiness
+The generated contract currently covers all 171 Rust operations: process/readiness
 health, all five authentication endpoints, the eight contest core endpoints,
 the fourteen team and contest-roster endpoints, sixteen problem catalog and
-test-data endpoints, five contest-problem endpoints, fourteen submission,
+test-data endpoints, seventeen submission,
 rejudge, batch-rejudge, and export endpoints, the complete announcement
 workflow, six scoreboard and snapshot endpoints, seven printing endpoints,
 seven balloon endpoints, seven clarification endpoints, thirteen Resolver
@@ -37,6 +37,34 @@ This runtime contract is deliberately separate from `docs/api/openapi.yaml`.
 The YAML file is the frozen Java compatibility input; reviewed Rust operations
 move into the generated contract incrementally until all current Axum routes
 are represented.
+
+## P2 Submission Similarity Foundation
+
+New submissions persist a SHA-256 `source_fingerprint` generated after removing
+comments and formatting whitespace while preserving string and character literals.
+Contest managers can query
+`GET /api/admin/contests/{contestId}/submission-similarity` with optional
+`problemId`, `language`, and `minGroupSize` filters. Results are grouped by
+contest, problem, language, and normalized fingerprint, and contain only
+submission/team IDs and counts. This first P2 slice detects exact normalized
+duplicates without changing judging or exposing source code. The same migration
+stores a 64-bit SimHash over normalized five-token shingles; contest managers can
+query `/api/admin/contests/{contestId}/submission-similarity/pairs` with a bounded
+similarity threshold (50--100 percent) to review cross-team approximate matches.
+The result is capped and excludes same-team pairs; approximate matches are
+candidate evidence only and never automatically trigger disciplinary action.
+For pre-migration submissions, an authenticated CSRF-protected backfill endpoint
+processes at most 1,000 rows per request, re-downloads each source, verifies its
+authoritative SHA-256, and writes signatures only after verification.
+
+## P2 Presentation Templates
+
+Screen and live presentation configurations select one of four validated visual
+templates: `DEFAULT`, `CINEMATIC`, `MINIMAL`, or `SPLIT`. Existing configurations
+are migrated to `DEFAULT`; both operator consoles persist the selection, and the
+OBS live views apply the chosen layout together with the configured accent color.
+Unknown template identifiers are rejected by both the API and a database check
+constraint so public presentation pages cannot be used to inject markup or CSS.
 
 ## Object Storage Orphan Compensation
 

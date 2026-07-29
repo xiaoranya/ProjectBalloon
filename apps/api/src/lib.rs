@@ -225,6 +225,18 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         )
         .route("/api/admin/contests/{contest_id}/submissions", get(submissions::list_admin))
         .route(
+            "/api/admin/contests/{contest_id}/submission-similarity",
+            get(submissions::list_similarity),
+        )
+        .route(
+            "/api/admin/contests/{contest_id}/submission-similarity/pairs",
+            get(submissions::list_similarity_pairs),
+        )
+        .route(
+            "/api/admin/contests/{contest_id}/submission-similarity/backfill",
+            post(submissions::backfill_similarity),
+        )
+        .route(
             "/api/admin/contests/{contest_id}/judge-queue/status",
             get(submissions::judge_queue_status),
         )

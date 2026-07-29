@@ -227,6 +227,29 @@
             />
           </div>
         </ElCard>
+        <ElCard shadow="never" class="admin-card">
+          <template #header>
+            <div class="assignment-toolbar">
+              <strong>P2 源码相似度审核</strong>
+              <ElSelect v-model="similarityProblemId" clearable placeholder="全部题目" style="width: 180px">
+                <ElOption v-for="problem in sortedContestProblems" :key="problem.problemId" :label="problem.alias" :value="problem.problemId" />
+              </ElSelect>
+              <span>最低相似度</span>
+              <ElInputNumber v-model="similarityThreshold" :min="50" :max="100" :step="1" />
+              <ElButton type="primary" plain :loading="similarityLoading" @click="loadSimilarityPairs">扫描候选</ElButton>
+              <ElButton plain :loading="similarityBackfillLoading" @click="backfillSimilarity">历史回填</ElButton>
+            </div>
+          </template>
+          <ElAlert title="相似度结果仅用于人工复核，不会自动处罚或改变判题结果。" type="info" :closable="false" show-icon />
+          <ElTable :data="similarityPairs" row-key="submissionId" style="margin-top: 12px">
+            <ElTableColumn label="题目" width="100"><template #default="{ row }">{{ problemName(row.problemId) }}</template></ElTableColumn>
+            <ElTableColumn prop="language" label="语言" width="90" />
+            <ElTableColumn label="提交 A" min-width="170"><template #default="{ row }"><ElButton link @click="openSubmissionDetail(row.submissionId)">#{{ row.submissionId }}</ElButton> · 队伍 {{ row.teamId }}</template></ElTableColumn>
+            <ElTableColumn label="提交 B" min-width="170"><template #default="{ row }"><ElButton link @click="openSubmissionDetail(row.otherSubmissionId)">#{{ row.otherSubmissionId }}</ElButton> · 队伍 {{ row.otherTeamId }}</template></ElTableColumn>
+            <ElTableColumn label="相似度" width="110"><template #default="{ row }"><ElTag type="warning">{{ row.similarityPercent }}%</ElTag></template></ElTableColumn>
+            <template #empty><ElEmpty description="没有达到阈值的跨队候选" /></template>
+          </ElTable>
+        </ElCard>
       </ElTabPane>
     </ElTabs>
 
@@ -389,6 +412,7 @@ import type {
   PageResponse,
   Problem,
   SubmissionDetail,
+  SubmissionSimilarityPair,
   SubmissionSummary,
   Team,
 } from '../api/types';
@@ -436,6 +460,11 @@ const problemEditVisible = ref(false);
 const submissionDetailVisible = ref(false);
 const submissionDetailLoading = ref(false);
 const submissionDetail = ref<SubmissionDetail | null>(null);
+const similarityPairs = ref<SubmissionSimilarityPair[]>([]);
+const similarityLoading = ref(false);
+const similarityBackfillLoading = ref(false);
+const similarityThreshold = ref(85);
+const similarityProblemId = ref<number | undefined>();
 const editForm = reactive({
   name: '',
   visibility: 'PRIVATE' as ContestVisibility,
@@ -581,6 +610,33 @@ async function loadAll() {
     problemForm.displayOrder = assignedProblems.length + 1;
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
+  }
+}
+
+async function loadSimilarityPairs() {
+  similarityLoading.value = true;
+  try {
+    similarityPairs.value = await adminContestApi.listSubmissionSimilarityPairs(contestId, {
+      problemId: similarityProblemId.value,
+      minSimilarityPercent: similarityThreshold.value,
+    });
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+  } finally {
+    similarityLoading.value = false;
+  }
+}
+
+async function backfillSimilarity() {
+  similarityBackfillLoading.value = true;
+  try {
+    const result = await adminContestApi.backfillSubmissionSimilarity(contestId);
+    ElMessage.success(`已扫描 ${result.scanned}，更新 ${result.updated}，失败 ${result.failed}`);
+    await loadSimilarityPairs();
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+  } finally {
+    similarityBackfillLoading.value = false;
   }
 }
 

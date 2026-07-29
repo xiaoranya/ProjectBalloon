@@ -2,7 +2,7 @@ import { apiRequest } from './client';
 import type { Scoreboard } from './types';
 
 export type PresentationMode = 'SCREEN' | 'LIVE';
-export interface PresentationConfig { contestId: number; mode: PresentationMode; enabled: boolean; title: string | null; subtitle: string | null; accentColor: string; rowLimit: number; showAnnouncements: boolean; announcementIntervalSeconds: number; updatedAt: string | null; }
+export interface PresentationConfig { contestId: number; mode: PresentationMode; enabled: boolean; title: string | null; subtitle: string | null; accentColor: string; rowLimit: number; showAnnouncements: boolean; announcementIntervalSeconds: number; template: 'DEFAULT' | 'CINEMATIC' | 'MINIMAL' | 'SPLIT'; updatedAt: string | null; }
 export type PresentationConfigPayload = Omit<PresentationConfig, 'contestId' | 'mode' | 'updatedAt'>;
 export interface BroadcastToken { id: number; label: string; expiresAt: string; revokedAt: string | null; lastUsedAt: string | null; createdAt: string; }
 export interface BroadcastTokenCreated { id: number; label: string; token: string; expiresAt: string; createdAt: string; }

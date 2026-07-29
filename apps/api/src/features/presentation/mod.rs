@@ -43,6 +43,8 @@ pub struct ConfigRequest {
     row_limit: i32,
     show_announcements: bool,
     announcement_interval_seconds: i32,
+    #[serde(default)]
+    template: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
@@ -57,6 +59,7 @@ pub struct ConfigResponse {
     row_limit: i32,
     show_announcements: bool,
     announcement_interval_seconds: i32,
+    template: String,
     #[serde(with = "time::serde::rfc3339::option")]
     updated_at: Option<OffsetDateTime>,
 }
@@ -155,9 +158,9 @@ impl PresentationService {
         require_presentation_operator(actor)?;
         let mode = validate_mode(mode)?;
         require_contest(&self.database, contest).await?;
-        Ok(sqlx::query_as::<_, ConfigResponse>("SELECT contest_id,mode,enabled,title,subtitle,accent_color,row_limit,show_announcements,announcement_interval_seconds,updated_at FROM presentation_configs WHERE contest_id=$1 AND mode=$2")
+        Ok(sqlx::query_as::<_, ConfigResponse>("SELECT contest_id,mode,enabled,title,subtitle,accent_color,row_limit,show_announcements,announcement_interval_seconds,template,updated_at FROM presentation_configs WHERE contest_id=$1 AND mode=$2")
             .bind(contest).bind(mode).fetch_optional(&self.database).await.map_err(|error| AppError::internal("load presentation config", error))?
-            .unwrap_or(ConfigResponse { contest_id: contest, mode: mode.to_owned(), enabled: false, title: None, subtitle: None, accent_color: "#22c55e".into(), row_limit: 12, show_announcements: true, announcement_interval_seconds: 10, updated_at: None }))
+            .unwrap_or(ConfigResponse { contest_id: contest, mode: mode.to_owned(), enabled: false, title: None, subtitle: None, accent_color: "#22c55e".into(), row_limit: 12, show_announcements: true, announcement_interval_seconds: 10, template: "DEFAULT".into(), updated_at: None }))
     }
 
     async fn update_config(
@@ -177,8 +180,9 @@ impl PresentationService {
             .begin()
             .await
             .map_err(|error| AppError::internal("begin presentation config", error))?;
-        sqlx::query("INSERT INTO presentation_configs(contest_id,mode,enabled,title,subtitle,accent_color,row_limit,show_announcements,announcement_interval_seconds,updated_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(contest_id,mode) DO UPDATE SET enabled=excluded.enabled,title=excluded.title,subtitle=excluded.subtitle,accent_color=excluded.accent_color,row_limit=excluded.row_limit,show_announcements=excluded.show_announcements,announcement_interval_seconds=excluded.announcement_interval_seconds,updated_by_user_id=excluded.updated_by_user_id,updated_at=now()")
-            .bind(contest).bind(mode).bind(request.enabled).bind(request.title.as_deref()).bind(request.subtitle.as_deref()).bind(&request.accent_color).bind(request.row_limit).bind(request.show_announcements).bind(request.announcement_interval_seconds).bind(actor.id)
+        let template = validate_template(request.template.as_deref().unwrap_or("DEFAULT"))?;
+        sqlx::query("INSERT INTO presentation_configs(contest_id,mode,enabled,title,subtitle,accent_color,row_limit,show_announcements,announcement_interval_seconds,template,updated_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(contest_id,mode) DO UPDATE SET enabled=excluded.enabled,title=excluded.title,subtitle=excluded.subtitle,accent_color=excluded.accent_color,row_limit=excluded.row_limit,show_announcements=excluded.show_announcements,announcement_interval_seconds=excluded.announcement_interval_seconds,template=excluded.template,updated_by_user_id=excluded.updated_by_user_id,updated_at=now()")
+            .bind(contest).bind(mode).bind(request.enabled).bind(request.title.as_deref()).bind(request.subtitle.as_deref()).bind(&request.accent_color).bind(request.row_limit).bind(request.show_announcements).bind(request.announcement_interval_seconds).bind(template).bind(actor.id)
             .execute(&mut *tx).await.map_err(|error| AppError::internal("save presentation config", error))?;
         audit(&mut tx, actor.id, "PRESENTATION_CONFIG_UPDATED", "CONTEST", contest, ip).await?;
         sqlx::query("INSERT INTO realtime_outbox(event_id,contest_id,event_type,scope,payload_json) VALUES($1,$2,'PRESENTATION_UPDATED','PUBLIC',$3)")
@@ -403,7 +407,15 @@ fn validate_config(request: &ConfigRequest) -> Result<(), AppError> {
     {
         return Err(AppError::validation("title", "title or subtitle is too long"));
     }
+    validate_template(request.template.as_deref().unwrap_or("DEFAULT"))?;
     Ok(())
+}
+
+fn validate_template(template: &str) -> Result<&str, AppError> {
+    match template.trim() {
+        "DEFAULT" | "CINEMATIC" | "MINIMAL" | "SPLIT" => Ok(template.trim()),
+        _ => Err(AppError::validation("template", "must be DEFAULT, CINEMATIC, MINIMAL, or SPLIT")),
+    }
 }
 
 fn require_presentation_operator(actor: &AuthUser) -> Result<(), AppError> {
@@ -581,6 +593,8 @@ mod tests {
         assert!(validate_mode("OBS").is_err());
         assert_eq!(validate_view("awards").expect("awards"), "AWARDS");
         assert!(validate_view("javascript:").is_err());
+        assert_eq!(validate_template(" CINEMATIC ").expect("template"), "CINEMATIC");
+        assert!(validate_template("CUSTOM_HTML").is_err());
     }
 
     #[sqlx::test(migrations = "../../migrations")]
@@ -618,6 +632,7 @@ mod tests {
                     row_limit: 12,
                     show_announcements: true,
                     announcement_interval_seconds: 10,
+                    template: Some("CINEMATIC".into()),
                 },
                 &actor,
                 ip,
@@ -625,6 +640,7 @@ mod tests {
             .await
             .expect("publish screen");
         assert!(config.enabled);
+        assert_eq!(config.template, "CINEMATIC");
         let registration = service
             .register(RegisterRequest { contest_id: contest, name: " Main Hall ".into() }, ip)
             .await

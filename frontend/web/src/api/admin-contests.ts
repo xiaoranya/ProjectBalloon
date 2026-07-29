@@ -13,6 +13,9 @@ import type {
   RejudgeResult,
   SubmissionDetail,
   SubmissionSummary,
+  SubmissionSimilarityGroup,
+  SubmissionSimilarityPair,
+  SubmissionSimilarityBackfillResult,
   Team,
 } from './types';
 
@@ -41,6 +44,18 @@ export interface SubmissionFilters {
   problemId?: number;
   status?: string;
   language?: string;
+}
+
+export interface SubmissionSimilarityFilters {
+  problemId?: number;
+  language?: string;
+  minGroupSize?: number;
+}
+
+export interface SubmissionSimilarityPairFilters {
+  problemId?: number;
+  language?: string;
+  minSimilarityPercent?: number;
 }
 
 function submissionQuery(filters: SubmissionFilters): string {
@@ -154,6 +169,32 @@ export const adminContestApi = {
   listSubmissions(contestId: number, filters: SubmissionFilters = {}) {
     return apiRequest<PageResponse<SubmissionSummary>>(
       `/api/admin/contests/${contestId}/submissions?${submissionQuery(filters)}`,
+    );
+  },
+  listSubmissionSimilarity(contestId: number, filters: SubmissionSimilarityFilters = {}) {
+    const params = new URLSearchParams();
+    if (filters.problemId !== undefined) params.set('problemId', String(filters.problemId));
+    if (filters.language) params.set('language', filters.language);
+    if (filters.minGroupSize !== undefined) params.set('minGroupSize', String(filters.minGroupSize));
+    const query = params.toString();
+    return apiRequest<SubmissionSimilarityGroup[]>(
+      '/api/admin/contests/' + contestId + '/submission-similarity' + (query ? '?' + query : ''),
+    );
+  },
+  listSubmissionSimilarityPairs(contestId: number, filters: SubmissionSimilarityPairFilters = {}) {
+    const params = new URLSearchParams();
+    if (filters.problemId !== undefined) params.set('problemId', String(filters.problemId));
+    if (filters.language) params.set('language', filters.language);
+    if (filters.minSimilarityPercent !== undefined) params.set('minSimilarityPercent', String(filters.minSimilarityPercent));
+    const query = params.toString();
+    return apiRequest<SubmissionSimilarityPair[]>(
+      '/api/admin/contests/' + contestId + '/submission-similarity/pairs' + (query ? '?' + query : ''),
+    );
+  },
+  backfillSubmissionSimilarity(contestId: number) {
+    return apiRequest<SubmissionSimilarityBackfillResult>(
+      '/api/admin/contests/' + contestId + '/submission-similarity/backfill',
+      { method: 'POST' },
     );
   },
   getSubmission(contestId: number, submissionId: number) {

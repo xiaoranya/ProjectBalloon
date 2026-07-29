@@ -13,7 +13,7 @@ vi.mock('vue-router', () => ({ useRoute: () => ({ query: { contestId: '7', name:
 vi.mock('../api/contest', () => ({ contestApi: { listContests: vi.fn() } }));
 vi.mock('../api/presentation', () => ({ presentationApi: { config: vi.fn(), update: vi.fn() } }));
 vi.mock('../api/screen', () => ({ screenApi: { register: vi.fn(), heartbeat: vi.fn(), list: vi.fn(), command: vi.fn(), revoke: vi.fn(), playlists: vi.fn(), groups: vi.fn(), createPlaylist: vi.fn(), updatePlaylist: vi.fn(), deletePlaylist: vi.fn(), createGroup: vi.fn(), updateGroup: vi.fn(), deleteGroup: vi.fn(), controlGroup: vi.fn() } }));
-const config = { contestId: 7, mode: 'SCREEN' as const, enabled: true, title: 'Finals', subtitle: null, accentColor: '#22c55e', rowLimit: 12, showAnnouncements: true, announcementIntervalSeconds: 10, updatedAt: null };
+const config = { contestId: 7, mode: 'SCREEN' as const, enabled: true, title: 'Finals', subtitle: null, accentColor: '#22c55e', rowLimit: 12, showAnnouncements: true, announcementIntervalSeconds: 10, template: 'DEFAULT' as const, updatedAt: null };
 const instance = { id: 3, contestId: 7, name: 'Main Hall', currentView: 'SCOREBOARD' as const, online: true, lastSeenAt: '2026-07-22T01:00:00Z', lastIp: '127.0.0.1', revokedAt: null, createdAt: '2026-07-22T01:00:00Z' };
 describe('screen views', () => {
   beforeEach(() => {

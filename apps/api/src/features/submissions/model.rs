@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -30,6 +31,212 @@ pub struct ValidatedSubmission {
     pub language: String,
     pub extension: &'static str,
     pub source: bytes::Bytes,
+}
+
+/// Stable first-slice similarity fingerprint: comments and formatting
+/// whitespace are ignored while literals remain byte-exact.
+pub fn source_fingerprint(source: &[u8]) -> String {
+    let mut normalized = Vec::with_capacity(source.len());
+    let mut index = 0;
+    while index < source.len() {
+        let byte = source[index];
+        if byte == b'/' && source.get(index + 1) == Some(&b'/') {
+            index += 2;
+            while index < source.len() && !matches!(source[index], b'\n' | b'\r') {
+                index += 1;
+            }
+            continue;
+        }
+        if byte == b'/' && source.get(index + 1) == Some(&b'*') {
+            index += 2;
+            while index + 1 < source.len() && !(source[index] == b'*' && source[index + 1] == b'/')
+            {
+                index += 1;
+            }
+            index = (index + 2).min(source.len());
+            continue;
+        }
+        if byte == b'"' || byte == b'\'' {
+            let quote = byte;
+            normalized.push(byte);
+            index += 1;
+            let mut escaped = false;
+            while index < source.len() {
+                let literal = source[index];
+                normalized.push(literal);
+                index += 1;
+                if escaped {
+                    escaped = false;
+                } else if literal == b'\\' {
+                    escaped = true;
+                } else if literal == quote {
+                    break;
+                }
+            }
+            continue;
+        }
+        if byte.is_ascii_whitespace() {
+            index += 1;
+            continue;
+        }
+        normalized.push(byte);
+        index += 1;
+    }
+    hex::encode(Sha256::digest(normalized))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SourceSimilaritySignature {
+    pub simhash: i64,
+    pub token_count: i32,
+}
+
+pub fn source_similarity_signature(source: &[u8]) -> SourceSimilaritySignature {
+    let tokens = similarity_tokens(source);
+    let mut weights = [0_i32; 64];
+    let width = tokens.len().min(5);
+    for window in tokens.windows(width.max(1)) {
+        let mut hasher = Sha256::new();
+        for token in window {
+            hasher.update(token);
+            hasher.update([0]);
+        }
+        let digest = hasher.finalize();
+        let mut prefix = [0_u8; 8];
+        prefix.copy_from_slice(&digest[..8]);
+        let hash = u64::from_be_bytes(prefix);
+        for (bit, weight) in weights.iter_mut().enumerate() {
+            if hash & (1_u64 << bit) == 0 {
+                *weight -= 1;
+            } else {
+                *weight += 1;
+            }
+        }
+    }
+    let simhash = weights.iter().enumerate().fold(0_u64, |value, (bit, weight)| {
+        if *weight > 0 { value | (1_u64 << bit) } else { value }
+    });
+    SourceSimilaritySignature {
+        simhash: i64::from_be_bytes(simhash.to_be_bytes()),
+        token_count: i32::try_from(tokens.len()).unwrap_or(i32::MAX).max(1),
+    }
+}
+
+fn similarity_tokens(source: &[u8]) -> Vec<Vec<u8>> {
+    let mut tokens = Vec::new();
+    let mut index = 0;
+    while index < source.len() {
+        let byte = source[index];
+        if byte.is_ascii_whitespace() {
+            index += 1;
+            continue;
+        }
+        if byte == b'/' && source.get(index + 1) == Some(&b'/') {
+            index += 2;
+            while index < source.len() && !matches!(source[index], b'\n' | b'\r') {
+                index += 1;
+            }
+            continue;
+        }
+        if byte == b'/' && source.get(index + 1) == Some(&b'*') {
+            index += 2;
+            while index + 1 < source.len() && !(source[index] == b'*' && source[index + 1] == b'/')
+            {
+                index += 1;
+            }
+            index = (index + 2).min(source.len());
+            continue;
+        }
+        if byte == b'"' || byte == b'\'' {
+            let quote = byte;
+            index += 1;
+            let mut escaped = false;
+            while index < source.len() {
+                let literal = source[index];
+                index += 1;
+                if escaped {
+                    escaped = false;
+                } else if literal == b'\\' {
+                    escaped = true;
+                } else if literal == quote {
+                    break;
+                }
+            }
+            tokens.push(if quote == b'"' { b"str".to_vec() } else { b"char".to_vec() });
+            continue;
+        }
+        if byte.is_ascii_alphabetic() || byte == b'_' {
+            let start = index;
+            index += 1;
+            while index < source.len()
+                && (source[index].is_ascii_alphanumeric() || source[index] == b'_')
+            {
+                index += 1;
+            }
+            let word = &source[start..index];
+            tokens.push(if is_similarity_keyword(word) {
+                word.to_ascii_lowercase()
+            } else {
+                b"id".to_vec()
+            });
+            continue;
+        }
+        if byte.is_ascii_digit() {
+            index += 1;
+            while index < source.len()
+                && (source[index].is_ascii_alphanumeric() || matches!(source[index], b'.' | b'_'))
+            {
+                index += 1;
+            }
+            tokens.push(b"num".to_vec());
+            continue;
+        }
+        tokens.push(vec![byte]);
+        index += 1;
+    }
+    if tokens.is_empty() {
+        tokens.push(b"empty".to_vec());
+    }
+    tokens
+}
+
+fn is_similarity_keyword(word: &[u8]) -> bool {
+    matches!(
+        word,
+        b"if"
+            | b"else"
+            | b"for"
+            | b"while"
+            | b"do"
+            | b"switch"
+            | b"case"
+            | b"return"
+            | b"break"
+            | b"continue"
+            | b"class"
+            | b"struct"
+            | b"enum"
+            | b"fn"
+            | b"def"
+            | b"let"
+            | b"const"
+            | b"static"
+            | b"public"
+            | b"private"
+            | b"protected"
+            | b"import"
+            | b"from"
+            | b"include"
+            | b"try"
+            | b"catch"
+            | b"throw"
+            | b"throws"
+            | b"new"
+            | b"delete"
+            | b"match"
+            | b"async"
+            | b"await"
+    )
 }
 
 impl SubmitMetadata {
@@ -257,7 +464,29 @@ pub struct RunDetail {
 mod tests {
     use bytes::Bytes;
 
-    use super::SubmitMetadata;
+    use super::{SubmitMetadata, source_fingerprint, source_similarity_signature};
+
+    #[test]
+    fn source_fingerprint_ignores_comments_and_formatting_but_keeps_literals() {
+        let first = b"int main() { // comment\n return \"a b\"; }";
+        let second = b"int  main(){/* other */return \"a b\";}";
+        let different = b"int main(){return\"ab\";}";
+        assert_eq!(source_fingerprint(first), source_fingerprint(second));
+        assert_ne!(source_fingerprint(first), source_fingerprint(different));
+    }
+
+    #[test]
+    fn simhash_stays_close_when_identifiers_and_literals_change() {
+        let first = source_similarity_signature(
+            b"int sum(int a,int b){return a+b;} int main(){return sum(2,3);}",
+        );
+        let renamed = source_similarity_signature(
+            b"int add(int x,int y){ return x + y; } int main(){return add(8,9);}",
+        );
+        let unrelated = source_similarity_signature(b"for(int i=0;i<10;i++){while(true){break;}}");
+        assert!((first.simhash ^ renamed.simhash).count_ones() <= 8);
+        assert!((first.simhash ^ unrelated.simhash).count_ones() > 8);
+    }
 
     #[test]
     fn source_language_extension_and_size_are_closed() {

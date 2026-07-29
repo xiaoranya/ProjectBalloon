@@ -770,6 +770,7 @@ mod tests {
                     row_limit: 12,
                     show_announcements: true,
                     announcement_interval_seconds: 10,
+                    template: None,
                 },
                 &actor,
                 ip,

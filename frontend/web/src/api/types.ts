@@ -300,6 +300,32 @@ export interface SubmissionSummary {
   peakMemoryKb: number | null;
 }
 
+export interface SubmissionSimilarityGroup {
+  problemId: number;
+  language: string;
+  fingerprint: string;
+  submissionIds: number[];
+  teamIds: number[];
+  submissionCount: number;
+}
+
+export interface SubmissionSimilarityPair {
+  problemId: number;
+  language: string;
+  submissionId: number;
+  teamId: number;
+  otherSubmissionId: number;
+  otherTeamId: number;
+  hammingDistance: number;
+  similarityPercent: number;
+}
+
+export interface SubmissionSimilarityBackfillResult {
+  scanned: number;
+  updated: number;
+  failed: number;
+}
+
 export interface RunDetail {
   testIndex: number;
   verdict: string | null;

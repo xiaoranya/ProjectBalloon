@@ -75,6 +75,9 @@ const SWAGGER_UI_PATH: &str = "/api/docs";
         contest_problems::handlers::reorder,
         submissions::handlers::list_own,
         submissions::handlers::list_admin,
+        submissions::handlers::list_similarity,
+        submissions::handlers::list_similarity_pairs,
+        submissions::handlers::backfill_similarity,
         submissions::handlers::detail_own,
         submissions::handlers::detail_admin,
         submissions::handlers::submit,
@@ -278,7 +281,7 @@ mod tests {
             .values()
             .map(|item| item.as_object().expect("path item").len())
             .sum::<usize>();
-        assert_eq!(operation_count, 168);
+        assert_eq!(operation_count, 171);
         assert!(document["paths"]["/livez"]["get"].is_object());
         assert!(document["paths"]["/api/health"]["get"].is_object());
         assert!(document["paths"]["/metrics"]["get"].is_object());
