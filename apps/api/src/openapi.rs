@@ -5,7 +5,7 @@ use crate::{
     features::{
         announcements, audit_logs, auth, awards, balloons, clarifications, contest_admin_scopes,
         contest_problems, contests, presentation, printing, problems, realtime, resolver,
-        scoreboard, staff_accounts, submissions, teams,
+        scoreboard, scoring, staff_accounts, submissions, teams,
     },
     health, metrics,
 };
@@ -96,6 +96,10 @@ const SWAGGER_UI_PATH: &str = "/api/docs";
         scoreboard::handlers::admin_csv,
         scoreboard::handlers::create_snapshot,
         scoreboard::handlers::latest_snapshot,
+        scoring::get_policy,
+        scoring::update_policy,
+        scoring::get_subtasks,
+        scoring::replace_subtasks,
         printing::create,
         printing::list_mine,
         printing::list_all,
@@ -202,6 +206,7 @@ const SWAGGER_UI_PATH: &str = "/api/docs";
         (name = "contest-problems", description = "Contest problem assignment and ordering"),
         (name = "submissions", description = "Submission, judging, rejudge, and export operations"),
         (name = "scoreboard", description = "Public, administrative, CSV, and snapshot scoreboards"),
+        (name = "scoring", description = "OI/IOI scoring policies and subtask configuration"),
         (name = "printing", description = "Print requests and operator workflow"),
         (name = "balloons", description = "Balloon delivery workflow"),
         (name = "clarifications", description = "Team questions and staff replies"),
@@ -281,7 +286,7 @@ mod tests {
             .values()
             .map(|item| item.as_object().expect("path item").len())
             .sum::<usize>();
-        assert_eq!(operation_count, 171);
+        assert_eq!(operation_count, 175);
         assert!(document["paths"]["/livez"]["get"].is_object());
         assert!(document["paths"]["/api/health"]["get"].is_object());
         assert!(document["paths"]["/metrics"]["get"].is_object());

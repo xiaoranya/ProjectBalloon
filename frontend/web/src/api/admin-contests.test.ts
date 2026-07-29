@@ -228,4 +228,28 @@ describe('Rust contest administration API contract', () => {
     expect(fetchMock.mock.calls[1][0]).toBe('/api/contests/42/problems/reorder');
     expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'PUT', body: JSON.stringify(entries) }));
   });
+
+  it('persists OI scoring policy and subtask test mappings', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }))
+      .mockResolvedValueOnce(jsonResponse({ contestId: 42, scoringMode: 'IOI' }))
+      .mockResolvedValueOnce(jsonResponse({ contestId: 42, problemId: 7, maxScoreMilli: 100000, subtasks: [] }));
+
+    await adminContestApi.updateScoringPolicy(42, {
+      scoringMode: 'IOI', scoreAggregation: 'BEST', feedbackPolicy: 'SCORE_ONLY',
+    });
+    await adminContestApi.replaceProblemSubtasks(42, 7, {
+      maxScoreMilli: 100000,
+      subtasks: [{ subtaskKey: 'BASIC', name: 'Basic', displayOrder: 1, scoreMilli: 100000, testIndexes: [1, 2] }],
+    });
+
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/admin/contests/42/scoring-policy');
+    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ scoringMode: 'IOI', scoreAggregation: 'BEST', feedbackPolicy: 'SCORE_ONLY' }),
+    }));
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/admin/contests/42/problems/7/subtasks');
+    expect(fetchMock.mock.calls[2][1]).toEqual(expect.objectContaining({ method: 'PUT' }));
+  });
 });

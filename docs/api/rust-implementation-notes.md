@@ -14,7 +14,7 @@ annotations:
 | `GET /api/openapi.json` | Machine-readable generated contract |
 | `GET /api/docs` | Offline-capable Swagger UI using vendored assets |
 
-The generated contract currently covers all 171 Rust operations: process/readiness
+The generated contract currently covers all 175 Rust operations: process/readiness
 health, all five authentication endpoints, the eight contest core endpoints,
 the fourteen team and contest-roster endpoints, sixteen problem catalog and
 test-data endpoints, seventeen submission,
@@ -65,6 +65,18 @@ are migrated to `DEFAULT`; both operator consoles persist the selection, and the
 OBS live views apply the chosen layout together with the configured accent color.
 Unknown template identifiers are rejected by both the API and a database check
 constraint so public presentation pages cannot be used to inject markup or CSS.
+
+## P2 OI/IOI Scoring
+
+Contest scoring is configured independently of the ICPC projection. `ICPC` keeps
+the solved/penalty ranking; `OI` and `IOI` use integer milli-points, with either
+the highest-scoring or latest completed submission selected per problem. Each
+contest problem can define ordered, non-overlapping subtasks and their test
+indexes, with scores required to sum exactly to the problem maximum. Judgement
+results persist the total and each subtask score, and the scoreboard ranks by
+total score. Contest-level `FULL`, `SCORE_ONLY`, and `NONE` feedback policies
+redact team-facing test details during a running contest while administrators
+retain the complete audit view.
 
 ## Object Storage Orphan Compensation
 

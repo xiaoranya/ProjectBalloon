@@ -415,6 +415,7 @@ pub struct SubmissionSummary {
     pub verdict: Option<String>,
     pub total_time_ms: Option<i32>,
     pub peak_memory_kb: Option<i32>,
+    pub score_milli: Option<i32>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -445,8 +446,22 @@ pub struct JudgementDetail {
     pub version: i32,
     pub superseded: bool,
     pub active: bool,
+    pub score_milli: Option<i32>,
     #[sqlx(skip)]
     pub runs: Vec<RunDetail>,
+    #[sqlx(skip)]
+    pub subtask_scores: Vec<JudgementSubtaskScore>,
+}
+
+#[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct JudgementSubtaskScore {
+    pub subtask_key: String,
+    pub name: String,
+    pub score_milli: i32,
+    pub max_score_milli: i32,
+    pub passed_tests: i32,
+    pub total_tests: i32,
 }
 
 #[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]

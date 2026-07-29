@@ -10,8 +10,8 @@ use crate::{
 
 use super::{
     model::{
-        JudgeQueueStatusResponse, JudgementDetail, RunDetail, SubmissionDetail, SubmissionSummary,
-        ValidatedSubmissionListQuery,
+        JudgeQueueStatusResponse, JudgementDetail, JudgementSubtaskScore, RunDetail,
+        SubmissionDetail, SubmissionSummary, ValidatedSubmissionListQuery,
     },
     service::SubmissionService,
 };
@@ -425,7 +425,8 @@ async fn list(
                judgement.id AS active_judgement_id,
                judgement.verdict,
                judgement.total_time_ms,
-               judgement.peak_memory_kb
+               judgement.peak_memory_kb,
+               judgement.score_milli
         FROM submissions submission
         JOIN teams team ON team.id = submission.team_id
         JOIN contest_problems assignment
@@ -484,7 +485,8 @@ async fn detail(
                judgement.id AS active_judgement_id,
                judgement.verdict,
                judgement.total_time_ms,
-               judgement.peak_memory_kb
+               judgement.peak_memory_kb,
+               judgement.score_milli
         FROM submissions submission
         JOIN teams team ON team.id = submission.team_id
         JOIN contest_problems assignment
@@ -526,7 +528,7 @@ async fn detail(
         r#"
         SELECT id, verdict, total_time_ms, peak_memory_kb, compile_log, worker_id,
                started_at, completed_at, created_at, version, superseded,
-               active_marker IS TRUE AS active
+               active_marker IS TRUE AS active, score_milli
         FROM judgements
         WHERE submission_id = $1
         ORDER BY created_at DESC, id DESC
@@ -554,8 +556,58 @@ async fn detail(
             run.stderr_tail = safe_text(run.stderr_tail.take(), 8_192);
         }
         judgement.runs = runs;
+        judgement.subtask_scores = sqlx::query_as::<_, JudgementSubtaskScore>(
+            r#"SELECT subtask.subtask_key,subtask.name,score.score_milli,
+                      subtask.score_milli max_score_milli,
+                      score.passed_tests,score.total_tests
+               FROM judgement_subtask_scores score
+               JOIN contest_problem_subtasks subtask ON subtask.id=score.subtask_id
+               WHERE score.judgement_id=$1
+               ORDER BY subtask.display_order"#,
+        )
+        .bind(judgement.id)
+        .fetch_all(database)
+        .await
+        .map_err(|error| AppError::internal("load judgement subtask scores", error))?;
     }
-    Ok(SubmissionDetail { summary, source, source_sha256, judgements })
+    let mut detail = SubmissionDetail { summary, source, source_sha256, judgements };
+    if required_team_id.is_some() {
+        let (feedback_policy, status) = sqlx::query_as::<_, (String, String)>(
+            "SELECT feedback_policy,status FROM contests WHERE id=$1",
+        )
+        .bind(contest_id)
+        .fetch_one(database)
+        .await
+        .map_err(|error| AppError::internal("load submission feedback policy", error))?;
+        if !matches!(status.as_str(), "ENDED" | "ARCHIVED") {
+            apply_feedback_policy(&mut detail, &feedback_policy);
+        }
+    }
+    Ok(detail)
+}
+
+fn apply_feedback_policy(detail: &mut SubmissionDetail, policy: &str) {
+    if policy == "FULL" {
+        return;
+    }
+    detail.summary.verdict = None;
+    detail.summary.total_time_ms = None;
+    detail.summary.peak_memory_kb = None;
+    if policy == "NONE" {
+        detail.summary.score_milli = None;
+    }
+    for judgement in &mut detail.judgements {
+        judgement.verdict = None;
+        judgement.total_time_ms = None;
+        judgement.peak_memory_kb = None;
+        judgement.compile_log = None;
+        judgement.worker_id = None;
+        judgement.runs.clear();
+        judgement.subtask_scores.clear();
+        if policy == "NONE" {
+            judgement.score_milli = None;
+        }
+    }
 }
 
 fn safe_text(value: Option<String>, limit: usize) -> Option<String> {

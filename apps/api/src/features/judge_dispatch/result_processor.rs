@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::features::{balloons, scoreboard};
+use crate::features::{balloons, scoreboard, scoring};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyResultOutcome {
@@ -145,6 +145,15 @@ impl JudgeResultProcessor {
             .execute(&mut *transaction)
             .await?;
         }
+        let score_milli = scoring::score_judgement(
+            &mut transaction,
+            result.judgement_id,
+            contest_id,
+            problem_id,
+            result.verdict,
+            &result.runs,
+        )
+        .await?;
         sqlx::query(
             r#"
             UPDATE submissions
@@ -183,6 +192,7 @@ impl JudgeResultProcessor {
             "status": result.verdict.as_str(),
             "totalTimeMs": result.total_time_ms,
             "peakMemoryKb": result.peak_memory_kb
+            ,"scoreMilli": score_milli
         }))
         .execute(&mut *transaction)
         .await?;

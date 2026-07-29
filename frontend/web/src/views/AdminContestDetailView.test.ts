@@ -11,6 +11,10 @@ const api = vi.hoisted(() => ({
   updateProblemAssignment: vi.fn(),
   listSubmissions: vi.fn(),
   getJudgeQueueStatus: vi.fn(),
+  getScoringPolicy: vi.fn(),
+  updateScoringPolicy: vi.fn(),
+  getProblemSubtasks: vi.fn(),
+  replaceProblemSubtasks: vi.fn(),
   cloneContest: vi.fn(),
   isSuperAdmin: { value: false },
   push: vi.fn(),
@@ -69,6 +73,7 @@ describe('AdminContestDetailView', () => {
       contestId: 42, drained: true, pendingSubmissions: 0, judgingSubmissions: 0,
       outboxPending: 0, outboxFailed: 0, checkedAt: '2026-07-20T09:00:00Z',
     });
+    api.getScoringPolicy.mockResolvedValue({ contestId: 42, scoringMode: 'ICPC', scoreAggregation: 'BEST', feedbackPolicy: 'FULL' });
   });
 
   it('loads contest administration resources from the Rust-aligned API', async () => {

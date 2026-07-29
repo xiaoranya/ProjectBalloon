@@ -125,6 +125,10 @@ pub struct ScoreboardResponse {
     pub contest_id: i64,
     pub variant: String,
     pub frozen: bool,
+    #[serde(default = "default_scoring_mode")]
+    pub scoring_mode: String,
+    #[serde(default = "default_score_aggregation")]
+    pub score_aggregation: String,
     #[serde(with = "time::serde::rfc3339")]
     pub generated_at: OffsetDateTime,
     pub problems: Vec<ScoreboardProblem>,
@@ -157,6 +161,8 @@ pub struct ScoreboardRow {
     pub is_star: bool,
     pub solved_count: i32,
     pub penalty_minutes: i64,
+    #[serde(default)]
+    pub total_score_milli: i64,
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_solved_at: Option<OffsetDateTime>,
     pub problems: Vec<ScoreboardCell>,
@@ -171,6 +177,8 @@ pub struct ScoreboardCell {
     #[serde(with = "time::serde::rfc3339::option")]
     pub solved_at: Option<OffsetDateTime>,
     pub penalty_minutes: i64,
+    #[serde(default)]
+    pub score_milli: i32,
     pub first_blood: bool,
 }
 
@@ -181,6 +189,8 @@ pub(super) struct ContestBoardRow {
     pub freeze_at: Option<OffsetDateTime>,
     pub end_at: Option<OffsetDateTime>,
     pub scoreboard_revision: i64,
+    pub scoring_mode: String,
+    pub score_aggregation: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -201,6 +211,7 @@ pub(super) struct CellRow {
     pub solved: bool,
     pub solved_at: Option<OffsetDateTime>,
     pub penalty_minutes: i64,
+    pub score_milli: i32,
 }
 
 #[derive(sqlx::FromRow)]
@@ -210,4 +221,14 @@ pub(super) struct SubmissionScoreRow {
     pub problem_id: i64,
     pub submitted_at: OffsetDateTime,
     pub verdict: String,
+    pub score_milli: i32,
+    pub max_score_milli: i32,
+}
+
+fn default_scoring_mode() -> String {
+    "ICPC".to_owned()
+}
+
+fn default_score_aggregation() -> String {
+    "BEST".to_owned()
 }

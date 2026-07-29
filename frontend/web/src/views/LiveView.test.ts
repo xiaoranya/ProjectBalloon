@@ -33,6 +33,8 @@ const published: PublishedPresentation = {
     contestId: 7,
     variant: 'PUBLIC',
     frozen: false,
+    scoringMode: 'ICPC',
+    scoreAggregation: 'BEST',
     generatedAt: '2026-07-29T00:00:00Z',
     problems: [],
     rows: [],

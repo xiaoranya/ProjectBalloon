@@ -1094,6 +1094,8 @@ mod tests {
             contest_id: 1,
             variant: "PUBLIC".into(),
             frozen: true,
+            scoring_mode: "ICPC".into(),
+            score_aggregation: "BEST".into(),
             generated_at: OffsetDateTime::now_utc(),
             problems: vec![ScoreboardProblem {
                 problem_id: 1,
@@ -1113,6 +1115,7 @@ mod tests {
                 is_star: false,
                 solved_count: i32::from(solved),
                 penalty_minutes: if solved { 60 } else { 0 },
+                total_score_milli: if solved { 100_000 } else { 0 },
                 last_solved_at: solved_at,
                 problems: vec![ScoreboardCell {
                     problem_id: 1,
@@ -1120,6 +1123,7 @@ mod tests {
                     solved,
                     solved_at,
                     penalty_minutes: if solved { 60 } else { 0 },
+                    score_milli: if solved { 100_000 } else { 0 },
                     first_blood: solved,
                 }],
             }],

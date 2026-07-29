@@ -36,6 +36,26 @@ export interface JudgeQueueStatus {
   outboxFailed: number;
   checkedAt: string;
 }
+export interface ScoringPolicy {
+  contestId: number;
+  scoringMode: 'ICPC' | 'OI' | 'IOI';
+  scoreAggregation: 'BEST' | 'LAST';
+  feedbackPolicy: 'FULL' | 'SCORE_ONLY' | 'NONE';
+}
+export interface ContestProblemSubtask {
+  id: number;
+  subtaskKey: string;
+  name: string;
+  displayOrder: number;
+  scoreMilli: number;
+  testIndexes: number[];
+}
+export interface ContestProblemSubtasks {
+  contestId: number;
+  problemId: number;
+  maxScoreMilli: number;
+  subtasks: ContestProblemSubtask[];
+}
 
 export interface SubmissionFilters {
   page?: number;
@@ -79,6 +99,25 @@ export const adminContestApi = {
   },
   getContest(contestId: number) {
     return apiRequest<Contest>(`/api/contests/${contestId}`);
+  },
+  getScoringPolicy(contestId: number) {
+    return apiRequest<ScoringPolicy>(`/api/admin/contests/${contestId}/scoring-policy`);
+  },
+  updateScoringPolicy(contestId: number, payload: Omit<ScoringPolicy, 'contestId'>) {
+    return apiRequest<ScoringPolicy>(`/api/admin/contests/${contestId}/scoring-policy`, {
+      method: 'PUT', body: payload,
+    });
+  },
+  getProblemSubtasks(contestId: number, problemId: number) {
+    return apiRequest<ContestProblemSubtasks>(`/api/admin/contests/${contestId}/problems/${problemId}/subtasks`);
+  },
+  replaceProblemSubtasks(contestId: number, problemId: number, payload: {
+    maxScoreMilli: number;
+    subtasks: Array<Omit<ContestProblemSubtask, 'id'>>;
+  }) {
+    return apiRequest<ContestProblemSubtasks>(`/api/admin/contests/${contestId}/problems/${problemId}/subtasks`, {
+      method: 'PUT', body: payload,
+    });
   },
   createContest(payload: ContestPayload) {
     return apiRequest<Contest>('/api/contests', { method: 'POST', body: payload });

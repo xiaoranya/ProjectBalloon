@@ -21,7 +21,7 @@ const run = {
   sourcePublicSnapshotId: 11, sourceFinalSnapshotId: 12, planSha256: 'a'.repeat(64), createdByUserId: 3,
   startedAt: '2026-07-20T08:00:00Z', completedAt: null, autoPlayEnabled: false,
   autoPlayIntervalMilliseconds: 3000, nextAutoAt: null, createdAt: '2026-07-20T08:00:00Z', updatedAt: '2026-07-20T08:00:00Z', version: 2,
-  state: { stepIndex: 0, totalSteps: 1, lastReveal: null, board: { contestId: 7, variant: 'PUBLIC', frozen: true, generatedAt: '2026-07-20T08:00:00Z', problems: [{ problemId: 1, alias: 'A', displayOrder: 1, firstBloodTeamId: null, firstBloodAt: null }], rows: [{ rank: 1, officialRank: 1, teamId: 2, teamName: 'Resolver Team', school: 'School', participationType: 'OFFICIAL', groupName: null, isStar: false, solvedCount: 0, penaltyMinutes: 0, lastSolvedAt: null, problems: [{ problemId: 1, wrongAttempts: 0, solved: false, solvedAt: null, penaltyMinutes: 0, firstBlood: false }] }] } },
+  state: { stepIndex: 0, totalSteps: 1, lastReveal: null, board: { contestId: 7, variant: 'PUBLIC', frozen: true, scoringMode: 'ICPC' as const, scoreAggregation: 'BEST' as const, generatedAt: '2026-07-20T08:00:00Z', problems: [{ problemId: 1, alias: 'A', displayOrder: 1, firstBloodTeamId: null, firstBloodAt: null }], rows: [{ rank: 1, officialRank: 1, teamId: 2, teamName: 'Resolver Team', school: 'School', participationType: 'OFFICIAL', groupName: null, isStar: false, solvedCount: 0, penaltyMinutes: 0, totalScoreMilli: 0, lastSolvedAt: null, problems: [{ problemId: 1, wrongAttempts: 0, solved: false, solvedAt: null, penaltyMinutes: 0, scoreMilli: 0, firstBlood: false }] }] } },
 };
 
 describe('Resolver views', () => {

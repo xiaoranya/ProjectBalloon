@@ -1713,6 +1713,7 @@ mod tests {
             is_star: false,
             solved_count: i32::from(solved),
             penalty_minutes: 0,
+            total_score_milli: if solved { 100_000 } else { 0 },
             last_solved_at: None,
             problems: vec![crate::features::scoreboard::ScoreboardCell {
                 problem_id: 1,
@@ -1720,6 +1721,7 @@ mod tests {
                 solved,
                 solved_at: None,
                 penalty_minutes: 0,
+                score_milli: if solved { 100_000 } else { 0 },
                 first_blood: false,
             }],
         }
@@ -1788,6 +1790,7 @@ mod tests {
                 is_star: false,
                 solved_count: 3 - i32::try_from(rank).expect("rank"),
                 penalty_minutes: i64::from(rank) * 60,
+                total_score_milli: i64::from(3 - i32::try_from(rank).expect("rank")) * 100_000,
                 last_solved_at: None,
                 problems: Vec::new(),
             });
@@ -1796,6 +1799,8 @@ mod tests {
             contest_id: contest,
             variant: "ADMIN".into(),
             frozen: false,
+            scoring_mode: "ICPC".into(),
+            score_aggregation: "BEST".into(),
             generated_at: OffsetDateTime::now_utc(),
             problems: Vec::new(),
             rows,

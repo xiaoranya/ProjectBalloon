@@ -298,6 +298,7 @@ export interface SubmissionSummary {
   verdict: string | null;
   totalTimeMs: number | null;
   peakMemoryKb: number | null;
+  scoreMilli: number | null;
 }
 
 export interface SubmissionSimilarityGroup {
@@ -348,7 +349,18 @@ export interface JudgementDetail {
   version: number;
   superseded: boolean;
   active: boolean;
+  scoreMilli: number | null;
   runs: RunDetail[];
+  subtaskScores: JudgementSubtaskScore[];
+}
+
+export interface JudgementSubtaskScore {
+  subtaskKey: string;
+  name: string;
+  scoreMilli: number;
+  maxScoreMilli: number;
+  passedTests: number;
+  totalTests: number;
 }
 
 export interface SubmissionDetail extends SubmissionSummary {
@@ -371,6 +383,7 @@ export interface ScoreboardCell {
   solved: boolean;
   solvedAt: string | null;
   penaltyMinutes: number;
+  scoreMilli: number;
   firstBlood: boolean;
 }
 
@@ -385,6 +398,7 @@ export interface ScoreboardRow {
   isStar: boolean;
   solvedCount: number;
   penaltyMinutes: number;
+  totalScoreMilli: number;
   lastSolvedAt: string | null;
   problems: ScoreboardCell[];
 }
@@ -393,6 +407,8 @@ export interface Scoreboard {
   contestId: number;
   variant: string;
   frozen: boolean;
+  scoringMode: 'ICPC' | 'OI' | 'IOI';
+  scoreAggregation: 'BEST' | 'LAST';
   generatedAt: string;
   problems: ScoreboardProblem[];
   rows: ScoreboardRow[];

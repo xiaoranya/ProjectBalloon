@@ -23,7 +23,7 @@ use crate::{
     features::{
         announcements, audit_logs, auth, awards, balloons, clarifications, contest_admin_scopes,
         contest_problems, contests, presentation, printing, problems, realtime, resolver,
-        scoreboard, staff_accounts, submissions, teams,
+        scoreboard, scoring, staff_accounts, submissions, teams,
     },
     health::{liveness, readiness},
     state::AppState,
@@ -204,6 +204,14 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         .route(
             "/api/admin/contests/{contest_id}/scoreboard/snapshots/latest",
             get(scoreboard::latest_snapshot),
+        )
+        .route(
+            "/api/admin/contests/{contest_id}/scoring-policy",
+            get(scoring::get_policy).put(scoring::update_policy),
+        )
+        .route(
+            "/api/admin/contests/{contest_id}/problems/{problem_id}/subtasks",
+            get(scoring::get_subtasks).put(scoring::replace_subtasks),
         )
         .route(
             "/api/contests/{contest_id}/problems",

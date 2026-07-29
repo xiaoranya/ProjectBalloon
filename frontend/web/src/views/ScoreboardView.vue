@@ -20,8 +20,8 @@
           <tr>
             <th>排名</th>
             <th class="team-column">队伍</th>
-            <th>解题</th>
-            <th>罚时</th>
+            <th>{{ scoreboard.scoringMode === 'ICPC' ? '解题' : '总分' }}</th>
+            <th v-if="scoreboard.scoringMode === 'ICPC'">罚时</th>
             <th v-for="problem in scoreboard.problems" :key="problem.problemId">
               {{ problem.alias }}
             </th>
@@ -34,17 +34,20 @@
               <strong>{{ row.teamName }} <ElTag v-if="row.isStar" size="small" type="warning">打星</ElTag></strong>
               <small v-if="row.school">{{ row.school }}</small>
             </td>
-            <td><strong>{{ row.solvedCount }}</strong></td>
-            <td>{{ row.penaltyMinutes }}</td>
+            <td><strong>{{ scoreboard.scoringMode === 'ICPC' ? row.solvedCount : points(row.totalScoreMilli) }}</strong></td>
+            <td v-if="scoreboard.scoringMode === 'ICPC'">{{ row.penaltyMinutes }}</td>
             <td v-for="cell in orderedCells(row.problems)" :key="cell.problemId">
               <div
                 class="score-cell"
                 :class="{ solved: cell.solved, attempted: !cell.solved && cell.wrongAttempts > 0, first: cell.firstBlood }"
               >
-                <strong v-if="cell.solved">+{{ cell.wrongAttempts || '' }}</strong>
-                <strong v-else-if="cell.wrongAttempts">-{{ cell.wrongAttempts }}</strong>
-                <span v-else>·</span>
-                <small v-if="cell.solved">{{ cell.penaltyMinutes }}</small>
+                <template v-if="scoreboard.scoringMode === 'ICPC'">
+                  <strong v-if="cell.solved">+{{ cell.wrongAttempts || '' }}</strong>
+                  <strong v-else-if="cell.wrongAttempts">-{{ cell.wrongAttempts }}</strong>
+                  <span v-else>·</span>
+                  <small v-if="cell.solved">{{ cell.penaltyMinutes }}</small>
+                </template>
+                <strong v-else>{{ points(cell.scoreMilli) }}</strong>
               </div>
             </td>
           </tr>
@@ -96,8 +99,13 @@ function orderedCells(cells: ScoreboardCell[]): ScoreboardCell[] {
     solved: false,
     solvedAt: null,
     penaltyMinutes: 0,
+    scoreMilli: 0,
     firstBlood: false,
   });
+}
+
+function points(scoreMilli: number): string {
+  return (scoreMilli / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 });
 }
 
 onMounted(async () => {

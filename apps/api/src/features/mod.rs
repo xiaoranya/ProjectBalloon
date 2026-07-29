@@ -14,6 +14,7 @@ pub mod problems;
 pub mod realtime;
 pub mod resolver;
 pub mod scoreboard;
+pub mod scoring;
 pub mod staff_accounts;
 pub mod submissions;
 pub mod teams;

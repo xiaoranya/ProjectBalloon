@@ -57,6 +57,37 @@
               <p v-if="nextStatuses.length === 0">当前状态没有后续操作。</p>
             </div>
           </ElCard>
+
+          <ElCard shadow="never" class="admin-card">
+            <template #header><strong>OI / IOI 计分策略</strong></template>
+            <ElForm label-position="top">
+              <div class="admin-form-grid">
+                <ElFormItem label="赛制">
+                  <ElSelect v-model="scoringForm.scoringMode" :disabled="!canEditProblemConfiguration">
+                    <ElOption label="ICPC（解题数 / 罚时）" value="ICPC" />
+                    <ElOption label="OI（积分）" value="OI" />
+                    <ElOption label="IOI（积分）" value="IOI" />
+                  </ElSelect>
+                </ElFormItem>
+                <ElFormItem label="有效提交">
+                  <ElSelect v-model="scoringForm.scoreAggregation" :disabled="!canEditProblemConfiguration || scoringForm.scoringMode === 'ICPC'">
+                    <ElOption label="最高分" value="BEST" />
+                    <ElOption label="最后一次" value="LAST" />
+                  </ElSelect>
+                </ElFormItem>
+                <ElFormItem label="比赛中反馈">
+                  <ElSelect v-model="scoringForm.feedbackPolicy" :disabled="!canEditProblemConfiguration">
+                    <ElOption label="完整测试点" value="FULL" />
+                    <ElOption label="仅总分" value="SCORE_ONLY" />
+                    <ElOption label="不反馈" value="NONE" />
+                  </ElSelect>
+                </ElFormItem>
+              </div>
+            </ElForm>
+            <div class="card-action">
+              <ElButton type="primary" :loading="savingScoring" :disabled="!canEditProblemConfiguration" @click="saveScoringPolicy">保存计分策略</ElButton>
+            </div>
+          </ElCard>
         </div>
       </ElTabPane>
 
@@ -131,9 +162,10 @@
                 <span class="problem-color"><i :style="{ background: row.color || '#cbd5e1' }" />{{ row.color || '未设置' }}</span>
               </template>
             </ElTableColumn>
-            <ElTableColumn label="操作" width="230">
+            <ElTableColumn label="操作" width="290">
               <template #default="{ row }">
                 <ElButton link type="primary" :disabled="!canEditProblemConfiguration" @click="openProblemEdit(row)">编辑</ElButton>
+                <ElButton link type="primary" :disabled="!canEditProblemConfiguration || scoringForm.scoringMode === 'ICPC'" @click="openSubtasks(row.problemId)">子任务</ElButton>
                 <ElButton link type="primary" @click="openProblemContent(row.problemId)">题目内容</ElButton>
                 <ElButton link type="danger" :disabled="!canEditProblemConfiguration" @click="unassignProblem(row.problemId)">移除</ElButton>
               </template>
@@ -272,6 +304,31 @@
       </template>
     </ElDialog>
 
+    <ElDialog v-model="subtasksVisible" title="子任务与测试点计分" width="900">
+      <ElSkeleton v-if="subtasksLoading" :rows="5" animated />
+      <template v-else>
+        <div class="assignment-toolbar">
+          <ElFormItem label="题目满分（千分之一分）">
+            <ElInputNumber v-model="subtaskMaxScoreMilli" :min="1" :max="100000000" />
+          </ElFormItem>
+          <ElButton plain @click="addSubtask">添加子任务</ElButton>
+        </div>
+        <ElTable :data="editableSubtasks" row-key="localId">
+          <ElTableColumn label="标识" width="130"><template #default="{ row }"><ElInput v-model="row.subtaskKey" maxlength="32" /></template></ElTableColumn>
+          <ElTableColumn label="名称" min-width="150"><template #default="{ row }"><ElInput v-model="row.name" maxlength="120" /></template></ElTableColumn>
+          <ElTableColumn label="顺序" width="110"><template #default="{ row }"><ElInputNumber v-model="row.displayOrder" :min="1" :max="1000" controls-position="right" /></template></ElTableColumn>
+          <ElTableColumn label="分值（千分之一分）" width="180"><template #default="{ row }"><ElInputNumber v-model="row.scoreMilli" :min="1" :max="subtaskMaxScoreMilli" /></template></ElTableColumn>
+          <ElTableColumn label="测试点编号" min-width="210"><template #default="{ row }"><ElInput v-model="row.testIndexes" placeholder="1,2,3" /></template></ElTableColumn>
+          <ElTableColumn width="70"><template #default="{ $index }"><ElButton link type="danger" @click="editableSubtasks.splice($index, 1)">删除</ElButton></template></ElTableColumn>
+        </ElTable>
+        <ElAlert v-if="subtaskValidationError" :title="subtaskValidationError" type="warning" :closable="false" show-icon style="margin-top: 12px" />
+      </template>
+      <template #footer>
+        <ElButton @click="subtasksVisible = false">取消</ElButton>
+        <ElButton type="primary" :loading="savingSubtasks" :disabled="Boolean(subtaskValidationError) || subtasksLoading" @click="saveSubtasks">保存子任务</ElButton>
+      </template>
+    </ElDialog>
+
     <ElDialog v-model="editVisible" title="编辑比赛信息" width="620">
       <ElForm v-if="contest" label-position="top">
         <ElFormItem label="比赛名称"><ElInput v-model="editForm.name" /></ElFormItem>
@@ -400,7 +457,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { ArrowLeft, Download, Refresh } from '@element-plus/icons-vue';
 import { useRoute, useRouter } from 'vue-router';
-import { adminContestApi, type JudgeQueueStatus } from '../api/admin-contests';
+import { adminContestApi, type JudgeQueueStatus, type ScoringPolicy } from '../api/admin-contests';
 import { ApiError, getErrorMessage } from '../api/client';
 import { useSession } from '../auth/session';
 import type {
@@ -447,6 +504,7 @@ const assigning = ref(false);
 const reordering = ref(false);
 const savingProblem = ref(false);
 const saving = ref(false);
+const savingScoring = ref(false);
 const cloning = ref(false);
 const extending = ref(false);
 const transitioning = ref(false);
@@ -457,6 +515,14 @@ const editVisible = ref(false);
 const cloneVisible = ref(false);
 const extensionVisible = ref(false);
 const problemEditVisible = ref(false);
+const subtasksVisible = ref(false);
+const subtasksLoading = ref(false);
+const savingSubtasks = ref(false);
+const subtaskProblemId = ref<number | null>(null);
+const subtaskMaxScoreMilli = ref(100_000);
+let subtaskLocalId = 0;
+interface EditableSubtask { localId: number; subtaskKey: string; name: string; displayOrder: number; scoreMilli: number; testIndexes: string }
+const editableSubtasks = reactive<EditableSubtask[]>([]);
 const submissionDetailVisible = ref(false);
 const submissionDetailLoading = ref(false);
 const submissionDetail = ref<SubmissionDetail | null>(null);
@@ -465,6 +531,11 @@ const similarityLoading = ref(false);
 const similarityBackfillLoading = ref(false);
 const similarityThreshold = ref(85);
 const similarityProblemId = ref<number | undefined>();
+const scoringForm = reactive<Omit<ScoringPolicy, 'contestId'>>({
+  scoringMode: 'ICPC',
+  scoreAggregation: 'BEST',
+  feedbackPolicy: 'FULL',
+});
 const editForm = reactive({
   name: '',
   visibility: 'PRIVATE' as ContestVisibility,
@@ -540,6 +611,27 @@ const availableProblems = computed(() => {
 const sortedContestProblems = computed(() =>
   [...contestProblems.value].sort((a, b) => a.displayOrder - b.displayOrder),
 );
+const subtaskValidationError = computed(() => {
+  if (!editableSubtasks.length) return '至少需要一个子任务。';
+  const keys = new Set<string>();
+  const orders = new Set<number>();
+  const tests = new Set<number>();
+  let score = 0;
+  for (const item of editableSubtasks) {
+    const key = item.subtaskKey.trim().toUpperCase();
+    if (!/^[A-Z0-9_]{1,32}$/.test(key) || keys.has(key)) return '子任务标识需唯一，并使用大写字母、数字或下划线。';
+    if (!item.name.trim()) return '子任务名称不能为空。';
+    if (orders.has(item.displayOrder)) return '子任务顺序不能重复。';
+    keys.add(key); orders.add(item.displayOrder); score += item.scoreMilli;
+    const indexes = parseTestIndexes(item.testIndexes);
+    if (!indexes.length) return '每个子任务至少需要一个测试点。';
+    for (const index of indexes) {
+      if (tests.has(index)) return `测试点 ${index} 被多个子任务重复使用。`;
+      tests.add(index);
+    }
+  }
+  return score === subtaskMaxScoreMilli.value ? '' : '所有子任务分值之和必须等于题目满分。';
+});
 
 watch(editVisible, (visible) => {
   if (!visible || !contest.value) return;
@@ -590,7 +682,7 @@ async function cloneContest() {
 async function loadAll() {
   errorMessage.value = '';
   try {
-    const [contestValue, teamPage, assignedTeamPage, allProblems, assignedProblems, submissionPageValue, queueStatus] =
+    const [contestValue, teamPage, assignedTeamPage, allProblems, assignedProblems, submissionPageValue, queueStatus, scoringPolicy] =
       await Promise.all([
         adminContestApi.getContest(contestId),
         adminContestApi.listTeams(),
@@ -599,6 +691,7 @@ async function loadAll() {
         adminContestApi.listContestProblems(contestId),
         adminContestApi.listSubmissions(contestId),
         adminContestApi.getJudgeQueueStatus(contestId),
+        adminContestApi.getScoringPolicy(contestId),
       ]);
     contest.value = contestValue;
     teams.value = teamPage.content;
@@ -607,9 +700,25 @@ async function loadAll() {
     contestProblems.value = assignedProblems;
     submissionPage.value = submissionPageValue;
     judgeQueueStatus.value = queueStatus;
+    Object.assign(scoringForm, scoringPolicy);
     problemForm.displayOrder = assignedProblems.length + 1;
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
+  }
+}
+
+async function saveScoringPolicy() {
+  if (!canEditProblemConfiguration.value) return;
+  savingScoring.value = true;
+  try {
+    if (scoringForm.scoringMode === 'ICPC') scoringForm.scoreAggregation = 'BEST';
+    const value = await adminContestApi.updateScoringPolicy(contestId, { ...scoringForm });
+    Object.assign(scoringForm, value);
+    ElMessage.success('计分策略已保存');
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+  } finally {
+    savingScoring.value = false;
   }
 }
 
@@ -798,6 +907,74 @@ function openProblemEdit(value: unknown) {
 
 function openProblemContent(problemId: number) {
   void router.push(`/admin/problems/${problemId}?contestId=${contestId}`);
+}
+
+function parseTestIndexes(value: string): number[] {
+  const values = value.split(/[\s,]+/).filter(Boolean).map(Number);
+  if (values.some((index) => !Number.isInteger(index) || index < 1 || index > 10_000)) return [];
+  return [...new Set(values)].sort((left, right) => left - right);
+}
+
+function addSubtask() {
+  const displayOrder = editableSubtasks.length + 1;
+  editableSubtasks.push({
+    localId: ++subtaskLocalId,
+    subtaskKey: `S${displayOrder}`,
+    name: `子任务 ${displayOrder}`,
+    displayOrder,
+    scoreMilli: 0,
+    testIndexes: '',
+  });
+}
+
+async function openSubtasks(problemId: number) {
+  subtaskProblemId.value = problemId;
+  subtasksVisible.value = true;
+  subtasksLoading.value = true;
+  editableSubtasks.splice(0);
+  try {
+    const value = await adminContestApi.getProblemSubtasks(contestId, problemId);
+    subtaskMaxScoreMilli.value = value.maxScoreMilli;
+    for (const item of value.subtasks) {
+      editableSubtasks.push({
+        localId: ++subtaskLocalId,
+        subtaskKey: item.subtaskKey,
+        name: item.name,
+        displayOrder: item.displayOrder,
+        scoreMilli: item.scoreMilli,
+        testIndexes: item.testIndexes.join(','),
+      });
+    }
+    if (!editableSubtasks.length) addSubtask();
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+    subtasksVisible.value = false;
+  } finally {
+    subtasksLoading.value = false;
+  }
+}
+
+async function saveSubtasks() {
+  if (!subtaskProblemId.value || subtaskValidationError.value) return;
+  savingSubtasks.value = true;
+  try {
+    await adminContestApi.replaceProblemSubtasks(contestId, subtaskProblemId.value, {
+      maxScoreMilli: subtaskMaxScoreMilli.value,
+      subtasks: editableSubtasks.map((item) => ({
+        subtaskKey: item.subtaskKey.trim().toUpperCase(),
+        name: item.name.trim(),
+        displayOrder: item.displayOrder,
+        scoreMilli: item.scoreMilli,
+        testIndexes: parseTestIndexes(item.testIndexes),
+      })),
+    });
+    subtasksVisible.value = false;
+    ElMessage.success('子任务计分已保存');
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+  } finally {
+    savingSubtasks.value = false;
+  }
 }
 
 async function saveProblemEdit() {

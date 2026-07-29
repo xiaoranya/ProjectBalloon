@@ -202,7 +202,8 @@ impl ScoreboardService {
     ) -> Result<ScoreboardResponse, AppError> {
         let contest = sqlx::query_as::<_, ContestBoardRow>(
             r#"
-            SELECT status, start_at, freeze_at, end_at, scoreboard_revision
+            SELECT status, start_at, freeze_at, end_at, scoreboard_revision,
+                   scoring_mode, score_aggregation
             FROM contests
             WHERE id = $1 AND deleted_at IS NULL
             "#,
@@ -256,12 +257,24 @@ impl ScoreboardService {
                 contest.freeze_at.ok_or_else(|| {
                     AppError::internal("load frozen scoreboard", "freeze timestamp disappeared")
                 })?,
+                &contest.scoring_mode,
+                &contest.score_aggregation,
             )
             .await?
         } else {
             self.load_live_cells(contest_id).await?
         };
-        let board = assemble(contest_id, variant, frozen, generated_at, problems, roster, cells);
+        let board = assemble(
+            contest_id,
+            variant,
+            frozen,
+            generated_at,
+            contest.scoring_mode,
+            contest.score_aggregation,
+            problems,
+            roster,
+            cells,
+        );
         if let Some(cache) = &self.cache {
             cache.put(contest.scoreboard_revision, phase, &query, &board).await;
         }
@@ -300,7 +313,8 @@ impl ScoreboardService {
     async fn load_live_cells(&self, contest_id: i64) -> Result<Vec<CellRow>, AppError> {
         sqlx::query_as::<_, CellRow>(
             r#"
-            SELECT team_id, problem_id, wrong_attempts, solved, solved_at, penalty_minutes
+            SELECT team_id, problem_id, wrong_attempts, solved, solved_at, penalty_minutes,
+                   score_milli
             FROM contest_scoreboard_cells
             WHERE contest_id = $1
             "#,
@@ -316,6 +330,8 @@ impl ScoreboardService {
         contest_id: i64,
         start_at: OffsetDateTime,
         cutoff: OffsetDateTime,
+        scoring_mode: &str,
+        score_aggregation: &str,
     ) -> Result<Vec<CellRow>, AppError> {
         let submissions = sqlx::query_as::<_, SubmissionScoreRow>(
             r#"
@@ -323,12 +339,17 @@ impl ScoreboardService {
                    submission.team_id,
                    submission.problem_id,
                    submission.submitted_at,
-                   judgement.verdict
+                   judgement.verdict,
+                   judgement.score_milli,
+                   assignment.max_score_milli
             FROM submissions submission
             JOIN judgements judgement
               ON judgement.submission_id = submission.id
              AND judgement.active_marker IS TRUE
              AND judgement.completed_at IS NOT NULL
+            JOIN contest_problems assignment
+              ON assignment.contest_id=submission.contest_id
+             AND assignment.problem_id=submission.problem_id
             WHERE submission.contest_id = $1
               AND submission.submitted_at < $2
             ORDER BY submission.submitted_at, submission.id
@@ -339,12 +360,14 @@ impl ScoreboardService {
         .fetch_all(&self.database)
         .await
         .map_err(|error| AppError::internal("calculate frozen scoreboard", error))?;
-        Ok(score_submissions(start_at, submissions))
+        Ok(score_submissions(start_at, scoring_mode, score_aggregation, submissions))
     }
 }
 
 fn score_submissions(
     start_at: OffsetDateTime,
+    scoring_mode: &str,
+    score_aggregation: &str,
     submissions: Vec<SubmissionScoreRow>,
 ) -> Vec<CellRow> {
     let mut cells: HashMap<(i64, i64), CellRow> = HashMap::new();
@@ -356,7 +379,19 @@ fn score_submissions(
             solved: false,
             solved_at: None,
             penalty_minutes: 0,
+            score_milli: 0,
         });
+        if scoring_mode != "ICPC" {
+            cell.wrong_attempts = cell.wrong_attempts.saturating_add(1);
+            let replaces = score_aggregation == "LAST" || submission.score_milli > cell.score_milli;
+            if replaces {
+                cell.score_milli = submission.score_milli;
+                cell.solved = submission.score_milli >= submission.max_score_milli;
+                cell.solved_at = cell.solved.then_some(submission.submitted_at);
+                cell.penalty_minutes = 0;
+            }
+            continue;
+        }
         if cell.solved {
             continue;
         }
@@ -365,6 +400,7 @@ fn score_submissions(
             cell.solved = true;
             cell.solved_at = Some(submission.submitted_at);
             cell.penalty_minutes = elapsed_minutes + 20 * i64::from(cell.wrong_attempts);
+            cell.score_milli = 100_000;
         } else if is_penalized_rejection(&submission.verdict) {
             cell.wrong_attempts = cell.wrong_attempts.saturating_add(1);
         }
@@ -384,11 +420,14 @@ fn is_penalized_rejection(verdict: &str) -> bool {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn assemble(
     contest_id: i64,
     variant: &'static str,
     frozen: bool,
     generated_at: OffsetDateTime,
+    scoring_mode: String,
+    score_aggregation: String,
     mut problems: Vec<ScoreboardProblem>,
     roster: Vec<RosterRow>,
     cells: Vec<CellRow>,
@@ -408,6 +447,7 @@ fn assemble(
                             solved: false,
                             solved_at: None,
                             penalty_minutes: 0,
+                            score_milli: 0,
                             first_blood: false,
                         },
                         |cell| ScoreboardCell {
@@ -416,6 +456,7 @@ fn assemble(
                             solved: cell.solved,
                             solved_at: cell.solved_at,
                             penalty_minutes: cell.penalty_minutes,
+                            score_milli: cell.score_milli,
                             first_blood: false,
                         },
                     )
@@ -429,6 +470,8 @@ fn assemble(
                 .filter(|cell| cell.solved)
                 .map(|cell| cell.penalty_minutes)
                 .sum();
+            let total_score_milli =
+                problem_cells.iter().map(|cell| i64::from(cell.score_milli)).sum();
             let last_solved_at = problem_cells.iter().filter_map(|cell| cell.solved_at).max();
             ScoreboardRow {
                 rank: 0,
@@ -441,12 +484,13 @@ fn assemble(
                 group_name: team.group_name,
                 solved_count,
                 penalty_minutes,
+                total_score_milli,
                 last_solved_at,
                 problems: problem_cells,
             }
         })
         .collect();
-    rows.sort_by(compare_rows);
+    rows.sort_by(|left, right| compare_rows(&scoring_mode, left, right));
     let mut official_rank = 0_u32;
     for (index, row) in rows.iter_mut().enumerate() {
         row.rank = u32::try_from(index + 1).unwrap_or(u32::MAX);
@@ -480,13 +524,27 @@ fn assemble(
         contest_id,
         variant: variant.to_owned(),
         frozen,
+        scoring_mode,
+        score_aggregation,
         generated_at,
         problems,
         rows,
     }
 }
 
-fn compare_rows(left: &ScoreboardRow, right: &ScoreboardRow) -> Ordering {
+fn compare_rows(scoring_mode: &str, left: &ScoreboardRow, right: &ScoreboardRow) -> Ordering {
+    if scoring_mode != "ICPC" {
+        return right
+            .total_score_milli
+            .cmp(&left.total_score_milli)
+            .then_with(|| match (left.last_solved_at, right.last_solved_at) {
+                (Some(left), Some(right)) => left.cmp(&right),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
+            })
+            .then_with(|| left.team_id.cmp(&right.team_id));
+    }
     right
         .solved_count
         .cmp(&left.solved_count)
@@ -895,6 +953,8 @@ mod tests {
             "ADMIN",
             false,
             solved_at,
+            "ICPC".to_owned(),
+            "BEST".to_owned(),
             vec![super::ScoreboardProblem {
                 problem_id: 10,
                 alias: "A".to_owned(),
@@ -928,6 +988,7 @@ mod tests {
                     solved: true,
                     solved_at: Some(solved_at),
                     penalty_minutes: 60,
+                    score_milli: 100_000,
                 },
                 super::CellRow {
                     team_id: 10,
@@ -936,6 +997,7 @@ mod tests {
                     solved: true,
                     solved_at: Some(solved_at),
                     penalty_minutes: 60,
+                    score_milli: 100_000,
                 },
             ],
         );
