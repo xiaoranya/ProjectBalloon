@@ -180,6 +180,26 @@ pub struct ChangePasswordRequest {
     pub new_password: String,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProfileRequest {
+    #[schema(min_length = 1, max_length = 128)]
+    pub display_name: String,
+}
+
+impl ProfileRequest {
+    pub fn validate(&self) -> Result<String, AppError> {
+        let display_name = self.display_name.trim();
+        if display_name.is_empty() || display_name.chars().count() > 128 {
+            return Err(AppError::validation(
+                "displayName",
+                "must be non-empty and at most 128 characters",
+            ));
+        }
+        Ok(display_name.to_owned())
+    }
+}
+
 impl ChangePasswordRequest {
     pub fn validate(&self) -> Result<(), AppError> {
         validate_non_blank("currentPassword", &self.current_password)?;
@@ -228,7 +248,7 @@ impl UserRow {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChangePasswordRequest, LoginRequest, UserType};
+    use super::{ChangePasswordRequest, LoginRequest, ProfileRequest, UserType};
 
     #[test]
     fn user_type_wire_names_are_stable() {
@@ -252,5 +272,12 @@ mod tests {
             new_password: "short".to_owned(),
         };
         assert!(request.validate().is_err());
+    }
+
+    #[test]
+    fn profile_name_is_trimmed_and_bounded() {
+        let request = ProfileRequest { display_name: "  Daily User  ".to_owned() };
+        assert_eq!(request.validate().expect("valid profile"), "Daily User");
+        assert!(ProfileRequest { display_name: " ".to_owned() }.validate().is_err());
     }
 }

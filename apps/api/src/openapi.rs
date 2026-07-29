@@ -29,6 +29,7 @@ const SWAGGER_UI_PATH: &str = "/api/docs";
         auth::handlers::register,
         auth::handlers::logout,
         auth::handlers::current_user,
+        auth::handlers::update_profile,
         auth::handlers::change_password,
         contests::handlers::list,
         contests::handlers::get,

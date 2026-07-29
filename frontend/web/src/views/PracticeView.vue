@@ -1,6 +1,6 @@
 <template>
   <main class="practice-page">
-    <header><div><h1>日常练习</h1><p>选择公开题目，提交代码并持续积累进度</p></div><nav><RouterLink to="/problem-bank">题库</RouterLink><RouterLink to="/practice/virtual">虚拟比赛</RouterLink></nav></header>
+    <header><div><h1>日常练习</h1><p>选择公开题目，提交代码并持续积累进度</p></div><nav><RouterLink to="/problem-bank">题库</RouterLink><RouterLink to="/practice/virtual">虚拟比赛</RouterLink><RouterLink to="/profile">账户</RouterLink></nav></header>
     <div class="practice-stats"><div><span>已通过</span><strong>{{ solvedCount }}</strong><small>/ {{ problems.length }}</small></div><div><span>总尝试</span><strong>{{ attemptCount }}</strong></div><div><span>已提交</span><strong>{{ submissions.length }}</strong></div></div>
     <div class="practice-layout">
       <aside><ElInput v-model="filter" clearable placeholder="搜索题目"/><ElRadioGroup v-model="problemFilter" size="small"><ElRadioButton label="all">全部</ElRadioButton><ElRadioButton label="favorites">收藏</ElRadioButton><ElRadioButton label="unsolved">未通过</ElRadioButton></ElRadioGroup><button v-for="problem in filteredProblems" :key="problem.id" :class="{active:selected?.id===problem.id}" @click="select(problem)"><strong>{{problem.slug}}</strong><span>{{problem.title}}</span><ElTag v-if="status(problem.id)?.solved" type="success" size="small">已通过</ElTag></button></aside>

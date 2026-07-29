@@ -73,6 +73,14 @@ async function changePassword(currentPassword: string, newPassword: string) {
   return state.user;
 }
 
+async function updateProfile(displayName: string) {
+  state.user = await apiRequest<CurrentUser>('/api/auth/profile', {
+    method: 'PATCH',
+    body: { displayName },
+  });
+  return state.user;
+}
+
 function clearSession() {
   state.user = null;
   state.initialized = true;
@@ -108,6 +116,7 @@ export function useSession() {
     login,
     register,
     changePassword,
+    updateProfile,
     logout,
     clearSession,
   };

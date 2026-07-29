@@ -7,7 +7,7 @@ mod service;
 
 pub use context::{AuthContext, ContestManagerContext, OptionalAuthContext, SuperAdminContext};
 pub use csrf::{CsrfSigner, csrf, protect_csrf};
-pub use handlers::{change_password, current_user, login, logout, register};
+pub use handlers::{change_password, current_user, login, logout, register, update_profile};
 pub(crate) use password::hash as hash_password;
 pub use service::AuthService;
 

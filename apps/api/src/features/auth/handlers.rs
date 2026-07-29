@@ -12,7 +12,9 @@ use crate::{error::AppError, state::AppState};
 use super::{
     SESSION_COOKIE_NAME,
     context::AuthContext,
-    model::{ChangePasswordRequest, CurrentUserResponse, LoginRequest, RegisterRequest},
+    model::{
+        ChangePasswordRequest, CurrentUserResponse, LoginRequest, ProfileRequest, RegisterRequest,
+    },
 };
 
 #[utoipa::path(
@@ -128,6 +130,33 @@ pub async fn change_password(
         AppError::validation("request", "must be a valid password-change JSON object")
     })?;
     let user = state.auth().change_password(context.session(), request, peer.ip()).await?;
+    Ok(Json(user.response()))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/auth/profile",
+    operation_id = "updateProfile",
+    tag = "auth",
+    request_body = ProfileRequest,
+    responses(
+        (status = 200, description = "Updated personal profile", body = CurrentUserResponse),
+        (status = 400, body = crate::error::ApiErrorBody),
+        (status = 401, body = crate::error::ApiErrorBody),
+        (status = 403, body = crate::error::ApiErrorBody)
+    ),
+    security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = []))
+)]
+pub async fn update_profile(
+    context: AuthContext,
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    payload: Result<Json<ProfileRequest>, JsonRejection>,
+) -> Result<Json<CurrentUserResponse>, AppError> {
+    context.require_password_ready()?;
+    let Json(request) = payload
+        .map_err(|_| AppError::validation("request", "must be a valid profile JSON object"))?;
+    let user = state.auth().update_profile(context.session(), request, peer.ip()).await?;
     Ok(Json(user.response()))
 }
 

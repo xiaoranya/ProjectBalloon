@@ -74,6 +74,7 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/logout", post(auth::logout))
         .route("/api/auth/me", get(auth::current_user))
+        .route("/api/auth/profile", patch(auth::update_profile))
         .route(
             "/api/practice/submissions",
             get(submissions::list_practice)

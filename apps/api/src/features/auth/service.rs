@@ -8,7 +8,9 @@ use subtle::ConstantTimeEq;
 use crate::error::AppError;
 
 use super::{
-    model::{AuthUser, ChangePasswordRequest, LoginRequest, RegisterRequest, UserRow},
+    model::{
+        AuthUser, ChangePasswordRequest, LoginRequest, ProfileRequest, RegisterRequest, UserRow,
+    },
     password,
 };
 
@@ -354,6 +356,48 @@ impl AuthService {
         let mut user = session.user.clone();
         user.password_reset_required = false;
         Ok(user)
+    }
+
+    pub async fn update_profile(
+        &self,
+        session: &AuthenticatedSession,
+        request: ProfileRequest,
+        request_ip: IpAddr,
+    ) -> Result<AuthUser, AppError> {
+        let display_name = request.validate()?;
+        let mut transaction = self
+            .database
+            .begin()
+            .await
+            .map_err(|error| AppError::internal("begin profile update", error))?;
+        let update = sqlx::query(
+            "UPDATE users SET display_name=$1,updated_at=now() WHERE id=$2 AND enabled=true",
+        )
+        .bind(display_name)
+        .bind(session.user.id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| AppError::internal("update profile", error))?;
+        if update.rows_affected() != 1 {
+            return Err(AppError::unauthorized("ACCOUNT_DISABLED", "Account is disabled"));
+        }
+        record_audit(
+            &mut transaction,
+            Some(session.user.id),
+            "PROFILE_UPDATED",
+            &session.user.id.to_string(),
+            &request_ip.to_string(),
+            "success",
+        )
+        .await?;
+        transaction
+            .commit()
+            .await
+            .map_err(|error| AppError::internal("commit profile update", error))?;
+        self.load_user_by_id(session.user.id)
+            .await?
+            .ok_or_else(|| AppError::unauthorized("ACCOUNT_DISABLED", "Account is disabled"))?
+            .auth_user()
     }
 
     async fn load_user_by_username(&self, username: &str) -> Result<Option<UserRow>, AppError> {
