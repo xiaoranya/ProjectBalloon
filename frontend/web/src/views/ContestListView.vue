@@ -16,8 +16,8 @@
     </ElAlert>
 
     <div v-loading="loading" class="contest-grid">
-      <ElEmpty v-if="!loading && contests.length === 0" description="当前没有可访问的比赛" />
-      <article v-for="contest in contests" :key="contest.id" class="contest-card">
+      <ElEmpty v-if="!loading && page.content.length === 0" description="当前没有可访问的比赛" />
+      <article v-for="contest in page.content" :key="contest.id" class="contest-card">
         <div class="contest-card-top">
           <ElTag :type="contest.status === 'RUNNING' ? 'success' : 'info'" effect="light">
             {{ contestStatusLabel(contest.status) }}
@@ -33,6 +33,15 @@
         <ElButton type="primary" size="large" @click="enterContest(contest.id)">进入比赛</ElButton>
       </article>
     </div>
+    <ElPagination
+      v-if="page.totalPages > 1"
+      v-model:current-page="currentPage"
+      :page-size="page.size"
+      :total="page.totalElements"
+      layout="prev, pager, next, total"
+      class="pagination-row"
+      @current-change="loadContests"
+    />
   </main>
 </template>
 
@@ -41,13 +50,14 @@ import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { contestApi } from '../api/contest';
 import { getErrorMessage } from '../api/client';
-import type { Contest } from '../api/types';
+import type { Contest, PageResponse } from '../api/types';
 import { useSession } from '../auth/session';
 import { contestStatusLabel, formatDateTime } from '../utils/format';
 
 const router = useRouter();
 const session = useSession();
-const contests = ref<Contest[]>([]);
+const page = ref<PageResponse<Contest>>({ content: [], page: 0, size: 50, totalElements: 0, totalPages: 0 });
+const currentPage = ref(1);
 const loading = ref(false);
 const errorMessage = ref('');
 
@@ -55,8 +65,7 @@ async function loadContests() {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const page = await contestApi.listContests();
-    contests.value = page.content;
+    page.value = await contestApi.listContests(currentPage.value - 1, page.value.size);
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   } finally {

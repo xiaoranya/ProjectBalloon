@@ -38,7 +38,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
 import { contestApi } from '../api/contest';
@@ -51,13 +51,13 @@ const router = useRouter();
 const problems = ref<ContestProblem[]>([]);
 const loading = ref(false);
 const errorMessage = ref('');
-const contestId = Number(route.params.contestId);
+const contestId = computed(() => Number(route.params.contestId));
 
 async function loadProblems() {
   loading.value = true;
   errorMessage.value = '';
   try {
-    problems.value = await contestApi.listProblems(contestId);
+    problems.value = await contestApi.listProblems(contestId.value);
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   } finally {
@@ -66,8 +66,11 @@ async function loadProblems() {
 }
 
 function openProblem(problemId: number) {
-  void router.push(`/contests/${contestId}/problems/${problemId}`);
+  void router.push(`/contests/${contestId.value}/problems/${problemId}`);
 }
 
-onMounted(loadProblems);
+watch(contestId, () => {
+  problems.value = [];
+  void loadProblems();
+}, { immediate: true });
 </script>

@@ -59,7 +59,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
 import { contestApi } from '../api/contest';
@@ -68,7 +68,7 @@ import type { Scoreboard, ScoreboardCell } from '../api/types';
 import { formatDateTime } from '../utils/format';
 
 const route = useRoute();
-const contestId = Number(route.params.contestId);
+const contestId = computed(() => Number(route.params.contestId));
 const scoreboard = ref<Scoreboard | null>(null);
 const loading = ref(false);
 const errorMessage = ref('');
@@ -79,7 +79,7 @@ async function loadScoreboard(silent = false) {
   const generation = ++requestGeneration;
   if (!silent) loading.value = true;
   try {
-    const result = await contestApi.getScoreboard(contestId);
+    const result = await contestApi.getScoreboard(contestId.value);
     if (generation !== requestGeneration) return;
     scoreboard.value = result;
     errorMessage.value = '';
@@ -108,12 +108,16 @@ function points(scoreMilli: number): string {
   return (scoreMilli / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 });
 }
 
-onMounted(async () => {
-  await loadScoreboard();
+onMounted(() => {
   timer = window.setInterval(() => {
     if (!document.hidden) void loadScoreboard(true);
   }, 15_000);
 });
+
+watch(contestId, () => {
+  scoreboard.value = null;
+  void loadScoreboard();
+}, { immediate: true });
 
 onUnmounted(() => {
   if (timer) window.clearInterval(timer);

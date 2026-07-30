@@ -45,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
 import { contestApi } from '../api/contest';
@@ -61,7 +61,7 @@ import {
 
 const route = useRoute();
 const router = useRouter();
-const contestId = Number(route.params.contestId);
+const contestId = computed(() => Number(route.params.contestId));
 const submissions = ref<SubmissionSummary[]>([]);
 const loading = ref(false);
 const errorMessage = ref('');
@@ -81,7 +81,7 @@ async function loadSubmissions(silent = false) {
   if (!silent) loading.value = true;
   errorMessage.value = '';
   try {
-    const result = await contestApi.listSubmissions(contestId, currentPage.value - 1);
+    const result = await contestApi.listSubmissions(contestId.value, currentPage.value - 1);
     if (generation !== requestGeneration) return;
     page.value = result;
     submissions.value = result.content;
@@ -107,13 +107,17 @@ function handleVisibility() {
 }
 
 function openSubmission(row: SubmissionSummary) {
-  void router.push(`/contests/${contestId}/submissions/${row.id}`);
+  void router.push(`/contests/${contestId.value}/submissions/${row.id}`);
 }
 
 onMounted(() => {
-  void loadSubmissions();
   document.addEventListener('visibilitychange', handleVisibility);
 });
+
+watch(contestId, () => {
+  currentPage.value = 1;
+  void loadSubmissions();
+}, { immediate: true });
 
 onUnmounted(() => {
   if (pollTimer) window.clearTimeout(pollTimer);

@@ -10,8 +10,8 @@ import type {
 } from './types';
 
 export const contestApi = {
-  listContests(): Promise<PageResponse<Contest>> {
-    return apiRequest('/api/contests?page=0&size=50&sort=startAt,desc');
+  listContests(page = 0, size = 50): Promise<PageResponse<Contest>> {
+    return apiRequest(`/api/contests?page=${page}&size=${size}&sort=startAt,desc`);
   },
 
   getContest(contestId: number): Promise<Contest> {

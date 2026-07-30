@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { routes } from './routes';
 
 describe('clarification routing', () => {
+  it('allows authenticated individual users to access public training', () => {
+    const training = routes.find((route) => route.path === '/training');
+    expect(training?.meta).toMatchObject({ requiresAuth: true });
+    expect(training?.meta?.requiresTeam).not.toBe(true);
+  });
+
   it('adds a team-only contest clarification route', () => {
     const contestant = routes.find((route) => route.path === '/contests/:contestId');
     expect(contestant?.meta).toMatchObject({ requiresAuth: true, requiresTeam: true });

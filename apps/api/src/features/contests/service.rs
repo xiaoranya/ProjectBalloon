@@ -100,7 +100,7 @@ impl ContestService {
                         FROM contest_admin_assignments caa
                         WHERE caa.contest_id = c.id AND caa.user_id = $3
                     ))
-                    OR (NOT $5 AND c.visibility = 'PUBLIC')
+                    OR (NOT $5 AND c.visibility = 'PUBLIC' AND c.status <> 'DRAFT')
                     OR ($4::bigint IS NOT NULL AND EXISTS (
                         SELECT 1
                         FROM contest_teams ct
@@ -142,7 +142,7 @@ impl ContestService {
                         FROM contest_admin_assignments caa
                         WHERE caa.contest_id = c.id AND caa.user_id = $3
                     ))
-                    OR (NOT $5 AND c.visibility = 'PUBLIC')
+                    OR (NOT $5 AND c.visibility = 'PUBLIC' AND c.status <> 'DRAFT')
                     OR ($4::bigint IS NOT NULL AND EXISTS (
                         SELECT 1
                         FROM contest_teams ct
@@ -193,7 +193,7 @@ impl ContestService {
                         FROM contest_admin_assignments caa
                         WHERE caa.contest_id = c.id AND caa.user_id = $3
                     ))
-                    OR c.visibility = 'PUBLIC'
+                    OR (c.visibility = 'PUBLIC' AND c.status <> 'DRAFT')
                     OR ($4::bigint IS NOT NULL AND EXISTS (
                         SELECT 1
                         FROM contest_teams ct

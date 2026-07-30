@@ -107,7 +107,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowLeft } from '@element-plus/icons-vue';
 import { contestApi } from '../api/contest';
@@ -123,8 +123,8 @@ import {
 
 const route = useRoute();
 const router = useRouter();
-const contestId = Number(route.params.contestId);
-const submissionId = Number(route.params.submissionId);
+const contestId = computed(() => Number(route.params.contestId));
+const submissionId = computed(() => Number(route.params.submissionId));
 const submission = ref<SubmissionDetail | null>(null);
 const loading = ref(false);
 const errorMessage = ref('');
@@ -148,7 +148,7 @@ async function loadSubmission() {
   pollTimer = undefined;
   loading.value = true;
   try {
-    submission.value = await contestApi.getSubmission(contestId, submissionId);
+    submission.value = await contestApi.getSubmission(contestId.value, submissionId.value);
     errorMessage.value = '';
     failures = 0;
     if (!isFinalSubmissionStatus(submission.value.status) && !document.hidden) {
@@ -170,10 +170,12 @@ function handleVisibility() {
   }
 }
 
-onMounted(() => {
+watch([contestId, submissionId], () => {
+  submission.value = null;
   void loadSubmission();
-  document.addEventListener('visibilitychange', handleVisibility);
-});
+}, { immediate: true });
+
+onMounted(() => document.addEventListener('visibilitychange', handleVisibility));
 
 onUnmounted(() => {
   if (pollTimer) window.clearTimeout(pollTimer);

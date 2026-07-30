@@ -93,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { UploadFile, UploadInstance } from 'element-plus';
 import { ElMessage } from 'element-plus';
@@ -106,8 +106,8 @@ import { languageLabel } from '../utils/format';
 const props = defineProps<{ contest: Contest | null }>();
 const route = useRoute();
 const router = useRouter();
-const contestId = Number(route.params.contestId);
-const problemId = Number(route.params.problemId);
+const contestId = computed(() => Number(route.params.contestId));
+const problemId = computed(() => Number(route.params.problemId));
 const problem = ref<ContestProblem | null>(null);
 const loading = ref(false);
 const errorMessage = ref('');
@@ -133,8 +133,8 @@ async function loadProblem() {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const problems = await contestApi.listProblems(contestId);
-    problem.value = problems.find((item) => item.problemId === problemId) ?? null;
+    const problems = await contestApi.listProblems(contestId.value);
+    problem.value = problems.find((item) => item.problemId === problemId.value) ?? null;
     if (!problem.value) {
       errorMessage.value = '题目不存在或不可访问';
       return;
@@ -170,9 +170,9 @@ async function submit() {
   submitting.value = true;
   submitError.value = '';
   try {
-    const result = await contestApi.submit(contestId, problemId, language.value, sourceFile.value);
+    const result = await contestApi.submit(contestId.value, problemId.value, language.value, sourceFile.value);
     ElMessage.success('提交成功，正在等待判题');
-    await router.push(`/contests/${contestId}/submissions/${result.submissionId}`);
+    await router.push(`/contests/${contestId.value}/submissions/${result.submissionId}`);
   } catch (error) {
     submitError.value = getErrorMessage(error);
   } finally {
@@ -180,5 +180,9 @@ async function submit() {
   }
 }
 
-onMounted(loadProblem);
+watch([contestId, problemId], () => {
+  problem.value = null;
+  sourceFile.value = null;
+  void loadProblem();
+}, { immediate: true });
 </script>

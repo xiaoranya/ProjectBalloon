@@ -47,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { contestApi } from '../api/contest';
@@ -82,6 +82,7 @@ function contestRoute(child: string) {
 }
 
 async function loadContest() {
+  contest.value = null;
   try {
     contest.value = await contestApi.getContest(contestId.value);
     loadError.value = '';
@@ -108,6 +109,8 @@ onMounted(() => {
     now.value = Date.now();
   }, 30_000);
 });
+
+watch(contestId, () => void loadContest());
 
 onUnmounted(() => {
   if (clock) window.clearInterval(clock);
