@@ -124,6 +124,7 @@ impl SubmissionService {
         persisted
     }
 
+    // Practice submission fields are kept explicit to preserve validation boundaries.
     #[allow(clippy::too_many_arguments)]
     async fn persist_practice(
         &self,

@@ -403,6 +403,7 @@ impl ProblemService {
             .map_err(|error| AppError::internal("commit problem statement deletion", error))
     }
 
+    // Upload handlers pass independently validated request, actor, and storage metadata.
     #[allow(clippy::too_many_arguments)]
     pub async fn upload_attachment(
         &self,
@@ -904,6 +905,7 @@ impl ProblemService {
         })
     }
 
+    // Upload handlers pass independently validated request, actor, and storage metadata.
     #[allow(clippy::too_many_arguments)]
     async fn persist_testdata(
         &self,
@@ -983,6 +985,7 @@ impl ProblemService {
         Ok(response)
     }
 
+    // Upload handlers pass independently validated request, actor, and storage metadata.
     #[allow(clippy::too_many_arguments)]
     async fn persist_attachment(
         &self,

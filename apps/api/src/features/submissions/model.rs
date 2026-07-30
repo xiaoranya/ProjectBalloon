@@ -48,6 +48,7 @@ impl PracticeSubmitMetadata {
 }
 
 #[derive(Debug, ToSchema)]
+// Used only by the utoipa OpenAPI macro; Rust cannot see that generated use.
 #[allow(dead_code)]
 #[schema(as = SubmissionUploadRequest)]
 pub struct SubmissionUploadRequest {

@@ -22,6 +22,7 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo check-all
       - run: cargo lint
+      # Environment-backed tests run in the scheduled/manual Docker workflow.
       - run: cargo test-all
 
   frontend:

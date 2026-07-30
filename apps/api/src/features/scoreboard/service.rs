@@ -420,6 +420,7 @@ fn is_penalized_rejection(verdict: &str) -> bool {
     )
 }
 
+// Projection inputs stay explicit because each value participates in the cache key.
 #[allow(clippy::too_many_arguments)]
 fn assemble(
     contest_id: i64,

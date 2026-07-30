@@ -309,13 +309,21 @@ mod tests {
 
         assert_eq!(document["openapi"], "3.1.0");
         assert_eq!(document["info"]["title"], "ProjectBalloon API");
+        let http_methods = ["get", "put", "post", "delete", "options", "head", "patch", "trace"];
         let operation_count = document["paths"]
             .as_object()
             .expect("paths object")
             .values()
-            .map(|item| item.as_object().expect("path item").len())
+            .map(|item| {
+                item.as_object()
+                    .expect("path item")
+                    .keys()
+                    .filter(|key| http_methods.contains(&key.as_str()))
+                    .count()
+            })
             .sum::<usize>();
-        assert_eq!(operation_count, 176);
+        // Update this snapshot count when a documented endpoint is intentionally added or removed.
+        assert_eq!(operation_count, 202);
         assert!(document["paths"]["/livez"]["get"].is_object());
         assert!(document["paths"]["/api/health"]["get"].is_object());
         assert!(document["paths"]["/metrics"]["get"].is_object());

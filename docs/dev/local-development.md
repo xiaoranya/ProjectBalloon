@@ -50,8 +50,13 @@ scripts/test/docker-integration.sh
 
 The script starts uniquely named PostgreSQL, Redis, RabbitMQ, and RustFS
 containers, creates isolated buckets, declares the reviewed Judge topology,
-runs all 47 ignored API/Worker tests in queue-safe order, and removes its
+runs all ignored API/Worker tests in queue-safe order, and removes its
 containers on success or failure. Fixed Judge runtime images must already exist.
+
+The same script is exercised by the scheduled/manual
+`.github/workflows/docker-integration.yml` workflow. The regular PR workflow
+intentionally runs only dependency-free tests; it does not silently claim to
+cover these environment-backed scenarios.
 
 ## Development Data
 

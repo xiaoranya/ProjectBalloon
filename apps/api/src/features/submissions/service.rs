@@ -426,6 +426,7 @@ impl SubmissionService {
         })
     }
 
+    // Keeps persistence inputs explicit; the fields map one-to-one to the submission record.
     #[allow(clippy::too_many_arguments)]
     async fn persist(
         &self,

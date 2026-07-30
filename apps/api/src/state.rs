@@ -78,6 +78,7 @@ impl AppState {
     }
 
     #[must_use]
+    // State construction keeps each runtime dependency explicit for startup validation.
     #[allow(clippy::too_many_arguments)]
     pub fn with_object_storage(
         database: PgPool,
@@ -101,6 +102,7 @@ impl AppState {
         )
     }
 
+    // State construction keeps each runtime dependency explicit for startup validation.
     #[allow(clippy::too_many_arguments)]
     fn build(
         database: PgPool,

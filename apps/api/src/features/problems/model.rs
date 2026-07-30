@@ -344,6 +344,7 @@ pub struct ActivateTestdataVersionRequest {
 
 #[derive(Debug, ToSchema)]
 #[schema(as = AttachmentUploadRequest)]
+// Used only by the utoipa OpenAPI macro; Rust cannot see that generated use.
 #[allow(dead_code)]
 pub struct AttachmentUploadRequest {
     #[schema(example = "SAMPLE")]
@@ -354,6 +355,7 @@ pub struct AttachmentUploadRequest {
 
 #[derive(Debug, ToSchema)]
 #[schema(as = TestdataUploadRequest)]
+// Used only by the utoipa OpenAPI macro; Rust cannot see that generated use.
 #[allow(dead_code)]
 pub struct TestdataUploadRequest {
     #[schema(value_type = String, format = Binary)]
@@ -362,6 +364,7 @@ pub struct TestdataUploadRequest {
 
 #[derive(Debug, ToSchema)]
 #[schema(as = InteractorUploadRequest)]
+// Used only by the utoipa OpenAPI macro; Rust cannot see that generated use.
 #[allow(dead_code)]
 pub struct InteractorUploadRequest {
     #[schema(value_type = String, format = Binary)]

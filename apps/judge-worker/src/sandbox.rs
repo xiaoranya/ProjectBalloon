@@ -235,6 +235,7 @@ impl DockerSandbox {
         })
     }
 
+    // Sandbox limits and paths are passed separately to keep the container policy visible.
     #[allow(clippy::too_many_arguments)]
     async fn judge_in_container(
         &self,

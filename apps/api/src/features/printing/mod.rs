@@ -192,6 +192,7 @@ impl PrintingService {
         persisted
     }
 
+    // Persistence inputs mirror the print request and its audit fields.
     #[allow(clippy::too_many_arguments)]
     async fn persist(
         &self,
