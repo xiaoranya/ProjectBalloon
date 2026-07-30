@@ -44,3 +44,8 @@ cargo run -p project-balloon-api --bin bootstrap-admin
 
 The command refuses to run after any user has been created. The initial
 administrator must change the bootstrap password at first login.
+
+## License
+
+ProjectBalloon is licensed under the Apache License, Version 2.0. See
+[`LICENSE`](LICENSE) for the complete text.
