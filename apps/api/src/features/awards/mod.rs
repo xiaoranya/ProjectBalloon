@@ -301,6 +301,7 @@ impl AwardService {
         actor: &AuthUser,
     ) -> Result<Vec<CategoryResponse>, AppError> {
         require_operator(actor)?;
+        require_active_contest(&self.database, contest).await?;
         category_query(&self.database, contest).await
     }
 
@@ -312,6 +313,7 @@ impl AwardService {
         ip: IpAddr,
     ) -> Result<CategoryResponse, AppError> {
         require_operator(actor)?;
+        require_active_contest(&self.database, contest).await?;
         let request = validate_category(request)?;
         let mut tx = self
             .database
@@ -354,6 +356,7 @@ impl AwardService {
         .ok_or_else(|| {
             AppError::not_found("AWARD_CATEGORY_NOT_FOUND", "Award category was not found")
         })?;
+        require_active_contest_tx(&mut tx, contest).await?;
         ensure_awards_mutable(&mut tx, contest).await?;
         let changed = sqlx::query("UPDATE award_categories SET code=$2,name=$3,display_order=$4,include_star=$5,group_name=$6,participation_type=$7,first_blood=$8,updated_at=now(),version=version+1 WHERE id=$1 AND version=$9")
             .bind(id).bind(&category.code).bind(&category.name).bind(category.display_order)
@@ -403,6 +406,7 @@ impl AwardService {
         .ok_or_else(|| {
             AppError::not_found("AWARD_CATEGORY_NOT_FOUND", "Award category was not found")
         })?;
+        require_active_contest_tx(&mut tx, contest).await?;
         ensure_awards_mutable(&mut tx, contest).await?;
         if version != expected_version {
             return Err(AppError::conflict(
@@ -433,6 +437,7 @@ impl AwardService {
         actor: &AuthUser,
     ) -> Result<Vec<AwardResolverRunResponse>, AppError> {
         require_operator(actor)?;
+        require_active_contest(&self.database, contest).await?;
         sqlx::query_as("SELECT id,completed_at FROM resolver_runs WHERE contest_id=$1 AND official AND status='COMPLETED' ORDER BY completed_at DESC,id DESC")
             .bind(contest).fetch_all(&self.database).await
             .map_err(|error| AppError::internal("list completed Resolver runs", error))
@@ -444,6 +449,7 @@ impl AwardService {
         actor: &AuthUser,
     ) -> Result<Vec<AwardCandidateResponse>, AppError> {
         require_operator(actor)?;
+        require_active_contest(&self.database, contest).await?;
         let snapshot = sqlx::query_scalar::<_, String>("SELECT snapshot.payload_json FROM award_sets award JOIN scoreboard_snapshots snapshot ON snapshot.id=award.final_scoreboard_snapshot_id WHERE award.contest_id=$1")
             .bind(contest).fetch_optional(&self.database).await
             .map_err(|error| AppError::internal("load award candidates", error))?
@@ -473,6 +479,7 @@ impl AwardService {
         ip: IpAddr,
     ) -> Result<AwardSetResponse, AppError> {
         require_operator(actor)?;
+        require_active_contest(&self.database, contest).await?;
         let mut tx = self
             .database
             .begin()
@@ -530,6 +537,7 @@ impl AwardService {
         ip: IpAddr,
     ) -> Result<AwardSetResponse, AppError> {
         require_operator(actor)?;
+        require_active_contest(&self.database, contest).await?;
         let mut tx =
             self.database.begin().await.map_err(|e| AppError::internal("begin manual award", e))?;
         let (set_id, snapshot_id, version) = lock_set(&mut tx, contest).await?;
@@ -597,6 +605,7 @@ impl AwardService {
         .ok_or_else(|| {
             AppError::not_found("AWARD_RECIPIENT_NOT_FOUND", "Award recipient was not found")
         })?;
+        require_active_contest_tx(&mut tx, contest).await?;
         let (set_id, _, version) = lock_set(&mut tx, contest).await?;
         if version != expected_version {
             return Err(stale());
@@ -633,6 +642,7 @@ impl AwardService {
         ip: IpAddr,
     ) -> Result<AwardSetResponse, AppError> {
         require_operator(actor)?;
+        require_active_contest(&self.database, contest).await?;
         let mut tx =
             self.database.begin().await.map_err(|e| AppError::internal("begin award freeze", e))?;
         let changed = sqlx::query("UPDATE award_sets SET status=CASE WHEN $3 THEN 'FROZEN' ELSE 'DRAFT' END, frozen_at=CASE WHEN $3 THEN now() ELSE NULL END, frozen_by_user_id=CASE WHEN $3 THEN $4 ELSE NULL END, version=version+1 WHERE contest_id=$1 AND version=$2 AND status=CASE WHEN $3 THEN 'DRAFT' ELSE 'FROZEN' END")
@@ -730,6 +740,7 @@ impl AwardService {
 
     async fn load_set(&self, contest: i64, actor: &AuthUser) -> Result<AwardSetResponse, AppError> {
         require_operator(actor)?;
+        require_active_contest(&self.database, contest).await?;
         let row = sqlx::query_as::<_, (i64,i64,i64,String,i32,OffsetDateTime,Option<OffsetDateTime>)>("SELECT id,resolver_run_id,final_scoreboard_snapshot_id,status,version,generated_at,frozen_at FROM award_sets WHERE contest_id=$1")
             .bind(contest).fetch_optional(&self.database).await.map_err(|e| AppError::internal("load award set", e))?
             .ok_or_else(|| AppError::not_found("AWARD_SET_NOT_FOUND", "Award set was not found"))?;
@@ -854,6 +865,7 @@ impl AwardService {
         ip: IpAddr,
     ) -> Result<PresentationResponse, AppError> {
         require_operator(actor)?;
+        require_active_contest(&self.database, contest).await?;
         request.status = request.status.trim().to_ascii_uppercase();
         if !matches!(request.status.as_str(), "WAITING" | "PRESENTING" | "COMPLETED") {
             return Err(AppError::validation("status", "is not a presentation status"));
@@ -1312,6 +1324,7 @@ async fn ensure_awards_mutable(
     tx: &mut Transaction<'_, Postgres>,
     contest: i64,
 ) -> Result<(), AppError> {
+    require_active_contest_tx(tx, contest).await?;
     let frozen = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM award_sets WHERE contest_id=$1 AND status='FROZEN')",
     )
@@ -1329,6 +1342,7 @@ async fn lock_set(
     tx: &mut Transaction<'_, Postgres>,
     contest: i64,
 ) -> Result<(i64, i64, i32), AppError> {
+    require_active_contest_tx(tx, contest).await?;
     sqlx::query_as("SELECT id,final_scoreboard_snapshot_id,version FROM award_sets WHERE contest_id=$1 AND status='DRAFT' FOR UPDATE").bind(contest).fetch_optional(&mut**tx).await.map_err(|e|AppError::internal("lock award set",e))?.ok_or_else(||AppError::conflict("AWARD_SET_NOT_MUTABLE","A draft award set is required"))
 }
 async fn audit(
@@ -1345,6 +1359,39 @@ fn require_operator(a: &AuthUser) -> Result<(), AppError> {
         Ok(())
     } else {
         Err(AppError::forbidden("AWARD_OPERATOR_REQUIRED", "Award operator role is required"))
+    }
+}
+
+async fn require_active_contest(database: &PgPool, contest: i64) -> Result<(), AppError> {
+    let active = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM contests WHERE id=$1 AND deleted_at IS NULL)",
+    )
+    .bind(contest)
+    .fetch_one(database)
+    .await
+    .map_err(|error| AppError::internal("check award contest", error))?;
+    if active {
+        Ok(())
+    } else {
+        Err(AppError::not_found("CONTEST_NOT_FOUND", "Contest was not found"))
+    }
+}
+
+async fn require_active_contest_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    contest: i64,
+) -> Result<(), AppError> {
+    let active = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM contests WHERE id=$1 AND deleted_at IS NULL)",
+    )
+    .bind(contest)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|error| AppError::internal("check award contest", error))?;
+    if active {
+        Ok(())
+    } else {
+        Err(AppError::not_found("CONTEST_NOT_FOUND", "Contest was not found"))
     }
 }
 fn stale() -> AppError {

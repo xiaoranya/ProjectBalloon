@@ -343,7 +343,7 @@ impl PresentationService {
             .begin()
             .await
             .map_err(|error| AppError::internal("begin screen heartbeat", error))?;
-        let updated = sqlx::query_scalar::<_, i64>("UPDATE screen_instances SET current_view=$3,last_seen_at=now(),last_ip=$4,updated_at=now() WHERE id=$1 AND client_token_hash=$2 AND revoked_at IS NULL RETURNING id")
+        let updated = sqlx::query_scalar::<_, i64>("UPDATE screen_instances instance SET current_view=$3,last_seen_at=now(),last_ip=$4,updated_at=now() WHERE instance.id=$1 AND instance.client_token_hash=$2 AND instance.revoked_at IS NULL AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id=instance.contest_id AND contest.deleted_at IS NULL) RETURNING instance.id")
             .bind(instance).bind(token_hash(&request.client_token)).bind(&request.current_view).bind(ip.to_string()).fetch_optional(&mut *tx).await.map_err(|error| AppError::internal("update screen heartbeat", error))?;
         if updated.is_none() {
             return Err(AppError::unauthorized("SCREEN_TOKEN_INVALID", "Screen token is invalid"));
@@ -390,6 +390,7 @@ impl PresentationService {
         ip: IpAddr,
     ) -> Result<CommandResponse, AppError> {
         require_screen_operator(actor)?;
+        require_contest(&self.database, contest).await?;
         let target = validate_view(&request.target_view)?;
         let mut tx = self
             .database
@@ -424,7 +425,7 @@ impl PresentationService {
             .begin()
             .await
             .map_err(|error| AppError::internal("begin screen revoke", error))?;
-        let changed = sqlx::query("UPDATE screen_instances SET revoked_at=coalesce(revoked_at,now()),updated_at=now() WHERE id=$1 AND contest_id=$2")
+        let changed = sqlx::query("UPDATE screen_instances instance SET revoked_at=coalesce(revoked_at,now()),updated_at=now() WHERE instance.id=$1 AND instance.contest_id=$2 AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id=instance.contest_id AND contest.deleted_at IS NULL)")
             .bind(instance).bind(contest).execute(&mut *tx).await.map_err(|error| AppError::internal("revoke screen instance", error))?.rows_affected();
         if changed != 1 {
             return Err(AppError::not_found(

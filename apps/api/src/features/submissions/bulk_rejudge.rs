@@ -439,6 +439,16 @@ async fn require_access(
     if contest_id <= 0 {
         return Err(batch_not_found());
     }
+    let active = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM contests WHERE id = $1 AND deleted_at IS NULL)",
+    )
+    .bind(contest_id)
+    .fetch_one(database)
+    .await
+    .map_err(|error| AppError::internal("check batch rejudge contest", error))?;
+    if !active {
+        return Err(batch_not_found());
+    }
     if actor.has_role("SUPER_ADMIN") {
         return Ok(());
     }
@@ -474,6 +484,8 @@ async fn count_matches(
 
 const MATCHING_SUBMISSIONS: &str = r#"
     FROM submissions submission
+    JOIN contests contest ON contest.id = submission.contest_id
+                         AND contest.deleted_at IS NULL
     JOIN judgements judgement
       ON judgement.submission_id = submission.id
      AND judgement.active_marker IS TRUE

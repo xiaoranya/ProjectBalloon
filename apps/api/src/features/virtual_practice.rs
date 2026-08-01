@@ -106,6 +106,7 @@ pub async fn list(
     context: AuthContext,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<VirtualSessionResponse>>, AppError> {
+    context.require_password_ready()?;
     let sql = format!(
         "{SESSION_SELECT} WHERE s.user_id=$1 GROUP BY s.id ORDER BY s.created_at DESC,s.id DESC"
     );
@@ -124,6 +125,7 @@ pub async fn get(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<VirtualSessionDetail>, AppError> {
+    context.require_password_ready()?;
     let session = load_session(&state, id, context.user().id).await?;
     let problems=sqlx::query_as::<_,VirtualProblemResponse>("SELECT i.problem_id,p.slug,p.title,i.position,EXISTS(SELECT 1 FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2 AND s.status='ACCEPTED') AS solved,(SELECT count(*) FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2)::bigint AS attempts FROM practice_virtual_items i JOIN problems p ON p.id=i.problem_id WHERE i.session_id=$1 ORDER BY i.position").bind(id).bind(context.user().id).fetch_all(state.database()).await.map_err(|e|AppError::internal("load virtual problems",e))?;
     Ok(Json(VirtualSessionDetail { session, problems }))

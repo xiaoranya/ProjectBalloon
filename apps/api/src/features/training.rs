@@ -189,7 +189,7 @@ pub async fn list_bank(
     let Query(query) = query.map_err(|_| AppError::validation("query", "invalid query"))?;
     let (size, offset) = validate_page(&query)?;
     let tag = query.tag.as_deref().map(str::trim).filter(|v| !v.is_empty());
-    let total = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM problem_bank_entries WHERE visibility='PUBLIC' AND ($1::text IS NULL OR tags::jsonb ? $1) AND ($2::smallint IS NULL OR difficulty=$2)").bind(tag).bind(query.difficulty).fetch_one(state.database()).await.map_err(|e| AppError::internal("count public problem bank", e))?;
+    let total = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM problem_bank_entries b JOIN problems p ON p.id=b.problem_id AND p.deleted_at IS NULL WHERE b.visibility='PUBLIC' AND ($1::text IS NULL OR b.tags::jsonb ? $1) AND ($2::smallint IS NULL OR b.difficulty=$2)").bind(tag).bind(query.difficulty).fetch_one(state.database()).await.map_err(|e| AppError::internal("count public problem bank", e))?;
     let mut rows = sqlx::query_as::<_, BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.deleted_at IS NULL AND b.visibility='PUBLIC' AND ($1::text IS NULL OR b.tags::jsonb ? $1) AND ($2::smallint IS NULL OR b.difficulty=$2) ORDER BY b.published_at DESC,b.problem_id DESC LIMIT $3 OFFSET $4").bind(tag).bind(query.difficulty).bind(size).bind(offset).fetch_all(state.database()).await.map_err(|e| AppError::internal("list public problem bank", e))?;
     for row in &mut rows {
         row.statement = row.statement.take().map(|statement| render_safe_statement(&statement));
@@ -248,18 +248,20 @@ async fn team_for_user(state: &AppState, user_id: i64) -> Result<Option<i64>, Ap
 
 #[utoipa::path(get, path = "/api/training/sets", operation_id = "listTrainingSets", tag = "training", responses((status = 200, body = [TrainingSet]), (status = 401, body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
 pub async fn list_sets(
-    _context: AuthContext,
+    context: AuthContext,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TrainingSet>>, AppError> {
+    context.require_password_ready()?;
     Ok(Json(sqlx::query_as::<_, TrainingSet>("SELECT s.id,s.slug,s.title,s.description,s.visibility,count(i.problem_id)::bigint AS item_count FROM training_sets s LEFT JOIN training_set_items i ON i.set_id=s.id WHERE s.visibility='PUBLIC' GROUP BY s.id ORDER BY s.updated_at DESC,s.id DESC").fetch_all(state.database()).await.map_err(|e| AppError::internal("list training sets", e))?))
 }
 
 #[utoipa::path(get, path = "/api/training/sets/{set_id}", operation_id = "getTrainingSet", tag = "training", params(("set_id" = i64, Path)), responses((status = 200, body = TrainingSetDetail), (status = 404, body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
 pub async fn get_set(
-    _context: AuthContext,
+    context: AuthContext,
     State(state): State<AppState>,
     Path(set_id): Path<i64>,
 ) -> Result<Json<TrainingSetDetail>, AppError> {
+    context.require_password_ready()?;
     let set_info=sqlx::query_as::<_,TrainingSet>("SELECT s.id,s.slug,s.title,s.description,s.visibility,count(i.problem_id)::bigint AS item_count FROM training_sets s LEFT JOIN training_set_items i ON i.set_id=s.id WHERE s.id=$1 AND s.visibility='PUBLIC' GROUP BY s.id").bind(set_id).fetch_optional(state.database()).await.map_err(|e| AppError::internal("get training set", e))?.ok_or_else(|| AppError::not_found("TRAINING_SET_NOT_FOUND","Training set not found"))?;
     let items=sqlx::query_as::<_,TrainingItem>("SELECT i.problem_id,p.slug,p.title,i.position,i.required,b.difficulty,coalesce(b.tags,'[]')::jsonb AS tags FROM training_set_items i JOIN problems p ON p.id=i.problem_id LEFT JOIN problem_bank_entries b ON b.problem_id=p.id WHERE i.set_id=$1 ORDER BY i.position").bind(set_id).fetch_all(state.database()).await.map_err(|e| AppError::internal("list training items",e))?;
     Ok(Json(TrainingSetDetail { set_info, items }))
@@ -367,6 +369,7 @@ pub async fn enroll(
     State(state): State<AppState>,
     Path(set_id): Path<i64>,
 ) -> Result<(axum::http::StatusCode, Json<Enrollment>), AppError> {
+    context.require_password_ready()?;
     let team_id = team_for_user(&state, context.user().id).await?;
     let row = if let Some(team_id) = team_id {
         sqlx::query_as::<_,Enrollment>("INSERT INTO training_enrollments(set_id,team_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM training_sets WHERE id=$1 AND visibility='PUBLIC') ON CONFLICT(set_id,team_id) DO UPDATE SET status='ACTIVE',updated_at=now() RETURNING id,set_id,team_id,user_id,status,started_at,completed_at").bind(set_id).bind(team_id).fetch_optional(state.database()).await
@@ -383,17 +386,21 @@ pub async fn progress(
     Path(enrollment_id): Path<i64>,
     payload: Result<Json<ProgressRequest>, JsonRejection>,
 ) -> Result<Json<Enrollment>, AppError> {
+    context.require_password_ready()?;
     let Json(request) = payload.map_err(|_| AppError::validation("request", "invalid progress"))?;
     if request.problem_id <= 0
-        || !matches!(request.status.as_str(), "TODO" | "IN_PROGRESS" | "SOLVED")
-        || !(0..=100).contains(&request.score)
+        || !matches!(request.status.as_str(), "TODO" | "IN_PROGRESS")
+        || request.score != 0
     {
-        return Err(AppError::validation("progress", "invalid status, problem, or score"));
+        return Err(AppError::validation(
+            "progress",
+            "client progress may only set TODO or IN_PROGRESS with a zero score",
+        ));
     }
     let team_id = team_for_user(&state, context.user().id).await?;
     let owner_id = team_id.unwrap_or(context.user().id);
     let is_team = team_id.is_some();
-    let result=sqlx::query_as::<_,Enrollment>("WITH e AS (SELECT * FROM training_enrollments WHERE id=$1 AND (($3 AND team_id=$2) OR (NOT $3 AND user_id=$2))), p AS (INSERT INTO training_progress(enrollment_id,problem_id,status,attempts,best_score,solved_at) SELECT $1,$4,$5,1,$6,CASE WHEN $5='SOLVED' THEN now() ELSE NULL END FROM e ON CONFLICT(enrollment_id,problem_id) DO UPDATE SET status=EXCLUDED.status,attempts=training_progress.attempts+1,best_score=GREATEST(training_progress.best_score,EXCLUDED.best_score),solved_at=coalesce(training_progress.solved_at,EXCLUDED.solved_at),updated_at=now() RETURNING enrollment_id) UPDATE training_enrollments SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN 'COMPLETED' ELSE 'ACTIVE' END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN coalesce(training_enrollments.completed_at,now()) ELSE NULL END,updated_at=now() FROM e WHERE training_enrollments.id=e.id RETURNING training_enrollments.id,training_enrollments.set_id,training_enrollments.team_id,training_enrollments.user_id,training_enrollments.status,training_enrollments.started_at,training_enrollments.completed_at").bind(enrollment_id).bind(owner_id).bind(is_team).bind(request.problem_id).bind(&request.status).bind(request.score).fetch_optional(state.database()).await.map_err(|e|AppError::internal("update training progress",e))?.ok_or_else(||AppError::not_found("ENROLLMENT_NOT_FOUND","Enrollment not found"))?;
+    let result=sqlx::query_as::<_,Enrollment>("WITH e AS (SELECT e.* FROM training_enrollments e JOIN training_set_items i ON i.set_id=e.set_id AND i.problem_id=$4 WHERE e.id=$1 AND e.status IN ('ACTIVE','COMPLETED') AND (($3 AND e.team_id=$2) OR (NOT $3 AND e.user_id=$2))), p AS (INSERT INTO training_progress(enrollment_id,problem_id,status,attempts,best_score,solved_at) SELECT $1,$4,$5,0,0,NULL FROM e ON CONFLICT(enrollment_id,problem_id) DO UPDATE SET status=CASE WHEN training_progress.status='SOLVED' THEN 'SOLVED' ELSE EXCLUDED.status END,updated_at=now() RETURNING enrollment_id) UPDATE training_enrollments SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN 'COMPLETED' ELSE 'ACTIVE' END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN coalesce(training_enrollments.completed_at,now()) ELSE NULL END,updated_at=now() FROM e WHERE training_enrollments.id=e.id RETURNING training_enrollments.id,training_enrollments.set_id,training_enrollments.team_id,training_enrollments.user_id,training_enrollments.status,training_enrollments.started_at,training_enrollments.completed_at").bind(enrollment_id).bind(owner_id).bind(is_team).bind(request.problem_id).bind(&request.status).fetch_optional(state.database()).await.map_err(|e|AppError::internal("update training progress",e))?.ok_or_else(||AppError::not_found("ENROLLMENT_NOT_FOUND","Enrollment not found"))?;
     Ok(Json(result))
 }
 
@@ -402,7 +409,8 @@ pub async fn list_favorites(
     context: AuthContext,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<BankProblem>>, AppError> {
-    let rows=sqlx::query_as::<_,BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM practice_problem_favorites f JOIN problems p ON p.id=f.problem_id JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE f.user_id=$1 ORDER BY f.created_at DESC").bind(context.user().id).fetch_all(state.database()).await.map_err(|e|AppError::internal("list practice favorites",e))?;
+    context.require_password_ready()?;
+    let rows=sqlx::query_as::<_,BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM practice_problem_favorites f JOIN problems p ON p.id=f.problem_id AND p.deleted_at IS NULL JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE f.user_id=$1 ORDER BY f.created_at DESC").bind(context.user().id).fetch_all(state.database()).await.map_err(|e|AppError::internal("list practice favorites",e))?;
     Ok(Json(rows))
 }
 
@@ -413,12 +421,13 @@ pub async fn set_favorite(
     Path(problem_id): Path<i64>,
     payload: Result<Json<FavoriteRequest>, JsonRejection>,
 ) -> Result<Json<FavoriteResponse>, AppError> {
+    context.require_password_ready()?;
     let Json(request) =
         payload.map_err(|_| AppError::validation("request", "invalid favorite state"))?;
     if request.favorite {
-        let changed=sqlx::query("INSERT INTO practice_problem_favorites(user_id,problem_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM problem_bank_entries WHERE problem_id=$2 AND visibility='PUBLIC') ON CONFLICT DO NOTHING").bind(context.user().id).bind(problem_id).execute(state.database()).await.map_err(|e|AppError::internal("favorite problem",e))?.rows_affected();
+        let changed=sqlx::query("INSERT INTO practice_problem_favorites(user_id,problem_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM problem_bank_entries b JOIN problems p ON p.id=b.problem_id AND p.deleted_at IS NULL WHERE b.problem_id=$2 AND b.visibility='PUBLIC') ON CONFLICT DO NOTHING").bind(context.user().id).bind(problem_id).execute(state.database()).await.map_err(|e|AppError::internal("favorite problem",e))?.rows_affected();
         if changed == 0 {
-            let public=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM problem_bank_entries WHERE problem_id=$1 AND visibility='PUBLIC')").bind(problem_id).fetch_one(state.database()).await.map_err(|e|AppError::internal("check favorite problem",e))?;
+            let public=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM problem_bank_entries b JOIN problems p ON p.id=b.problem_id AND p.deleted_at IS NULL WHERE b.problem_id=$1 AND b.visibility='PUBLIC')").bind(problem_id).fetch_one(state.database()).await.map_err(|e|AppError::internal("check favorite problem",e))?;
             if !public {
                 return Err(AppError::not_found("PROBLEM_NOT_FOUND", "Public problem not found"));
             }
@@ -441,8 +450,9 @@ pub async fn get_editorial(
     Path(problem_id): Path<i64>,
     Query(query): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<EditorialResponse>, AppError> {
+    context.require_password_ready()?;
     let lang = query.get("lang").map_or("en", String::as_str);
-    let row=sqlx::query_as::<_,(String,String,String,time::OffsetDateTime)>("SELECT title,body,unlock_policy,updated_at FROM problem_editorials WHERE problem_id=$1 AND lang_code=$2 AND published").bind(problem_id).bind(lang).fetch_optional(state.database()).await.map_err(|e|AppError::internal("load practice editorial",e))?.ok_or_else(||AppError::not_found("EDITORIAL_NOT_FOUND","Editorial not found"))?;
+    let row=sqlx::query_as::<_,(String,String,String,time::OffsetDateTime)>("SELECT editorial.title,editorial.body,editorial.unlock_policy,editorial.updated_at FROM problem_editorials editorial JOIN problems problem ON problem.id=editorial.problem_id AND problem.deleted_at IS NULL JOIN problem_bank_entries bank ON bank.problem_id=problem.id AND bank.visibility='PUBLIC' WHERE editorial.problem_id=$1 AND editorial.lang_code=$2 AND editorial.published").bind(problem_id).bind(lang).fetch_optional(state.database()).await.map_err(|e|AppError::internal("load practice editorial",e))?.ok_or_else(||AppError::not_found("EDITORIAL_NOT_FOUND","Editorial not found"))?;
     let progress = sqlx::query_as::<_, (i32, bool)>(
         "SELECT attempts,solved FROM practice_problem_progress WHERE user_id=$1 AND problem_id=$2",
     )

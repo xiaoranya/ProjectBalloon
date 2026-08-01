@@ -640,10 +640,15 @@ pub(crate) fn to_csv(board: &ScoreboardResponse) -> String {
 }
 
 fn csv_field(value: &str) -> String {
-    if value.chars().any(|character| matches!(character, ',' | '"' | '\r' | '\n')) {
-        format!("\"{}\"", value.replace('"', "\"\""))
+    let safe = if matches!(value.as_bytes().first(), Some(b'=' | b'+' | b'-' | b'@')) {
+        format!("'{value}")
     } else {
         value.to_owned()
+    };
+    if safe.chars().any(|character| matches!(character, ',' | '"' | '\r' | '\n')) {
+        format!("\"{}\"", safe.replace('"', "\"\""))
+    } else {
+        safe
     }
 }
 
@@ -663,8 +668,15 @@ mod tests {
 
     use super::{
         ScoreboardService, SubmissionScoreRow, ValidatedScoreboardQuery, ValidatedSnapshotSelector,
-        score_submissions, to_csv,
+        csv_field, score_submissions, to_csv,
     };
+
+    #[test]
+    fn scoreboard_csv_blocks_spreadsheet_formulas() {
+        assert_eq!(csv_field("=cmd()"), "'=cmd()");
+        assert_eq!(csv_field("+1"), "'+1");
+        assert_eq!(csv_field("A,B"), "\"A,B\"");
+    }
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]

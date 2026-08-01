@@ -386,6 +386,16 @@ pub(super) async fn require_admin_access(
     if contest_id <= 0 {
         return Err(submission_not_found());
     }
+    let active = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM contests WHERE id = $1 AND deleted_at IS NULL)",
+    )
+    .bind(contest_id)
+    .fetch_one(database)
+    .await
+    .map_err(|error| AppError::internal("check submission contest", error))?;
+    if !active {
+        return Err(submission_not_found());
+    }
     if actor.has_role("SUPER_ADMIN") {
         return Ok(());
     }
@@ -407,6 +417,16 @@ async fn list(
     query: ValidatedSubmissionListQuery,
 ) -> Result<PageResponse<SubmissionSummary>, AppError> {
     if contest_id <= 0 {
+        return Err(submission_not_found());
+    }
+    let active = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM contests WHERE id = $1 AND deleted_at IS NULL)",
+    )
+    .bind(contest_id)
+    .fetch_one(database)
+    .await
+    .map_err(|error| AppError::internal("check submission contest", error))?;
+    if !active {
         return Err(submission_not_found());
     }
     let total_elements = sqlx::query_scalar::<_, i64>(
@@ -488,6 +508,16 @@ async fn detail(
     storage: &ObjectStorageHandle,
 ) -> Result<SubmissionDetail, AppError> {
     if contest_id <= 0 || submission_id <= 0 {
+        return Err(submission_not_found());
+    }
+    let active = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM contests WHERE id = $1 AND deleted_at IS NULL)",
+    )
+    .bind(contest_id)
+    .fetch_one(database)
+    .await
+    .map_err(|error| AppError::internal("check submission contest", error))?;
+    if !active {
         return Err(submission_not_found());
     }
     let summary = sqlx::query_as::<_, SubmissionSummary>(

@@ -330,6 +330,7 @@ impl ResolverService {
         actor: &AuthUser,
     ) -> Result<Vec<ResolverRunResponse>, AppError> {
         require_operator(actor)?;
+        require_active_contest(&self.database, contest_id).await?;
         sqlx::query_as::<_, RunRow>(&format!(
             "{RUN_SELECT} WHERE run.contest_id = $1 ORDER BY run.official DESC, run.created_at DESC"
         ))
@@ -348,6 +349,7 @@ impl ResolverService {
         actor: &AuthUser,
     ) -> Result<ResolverSourcesResponse, AppError> {
         require_operator(actor)?;
+        require_active_contest(&self.database, contest_id).await?;
         let load = |variant: &'static str, frozen_only: bool| async move {
             sqlx::query_as::<_, ResolverSourceSnapshotResponse>(
                 r#"
@@ -407,7 +409,7 @@ impl ResolverService {
     ) -> Result<Vec<ResolverEventResponse>, AppError> {
         require_operator(actor)?;
         sqlx::query_as::<_, EventRow>(
-            "SELECT id, event_type, payload, sequence, actor_user_id, created_at FROM resolver_events WHERE run_id = $1 ORDER BY sequence",
+            "SELECT event.id, event.event_type, event.payload, event.sequence, event.actor_user_id, event.created_at FROM resolver_events event JOIN resolver_runs run ON run.id = event.run_id JOIN contests contest ON contest.id = run.contest_id AND contest.deleted_at IS NULL WHERE event.run_id = $1 ORDER BY event.sequence",
         )
         .bind(id).fetch_all(&self.database).await
         .map_err(|error| AppError::internal("list resolver events", error))?
@@ -432,7 +434,7 @@ impl ResolverService {
             .await
             .map_err(|error| AppError::internal("begin resolver command", error))?;
         let (status, step, total, version, official) = sqlx::query_as::<_, (String, i32, i32, i32, bool)>(
-            "SELECT status, current_step, total_steps, version, official FROM resolver_runs WHERE id = $1 FOR UPDATE",
+            "SELECT run.status, run.current_step, run.total_steps, run.version, run.official FROM resolver_runs run JOIN contests contest ON contest.id = run.contest_id AND contest.deleted_at IS NULL WHERE run.id = $1 FOR UPDATE OF run",
         ).bind(id).fetch_optional(&mut *tx).await
             .map_err(|error| AppError::internal("lock resolver run", error))?
             .ok_or_else(resolver_not_found)?;
@@ -539,7 +541,7 @@ impl ResolverService {
             .await
             .map_err(|error| AppError::internal("begin Resolver auto-play update", error))?;
         let (status, step, total, version, official) = sqlx::query_as::<_, (String, i32, i32, i32, bool)>(
-            "SELECT status, current_step, total_steps, version, official FROM resolver_runs WHERE id = $1 FOR UPDATE",
+            "SELECT run.status, run.current_step, run.total_steps, run.version, run.official FROM resolver_runs run JOIN contests contest ON contest.id = run.contest_id AND contest.deleted_at IS NULL WHERE run.id = $1 FOR UPDATE OF run",
         ).bind(id).fetch_optional(&mut *tx).await
             .map_err(|error| AppError::internal("lock Resolver auto-play", error))?
             .ok_or_else(resolver_not_found)?;
@@ -607,9 +609,10 @@ impl ResolverAutoRunner {
         let advanced = sqlx::query_as::<_, (i64, i64, bool, i32, i64)>(
             r#"
             WITH candidate AS (
-                SELECT id FROM resolver_runs
-                WHERE auto_play_enabled AND status = 'RUNNING' AND next_auto_at <= now()
-                ORDER BY next_auto_at, id FOR UPDATE SKIP LOCKED LIMIT 1
+                SELECT run.id FROM resolver_runs run
+                JOIN contests contest ON contest.id = run.contest_id AND contest.deleted_at IS NULL
+                WHERE run.auto_play_enabled AND run.status = 'RUNNING' AND run.next_auto_at <= now()
+                ORDER BY run.next_auto_at, run.id FOR UPDATE OF run SKIP LOCKED LIMIT 1
             )
             UPDATE resolver_runs run SET current_step = run.current_step + 1,
                 auto_play_enabled = run.current_step + 1 < run.total_steps,
@@ -837,7 +840,18 @@ const RUN_SELECT: &str = r#"SELECT run.id, run.contest_id, run.official, run.sta
  run.source_final_snapshot_id, run.plan_sha256, run.created_by_user_id,
  run.started_at, run.completed_at, run.auto_play_enabled, run.auto_play_interval_ms,
  run.next_auto_at, run.created_at, run.updated_at, run.version,
- current.state_data FROM resolver_runs run JOIN resolver_current_state current ON current.run_id = run.id"#;
+ current.state_data FROM resolver_runs run JOIN contests contest ON contest.id = run.contest_id AND contest.deleted_at IS NULL JOIN resolver_current_state current ON current.run_id = run.id"#;
+
+async fn require_active_contest(database: &PgPool, contest_id: i64) -> Result<(), AppError> {
+    let active = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM contests WHERE id=$1 AND deleted_at IS NULL)",
+    )
+    .bind(contest_id)
+    .fetch_one(database)
+    .await
+    .map_err(|error| AppError::internal("check resolver contest", error))?;
+    if active { Ok(()) } else { Err(resolver_not_found()) }
+}
 
 async fn load_run(database: &PgPool, id: i64) -> Result<ResolverRunResponse, AppError> {
     sqlx::query_as::<_, RunRow>(&format!("{RUN_SELECT} WHERE run.id = $1"))

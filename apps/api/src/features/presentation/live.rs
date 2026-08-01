@@ -179,7 +179,7 @@ async fn require_access(
         let raw = token.filter(|value| !value.trim().is_empty()).ok_or_else(|| {
             AppError::unauthorized("BROADCAST_TOKEN_INVALID", "Broadcast token is invalid")
         })?;
-        let changed = sqlx::query("UPDATE broadcast_tokens SET last_used_at=now() WHERE contest_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>now() AND (last_used_at IS NULL OR last_used_at<now()-interval '5 minutes')")
+        let changed = sqlx::query("UPDATE broadcast_tokens SET last_used_at=now() WHERE contest_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>now()")
             .bind(contest).bind(hash(raw)).execute(database).await.map_err(|e| AppError::internal("validate broadcast token", e))?.rows_affected();
         if changed != 1 {
             return Err(AppError::unauthorized(
@@ -211,7 +211,7 @@ pub async fn published(
     let row = sqlx::query_as::<
         _,
         (String, String, Option<OffsetDateTime>, Option<OffsetDateTime>, Option<OffsetDateTime>),
-    >("SELECT name,status,start_at,freeze_at,end_at FROM contests WHERE id=$1")
+    >("SELECT name,status,start_at,freeze_at,end_at FROM contests WHERE id=$1 AND deleted_at IS NULL")
     .bind(contest)
     .fetch_one(state.database())
     .await
@@ -392,6 +392,7 @@ mod tests {
         assert!(require_access(&pool, contest, "LIVE", Some("wrong")).await.is_err());
         let config = require_access(&pool, contest, "live", Some(raw)).await.expect("valid access");
         assert_eq!(config.mode, "LIVE");
+        assert!(require_access(&pool, contest, "LIVE", Some(raw)).await.is_ok());
         assert!(
             sqlx::query_scalar::<_, Option<OffsetDateTime>>(
                 "SELECT last_used_at FROM broadcast_tokens WHERE id=$1"

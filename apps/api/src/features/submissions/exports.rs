@@ -314,6 +314,8 @@ async fn load_export_rows(
                submission.source_object_key
         FROM submissions submission
         JOIN teams team ON team.id = submission.team_id
+        JOIN contests contest ON contest.id = submission.contest_id
+                            AND contest.deleted_at IS NULL
         JOIN contest_problems assignment
           ON assignment.contest_id = submission.contest_id
          AND assignment.problem_id = submission.problem_id

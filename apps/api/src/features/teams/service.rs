@@ -91,6 +91,12 @@ impl TeamService {
             return Err(AppError::forbidden("FORBIDDEN", "Insufficient permissions"));
         }
         let super_admin = actor.has_role("SUPER_ADMIN");
+        if !super_admin && actor.user_type != UserType::ContestAdmin {
+            return Err(AppError::forbidden(
+                "FORBIDDEN",
+                "Only team administrators may list teams",
+            ));
+        }
         if query.include_deleted && !super_admin {
             return Err(AppError::forbidden(
                 "FORBIDDEN",
@@ -109,6 +115,8 @@ impl TeamService {
                     OR EXISTS (
                         SELECT 1
                         FROM contest_teams ct
+                        JOIN contests contest
+                          ON contest.id = ct.contest_id AND contest.deleted_at IS NULL
                         JOIN contest_admin_assignments caa
                           ON caa.contest_id = ct.contest_id
                         WHERE ct.team_id = t.id AND caa.user_id = $2
@@ -133,6 +141,8 @@ impl TeamService {
                     OR EXISTS (
                         SELECT 1
                         FROM contest_teams ct
+                        JOIN contests contest
+                          ON contest.id = ct.contest_id AND contest.deleted_at IS NULL
                         JOIN contest_admin_assignments caa
                           ON caa.contest_id = ct.contest_id
                         WHERE ct.team_id = t.id AND caa.user_id = $2
@@ -177,6 +187,8 @@ impl TeamService {
                     SELECT EXISTS (
                         SELECT 1
                         FROM contest_teams ct
+                        JOIN contests contest
+                          ON contest.id = ct.contest_id AND contest.deleted_at IS NULL
                         JOIN contest_admin_assignments caa
                           ON caa.contest_id = ct.contest_id
                         WHERE ct.team_id = $1 AND caa.user_id = $2
@@ -192,7 +204,8 @@ impl TeamService {
                     return Err(team_not_found());
                 }
             }
-            _ => {}
+            UserType::SuperAdmin => {}
+            _ => return Err(team_not_found()),
         }
         self.load(team_id, false).await
     }
@@ -997,6 +1010,8 @@ async fn require_manage_team(
                 )
             )
         FROM contest_teams ct
+        JOIN contests contest
+          ON contest.id = ct.contest_id AND contest.deleted_at IS NULL
         WHERE ct.team_id = $1
         "#,
     )

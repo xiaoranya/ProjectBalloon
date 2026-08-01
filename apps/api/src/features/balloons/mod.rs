@@ -191,7 +191,7 @@ impl BalloonService {
             .await
             .map_err(|error| AppError::internal("begin balloon transition", error))?;
         let (contest_id, status, version) = sqlx::query_as::<_, (i64, String, i32)>(
-            "SELECT contest_id, status, version FROM balloon_tasks WHERE id = $1 FOR UPDATE",
+            "SELECT task.contest_id, task.status, task.version FROM balloon_tasks task JOIN contests contest ON contest.id = task.contest_id AND contest.deleted_at IS NULL WHERE task.id = $1 FOR UPDATE OF task",
         )
         .bind(id)
         .fetch_optional(&mut *tx)
@@ -263,7 +263,7 @@ impl BalloonService {
             .await
             .map_err(|error| AppError::internal("begin balloon note update", error))?;
         let contest_id = sqlx::query_scalar::<_, i64>(
-            "UPDATE balloon_tasks SET note = $2, updated_at = now(), version = version + 1 WHERE id = $1 AND version = $3 RETURNING contest_id",
+            "UPDATE balloon_tasks task SET note = $2, updated_at = now(), version = version + 1 WHERE task.id = $1 AND task.version = $3 AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = task.contest_id AND contest.deleted_at IS NULL) RETURNING task.contest_id",
         )
         .bind(id)
         .bind(note)
@@ -319,6 +319,19 @@ impl BalloonService {
             ));
         }
         ensure_contest(&self.database, contest_id).await?;
+        if !actor.has_role("SUPER_ADMIN") {
+            let assigned = sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (SELECT 1 FROM contest_admin_assignments WHERE contest_id = $1 AND user_id = $2)",
+            )
+            .bind(contest_id)
+            .bind(actor.id)
+            .fetch_one(&self.database)
+            .await
+            .map_err(|error| AppError::internal("check balloon policy scope", error))?;
+            if !assigned {
+                return Err(AppError::not_found("BALLOON_TASK_NOT_FOUND", "Contest was not found"));
+            }
+        }
         let zones = serde_json::to_string(&request.zone_order)
             .map_err(|e| AppError::internal("encode balloon zones", e))?;
         sqlx::query("INSERT INTO balloon_dispatch_policies(contest_id,strategy,max_batch,cooldown_seconds,zone_order,updated_by_user_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(contest_id) DO UPDATE SET strategy=EXCLUDED.strategy,max_batch=EXCLUDED.max_batch,cooldown_seconds=EXCLUDED.cooldown_seconds,zone_order=EXCLUDED.zone_order,updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=now()")
@@ -393,6 +406,7 @@ pub(crate) async fn generate_for_accepted(
                problem.color, 'PENDING', team.seat_no, team.name, problem.alias
         FROM submissions submission
         JOIN contests contest ON contest.id = submission.contest_id
+            AND contest.deleted_at IS NULL
             AND contest.status IN ('RUNNING', 'PAUSED')
             AND contest.freeze_at IS NOT NULL AND now() < contest.freeze_at
         JOIN contest_teams roster ON roster.contest_id = submission.contest_id

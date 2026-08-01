@@ -51,7 +51,8 @@ pub async fn subscribe_staff(
         return Err(AppError::forbidden("FORBIDDEN", "Insufficient permissions"));
     }
     state.contests().get(contest_id, Some(context.user())).await?;
-    if !context.user().has_role("SUPER_ADMIN") {
+    if context.user().user_type == UserType::ContestAdmin && !context.user().has_role("SUPER_ADMIN")
+    {
         let assigned = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS (SELECT 1 FROM contest_admin_assignments WHERE contest_id=$1 AND user_id=$2)",
         )

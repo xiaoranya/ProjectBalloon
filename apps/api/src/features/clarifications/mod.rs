@@ -428,6 +428,8 @@ const SELECT_COLUMNS: &str = r#"
            clarification.replied_by AS replied_by_user_id, clarification.replied_at,
            clarification.converted_announcement_id, clarification.created_at,
            clarification.updated_at, clarification.version FROM clarifications clarification
+           JOIN contests contest ON contest.id = clarification.contest_id
+                                AND contest.deleted_at IS NULL
 "#;
 
 async fn load(database: &PgPool, id: i64) -> Result<ClarificationResponse, AppError> {
@@ -449,7 +451,7 @@ async fn lock_context(
     id: i64,
 ) -> Result<(i64, i64, String), AppError> {
     sqlx::query_as(
-        "SELECT contest_id, team_id, status FROM clarifications WHERE id = $1 FOR UPDATE",
+        "SELECT clarification.contest_id, clarification.team_id, clarification.status FROM clarifications clarification JOIN contests contest ON contest.id = clarification.contest_id AND contest.deleted_at IS NULL WHERE clarification.id = $1 FOR UPDATE OF clarification",
     )
     .bind(id)
     .fetch_optional(&mut **tx)
@@ -478,6 +480,16 @@ async fn require_staff_access(
     contest_id: i64,
     actor: &AuthUser,
 ) -> Result<(), AppError> {
+    let active = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM contests WHERE id = $1 AND deleted_at IS NULL)",
+    )
+    .bind(contest_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|error| AppError::internal("check clarification contest", error))?;
+    if !active {
+        return Err(clarification_not_found());
+    }
     if actor.has_role("SUPER_ADMIN") {
         return Ok(());
     }

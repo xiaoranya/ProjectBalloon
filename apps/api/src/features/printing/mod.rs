@@ -315,7 +315,7 @@ impl PrintingService {
             .map_err(|error| AppError::internal("begin print transition", error))?;
         let (contest_id, team_id, status, delivery_in_progress) =
             sqlx::query_as::<_, (i64, i64, String, bool)>(
-                "SELECT contest_id, team_id, status, coalesce(delivery_lease_until > now(), false) FROM print_requests WHERE id = $1 FOR UPDATE",
+                "SELECT request.contest_id, request.team_id, request.status, coalesce(request.delivery_lease_until > now(), false) FROM print_requests request JOIN contests contest ON contest.id = request.contest_id AND contest.deleted_at IS NULL WHERE request.id = $1 FOR UPDATE OF request",
             )
         .bind(id)
         .fetch_optional(&mut *tx)
@@ -371,7 +371,7 @@ impl PrintingService {
         storage: &ObjectStorageHandle,
     ) -> Result<Bytes, AppError> {
         let (team_id, bucket, key) = sqlx::query_as::<_, (i64, Option<String>, Option<String>)>(
-            "SELECT team_id, pdf_bucket, pdf_object_key FROM print_requests WHERE id = $1",
+            "SELECT request.team_id, request.pdf_bucket, request.pdf_object_key FROM print_requests request JOIN contests contest ON contest.id = request.contest_id AND contest.deleted_at IS NULL WHERE request.id = $1",
         )
         .bind(id)
         .fetch_optional(&self.database)
@@ -409,7 +409,8 @@ const SELECT_COLUMNS: &str = r#"SELECT request.id, request.contest_id, request.t
  request.seat_no, request.content_hash, request.page_count, request.status, request.printer_id,
  request.cups_job_id, request.requested_by AS requested_by_user_id, request.operator_user_id,
  request.completed_at, request.failed_reason, request.created_at, request.updated_at, request.version
- FROM print_requests request"#;
+ FROM print_requests request
+ JOIN contests contest ON contest.id = request.contest_id AND contest.deleted_at IS NULL"#;
 
 async fn resolve_team(
     database: &PgPool,

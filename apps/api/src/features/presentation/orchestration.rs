@@ -189,7 +189,7 @@ impl OrchestrationService {
             .await
             .map_err(|e| AppError::internal("begin screen playlist update", e))?;
         let current = sqlx::query_as::<_, (i64, i64)>(
-            "SELECT contest_id,version FROM screen_playlists WHERE id=$1 FOR UPDATE",
+            "SELECT playlist.contest_id,playlist.version FROM screen_playlists playlist JOIN contests contest ON contest.id = playlist.contest_id AND contest.deleted_at IS NULL WHERE playlist.id=$1 FOR UPDATE OF playlist",
         )
         .bind(id)
         .fetch_optional(&mut *tx)
@@ -236,7 +236,7 @@ impl OrchestrationService {
             .await
             .map_err(|e| AppError::internal("begin screen playlist delete", e))?;
         let exists = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM screen_playlists WHERE id=$1)",
+            "SELECT EXISTS(SELECT 1 FROM screen_playlists playlist JOIN contests contest ON contest.id = playlist.contest_id AND contest.deleted_at IS NULL WHERE playlist.id=$1)",
         )
         .bind(id)
         .fetch_one(&mut *tx)
@@ -514,7 +514,7 @@ async fn ensure_group_name(
     }
 }
 async fn lock_group(tx: &mut Transaction<'_, Postgres>, id: i64) -> Result<(i64, i64), AppError> {
-    sqlx::query_as("SELECT contest_id,version FROM screen_groups WHERE id=$1 FOR UPDATE")
+    sqlx::query_as("SELECT group_row.contest_id,group_row.version FROM screen_groups group_row JOIN contests contest ON contest.id = group_row.contest_id AND contest.deleted_at IS NULL WHERE group_row.id=$1 FOR UPDATE OF group_row")
         .bind(id)
         .fetch_optional(&mut **tx)
         .await
@@ -563,7 +563,7 @@ async fn hydrate_playlists(
     Ok(rows)
 }
 async fn load_playlist(pool: &PgPool, id: i64) -> Result<PlaylistResponse, AppError> {
-    let row = sqlx::query_as("SELECT id,contest_id,name,loop_enabled,version,created_at,updated_at FROM screen_playlists WHERE id=$1").bind(id).fetch_one(pool).await.map_err(|e| AppError::internal("load saved screen playlist", e))?;
+    let row = sqlx::query_as("SELECT playlist.id,playlist.contest_id,playlist.name,playlist.loop_enabled,playlist.version,playlist.created_at,playlist.updated_at FROM screen_playlists playlist JOIN contests contest ON contest.id = playlist.contest_id AND contest.deleted_at IS NULL WHERE playlist.id=$1").bind(id).fetch_one(pool).await.map_err(|e| AppError::internal("load saved screen playlist", e))?;
     Ok(hydrate_playlists(pool, vec![row]).await?.remove(0))
 }
 async fn hydrate_groups(
@@ -576,7 +576,7 @@ async fn hydrate_groups(
     Ok(rows)
 }
 async fn load_group(pool: &PgPool, id: i64) -> Result<GroupResponse, AppError> {
-    let row = sqlx::query_as("SELECT id,contest_id,name,playlist_id,playback_status,playback_started_at,paused_elapsed_seconds,locked_view,version,created_at,updated_at FROM screen_groups WHERE id=$1").bind(id).fetch_one(pool).await.map_err(|e| AppError::internal("load saved screen group", e))?;
+    let row = sqlx::query_as("SELECT group_row.id,group_row.contest_id,group_row.name,group_row.playlist_id,group_row.playback_status,group_row.playback_started_at,group_row.paused_elapsed_seconds,group_row.locked_view,group_row.version,group_row.created_at,group_row.updated_at FROM screen_groups group_row JOIN contests contest ON contest.id = group_row.contest_id AND contest.deleted_at IS NULL WHERE group_row.id=$1").bind(id).fetch_one(pool).await.map_err(|e| AppError::internal("load saved screen group", e))?;
     Ok(hydrate_groups(pool, vec![row]).await?.remove(0))
 }
 
@@ -584,7 +584,7 @@ pub(super) async fn playback_for_instance(
     tx: &mut Transaction<'_, Postgres>,
     instance: i64,
 ) -> Result<Option<GroupPlaybackResponse>, AppError> {
-    let row = sqlx::query_as::<_, (i64,String,Option<i64>,String,Option<OffsetDateTime>,i64,Option<String>,i64,Option<bool>)>("SELECT g.id,g.name,g.playlist_id,g.playback_status,g.playback_started_at,g.paused_elapsed_seconds,g.locked_view,g.version,p.loop_enabled FROM screen_group_members m JOIN screen_groups g ON g.id=m.group_id LEFT JOIN screen_playlists p ON p.id=g.playlist_id WHERE m.screen_instance_id=$1").bind(instance).fetch_optional(&mut **tx).await.map_err(|e| AppError::internal("load screen group playback", e))?;
+    let row = sqlx::query_as::<_, (i64,String,Option<i64>,String,Option<OffsetDateTime>,i64,Option<String>,i64,Option<bool>)>("SELECT g.id,g.name,g.playlist_id,g.playback_status,g.playback_started_at,g.paused_elapsed_seconds,g.locked_view,g.version,p.loop_enabled FROM screen_group_members m JOIN screen_groups g ON g.id=m.group_id JOIN contests contest ON contest.id = g.contest_id AND contest.deleted_at IS NULL LEFT JOIN screen_playlists p ON p.id=g.playlist_id WHERE m.screen_instance_id=$1").bind(instance).fetch_optional(&mut **tx).await.map_err(|e| AppError::internal("load screen group playback", e))?;
     let Some(row) = row else { return Ok(None) };
     let items = if let Some(playlist) = row.2 {
         sqlx::query_as("SELECT id,target_view,duration_seconds,display_order FROM screen_playlist_items WHERE playlist_id=$1 ORDER BY display_order").bind(playlist).fetch_all(&mut **tx).await.map_err(|e| AppError::internal("load playback items", e))?

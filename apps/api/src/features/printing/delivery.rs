@@ -223,11 +223,13 @@ impl CupsDeliveryRunner {
         sqlx::query_as::<_, ClaimedPrintRequest>(
             r#"
             WITH candidate AS (
-                SELECT id FROM print_requests
-                WHERE (cancellation_pending OR status IN ('QUEUED', 'PRINTING'))
-                  AND (delivery_lease_until IS NULL OR delivery_lease_until < now())
-                ORDER BY cancellation_pending DESC, created_at, id
-                FOR UPDATE SKIP LOCKED LIMIT 1
+                SELECT request.id FROM print_requests request
+                JOIN contests contest ON contest.id = request.contest_id
+                                     AND contest.deleted_at IS NULL
+                WHERE (request.cancellation_pending OR request.status IN ('QUEUED', 'PRINTING'))
+                  AND (request.delivery_lease_until IS NULL OR request.delivery_lease_until < now())
+                ORDER BY request.cancellation_pending DESC, request.created_at, request.id
+                FOR UPDATE OF request SKIP LOCKED LIMIT 1
             )
             UPDATE print_requests request
             SET delivery_lease_owner = $1,
@@ -266,7 +268,7 @@ impl CupsDeliveryRunner {
         };
         match self.gateway.cancel(job_id).await {
             Ok(()) => {
-                if let Err(error) = sqlx::query("UPDATE print_requests SET cancellation_pending = false, delivery_lease_owner = NULL, delivery_lease_until = NULL, last_delivery_error = NULL, updated_at = now(), version = version + 1 WHERE id = $1 AND delivery_lease_owner = $2")
+                if let Err(error) = sqlx::query("UPDATE print_requests request SET cancellation_pending = false, delivery_lease_owner = NULL, delivery_lease_until = NULL, last_delivery_error = NULL, updated_at = now(), version = version + 1 WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL)")
                     .bind(request.id).bind(self.instance_id).execute(&self.database).await
                 {
                     warn!(print_request_id = request.id, %error, "failed to persist CUPS cancellation");
@@ -313,7 +315,7 @@ impl CupsDeliveryRunner {
         job_id: &str,
     ) -> Result<(), sqlx::Error> {
         let mut tx = self.database.begin().await?;
-        let updated = sqlx::query("UPDATE print_requests SET status = 'PRINTING', printer_id = $3, cups_job_id = $4, submitted_at = now(), delivery_lease_owner = NULL, delivery_lease_until = NULL, last_delivery_error = NULL, updated_at = now(), version = version + 1 WHERE id = $1 AND delivery_lease_owner = $2 AND status = 'QUEUED'")
+        let updated = sqlx::query("UPDATE print_requests request SET status = 'PRINTING', printer_id = $3, cups_job_id = $4, submitted_at = now(), delivery_lease_owner = NULL, delivery_lease_until = NULL, last_delivery_error = NULL, updated_at = now(), version = version + 1 WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND request.status = 'QUEUED' AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL)")
             .bind(request.id).bind(self.instance_id).bind(self.gateway.printer()).bind(job_id)
             .execute(&mut *tx).await?.rows_affected();
         if updated == 1 {
@@ -358,7 +360,7 @@ impl CupsDeliveryRunner {
 
     async fn mark_completed(&self, request: &ClaimedPrintRequest) -> Result<(), sqlx::Error> {
         let mut tx = self.database.begin().await?;
-        let updated = sqlx::query("UPDATE print_requests SET status = 'COMPLETED', completed_at = now(), failed_reason = NULL, delivery_lease_owner = NULL, delivery_lease_until = NULL, last_delivery_error = NULL, updated_at = now(), version = version + 1 WHERE id = $1 AND delivery_lease_owner = $2 AND status = 'PRINTING'")
+        let updated = sqlx::query("UPDATE print_requests request SET status = 'COMPLETED', completed_at = now(), failed_reason = NULL, delivery_lease_owner = NULL, delivery_lease_until = NULL, last_delivery_error = NULL, updated_at = now(), version = version + 1 WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND request.status = 'PRINTING' AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL)")
             .bind(request.id).bind(self.instance_id).execute(&mut *tx).await?.rows_affected();
         if updated == 1 {
             insert_events(&mut tx, request, "COMPLETED").await?;
@@ -377,7 +379,7 @@ impl CupsDeliveryRunner {
                 return;
             }
         };
-        let result = sqlx::query("UPDATE print_requests SET status = CASE WHEN $3 THEN 'FAILED' ELSE 'QUEUED' END, failed_reason = CASE WHEN $3 THEN $4 ELSE NULL END, last_delivery_error = $4, delivery_lease_owner = NULL, delivery_lease_until = CASE WHEN $3 THEN NULL ELSE now() + make_interval(secs => $5) END, updated_at = now(), version = version + 1 WHERE id = $1 AND delivery_lease_owner = $2")
+        let result = sqlx::query("UPDATE print_requests request SET status = CASE WHEN $3 THEN 'FAILED' ELSE 'QUEUED' END, failed_reason = CASE WHEN $3 THEN $4 ELSE NULL END, last_delivery_error = $4, delivery_lease_owner = NULL, delivery_lease_until = CASE WHEN $3 THEN NULL ELSE now() + make_interval(secs => $5) END, updated_at = now(), version = version + 1 WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL)")
             .bind(request.id).bind(self.instance_id).bind(terminal).bind(&message).bind(delay_seconds)
             .execute(&mut *tx).await;
         match result {
@@ -409,7 +411,7 @@ impl CupsDeliveryRunner {
                 return;
             }
         };
-        match sqlx::query("UPDATE print_requests SET status = 'FAILED', failed_reason = $3, last_delivery_error = $3, cancellation_pending = false, delivery_lease_owner = NULL, delivery_lease_until = NULL, updated_at = now(), version = version + 1 WHERE id = $1 AND delivery_lease_owner = $2")
+        match sqlx::query("UPDATE print_requests request SET status = 'FAILED', failed_reason = $3, last_delivery_error = $3, cancellation_pending = false, delivery_lease_owner = NULL, delivery_lease_until = NULL, updated_at = now(), version = version + 1 WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL)")
             .bind(request.id).bind(self.instance_id).bind(&message).execute(&mut *tx).await
         {
             Ok(result) if result.rows_affected() == 1 => {
@@ -432,7 +434,7 @@ impl CupsDeliveryRunner {
     async fn defer(&self, id: i64, attempts: i32, message: &str) {
         let message = (!message.is_empty()).then(|| sanitize_error(message));
         let delay_seconds = delivery_retry_delay(attempts);
-        if let Err(error) = sqlx::query("UPDATE print_requests SET delivery_lease_until = now() + make_interval(secs => $3), last_delivery_error = COALESCE($4, last_delivery_error), updated_at = now() WHERE id = $1 AND delivery_lease_owner = $2")
+        if let Err(error) = sqlx::query("UPDATE print_requests request SET delivery_lease_until = now() + make_interval(secs => $3), last_delivery_error = COALESCE($4, request.last_delivery_error), updated_at = now() WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL)")
             .bind(id).bind(self.instance_id).bind(delay_seconds).bind(message)
             .execute(&self.database).await
         {
