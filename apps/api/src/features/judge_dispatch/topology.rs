@@ -4,17 +4,19 @@ use lapin::{
     types::{AMQPValue, FieldTable, LongString, ShortString},
 };
 use project_balloon_contracts::{
-    JUDGE_HEARTBEAT_ROUTING_KEY, JUDGE_HEARTBEATS_EXCHANGE, JUDGE_HEARTBEATS_QUEUE,
+    JUDGE_DEAD_EXCHANGE, JUDGE_DEAD_QUEUE, JUDGE_HEARTBEAT_ROUTING_KEY, JUDGE_HEARTBEATS_EXCHANGE,
+    JUDGE_HEARTBEATS_QUEUE, JUDGE_RESULTS_EXCHANGE, JUDGE_RESULTS_QUEUE, JUDGE_RETRY_EXCHANGE,
+    JUDGE_RETRY_QUEUE, JUDGE_TASKS_EXCHANGE, JUDGE_TASKS_QUEUE,
 };
 
-pub const TASKS_QUEUE: &str = "judge.tasks";
-pub const RETRY_QUEUE: &str = "judge.retry";
-pub const DEAD_QUEUE: &str = "judge.dead";
-pub const RESULTS_QUEUE: &str = "judge.results";
-pub const TASKS_EXCHANGE: &str = "judge.tasks.exchange";
-pub const RETRY_EXCHANGE: &str = "judge.retry.exchange";
-pub const DEAD_EXCHANGE: &str = "judge.dead.exchange";
-pub const RESULTS_EXCHANGE: &str = "judge.results.exchange";
+pub const TASKS_QUEUE: &str = JUDGE_TASKS_QUEUE;
+pub const RETRY_QUEUE: &str = JUDGE_RETRY_QUEUE;
+pub const DEAD_QUEUE: &str = JUDGE_DEAD_QUEUE;
+pub const RESULTS_QUEUE: &str = JUDGE_RESULTS_QUEUE;
+pub const TASKS_EXCHANGE: &str = JUDGE_TASKS_EXCHANGE;
+pub const RETRY_EXCHANGE: &str = JUDGE_RETRY_EXCHANGE;
+pub const DEAD_EXCHANGE: &str = JUDGE_DEAD_EXCHANGE;
+pub const RESULTS_EXCHANGE: &str = JUDGE_RESULTS_EXCHANGE;
 pub const TASK_ROUTING_KEY: &str = "task";
 pub const RETRY_ROUTING_KEY: &str = "retry";
 pub const DEAD_ROUTING_KEY: &str = "dead";

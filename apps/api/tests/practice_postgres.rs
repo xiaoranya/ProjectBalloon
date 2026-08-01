@@ -1,5 +1,7 @@
 use project_balloon_api::features::judge_dispatch::{ApplyResultOutcome, JudgeResultProcessor};
-use project_balloon_contracts::{JUDGE_RESULT_SCHEMA_VERSION, JudgeResult, JudgeVerdict};
+use project_balloon_contracts::{
+    JUDGE_RESULT_SCHEMA_VERSION, JudgeResult, JudgeRunResult, JudgeVerdict,
+};
 use sqlx::PgPool;
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
@@ -25,7 +27,7 @@ async fn practice_result_updates_personal_progress(pool: PgPool) {
     let now = OffsetDateTime::now_utc();
     let result = JudgeResult {
         schema_version: JUDGE_RESULT_SCHEMA_VERSION,
-        message_id: Uuid::new_v4(),
+        message_id: judgement_id,
         judgement_id,
         submission_id,
         worker_id: "practice-worker".into(),
@@ -35,7 +37,14 @@ async fn practice_result_updates_personal_progress(pool: PgPool) {
         compile_log: None,
         started_at: now - Duration::SECOND,
         completed_at: now,
-        runs: vec![],
+        runs: vec![JudgeRunResult {
+            test_index: 1,
+            verdict: JudgeVerdict::Accepted,
+            time_ms: 5,
+            memory_kb: 100,
+            exit_code: Some(0),
+            stderr_tail: None,
+        }],
     };
     assert_eq!(
         JudgeResultProcessor::new(pool.clone()).apply(&result).await.expect("apply"),

@@ -394,7 +394,7 @@ mod tests {
         let now = OffsetDateTime::now_utc();
         let result = JudgeResult {
             schema_version: JUDGE_RESULT_SCHEMA_VERSION,
-            message_id: Uuid::new_v4(),
+            message_id: judgement_id,
             judgement_id,
             submission_id,
             worker_id: "worker-integration".to_owned(),
@@ -492,7 +492,7 @@ mod tests {
         let mut conflicting = result;
         conflicting.message_id = Uuid::new_v4();
         let error = processor.apply(&conflicting).await.expect_err("overwrite must fail");
-        assert!(matches!(error, ApplyResultError::Conflict(_)));
+        assert!(matches!(error, ApplyResultError::Invalid(_)));
         assert!(error.is_permanent());
     }
 }

@@ -12,8 +12,9 @@ use lapin::{
     types::{AMQPValue, FieldTable, LongString, ShortString},
 };
 use project_balloon_contracts::{
-    JUDGE_DEAD_EXCHANGE, JUDGE_DEAD_ROUTING_KEY, JUDGE_RESULT_ROUTING_KEY, JUDGE_RESULTS_EXCHANGE,
-    JUDGE_TASKS_QUEUE, JudgeResult, JudgeTask,
+    JUDGE_DEAD_EXCHANGE, JUDGE_DEAD_QUEUE, JUDGE_DEAD_ROUTING_KEY, JUDGE_RESULT_ROUTING_KEY,
+    JUDGE_RESULTS_EXCHANGE, JUDGE_RESULTS_QUEUE, JUDGE_RETRY_EXCHANGE, JUDGE_RETRY_QUEUE,
+    JUDGE_TASKS_EXCHANGE, JudgeResult, JudgeTask,
 };
 use tokio::{sync::watch, task::JoinSet, time::timeout};
 use tracing::{error, info, warn};
@@ -148,12 +149,14 @@ impl RabbitJudgeWorker {
                     let handler = self.handler.clone();
                     let activity = self.activity.clone();
                     let request_timeout = self.request_timeout;
+                    let task_queue = self.task_queue.clone();
                     in_flight.spawn(async move {
                         process_delivery(
                             &channel,
                             request_timeout,
                             handler.as_ref(),
                             &activity,
+                            &task_queue,
                             &delivery,
                         ).await
                     });
@@ -194,7 +197,9 @@ async fn verify_topology(channel: &Channel, task_queue: &str) -> Result<(), Stri
         durable: true,
         ..ExchangeDeclareOptions::default()
     };
-    for exchange in [JUDGE_RESULTS_EXCHANGE, JUDGE_DEAD_EXCHANGE] {
+    for exchange in
+        [JUDGE_TASKS_EXCHANGE, JUDGE_RETRY_EXCHANGE, JUDGE_RESULTS_EXCHANGE, JUDGE_DEAD_EXCHANGE]
+    {
         channel
             .exchange_declare(
                 exchange.into(),
@@ -205,15 +210,21 @@ async fn verify_topology(channel: &Channel, task_queue: &str) -> Result<(), Stri
             .await
             .map_err(|error| error.to_string())?;
     }
-    channel
-        .queue_declare(
-            task_queue.into(),
-            QueueDeclareOptions { passive: true, durable: true, ..QueueDeclareOptions::default() },
-            FieldTable::default(),
-        )
-        .await
-        .map(|_| ())
-        .map_err(|error| error.to_string())
+    for queue in [task_queue, JUDGE_RETRY_QUEUE, JUDGE_DEAD_QUEUE, JUDGE_RESULTS_QUEUE] {
+        channel
+            .queue_declare(
+                queue.into(),
+                QueueDeclareOptions {
+                    passive: true,
+                    durable: true,
+                    ..QueueDeclareOptions::default()
+                },
+                FieldTable::default(),
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 async fn process_delivery(
@@ -221,6 +232,7 @@ async fn process_delivery(
     request_timeout: Duration,
     handler: &dyn JudgeTaskHandler,
     activity: &WorkerActivity,
+    task_queue: &str,
     delivery: &Delivery,
 ) -> Result<(), String> {
     let task = match serde_json::from_slice::<JudgeTask>(&delivery.data) {
@@ -257,7 +269,7 @@ async fn process_delivery(
     }
 
     let _activity_guard = activity.begin_task();
-    let handled = handler.handle(task.clone(), retry_count(delivery)).await;
+    let handled = handler.handle(task.clone(), retry_count(delivery, task_queue)).await;
     match handled {
         Ok(result) => {
             if let Err(reason) = validate_handler_result(&task, &result) {
@@ -314,7 +326,7 @@ async fn process_delivery(
 /// records a separate `x-death` entry per reason per queue, so summing every
 /// entry double-counts each cycle and halves the effective retry budget. Count
 /// only the task-queue entries so `MAX_TASK_RETRIES` behaves as documented.
-fn retry_count(delivery: &Delivery) -> u32 {
+fn retry_count(delivery: &Delivery, task_queue: &str) -> u32 {
     let Some(headers) = delivery.properties.headers().as_ref() else { return 0 };
     let Some(AMQPValue::FieldArray(deaths)) = headers.inner().get("x-death") else {
         return 0;
@@ -325,10 +337,8 @@ fn retry_count(delivery: &Delivery) -> u32 {
         .filter_map(|entry| match entry {
             AMQPValue::FieldTable(death) => {
                 let from_tasks_queue = match death.inner().get("queue") {
-                    Some(AMQPValue::LongString(queue)) => {
-                        queue.as_bytes() == JUDGE_TASKS_QUEUE.as_bytes()
-                    }
-                    Some(AMQPValue::ShortString(queue)) => queue.as_str() == JUDGE_TASKS_QUEUE,
+                    Some(AMQPValue::LongString(queue)) => queue.as_bytes() == task_queue.as_bytes(),
+                    Some(AMQPValue::ShortString(queue)) => queue.as_str() == task_queue,
                     _ => false,
                 };
                 from_tasks_queue.then(|| death.inner().get("count")).flatten()

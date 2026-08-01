@@ -420,10 +420,9 @@ impl DockerSandbox {
         };
         let body = ContainerCreateBody {
             image: Some(image.to_owned()),
-            // Keep PID 1 outside the contestant UID. This lets the cleanup exec kill
-            // all descendant/background contestant processes without stopping the
-            // reusable container itself.
-            user: Some("0:0".to_owned()),
+            // Keep the reusable container's init process in the same fixed non-root
+            // identity as contestant execs. Cleanup explicitly preserves PID 1.
+            user: Some(self.user.clone()),
             cmd: Some(vec!["sleep".to_owned(), "infinity".to_owned()]),
             entrypoint: Some(vec![String::new()]),
             working_dir: Some("/work".to_owned()),
@@ -604,7 +603,7 @@ impl DockerSandbox {
                     cmd: Some(vec![
                         "/bin/sh".to_owned(),
                         "-c".to_owned(),
-                        "kill -KILL -1".to_owned(),
+                        "self=$$; for status in /proc/[0-9]*/status; do pid=${status#/proc/}; pid=${pid%/status}; [ \"$pid\" = 1 ] || [ \"$pid\" = \"$self\" ] || kill -KILL \"$pid\" 2>/dev/null || true; done".to_owned(),
                     ]),
                     user: Some(self.user.clone()),
                     working_dir: Some("/work".to_owned()),
@@ -613,8 +612,9 @@ impl DockerSandbox {
             )
             .await
             .map_err(|error| SandboxError::Api(error.to_string()))?;
-        // Linux excludes the calling process from kill(-1, ...); PID 1 runs as root,
-        // so this removes only processes owned by the unprivileged contestant user.
+        // PID 1 is the non-root reusable init process. The cleanup shell can kill
+        // other processes owned by the same UID, while preserving both itself and
+        // PID 1 so the container remains available for the next exec.
         let started = self
             .docker
             .start_exec(&exec.id, Some(StartExecOptions::default()))

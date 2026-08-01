@@ -7,7 +7,6 @@ use lapin::{
     options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicQosOptions},
     types::FieldTable,
 };
-use project_balloon_contracts::{JudgeResult, JudgeTask};
 use serde_json::json;
 use sqlx::PgPool;
 use thiserror::Error;
@@ -176,13 +175,13 @@ async fn process_delivery(database: &PgPool, delivery: &Delivery) -> Result<(), 
 }
 
 fn parse_dead_letter(data: &[u8]) -> Option<(Uuid, i64)> {
-    if let Ok(result) = serde_json::from_slice::<JudgeResult>(data) {
-        return Some((result.judgement_id, result.submission_id));
+    let value = serde_json::from_slice::<serde_json::Value>(data).ok()?;
+    let judgement_id = value.get("judgementId")?.as_str()?.parse().ok()?;
+    let submission_id = value.get("submissionId")?.as_i64()?;
+    if submission_id <= 0 {
+        return None;
     }
-    if let Ok(task) = serde_json::from_slice::<JudgeTask>(data) {
-        return Some((task.judgement_id, task.submission_id));
-    }
-    None
+    Some((judgement_id, submission_id))
 }
 
 async fn recover_stuck_submission(
@@ -291,7 +290,18 @@ mod tests {
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    use super::{DeadLetterError, recover_stuck_submission};
+    use super::{DeadLetterError, parse_dead_letter, recover_stuck_submission};
+
+    #[test]
+    fn dead_letter_parser_recovers_ids_from_invalid_payloads() {
+        let judgement_id = Uuid::new_v4();
+        let payload = serde_json::json!({
+            "judgementId": judgement_id,
+            "submissionId": 42,
+            "verdict": "NOT_A_VERDICT"
+        });
+        assert_eq!(parse_dead_letter(payload.to_string().as_bytes()), Some((judgement_id, 42)));
+    }
 
     async fn seed_stuck_submission(pool: &PgPool) -> (Uuid, i64, i64) {
         let team_id = sqlx::query_scalar::<_, i64>(

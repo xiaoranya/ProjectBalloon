@@ -14,7 +14,8 @@ use lapin::{
     options::{BasicAckOptions, BasicGetOptions, BasicPublishOptions, ConfirmSelectOptions},
 };
 use project_balloon_contracts::{
-    JUDGE_RESULT_SCHEMA_VERSION, JUDGE_TASKS_EXCHANGE, JudgeResult, JudgeTask, JudgeVerdict,
+    JUDGE_RESULT_SCHEMA_VERSION, JUDGE_TASKS_EXCHANGE, JudgeResult, JudgeRunResult, JudgeTask,
+    JudgeVerdict,
 };
 use project_balloon_judge_worker::{
     heartbeat::WorkerActivity,
@@ -237,7 +238,14 @@ impl JudgeTaskHandler for GatedHandler {
             compile_log: None,
             started_at: now,
             completed_at: now,
-            runs: Vec::new(),
+            runs: vec![JudgeRunResult {
+                test_index: 1,
+                verdict: JudgeVerdict::Accepted,
+                time_ms: 1,
+                memory_kb: 0,
+                exit_code: Some(0),
+                stderr_tail: None,
+            }],
         })
     }
 }
@@ -275,7 +283,14 @@ fn accepted_result(task: JudgeTask, worker_id: &str) -> JudgeResult {
         compile_log: None,
         started_at: now,
         completed_at: now,
-        runs: Vec::new(),
+        runs: vec![JudgeRunResult {
+            test_index: 1,
+            verdict: JudgeVerdict::Accepted,
+            time_ms: 1,
+            memory_kb: 0,
+            exit_code: Some(0),
+            stderr_tail: None,
+        }],
     }
 }
 

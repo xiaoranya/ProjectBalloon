@@ -11,7 +11,11 @@ pub const JUDGE_RESULT_SCHEMA_VERSION: u16 = 1;
 pub const REALTIME_EVENT_SCHEMA_VERSION: u16 = 1;
 pub const JUDGE_TASKS_QUEUE: &str = "judge.tasks";
 pub const JUDGE_TASKS_EXCHANGE: &str = "judge.tasks.exchange";
+pub const JUDGE_RETRY_QUEUE: &str = "judge.retry";
+pub const JUDGE_RETRY_EXCHANGE: &str = "judge.retry.exchange";
+pub const JUDGE_DEAD_QUEUE: &str = "judge.dead";
 pub const JUDGE_RESULTS_EXCHANGE: &str = "judge.results.exchange";
+pub const JUDGE_RESULTS_QUEUE: &str = "judge.results";
 pub const JUDGE_RESULT_ROUTING_KEY: &str = "result";
 pub const JUDGE_DEAD_EXCHANGE: &str = "judge.dead.exchange";
 pub const JUDGE_DEAD_ROUTING_KEY: &str = "dead";
@@ -249,13 +253,19 @@ impl JudgeResult {
         if self.schema_version != JUDGE_RESULT_SCHEMA_VERSION {
             return Err(ContractError::UnsupportedSchemaVersion(self.schema_version));
         }
+        if self.message_id != self.judgement_id {
+            return Err(ContractError::MismatchedResultMessageId);
+        }
         if self.submission_id <= 0 {
             return Err(ContractError::NonPositive {
                 name: "submissionId",
                 value: self.submission_id,
             });
         }
-        if self.worker_id.is_empty() || self.worker_id.len() > 64 {
+        if self.worker_id.is_empty()
+            || self.worker_id.len() > 64
+            || self.worker_id.chars().any(char::is_control)
+        {
             return Err(ContractError::InvalidWorkerId);
         }
         if self.total_time_ms < 0 || self.peak_memory_kb < 0 {
@@ -286,6 +296,23 @@ impl JudgeResult {
             }
             if run.stderr_tail.as_ref().is_some_and(|tail| tail.len() > 16 * 1024) {
                 return Err(ContractError::StderrTailTooLarge);
+            }
+        }
+        if self.runs.is_empty() {
+            if !matches!(
+                self.verdict,
+                JudgeVerdict::CompileError | JudgeVerdict::SystemError | JudgeVerdict::Cancelled
+            ) {
+                return Err(ContractError::MissingRunsForVerdict);
+            }
+        } else {
+            let expected_verdict = self
+                .runs
+                .iter()
+                .find(|run| run.verdict != JudgeVerdict::Accepted)
+                .map_or(JudgeVerdict::Accepted, |run| run.verdict);
+            if self.verdict != expected_verdict {
+                return Err(ContractError::MismatchedResultVerdict);
             }
         }
         Ok(())
@@ -368,6 +395,8 @@ const fn is_legacy_schema_version(version: &u16) -> bool {
 pub enum ContractError {
     #[error("unsupported judge task schema version {0}")]
     UnsupportedSchemaVersion(u16),
+    #[error("judge result messageId must equal judgementId")]
+    MismatchedResultMessageId,
     #[error("{name} must be positive, got {value}")]
     NonPositive { name: &'static str, value: i64 },
     #[error("languageMultiplier must be finite and positive")]
@@ -392,6 +421,10 @@ pub enum ContractError {
     DuplicateTestIndex(i32),
     #[error("stderrTail exceeds 16 KiB")]
     StderrTailTooLarge,
+    #[error("judge result with a non-compilation verdict must contain runs")]
+    MissingRunsForVerdict,
+    #[error("judge result verdict does not match its runs")]
+    MismatchedResultVerdict,
     #[error("Worker capacity must be positive and activeTasks cannot exceed it")]
     InvalidWorkerCapacity,
     #[error("Worker heartbeat occurredAt precedes startedAt")]
@@ -484,11 +517,42 @@ mod tests {
             completed_at: now,
             runs: vec![run.clone()],
         };
+        result.message_id = result.judgement_id;
         assert!(result.validate().is_ok());
         assert_eq!(serde_json::to_value(&result).expect("serialize")["verdict"], "ACCEPTED");
 
         result.runs.push(run);
         assert!(matches!(result.validate(), Err(super::ContractError::DuplicateTestIndex(1))));
+    }
+
+    #[test]
+    fn judge_result_rejects_mismatched_message_and_verdict_ids() {
+        let now = time::OffsetDateTime::now_utc();
+        let judgement_id = Uuid::new_v4();
+        let mut result = JudgeResult {
+            schema_version: JUDGE_RESULT_SCHEMA_VERSION,
+            message_id: Uuid::new_v4(),
+            judgement_id,
+            submission_id: 42,
+            worker_id: "worker-1".to_owned(),
+            verdict: JudgeVerdict::Accepted,
+            total_time_ms: 1,
+            peak_memory_kb: 1,
+            compile_log: None,
+            started_at: now,
+            completed_at: now,
+            runs: vec![JudgeRunResult {
+                test_index: 1,
+                verdict: JudgeVerdict::WrongAnswer,
+                time_ms: 1,
+                memory_kb: 1,
+                exit_code: Some(0),
+                stderr_tail: None,
+            }],
+        };
+        assert!(matches!(result.validate(), Err(super::ContractError::MismatchedResultMessageId)));
+        result.message_id = judgement_id;
+        assert!(matches!(result.validate(), Err(super::ContractError::MismatchedResultVerdict)));
     }
 
     #[test]
