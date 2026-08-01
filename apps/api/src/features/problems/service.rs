@@ -1257,6 +1257,7 @@ async fn require_problem_manage_pool(
                 WHERE caa.user_id = $2 AND caa.contest_id = cp.contest_id
             ))
         FROM contest_problems cp
+        JOIN contests c ON c.id = cp.contest_id AND c.deleted_at IS NULL
         WHERE cp.problem_id = $1
         "#,
     )
@@ -1285,6 +1286,7 @@ async fn require_problem_manage_transaction(
                 WHERE caa.user_id = $2 AND caa.contest_id = cp.contest_id
             ))
         FROM contest_problems cp
+        JOIN contests c ON c.id = cp.contest_id AND c.deleted_at IS NULL
         WHERE cp.problem_id = $1
         "#,
     )
@@ -1348,6 +1350,7 @@ async fn require_problem_readable(
         SELECT EXISTS (
             SELECT 1
             FROM contest_problems cp
+            JOIN contests c ON c.id = cp.contest_id AND c.deleted_at IS NULL
             JOIN contest_admin_assignments caa ON caa.contest_id = cp.contest_id
             WHERE cp.problem_id = $1 AND caa.user_id = $2
         )
@@ -2057,7 +2060,7 @@ mod tests {
             .execute(&pool)
             .await
             .expect("assign second contest scope");
-        service
+        let attachment = service
             .upload_attachment(
                 problem_id,
                 AttachmentKind::Sample,
@@ -2070,6 +2073,42 @@ mod tests {
             )
             .await
             .expect("fully scoped admin uploads attachment");
+        service
+            .upload_testdata(
+                problem_id,
+                testdata_zip("sample", b"test data"),
+                &actor,
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                &storage,
+            )
+            .await
+            .expect("fully scoped admin uploads test data");
+
+        sqlx::query("UPDATE contests SET deleted_at = now() WHERE id IN ($1, $2)")
+            .bind(first_contest_id)
+            .bind(second_contest_id)
+            .execute(&pool)
+            .await
+            .expect("soft-delete contests");
+        assert!(
+            service
+                .upload_attachment(
+                    problem_id,
+                    AttachmentKind::Supplement,
+                    "guide.pdf".into(),
+                    Some("application/pdf".into()),
+                    Bytes::from_static(b"guide"),
+                    &actor,
+                    IpAddr::V4(Ipv4Addr::LOCALHOST),
+                    &storage,
+                )
+                .await
+                .is_err()
+        );
+        assert!(
+            service.download_attachment(problem_id, attachment.id, &actor, &storage).await.is_err()
+        );
+        assert!(service.download_testdata(problem_id, &actor, &storage).await.is_err());
     }
 
     #[sqlx::test(migrations = "../../migrations")]

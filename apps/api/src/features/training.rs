@@ -3,7 +3,7 @@ use axum::{
     extract::{Path, Query, State, rejection::JsonRejection},
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Postgres, Transaction};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use std::collections::HashSet;
 use utoipa::ToSchema;
 
@@ -252,7 +252,11 @@ pub async fn list_sets(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TrainingSet>>, AppError> {
     context.require_password_ready()?;
-    Ok(Json(sqlx::query_as::<_, TrainingSet>("SELECT s.id,s.slug,s.title,s.description,s.visibility,count(i.problem_id)::bigint AS item_count FROM training_sets s LEFT JOIN training_set_items i ON i.set_id=s.id WHERE s.visibility='PUBLIC' GROUP BY s.id ORDER BY s.updated_at DESC,s.id DESC").fetch_all(state.database()).await.map_err(|e| AppError::internal("list training sets", e))?))
+    Ok(Json(
+        load_public_training_sets(state.database())
+            .await
+            .map_err(|e| AppError::internal("list training sets", e))?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/training/sets/{set_id}", operation_id = "getTrainingSet", tag = "training", params(("set_id" = i64, Path)), responses((status = 200, body = TrainingSetDetail), (status = 404, body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
@@ -262,9 +266,46 @@ pub async fn get_set(
     Path(set_id): Path<i64>,
 ) -> Result<Json<TrainingSetDetail>, AppError> {
     context.require_password_ready()?;
-    let set_info=sqlx::query_as::<_,TrainingSet>("SELECT s.id,s.slug,s.title,s.description,s.visibility,count(i.problem_id)::bigint AS item_count FROM training_sets s LEFT JOIN training_set_items i ON i.set_id=s.id WHERE s.id=$1 AND s.visibility='PUBLIC' GROUP BY s.id").bind(set_id).fetch_optional(state.database()).await.map_err(|e| AppError::internal("get training set", e))?.ok_or_else(|| AppError::not_found("TRAINING_SET_NOT_FOUND","Training set not found"))?;
-    let items=sqlx::query_as::<_,TrainingItem>("SELECT i.problem_id,p.slug,p.title,i.position,i.required,b.difficulty,coalesce(b.tags,'[]')::jsonb AS tags FROM training_set_items i JOIN problems p ON p.id=i.problem_id LEFT JOIN problem_bank_entries b ON b.problem_id=p.id WHERE i.set_id=$1 ORDER BY i.position").bind(set_id).fetch_all(state.database()).await.map_err(|e| AppError::internal("list training items",e))?;
+    let set_info = load_public_training_set(state.database(), set_id)
+        .await
+        .map_err(|e| AppError::internal("get training set", e))?
+        .ok_or_else(|| AppError::not_found("TRAINING_SET_NOT_FOUND", "Training set not found"))?;
+    let items = load_public_training_items(state.database(), set_id)
+        .await
+        .map_err(|e| AppError::internal("list training items", e))?;
     Ok(Json(TrainingSetDetail { set_info, items }))
+}
+
+async fn load_public_training_sets(database: &PgPool) -> Result<Vec<TrainingSet>, sqlx::Error> {
+    sqlx::query_as::<_, TrainingSet>(
+        "SELECT s.id,s.slug,s.title,s.description,s.visibility,count(b.problem_id)::bigint AS item_count FROM training_sets s LEFT JOIN training_set_items i ON i.set_id=s.id LEFT JOIN problems p ON p.id=i.problem_id AND p.deleted_at IS NULL LEFT JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' WHERE s.visibility='PUBLIC' GROUP BY s.id ORDER BY s.updated_at DESC,s.id DESC",
+    )
+    .fetch_all(database)
+    .await
+}
+
+async fn load_public_training_set(
+    database: &PgPool,
+    set_id: i64,
+) -> Result<Option<TrainingSet>, sqlx::Error> {
+    sqlx::query_as::<_, TrainingSet>(
+        "SELECT s.id,s.slug,s.title,s.description,s.visibility,count(b.problem_id)::bigint AS item_count FROM training_sets s LEFT JOIN training_set_items i ON i.set_id=s.id LEFT JOIN problems p ON p.id=i.problem_id AND p.deleted_at IS NULL LEFT JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' WHERE s.id=$1 AND s.visibility='PUBLIC' GROUP BY s.id",
+    )
+    .bind(set_id)
+    .fetch_optional(database)
+    .await
+}
+
+async fn load_public_training_items(
+    database: &PgPool,
+    set_id: i64,
+) -> Result<Vec<TrainingItem>, sqlx::Error> {
+    sqlx::query_as::<_, TrainingItem>(
+        "SELECT i.problem_id,p.slug,p.title,i.position,i.required,b.difficulty,b.tags::jsonb AS tags FROM training_set_items i JOIN problems p ON p.id=i.problem_id AND p.deleted_at IS NULL JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' WHERE i.set_id=$1 ORDER BY i.position",
+    )
+    .bind(set_id)
+    .fetch_all(database)
+    .await
 }
 
 fn validate_set_request(request: &SetRequest) -> Result<String, AppError> {
@@ -307,6 +348,22 @@ async fn write_set(
     visibility: &str,
     user_id: i64,
 ) -> Result<i64, AppError> {
+    if visibility == "PUBLIC" {
+        let problem_ids = request.items.iter().map(|item| item.problem_id).collect::<Vec<_>>();
+        let public_count = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id WHERE p.id=ANY($1) AND p.deleted_at IS NULL AND b.visibility='PUBLIC'",
+        )
+        .bind(&problem_ids)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::internal("validate public training items", e))?;
+        if public_count != i64::try_from(problem_ids.len()).unwrap_or(i64::MAX) {
+            return Err(AppError::validation(
+                "items",
+                "public training sets may only contain active public problems",
+            ));
+        }
+    }
     let id = if let Some(id) = set_id {
         sqlx::query_scalar::<_, i64>("UPDATE training_sets SET slug=$2,title=$3,description=$4,visibility=$5,updated_at=now() WHERE id=$1 RETURNING id")
             .bind(id).bind(&request.slug).bind(request.title.trim()).bind(request.description.trim()).bind(visibility).fetch_optional(&mut **tx).await.map_err(|e| AppError::internal("update training set",e))?.ok_or_else(|| AppError::not_found("TRAINING_SET_NOT_FOUND","Training set not found"))?
@@ -561,6 +618,99 @@ pub async fn get_practice_settings(
     .await
     .map_err(|e| AppError::internal("load practice settings", e))?;
     Ok(Json(settings))
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::PgPool;
+
+    use super::{
+        SetItemRequest, SetRequest, load_public_training_items, load_public_training_set,
+        load_public_training_sets, write_set,
+    };
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn public_training_sets_only_expose_active_public_problems(pool: PgPool) {
+        let user_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO users (username, password_hash, display_name, user_type, enabled, password_reset_required) VALUES ('training-admin', 'test-hash', 'Training Admin', 'SUPER_ADMIN', true, false) RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert training admin");
+        let public_problem_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems (slug, title) VALUES ('training-public', 'Public') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert public problem");
+        let private_problem_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems (slug, title) VALUES ('training-private', 'Private') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert private problem");
+        let deleted_problem_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems (slug, title) VALUES ('training-deleted', 'Deleted') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert deleted problem");
+        sqlx::query(
+            "INSERT INTO problem_bank_entries (problem_id, visibility, tags, published_at) VALUES ($1, 'PUBLIC', '[]', now()), ($2, 'PUBLIC', '[]', now()), ($3, 'PUBLIC', '[]', now())",
+        )
+        .bind(public_problem_id)
+        .bind(private_problem_id)
+        .bind(deleted_problem_id)
+        .execute(&pool)
+        .await
+        .expect("insert problem bank entries");
+
+        let request = SetRequest {
+            slug: "mixed-training".into(),
+            title: "Mixed Training".into(),
+            description: String::new(),
+            visibility: "PUBLIC".into(),
+            items: vec![
+                SetItemRequest { problem_id: public_problem_id, required: true },
+                SetItemRequest { problem_id: private_problem_id, required: false },
+                SetItemRequest { problem_id: deleted_problem_id, required: false },
+            ],
+        };
+        let mut tx = pool.begin().await.expect("begin training set transaction");
+        let set_id = write_set(&mut tx, None, &request, "PUBLIC", user_id)
+            .await
+            .expect("create initially public training set");
+        tx.commit().await.expect("commit training set");
+
+        sqlx::query("UPDATE problem_bank_entries SET visibility = 'PRIVATE' WHERE problem_id = $1")
+            .bind(private_problem_id)
+            .execute(&pool)
+            .await
+            .expect("make problem private");
+        sqlx::query("UPDATE problems SET deleted_at = now() WHERE id = $1")
+            .bind(deleted_problem_id)
+            .execute(&pool)
+            .await
+            .expect("soft-delete problem");
+
+        let sets = load_public_training_sets(&pool).await.expect("list public training sets");
+        assert_eq!(sets.len(), 1);
+        assert_eq!(sets[0].item_count, 1);
+        let summary = load_public_training_set(&pool, set_id)
+            .await
+            .expect("load public training set")
+            .expect("public training set exists");
+        assert_eq!(summary.item_count, 1);
+        let items =
+            load_public_training_items(&pool, set_id).await.expect("load public training items");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].problem_id, public_problem_id);
+
+        let mut tx = pool.begin().await.expect("begin invalid training set update");
+        assert!(write_set(&mut tx, Some(set_id), &request, "PUBLIC", user_id).await.is_err());
+        tx.rollback().await.expect("rollback invalid training set update");
+    }
 }
 
 #[utoipa::path(put, path = "/api/admin/practice/settings", operation_id = "updatePracticeSettings", tag = "practice", request_body = PracticeSettingsRequest, responses((status = 200, body = PracticeSettingsResponse), (status = 400, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
