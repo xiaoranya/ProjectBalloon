@@ -13,7 +13,7 @@ use lapin::{
 };
 use project_balloon_contracts::{
     JUDGE_DEAD_EXCHANGE, JUDGE_DEAD_ROUTING_KEY, JUDGE_RESULT_ROUTING_KEY, JUDGE_RESULTS_EXCHANGE,
-    JudgeResult, JudgeTask,
+    JUDGE_TASKS_QUEUE, JudgeResult, JudgeTask,
 };
 use tokio::{sync::watch, task::JoinSet, time::timeout};
 use tracing::{error, info, warn};
@@ -306,6 +306,13 @@ async fn process_delivery(
 /// RabbitMQ records each dead-letter cycle in `x-death`.  Count those cycles
 /// before handing the task to the engine so permanent infrastructure failures
 /// eventually become a terminal result instead of leaving a submission judging.
+///
+/// A single retry cycle dead-letters twice: once from the task queue (the
+/// worker's `nack requeue:false`, reason `rejected`) and once from the retry
+/// queue (TTL expiry back to the task queue, reason `expired`). RabbitMQ
+/// records a separate `x-death` entry per reason per queue, so summing every
+/// entry double-counts each cycle and halves the effective retry budget. Count
+/// only the task-queue entries so `MAX_TASK_RETRIES` behaves as documented.
 fn retry_count(delivery: &Delivery) -> u32 {
     let Some(headers) = delivery.properties.headers().as_ref() else { return 0 };
     let Some(AMQPValue::FieldArray(deaths)) = headers.inner().get("x-death") else {
@@ -315,7 +322,16 @@ fn retry_count(delivery: &Delivery) -> u32 {
         .as_slice()
         .iter()
         .filter_map(|entry| match entry {
-            AMQPValue::FieldTable(death) => death.inner().get("count"),
+            AMQPValue::FieldTable(death) => {
+                let from_tasks_queue = match death.inner().get("queue") {
+                    Some(AMQPValue::LongString(queue)) => {
+                        queue.as_bytes() == JUDGE_TASKS_QUEUE.as_bytes()
+                    }
+                    Some(AMQPValue::ShortString(queue)) => queue.as_str() == JUDGE_TASKS_QUEUE,
+                    _ => false,
+                };
+                from_tasks_queue.then(|| death.inner().get("count")).flatten()
+            }
             _ => None,
         })
         .filter_map(|count| match count {

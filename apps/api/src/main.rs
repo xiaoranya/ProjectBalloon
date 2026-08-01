@@ -6,8 +6,9 @@ use project_balloon_api::{
     features::announcements::AnnouncementScheduleRunner,
     features::contests::ContestLifecycleRunner,
     features::judge_dispatch::{
-        RabbitJudgeResultConsumer, RabbitJudgeTaskPublisher, RabbitWorkerHeartbeatConsumer,
-        SubmissionOutboxDispatcher, SubmissionOutboxDispatcherConfig,
+        RabbitDeadLetterConsumer, RabbitJudgeResultConsumer, RabbitJudgeTaskPublisher,
+        RabbitWorkerHeartbeatConsumer, SubmissionOutboxDispatcher,
+        SubmissionOutboxDispatcherConfig,
     },
     features::printing::{CommandLineCupsGateway, CupsDeliveryRunner, CupsGateway},
     features::realtime::{DispatcherConfig, OutboxDispatcher, RealtimePublisher},
@@ -232,6 +233,18 @@ async fn main() -> Result<()> {
             .run(dispatcher_shutdown_rx.clone()),
         )
     });
+    let judge_dead_letter_consumer_task = config.rabbitmq_enabled.then(|| {
+        tokio::spawn(
+            RabbitDeadLetterConsumer::new(
+                database.clone(),
+                config.rabbitmq_url.clone(),
+                config.rabbitmq_request_timeout,
+                config.judge_result_reconnect_delay,
+                config.judge_result_prefetch,
+            )
+            .run(dispatcher_shutdown_rx.clone()),
+        )
+    });
     let cups_delivery_task = match (cups_gateway, delivery_storage) {
         (Some(gateway), Some(storage)) => Some(tokio::spawn(
             CupsDeliveryRunner::new(database.clone(), storage, gateway)
@@ -289,6 +302,10 @@ async fn main() -> Result<()> {
         Some(task) => Some(task.await.context("Worker heartbeat consumer task failed")),
         None => None,
     };
+    let judge_dead_letter_consumer_result = match judge_dead_letter_consumer_task {
+        Some(task) => Some(task.await.context("Judge dead-letter consumer task failed")),
+        None => None,
+    };
     let cups_delivery_result = match cups_delivery_task {
         Some(task) => Some(task.await.context("CUPS delivery runner task failed")),
         None => None,
@@ -320,6 +337,9 @@ async fn main() -> Result<()> {
         result?;
     }
     if let Some(result) = worker_heartbeat_consumer_result {
+        result?;
+    }
+    if let Some(result) = judge_dead_letter_consumer_result {
         result?;
     }
     if let Some(result) = cups_delivery_result {

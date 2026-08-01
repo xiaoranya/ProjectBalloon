@@ -43,7 +43,7 @@ const DEFAULT_CUPS_PRINTER: &str = "xcpc";
 const DEFAULT_CUPS_COMMAND_TIMEOUT_MILLISECONDS: u64 = 5_000;
 const DEFAULT_TRUSTED_PROXY_CIDRS: &str = "127.0.0.1/32,::1/128";
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AppConfig {
     pub bind_address: SocketAddr,
     pub trusted_proxy_cidrs: Vec<IpNet>,
@@ -56,6 +56,7 @@ pub struct AppConfig {
     pub secure_cookies: bool,
     pub csrf_secret: Vec<u8>,
     pub uses_development_csrf_secret: bool,
+    pub allow_development_csrf_secret: bool,
     pub realtime_dispatcher_enabled: bool,
     pub realtime_channel_capacity: usize,
     pub realtime_poll_interval: Duration,
@@ -198,7 +199,21 @@ impl AppConfig {
                 reason: "must contain at least 32 bytes",
             });
         }
+        let allow_development_csrf_secret = parse_bool(
+            "PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET",
+            lookup("PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET").unwrap_or_else(|| "false".to_owned()),
+        )?;
         let uses_development_csrf_secret = csrf_secret == DEFAULT_CSRF_SECRET;
+        // The built-in secret is public knowledge, so anyone could forge CSRF
+        // tokens if a deployment keeps it. Only an explicit development
+        // opt-in may use it, and never together with secure cookies.
+        if uses_development_csrf_secret && !allow_development_csrf_secret {
+            return Err(ConfigError::Invalid {
+                name: "PROJECT_BALLOON_CSRF_SECRET",
+                value: "[redacted]".to_owned(),
+                reason: "must be explicitly set; the development secret is only permitted with PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET",
+            });
+        }
         if secure_cookies && uses_development_csrf_secret {
             return Err(ConfigError::Invalid {
                 name: "PROJECT_BALLOON_CSRF_SECRET",
@@ -452,6 +467,7 @@ impl AppConfig {
             secure_cookies,
             csrf_secret: csrf_secret.into_bytes(),
             uses_development_csrf_secret,
+            allow_development_csrf_secret,
             realtime_dispatcher_enabled,
             realtime_channel_capacity,
             realtime_poll_interval: Duration::from_millis(realtime_poll_milliseconds),
@@ -560,15 +576,32 @@ mod tests {
 
     use super::{AppConfig, ConfigError};
 
+    /// Wraps a value map so the development CSRF secret is explicitly allowed;
+    /// every validation test below targets a different concern, not the CSRF
+    /// default-secret rejection.
+    fn dev_lookup<'a>(
+        values: &'a HashMap<&'a str, String>,
+    ) -> impl FnMut(&str) -> Option<String> + 'a {
+        move |name| {
+            if name == "PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET" {
+                Some("true".to_owned())
+            } else {
+                values.get(name).cloned()
+            }
+        }
+    }
+
     #[test]
     fn local_defaults_are_valid() {
-        let config = AppConfig::from_lookup(|_| None).expect("defaults must be valid");
+        let config =
+            AppConfig::from_lookup(dev_lookup(&HashMap::new())).expect("defaults must be valid");
 
         assert_eq!(config.bind_address.to_string(), "127.0.0.1:8080");
         assert_eq!(config.database_max_connections, 20);
         assert!(config.run_migrations);
         assert_eq!(config.session_ttl.as_secs(), 43_200);
         assert!(config.uses_development_csrf_secret);
+        assert!(config.allow_development_csrf_secret);
         assert!(config.realtime_dispatcher_enabled);
         assert_eq!(config.realtime_batch_size, 100);
         assert!(!config.realtime_redis_enabled);
@@ -586,9 +619,41 @@ mod tests {
     }
 
     #[test]
+    fn development_csrf_secret_requires_explicit_opt_in() {
+        let error = AppConfig::from_lookup(|_| None)
+            .expect_err("default secret without opt-in must be rejected");
+        assert_eq!(
+            error,
+            ConfigError::Invalid {
+                name: "PROJECT_BALLOON_CSRF_SECRET",
+                value: "[redacted]".to_owned(),
+                reason: "must be explicitly set; the development secret is only permitted with PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET",
+            }
+        );
+    }
+
+    #[test]
+    fn development_csrf_secret_with_secure_cookies_is_rejected_even_when_allowed() {
+        let values = HashMap::from([
+            ("PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET", "true".to_owned()),
+            ("PROJECT_BALLOON_SECURE_COOKIES", "true".to_owned()),
+        ]);
+        let error = AppConfig::from_lookup(|name| values.get(name).cloned())
+            .expect_err("secure cookies with the known secret must be rejected");
+        assert_eq!(
+            error,
+            ConfigError::Invalid {
+                name: "PROJECT_BALLOON_CSRF_SECRET",
+                value: "[redacted]".to_owned(),
+                reason: "must be explicitly changed when secure cookies are enabled",
+            }
+        );
+    }
+
+    #[test]
     fn zero_database_connections_are_rejected() {
         let values = HashMap::from([("PROJECT_BALLOON_DATABASE_MAX_CONNECTIONS", "0".to_owned())]);
-        let result = AppConfig::from_lookup(|name| values.get(name).cloned());
+        let result = AppConfig::from_lookup(dev_lookup(&values));
         let error = match result {
             Ok(_) => panic!("zero pool size must fail"),
             Err(error) => error,
@@ -607,7 +672,7 @@ mod tests {
     #[test]
     fn migration_flag_has_closed_values() {
         let values = HashMap::from([("PROJECT_BALLOON_RUN_MIGRATIONS", "sometimes".to_owned())]);
-        assert!(AppConfig::from_lookup(|name| values.get(name).cloned()).is_err());
+        assert!(AppConfig::from_lookup(dev_lookup(&values)).is_err());
     }
 
     #[test]
@@ -619,20 +684,20 @@ mod tests {
             ("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY", "key".to_owned()),
             ("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY", "secret".to_owned()),
         ]);
-        assert!(AppConfig::from_lookup(|name| missing_printer.get(name).cloned()).is_err());
+        assert!(AppConfig::from_lookup(dev_lookup(&missing_printer)).is_err());
 
         let zero_timeout =
             HashMap::from([("PROJECT_BALLOON_CUPS_COMMAND_TIMEOUT_MILLISECONDS", "0".to_owned())]);
-        assert!(AppConfig::from_lookup(|name| zero_timeout.get(name).cloned()).is_err());
+        assert!(AppConfig::from_lookup(dev_lookup(&zero_timeout)).is_err());
 
         let no_storage = HashMap::from([("PROJECT_BALLOON_CUPS_ENABLED", "true".to_owned())]);
-        assert!(AppConfig::from_lookup(|name| no_storage.get(name).cloned()).is_err());
+        assert!(AppConfig::from_lookup(dev_lookup(&no_storage)).is_err());
     }
 
     #[test]
     fn realtime_sizes_must_be_positive() {
         let values = HashMap::from([("PROJECT_BALLOON_REALTIME_CHANNEL_CAPACITY", "0".to_owned())]);
-        assert!(AppConfig::from_lookup(|name| values.get(name).cloned()).is_err());
+        assert!(AppConfig::from_lookup(dev_lookup(&values)).is_err());
     }
 
     #[test]
@@ -641,7 +706,7 @@ mod tests {
             ("PROJECT_BALLOON_REALTIME_REDIS_ENABLED", "true".to_owned()),
             ("REDIS_URL", String::new()),
         ]);
-        assert!(AppConfig::from_lookup(|name| values.get(name).cloned()).is_err());
+        assert!(AppConfig::from_lookup(dev_lookup(&values)).is_err());
     }
 
     #[test]
@@ -650,17 +715,17 @@ mod tests {
             ("PROJECT_BALLOON_SCOREBOARD_CACHE_ENABLED", "true".to_owned()),
             ("REDIS_URL", String::new()),
         ]);
-        assert!(AppConfig::from_lookup(|name| missing_url.get(name).cloned()).is_err());
+        assert!(AppConfig::from_lookup(dev_lookup(&missing_url)).is_err());
 
         let zero_ttl =
             HashMap::from([("PROJECT_BALLOON_SCOREBOARD_CACHE_TTL_SECONDS", "0".to_owned())]);
-        assert!(AppConfig::from_lookup(|name| zero_ttl.get(name).cloned()).is_err());
+        assert!(AppConfig::from_lookup(dev_lookup(&zero_ttl)).is_err());
     }
 
     #[test]
     fn enabled_object_storage_requires_credentials() {
         let values = HashMap::from([("PROJECT_BALLOON_OBJECT_STORAGE_ENABLED", "true".to_owned())]);
-        assert!(AppConfig::from_lookup(|name| values.get(name).cloned()).is_err());
+        assert!(AppConfig::from_lookup(dev_lookup(&values)).is_err());
     }
 
     #[test]
@@ -669,6 +734,6 @@ mod tests {
             ("PROJECT_BALLOON_RABBITMQ_ENABLED", "true".to_owned()),
             ("PROJECT_BALLOON_RABBITMQ_URL", "http://rabbit.invalid".to_owned()),
         ]);
-        assert!(AppConfig::from_lookup(|name| values.get(name).cloned()).is_err());
+        assert!(AppConfig::from_lookup(dev_lookup(&values)).is_err());
     }
 }

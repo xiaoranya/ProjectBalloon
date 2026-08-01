@@ -779,6 +779,9 @@ async function saveContest() {
     const basePayload = {
       name: editForm.name.trim(),
       visibility: editForm.visibility,
+      // Optimistic concurrency: reject the save if another administrator
+      // changed the contest since this page loaded.
+      expectedVersion: contest.value.version,
     };
     contest.value = await adminContestApi.updateContest(
       contestId,

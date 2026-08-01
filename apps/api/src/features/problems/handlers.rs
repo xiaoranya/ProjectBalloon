@@ -534,7 +534,7 @@ pub async fn download_testdata(
 ) -> Result<Response, AppError> {
     let storage = require_storage(&state)?;
     let download = state.problems().download_testdata(problem_id, context.user(), storage).await?;
-    let mut response = Response::new(Body::from(download.content));
+    let mut response = Response::new(download.content);
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/zip"));
     headers.insert(header::CONTENT_DISPOSITION, content_disposition(&download.filename)?);
@@ -589,7 +589,7 @@ pub async fn download_testdata_version(
         .problems()
         .download_testdata_version(problem_id, version, context.user(), storage)
         .await?;
-    let mut response = Response::new(Body::from(download.content));
+    let mut response = Response::new(download.content);
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/zip"));
     headers.insert(header::CONTENT_DISPOSITION, content_disposition(&download.filename)?);

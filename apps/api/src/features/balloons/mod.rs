@@ -190,31 +190,33 @@ impl BalloonService {
             .begin()
             .await
             .map_err(|error| AppError::internal("begin balloon transition", error))?;
-        let (contest_id, status, version, claimed_by) =
-            sqlx::query_as::<_, (i64, String, i32, Option<i64>)>(
-                "SELECT contest_id, status, version, claimed_by FROM balloon_tasks WHERE id = $1 FOR UPDATE",
-            )
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|error| AppError::internal("lock balloon task", error))?
-            .ok_or_else(task_not_found)?;
+        let (contest_id, status, version) = sqlx::query_as::<_, (i64, String, i32)>(
+            "SELECT contest_id, status, version FROM balloon_tasks WHERE id = $1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|error| AppError::internal("lock balloon task", error))?
+        .ok_or_else(task_not_found)?;
         if version != expected_version {
             return Err(AppError::conflict(
                 "BALLOON_VERSION_STALE",
                 "Balloon task changed; reload and retry",
             ));
         }
-        let super_admin = actor.has_role("SUPER_ADMIN");
         match action {
             "CLAIM" if status == "PENDING" => {
                 sqlx::query("UPDATE balloon_tasks SET status = 'CLAIMED', claimed_by = $2, claimed_at = now(), updated_at = now(), version = version + 1 WHERE id = $1")
                     .bind(id).bind(actor.id).execute(&mut *tx).await
                     .map_err(|error| AppError::internal("claim balloon task", error))?;
             }
-            "DELIVER" if status == "CLAIMED" && (super_admin || claimed_by == Some(actor.id)) => {
-                sqlx::query("UPDATE balloon_tasks SET status = 'DELIVERED', delivered_at = now(), updated_at = now(), version = version + 1 WHERE id = $1")
-                    .bind(id).execute(&mut *tx).await
+            // Any operator may deliver a claimed task. Delivery is terminal and
+            // guarded by the optimistic version check, so a different operator
+            // can finish a batch the claiming operator left behind. The task is
+            // re-assigned to whoever actually delivered it for accurate records.
+            "DELIVER" if status == "CLAIMED" => {
+                sqlx::query("UPDATE balloon_tasks SET status = 'DELIVERED', claimed_by = $2, delivered_at = now(), updated_at = now(), version = version + 1 WHERE id = $1")
+                    .bind(id).bind(actor.id).execute(&mut *tx).await
                     .map_err(|error| AppError::internal("deliver balloon task", error))?;
             }
             "CANCEL" if matches!(status.as_str(), "PENDING" | "CLAIMED") => {
@@ -227,12 +229,6 @@ impl BalloonService {
                 sqlx::query("UPDATE balloon_tasks SET status = 'PENDING', claimed_by = NULL, claimed_at = NULL, delivered_at = NULL, cancelled_at = NULL, cancelled_reason = NULL, reopened_count = reopened_count + 1, updated_at = now(), version = version + 1 WHERE id = $1")
                     .bind(id).execute(&mut *tx).await
                     .map_err(|error| AppError::internal("reopen balloon task", error))?;
-            }
-            "DELIVER" if status == "CLAIMED" => {
-                return Err(AppError::conflict(
-                    "BALLOON_CLAIMED_BY_OTHER",
-                    "Only the claiming operator can mark this balloon delivered",
-                ));
             }
             _ => {
                 return Err(AppError::conflict(
@@ -430,6 +426,7 @@ pub(crate) async fn generate_for_accepted(
             SELECT candidate.id FROM balloon_tasks candidate
             JOIN submissions submission ON submission.id = candidate.submission_id
             WHERE candidate.contest_id = $1 AND candidate.problem_id = $2
+              AND candidate.status <> 'CANCELLED'
             ORDER BY submission.submitted_at, candidate.team_id, candidate.submission_id
             LIMIT 1
         )
@@ -797,7 +794,6 @@ mod tests {
             .await
             .expect("claim balloon");
         assert_eq!(claimed.status, "CLAIMED");
-        assert!(service.transition(task_ids[0], "DELIVER", 1, None, &second, ip).await.is_err());
         let noted = service
             .note(
                 task_ids[0],
@@ -807,11 +803,14 @@ mod tests {
             )
             .await
             .expect("note balloon");
+        // Another operator can take over and deliver a claimed task; the task
+        // is re-assigned to whoever actually delivered it.
         let delivered = service
-            .transition(task_ids[0], "DELIVER", noted.version, None, &first, ip)
+            .transition(task_ids[0], "DELIVER", noted.version, None, &second, ip)
             .await
-            .expect("deliver owned balloon");
+            .expect("another operator delivers a claimed balloon");
         assert_eq!(delivered.status, "DELIVERED");
+        assert_eq!(delivered.claimed_by_user_id, Some(second.id));
 
         let cancelled = service
             .transition(task_ids[1], "CANCEL", 0, Some("team absent".to_owned()), &second, ip)

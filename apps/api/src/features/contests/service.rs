@@ -369,6 +369,10 @@ impl ContestService {
         let visibility = request
             .visibility
             .map_or(current.visibility, |visibility| visibility.as_str().to_owned());
+        let version_guard = request
+            .expected_version
+            .map(|version| format!(" AND version = {version}"))
+            .unwrap_or_default();
         let sql = format!(
             r#"
             UPDATE contests
@@ -379,7 +383,7 @@ impl ContestService {
                 end_at = $5,
                 version = version + 1,
                 updated_at = now()
-            WHERE id = $6 AND deleted_at IS NULL
+            WHERE id = $6 AND deleted_at IS NULL{version_guard}
             RETURNING {CONTEST_COLUMNS}
             "#
         );
@@ -390,9 +394,18 @@ impl ContestService {
             .bind(freeze_at)
             .bind(end_at)
             .bind(contest_id)
-            .fetch_one(&mut *transaction)
+            .fetch_optional(&mut *transaction)
             .await
             .map_err(map_contest_write_error)?;
+        let updated = match updated {
+            Some(row) => row,
+            None => {
+                return Err(AppError::conflict(
+                    "CONTEST_UPDATE_STALE",
+                    "Contest was modified by another administrator; reload and retry",
+                ));
+            }
+        };
         record_audit(&mut transaction, actor.id, "CONTEST_UPDATED", contest_id, request_ip).await?;
         transaction
             .commit()

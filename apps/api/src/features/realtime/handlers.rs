@@ -91,7 +91,16 @@ fn stream_response(
                 {
                     return Some((event_frame(&envelope.event), receiver));
                 }
-                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Ok(_) => {}
+                Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                    tracing::warn!(
+                        %contest_id,
+                        %skipped,
+                        scope = %scope.as_str(),
+                        team_id,
+                        "realtime subscriber lagged; dropped events will not be replayed"
+                    );
+                }
                 Err(broadcast::error::RecvError::Closed) => return None,
             }
         }

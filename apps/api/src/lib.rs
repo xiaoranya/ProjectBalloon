@@ -362,7 +362,10 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
                 .post(problems::upload_testdata)
                 .layer(DefaultBodyLimit::max(258 * 1024 * 1024)),
         )
-        .route("/api/problems/{problem_id}/interactor", post(problems::upload_interactor))
+        .route(
+            "/api/problems/{problem_id}/interactor",
+            post(problems::upload_interactor).layer(DefaultBodyLimit::max(20 * 1024 * 1024)),
+        )
         .route(
             "/api/problems/{problem_id}/testdata/versions",
             get(problems::list_testdata_versions),

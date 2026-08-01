@@ -21,6 +21,10 @@ use super::{
 
 const MAX_SYNC_SOURCE_COUNT: i64 = 10_000;
 const MAX_SYNC_SOURCE_BYTES: i64 = 128 * 1024 * 1024;
+// The synchronous metadata CSV is built entirely in memory, so cap the row
+// count the same way the synchronous source export is capped. Larger exports
+// should use the async export-task path, which streams to a temp file.
+const MAX_SYNC_METADATA_ROWS: i64 = 10_000;
 
 #[derive(sqlx::FromRow)]
 struct ExportRow {
@@ -110,6 +114,14 @@ impl SubmissionService {
     ) -> Result<String, AppError> {
         require_admin_access(&self.database, contest_id, actor).await?;
         let rows = load_export_rows(&self.database, contest_id).await?;
+        let count = i64::try_from(rows.len())
+            .map_err(|error| AppError::internal("convert metadata export count", error))?;
+        if count > MAX_SYNC_METADATA_ROWS {
+            return Err(AppError::conflict(
+                "SOURCE_EXPORT_TOO_LARGE",
+                "Synchronous metadata export is limited to 10,000 submissions; use the async export task for larger contests",
+            ));
+        }
         let csv = tokio::task::spawn_blocking(move || metadata_csv(&rows))
             .await
             .map_err(|error| AppError::internal("join submission metadata export task", error))??;

@@ -236,6 +236,11 @@ pub struct UpdateContestRequest {
     pub end_at: Option<OffsetDateTime>,
     #[serde(default, with = "time::serde::rfc3339::option")]
     pub freeze_at: Option<OffsetDateTime>,
+    /// Optimistic-concurrency guard. When present the update is rejected if the
+    /// persisted contest version no longer matches, so concurrent administrators
+    /// cannot silently overwrite each other's changes.
+    #[serde(default)]
+    pub expected_version: Option<i64>,
 }
 
 pub struct ValidatedUpdateContest {
@@ -244,6 +249,7 @@ pub struct ValidatedUpdateContest {
     pub start_at: Option<OffsetDateTime>,
     pub end_at: Option<OffsetDateTime>,
     pub freeze_at: Option<OffsetDateTime>,
+    pub expected_version: Option<i64>,
 }
 
 impl ValidatedUpdateContest {
@@ -270,6 +276,7 @@ impl UpdateContestRequest {
             start_at: self.start_at,
             end_at: self.end_at,
             freeze_at: self.freeze_at,
+            expected_version: self.expected_version,
         })
     }
 }

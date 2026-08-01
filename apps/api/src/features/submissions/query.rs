@@ -260,7 +260,26 @@ impl SubmissionService {
     ) -> Result<PageResponse<SubmissionSummary>, AppError> {
         require_team_account(actor)?;
         let team_id = team_id_for_user(&self.database, actor.id).await?;
-        list(&self.database, contest_id, Some(team_id), query).await
+        let mut page = list(&self.database, contest_id, Some(team_id), query).await?;
+        // Match the detail endpoint: teams must not see verdicts, timing, or
+        // scores while the contest is live and feedback is restricted. The
+        // list endpoint previously leaked these fields past the feedback
+        // policy configured on the contest.
+        let policy = sqlx::query_as::<_, (String, String)>(
+            "SELECT feedback_policy, status FROM contests WHERE id = $1",
+        )
+        .bind(contest_id)
+        .fetch_optional(&self.database)
+        .await
+        .map_err(|error| AppError::internal("load submission feedback policy", error))?;
+        if let Some((feedback_policy, status)) = policy
+            && !matches!(status.as_str(), "ENDED" | "ARCHIVED")
+        {
+            for summary in &mut page.content {
+                mask_summary_feedback(summary, &feedback_policy);
+            }
+        }
+        Ok(page)
     }
 
     pub async fn list_admin(
@@ -588,6 +607,18 @@ async fn detail(
         }
     }
     Ok(detail)
+}
+
+fn mask_summary_feedback(summary: &mut SubmissionSummary, policy: &str) {
+    if policy == "FULL" {
+        return;
+    }
+    summary.verdict = None;
+    summary.total_time_ms = None;
+    summary.peak_memory_kb = None;
+    if policy == "NONE" {
+        summary.score_milli = None;
+    }
 }
 
 fn apply_feedback_policy(detail: &mut SubmissionDetail, policy: &str) {

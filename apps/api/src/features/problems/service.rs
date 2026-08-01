@@ -1,6 +1,8 @@
 use std::net::IpAddr;
 
+use axum::body::Body;
 use bytes::Bytes;
+use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
 
@@ -49,7 +51,7 @@ pub struct AttachmentDownloadReference {
 
 pub struct TestdataDownload {
     pub filename: String,
-    pub content: Bytes,
+    pub content: Body,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -741,7 +743,7 @@ impl ProblemService {
         .await
         .map_err(|error| AppError::internal("load current test-data metadata", error))?
         .ok_or_else(testdata_not_found)?;
-        let content = verified_testdata_object(storage, &row.1, &row.2).await?;
+        let content = testdata_download_body(storage, &row.1, &row.2).await?;
         Ok(TestdataDownload {
             filename: format!("problem-{problem_id}-testdata-v{}.zip", row.0),
             content,
@@ -799,7 +801,7 @@ impl ProblemService {
         .await
         .map_err(|error| AppError::internal("load test-data version metadata", error))?
         .ok_or_else(testdata_version_not_found)?;
-        let content = verified_testdata_object(storage, &row.0, &row.1).await?;
+        let content = testdata_download_body(storage, &row.0, &row.1).await?;
         Ok(TestdataDownload {
             filename: format!("problem-{problem_id}-testdata-v{version}.zip"),
             content,
@@ -1103,23 +1105,63 @@ async fn load_testdata_version(
     .ok_or_else(testdata_version_not_found)
 }
 
-async fn verified_testdata_object(
+/// Stream a test-data object to the response body while verifying its SHA-256
+/// incrementally. Buffering the whole object (up to 256 MiB) per concurrent
+/// download is a memory-exhaustion surface, so bytes flow through as chunks.
+/// A mismatch is detected only once the stream is exhausted, so it terminates
+/// the response early (logged) rather than returning a 409 before any bytes.
+async fn testdata_download_body(
     storage: &ObjectStorageHandle,
     object_key: &str,
     expected_sha256: &str,
-) -> Result<Bytes, AppError> {
-    let content = storage
+) -> Result<Body, AppError> {
+    let stream = storage
         .backend()
-        .get(storage.problem_bucket(), object_key)
+        .get_stream(storage.problem_bucket(), object_key)
         .await
-        .map_err(|error| AppError::internal("download problem test data", error))?;
-    if hex::encode(Sha256::digest(&content)) != expected_sha256 {
-        return Err(AppError::conflict(
-            "TESTDATA_INTEGRITY_MISMATCH",
-            "Stored test data does not match its immutable metadata",
-        ));
-    }
-    Ok(content)
+        .map_err(|error| AppError::internal("stream problem test data", error))?;
+    // The hasher, expected digest, and logging key travel through the unfold
+    // state so the producer closure never moves out of its own captures.
+    let verified = futures_util::stream::unfold(
+        (stream, false, Sha256::new(), expected_sha256.to_owned(), object_key.to_owned()),
+        |(mut inner, finished, mut hasher, expected, object_key)| async move {
+            if finished {
+                return None;
+            }
+            match inner.next().await {
+                Some(Ok(chunk)) => {
+                    hasher.update(&chunk);
+                    Some((Ok(chunk), (inner, false, hasher, expected, object_key)))
+                }
+                Some(Err(error)) => Some((
+                    Err::<Bytes, Box<dyn std::error::Error + Send + Sync>>(
+                        std::io::Error::other(format!("stream problem test data: {error}")).into(),
+                    ),
+                    (inner, true, hasher, expected, object_key),
+                )),
+                None => {
+                    if hex::encode(hasher.finalize_reset()) != expected {
+                        tracing::error!(
+                            object_key = %object_key,
+                            "test-data integrity mismatch detected while streaming download"
+                        );
+                        Some((
+                            Err::<Bytes, Box<dyn std::error::Error + Send + Sync>>(
+                                std::io::Error::other(
+                                    "stored test data does not match its immutable metadata",
+                                )
+                                .into(),
+                            ),
+                            (inner, true, hasher, expected, object_key),
+                        ))
+                    } else {
+                        None
+                    }
+                }
+            }
+        },
+    );
+    Ok(Body::from_stream(verified))
 }
 
 async fn preflight_attachment_change(
@@ -2109,7 +2151,10 @@ mod tests {
             .await
             .expect("download current test data");
         assert!(download.filename.ends_with("v2.zip"));
-        assert_eq!(download.content, second_content);
+        let download_bytes = axum::body::to_bytes(download.content, 8 * 1024 * 1024)
+            .await
+            .expect("read current test-data download");
+        assert_eq!(download_bytes, second_content);
         let current = sqlx::query_as::<_, (i32, String)>(
             "SELECT testdata_version, testdata_sha256 FROM problems WHERE id = $1",
         )
@@ -2138,7 +2183,10 @@ mod tests {
             .await
             .expect("download first test-data version");
         assert!(first_download.filename.ends_with("v1.zip"));
-        assert_eq!(first_download.content, first_content);
+        let first_download_bytes = axum::body::to_bytes(first_download.content, 8 * 1024 * 1024)
+            .await
+            .expect("read first test-data version download");
+        assert_eq!(first_download_bytes, first_content);
         let activated = service
             .activate_testdata_version(problem_id, 1, 2, &actor, IpAddr::V4(Ipv4Addr::LOCALHOST))
             .await
@@ -2169,14 +2217,14 @@ mod tests {
             .await
             .expect("upload after activating historical version");
         assert_eq!(third.version, 3);
-        assert_eq!(
-            service
-                .download_testdata(problem_id, &actor, &storage)
-                .await
-                .expect("download third version")
-                .content,
-            third_content
-        );
+        let third_download = service
+            .download_testdata(problem_id, &actor, &storage)
+            .await
+            .expect("download third version");
+        let third_download_bytes = axum::body::to_bytes(third_download.content, 8 * 1024 * 1024)
+            .await
+            .expect("read third test-data download");
+        assert_eq!(third_download_bytes, third_content);
         sqlx::query("UPDATE problems SET testdata_sha256 = $2 WHERE id = $1")
             .bind(problem_id)
             .bind("0".repeat(64))

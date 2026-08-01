@@ -588,8 +588,15 @@ pub(crate) fn to_csv(board: &ScoreboardResponse) -> String {
         for cell in &row.problems {
             output.push(',');
             let value = if cell.solved {
-                let solve_minutes = cell.penalty_minutes - 20 * i64::from(cell.wrong_attempts);
-                format!("+{}@{solve_minutes}", cell.wrong_attempts)
+                // OI/IOI cells carry no penalty-based solve time, so rendering
+                // `@minutes` would produce a negative value. Show the attempt
+                // count only for non-ICPC modes.
+                if board.scoring_mode == "ICPC" {
+                    let solve_minutes = cell.penalty_minutes - 20 * i64::from(cell.wrong_attempts);
+                    format!("+{}@{solve_minutes}", cell.wrong_attempts)
+                } else {
+                    format!("+{}", cell.wrong_attempts)
+                }
             } else if cell.wrong_attempts > 0 {
                 format!("-{}", cell.wrong_attempts)
             } else {

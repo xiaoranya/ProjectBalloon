@@ -177,6 +177,7 @@ const businessMessages: Record<string, string> = {
   CONTEST_END_TIME_NOT_SET: '比赛尚未设置结束时间',
   CONTEST_EXTENSION_STALE: '比赛结束时间已被其他管理员修改，请刷新后重试',
   CONTEST_EXTENSION_NOT_LATER: '新的结束时间必须晚于当前结束时间',
+  CONTEST_UPDATE_STALE: '比赛已被其他管理员修改，请刷新后重试',
   INVALID_CONTEST_TRANSITION: '当前比赛状态不允许执行该操作',
   CONTEST_TRANSITION_INVALID: '当前比赛状态不允许执行该操作',
   JUDGEMENT_VERSION_STALE: '该提交的有效判定已被其他管理员更新，请刷新后重试',
