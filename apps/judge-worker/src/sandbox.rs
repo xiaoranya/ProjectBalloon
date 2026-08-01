@@ -78,7 +78,7 @@ impl DockerSandbox {
             .socket
             .to_str()
             .ok_or_else(|| SandboxError::Api("sandbox socket path is not UTF-8".to_owned()))?;
-        let docker = Docker::connect_with_unix(socket, 10, bollard::API_DEFAULT_VERSION)
+        let docker = Docker::connect_with_local(socket, 10, bollard::API_DEFAULT_VERSION)
             .map_err(|error| SandboxError::Api(error.to_string()))?;
         Ok(Self {
             docker,
