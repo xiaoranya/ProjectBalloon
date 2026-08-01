@@ -11,6 +11,7 @@ use lapin::{
     BasicProperties, Connection, ConnectionProperties,
     options::{BasicAckOptions, BasicGetOptions, BasicPublishOptions, ConfirmSelectOptions},
 };
+use object_store::{ObjectStoreExt, aws::AmazonS3Builder, path::Path};
 use project_balloon_contracts::{
     JUDGE_TASK_SCHEMA_VERSION, JUDGE_TASKS_EXCHANGE, JudgeResult, JudgeTask, JudgeVerdict,
 };
@@ -21,7 +22,6 @@ use project_balloon_judge_worker::{
     sandbox::{DockerSandbox, DockerSandboxConfig},
     worker::JudgeEngine,
 };
-use s3::{Bucket, Region, creds::Credentials};
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 use uuid::Uuid;
@@ -187,13 +187,22 @@ fn required_env(name: &str) -> String {
     env::var(name).unwrap_or_else(|_| panic!("{name} must be set for this integration test"))
 }
 
-fn s3_bucket(endpoint: &str, access_key: &str, secret_key: &str, bucket: &str) -> Box<Bucket> {
-    let credentials = Credentials::new(Some(access_key), Some(secret_key), None, None, None)
-        .expect("pipeline test credentials must be valid");
-    let region = Region::Custom { region: "us-east-1".to_owned(), endpoint: endpoint.to_owned() };
-    Bucket::new(bucket, region, credentials)
+fn s3_bucket(
+    endpoint: &str,
+    access_key: &str,
+    secret_key: &str,
+    bucket: &str,
+) -> object_store::aws::AmazonS3 {
+    AmazonS3Builder::new()
+        .with_endpoint(endpoint)
+        .with_region("us-east-1")
+        .with_bucket_name(bucket)
+        .with_access_key_id(access_key)
+        .with_secret_access_key(secret_key)
+        .with_allow_http(endpoint.starts_with("http://"))
+        .with_virtual_hosted_style_request(false)
+        .build()
         .expect("pipeline test bucket configuration must be valid")
-        .with_path_style()
 }
 
 async fn put(
@@ -205,14 +214,14 @@ async fn put(
     content: Bytes,
 ) {
     s3_bucket(endpoint, access_key, secret_key, bucket)
-        .put_object(key, content.as_ref())
+        .put(&Path::parse(key).expect("pipeline object key must be valid"), content.into())
         .await
         .expect("upload integration artifact");
 }
 
 async fn delete(endpoint: &str, access_key: &str, secret_key: &str, bucket: &str, key: &str) {
     s3_bucket(endpoint, access_key, secret_key, bucket)
-        .delete_object(key)
+        .delete(&Path::parse(key).expect("pipeline object key must be valid"))
         .await
         .expect("delete integration artifact");
 }

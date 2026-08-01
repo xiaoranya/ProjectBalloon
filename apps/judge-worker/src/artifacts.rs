@@ -1,10 +1,20 @@
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use futures_util::StreamExt;
+use object_store::{
+    ObjectStoreExt,
+    aws::{AmazonS3, AmazonS3Builder},
+    list::{PaginatedListOptions, PaginatedListStore},
+    path::Path,
+};
 use project_balloon_contracts::JudgeTask;
-use s3::{Bucket, Region, creds::Credentials};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::{io::AsyncReadExt, time::timeout};
@@ -33,14 +43,16 @@ pub trait ArtifactSource: Send + Sync {
 pub struct S3ArtifactSource {
     endpoint: String,
     region: String,
-    credentials: Credentials,
+    access_key: String,
+    secret_key: String,
     request_timeout: Duration,
+    stores: RwLock<HashMap<String, Arc<AmazonS3>>>,
 }
 
-const MAX_S3_RESPONSE_BYTES: i64 = 512 * 1024 * 1024;
+const MAX_S3_RESPONSE_BYTES: u64 = 512 * 1024 * 1024;
 
-fn declared_size_is_allowed(length: Option<i64>) -> bool {
-    length.is_none_or(|length| (0..=MAX_S3_RESPONSE_BYTES).contains(&length))
+fn declared_size_is_allowed(length: Option<u64>) -> bool {
+    length.is_none_or(|length| length <= MAX_S3_RESPONSE_BYTES)
 }
 
 pub struct S3ArtifactSourceConfig {
@@ -53,60 +65,93 @@ pub struct S3ArtifactSourceConfig {
 
 impl S3ArtifactSource {
     pub fn new(config: S3ArtifactSourceConfig) -> Result<Self, ArtifactError> {
-        let credentials =
-            Credentials::new(Some(&config.access_key), Some(&config.secret_key), None, None, None)
-                .map_err(|error| ArtifactError::Request(error.to_string()))?;
         Ok(Self {
             endpoint: config.endpoint,
             region: config.region,
-            credentials,
+            access_key: config.access_key,
+            secret_key: config.secret_key,
             request_timeout: config.request_timeout,
+            stores: RwLock::new(HashMap::new()),
         })
     }
 
-    fn bucket(&self, name: &str) -> Result<Box<Bucket>, ArtifactError> {
-        let region =
-            Region::Custom { region: self.region.clone(), endpoint: self.endpoint.clone() };
-        Bucket::new(name, region, self.credentials.clone())
-            .map(|bucket| bucket.with_path_style())
-            .map_err(|error| ArtifactError::Request(error.to_string()))
+    fn store(&self, bucket: &str) -> Result<Arc<AmazonS3>, ArtifactError> {
+        {
+            let stores = self
+                .stores
+                .read()
+                .map_err(|_| ArtifactError::Request("object storage cache is poisoned".into()))?;
+            if let Some(store) = stores.get(bucket) {
+                return Ok(Arc::clone(store));
+            }
+        }
+
+        let store = Arc::new(
+            AmazonS3Builder::new()
+                .with_endpoint(self.endpoint.clone())
+                .with_region(self.region.clone())
+                .with_bucket_name(bucket)
+                .with_access_key_id(self.access_key.clone())
+                .with_secret_access_key(self.secret_key.clone())
+                .with_allow_http(self.endpoint.starts_with("http://"))
+                .with_virtual_hosted_style_request(false)
+                .build()
+                .map_err(|error| ArtifactError::Request(error.to_string()))?,
+        );
+        let mut stores = self
+            .stores
+            .write()
+            .map_err(|_| ArtifactError::Request("object storage cache is poisoned".into()))?;
+        if let Some(existing) = stores.get(bucket) {
+            return Ok(Arc::clone(existing));
+        }
+        stores.insert(bucket.to_owned(), Arc::clone(&store));
+        Ok(store)
     }
 }
 
 #[async_trait]
 impl ArtifactSource for S3ArtifactSource {
     async fn check_bucket(&self, bucket: &str) -> Result<(), ArtifactError> {
-        let bucket = self.bucket(bucket)?;
-        timeout(self.request_timeout, bucket.list_page(String::new(), None, None, None, Some(1)))
-            .await
-            .map_err(|_| ArtifactError::Timeout)?
-            .map(|_| ())
-            .map_err(|error| ArtifactError::Request(error.to_string()))
+        let store = self.store(bucket)?;
+        timeout(
+            self.request_timeout,
+            store.list_paginated(
+                None,
+                PaginatedListOptions { max_keys: Some(1), ..Default::default() },
+            ),
+        )
+        .await
+        .map_err(|_| ArtifactError::Timeout)?
+        .map(|_| ())
+        .map_err(|error| ArtifactError::Request(error.to_string()))
     }
 
     async fn get(&self, bucket: &str, key: &str) -> Result<Bytes, ArtifactError> {
-        let bucket = self.bucket(bucket)?;
-        let (metadata, _) = timeout(self.request_timeout, bucket.head_object(key))
+        let store = self.store(bucket)?;
+        let path = Path::parse(key).map_err(|error| ArtifactError::Request(error.to_string()))?;
+        let metadata = timeout(self.request_timeout, store.head(&path))
             .await
             .map_err(|_| ArtifactError::Timeout)?
             .map_err(|error| ArtifactError::Request(error.to_string()))?;
-        if !declared_size_is_allowed(metadata.content_length) {
-            return Err(ArtifactError::TooLarge(MAX_S3_RESPONSE_BYTES as u64));
+        if !declared_size_is_allowed(Some(metadata.size)) {
+            return Err(ArtifactError::TooLarge(MAX_S3_RESPONSE_BYTES));
         }
-        let mut response = timeout(self.request_timeout, bucket.get_object_stream(key))
+        let mut response = timeout(self.request_timeout, store.get(&path))
             .await
             .map_err(|_| ArtifactError::Timeout)?
-            .map_err(|error| ArtifactError::Request(error.to_string()))?;
+            .map_err(|error| ArtifactError::Request(error.to_string()))?
+            .into_stream();
         let mut body = BytesMut::new();
         loop {
-            let chunk = timeout(self.request_timeout, response.bytes().next())
+            let chunk = timeout(self.request_timeout, response.next())
                 .await
                 .map_err(|_| ArtifactError::Timeout)?
                 .transpose()
                 .map_err(|error| ArtifactError::Request(error.to_string()))?;
             let Some(chunk) = chunk else { break };
             if body.len().saturating_add(chunk.len()) > MAX_S3_RESPONSE_BYTES as usize {
-                return Err(ArtifactError::TooLarge(MAX_S3_RESPONSE_BYTES as u64));
+                return Err(ArtifactError::TooLarge(MAX_S3_RESPONSE_BYTES));
             }
             body.extend_from_slice(&chunk);
         }
@@ -354,7 +399,6 @@ mod tests {
         assert!(declared_size_is_allowed(Some(1)));
         assert!(declared_size_is_allowed(Some(MAX_S3_RESPONSE_BYTES)));
         assert!(!declared_size_is_allowed(Some(MAX_S3_RESPONSE_BYTES + 1)));
-        assert!(!declared_size_is_allowed(Some(-1)));
     }
 
     #[tokio::test]
