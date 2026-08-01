@@ -348,11 +348,16 @@ impl PresentationService {
         if updated.is_none() {
             return Err(AppError::unauthorized("SCREEN_TOKEN_INVALID", "Screen token is invalid"));
         }
-        let command = sqlx::query_as::<_, (i64, String)>("SELECT id,target_view FROM screen_commands WHERE screen_instance_id=$1 AND acknowledged_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE")
+        let command = sqlx::query_as::<_, (i64, String, OffsetDateTime)>("SELECT id,target_view,created_at FROM screen_commands WHERE screen_instance_id=$1 AND acknowledged_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE")
             .bind(instance).fetch_optional(&mut *tx).await.map_err(|error| AppError::internal("load screen command", error))?;
-        if let Some((command_id, _)) = command.as_ref() {
-            sqlx::query("UPDATE screen_commands SET acknowledged_at=now() WHERE id=$1 AND acknowledged_at IS NULL")
-                .bind(command_id).execute(&mut *tx).await.map_err(|error| AppError::internal("acknowledge screen command", error))?;
+        if let Some((command_id, _, created_at)) = command.as_ref() {
+            sqlx::query("UPDATE screen_commands SET acknowledged_at=now() WHERE screen_instance_id=$1 AND acknowledged_at IS NULL AND (created_at,id) <= ($2,$3)")
+                .bind(instance)
+                .bind(created_at)
+                .bind(command_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|error| AppError::internal("acknowledge screen commands", error))?;
         }
         let group_playback = orchestration::playback_for_instance(&mut tx, instance).await?;
         tx.commit().await.map_err(|error| AppError::internal("commit screen heartbeat", error))?;
@@ -847,6 +852,19 @@ mod tests {
         assert_eq!(heartbeat.command_id, Some(latest.id));
         assert_eq!(heartbeat.target_view.as_deref(), Some("AWARDS"));
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM screen_commands WHERE screen_instance_id=$1 AND acknowledged_at IS NOT NULL").bind(registration.instance_id).fetch_one(&pool).await.expect("acked"), 2);
+        let next_heartbeat = service
+            .heartbeat(
+                registration.instance_id,
+                HeartbeatRequest {
+                    client_token: registration.client_token.clone(),
+                    current_view: "AWARDS".into(),
+                },
+                ip,
+            )
+            .await
+            .expect("next heartbeat");
+        assert_eq!(next_heartbeat.command_id, None);
+        assert_eq!(next_heartbeat.target_view, None);
         assert!(
             service
                 .heartbeat(
