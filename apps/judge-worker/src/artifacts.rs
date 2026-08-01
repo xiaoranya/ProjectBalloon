@@ -1,12 +1,10 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use aws_sdk_s3::{
-    Client,
-    config::{Credentials, Region},
-};
 use bytes::{Bytes, BytesMut};
+use futures_util::StreamExt;
 use project_balloon_contracts::JudgeTask;
+use s3::{Bucket, Region, creds::Credentials};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::{io::AsyncReadExt, time::timeout};
@@ -33,7 +31,9 @@ pub trait ArtifactSource: Send + Sync {
 }
 
 pub struct S3ArtifactSource {
-    client: Client,
+    endpoint: String,
+    region: String,
+    credentials: Credentials,
     request_timeout: Duration,
 }
 
@@ -52,30 +52,32 @@ pub struct S3ArtifactSourceConfig {
 }
 
 impl S3ArtifactSource {
-    #[must_use]
-    pub fn new(config: S3ArtifactSourceConfig) -> Self {
-        let credentials = Credentials::new(
-            config.access_key,
-            config.secret_key,
-            None,
-            None,
-            "project-balloon-worker-static",
-        );
-        let sdk_config = aws_sdk_s3::Config::builder()
-            .behavior_version_latest()
-            .region(Region::new(config.region))
-            .credentials_provider(credentials)
-            .endpoint_url(config.endpoint)
-            .force_path_style(true)
-            .build();
-        Self { client: Client::from_conf(sdk_config), request_timeout: config.request_timeout }
+    pub fn new(config: S3ArtifactSourceConfig) -> Result<Self, ArtifactError> {
+        let credentials =
+            Credentials::new(Some(&config.access_key), Some(&config.secret_key), None, None, None)
+                .map_err(|error| ArtifactError::Request(error.to_string()))?;
+        Ok(Self {
+            endpoint: config.endpoint,
+            region: config.region,
+            credentials,
+            request_timeout: config.request_timeout,
+        })
+    }
+
+    fn bucket(&self, name: &str) -> Result<Box<Bucket>, ArtifactError> {
+        let region =
+            Region::Custom { region: self.region.clone(), endpoint: self.endpoint.clone() };
+        Bucket::new(name, region, self.credentials.clone())
+            .map(|bucket| bucket.with_path_style())
+            .map_err(|error| ArtifactError::Request(error.to_string()))
     }
 }
 
 #[async_trait]
 impl ArtifactSource for S3ArtifactSource {
     async fn check_bucket(&self, bucket: &str) -> Result<(), ArtifactError> {
-        timeout(self.request_timeout, self.client.head_bucket().bucket(bucket).send())
+        let bucket = self.bucket(bucket)?;
+        timeout(self.request_timeout, bucket.list_page(String::new(), None, None, None, Some(1)))
             .await
             .map_err(|_| ArtifactError::Timeout)?
             .map(|_| ())
@@ -83,18 +85,21 @@ impl ArtifactSource for S3ArtifactSource {
     }
 
     async fn get(&self, bucket: &str, key: &str) -> Result<Bytes, ArtifactError> {
-        let response =
-            timeout(self.request_timeout, self.client.get_object().bucket(bucket).key(key).send())
-                .await
-                .map_err(|_| ArtifactError::Timeout)?
-                .map_err(|error| ArtifactError::Request(error.to_string()))?;
-        if !declared_size_is_allowed(response.content_length()) {
+        let bucket = self.bucket(bucket)?;
+        let (metadata, _) = timeout(self.request_timeout, bucket.head_object(key))
+            .await
+            .map_err(|_| ArtifactError::Timeout)?
+            .map_err(|error| ArtifactError::Request(error.to_string()))?;
+        if !declared_size_is_allowed(metadata.content_length) {
             return Err(ArtifactError::TooLarge(MAX_S3_RESPONSE_BYTES as u64));
         }
-        let mut stream = response.body;
+        let mut response = timeout(self.request_timeout, bucket.get_object_stream(key))
+            .await
+            .map_err(|_| ArtifactError::Timeout)?
+            .map_err(|error| ArtifactError::Request(error.to_string()))?;
         let mut body = BytesMut::new();
         loop {
-            let chunk = timeout(self.request_timeout, stream.next())
+            let chunk = timeout(self.request_timeout, response.bytes().next())
                 .await
                 .map_err(|_| ArtifactError::Timeout)?
                 .transpose()

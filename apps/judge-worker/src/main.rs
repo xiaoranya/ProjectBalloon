@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
         access_key: config.object_storage_access_key.clone(),
         secret_key: config.object_storage_secret_key.clone(),
         request_timeout: config.request_timeout,
-    }));
+    })?);
     let artifacts = ArtifactManager::new(
         artifact_source,
         config.cache_dir.clone(),

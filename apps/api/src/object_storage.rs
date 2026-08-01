@@ -1,13 +1,9 @@
 use std::{pin::Pin, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use aws_sdk_s3::{
-    Client,
-    config::{Credentials, Region},
-    primitives::ByteStream,
-};
 use bytes::{Bytes, BytesMut};
 use futures_util::{Stream, StreamExt};
+use s3::{Bucket, BucketConfiguration, Region, creds::Credentials};
 use thiserror::Error;
 use tokio::time::timeout;
 
@@ -208,28 +204,40 @@ impl ObjectStorageHandle {
 }
 
 pub struct S3ObjectStorage {
-    client: Client,
+    endpoint: String,
+    region: String,
+    credentials: Credentials,
+    force_path_style: bool,
     request_timeout: Duration,
 }
 
 impl S3ObjectStorage {
-    #[must_use]
-    pub fn new(config: S3ObjectStorageConfig) -> Self {
-        let credentials = Credentials::new(
-            config.access_key,
-            config.secret_key,
-            None,
-            None,
-            "project-balloon-static",
-        );
-        let sdk_config = aws_sdk_s3::Config::builder()
-            .behavior_version_latest()
-            .region(Region::new(config.region))
-            .credentials_provider(credentials)
-            .endpoint_url(config.endpoint)
-            .force_path_style(config.force_path_style)
-            .build();
-        Self { client: Client::from_conf(sdk_config), request_timeout: config.request_timeout }
+    pub fn new(config: S3ObjectStorageConfig) -> Result<Self, ObjectStorageError> {
+        let credentials =
+            Credentials::new(Some(&config.access_key), Some(&config.secret_key), None, None, None)
+                .map_err(|error| ObjectStorageError::Request(error.to_string()))?;
+        Ok(Self {
+            endpoint: config.endpoint,
+            region: config.region,
+            credentials,
+            force_path_style: config.force_path_style,
+            request_timeout: config.request_timeout,
+        })
+    }
+
+    fn bucket(&self, name: &str) -> Result<Box<Bucket>, ObjectStorageError> {
+        let region =
+            Region::Custom { region: self.region.clone(), endpoint: self.endpoint.clone() };
+        let mut bucket = Bucket::new(name, region, self.credentials.clone())
+            .map_err(|error| ObjectStorageError::Request(error.to_string()))?;
+        if self.force_path_style {
+            bucket = bucket.with_path_style();
+        }
+        Ok(bucket)
+    }
+
+    fn region(&self) -> Region {
+        Region::Custom { region: self.region.clone(), endpoint: self.endpoint.clone() }
     }
 
     async fn within_timeout<T>(
@@ -245,16 +253,13 @@ impl S3ObjectStorage {
         key: &str,
         max_bytes: usize,
     ) -> Result<Bytes, ObjectStorageError> {
+        let bucket = self.bucket(bucket)?;
         self.within_timeout(async {
-            let response = self
-                .client
-                .get_object()
-                .bucket(bucket)
-                .key(key)
-                .send()
+            let (metadata, _) = bucket
+                .head_object(key)
                 .await
                 .map_err(|error| ObjectStorageError::Request(error.to_string()))?;
-            if response.content_length().is_some_and(|length| {
+            if metadata.content_length.is_some_and(|length| {
                 length < 0
                     || u64::try_from(length).ok().is_some_and(|length| length > max_bytes as u64)
             }) {
@@ -262,9 +267,12 @@ impl S3ObjectStorage {
                     "object exceeds the {max_bytes} byte read limit"
                 )));
             }
-            let mut stream = tokio_util::io::ReaderStream::new(response.body.into_async_read());
+            let mut stream = bucket
+                .get_object_stream(key)
+                .await
+                .map_err(|error| ObjectStorageError::Request(error.to_string()))?;
             let mut content = BytesMut::new();
-            while let Some(chunk) = stream.next().await {
+            while let Some(chunk) = stream.bytes().next().await {
                 let chunk =
                     chunk.map_err(|error| ObjectStorageError::Request(error.to_string()))?;
                 if content.len().saturating_add(chunk.len()) > max_bytes {
@@ -292,11 +300,10 @@ pub struct S3ObjectStorageConfig {
 #[async_trait]
 impl ObjectStorage for S3ObjectStorage {
     async fn check_bucket(&self, bucket: &str) -> Result<(), ObjectStorageError> {
+        let bucket = self.bucket(bucket)?;
         self.within_timeout(async {
-            self.client
-                .head_bucket()
-                .bucket(bucket)
-                .send()
+            bucket
+                .list_page(String::new(), None, None, None, Some(1))
                 .await
                 .map(|_| ())
                 .map_err(|error| ObjectStorageError::Request(error.to_string()))
@@ -309,46 +316,44 @@ impl ObjectStorage for S3ObjectStorage {
         bucket: &str,
         continuation_token: Option<&str>,
     ) -> Result<ObjectStoragePage, ObjectStorageError> {
+        let bucket = self.bucket(bucket)?;
         self.within_timeout(async {
-            let mut request = self.client.list_objects_v2().bucket(bucket);
-            if let Some(token) = continuation_token {
-                request = request.continuation_token(token);
-            }
-            let response = request
-                .send()
+            let (response, _) = bucket
+                .list_page(String::new(), None, continuation_token.map(str::to_owned), None, None)
                 .await
                 .map_err(|error| ObjectStorageError::Request(error.to_string()))?;
             let objects = response
-                .contents()
-                .iter()
-                .filter_map(|object| {
-                    object.key().map(|key| ObjectStorageObject {
-                        key: key.to_owned(),
-                        last_modified: object.last_modified().and_then(|date| {
-                            std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(
-                                u64::try_from(date.secs()).ok()?,
-                            ))
-                        }),
-                    })
+                .contents
+                .into_iter()
+                .map(|object| ObjectStorageObject {
+                    key: object.key,
+                    last_modified: parse_last_modified(&object.last_modified),
                 })
                 .collect();
             Ok(ObjectStoragePage {
                 objects,
-                next_continuation_token: response.next_continuation_token().map(str::to_owned),
+                next_continuation_token: response.next_continuation_token,
             })
         })
         .await
     }
 
     async fn create_bucket(&self, bucket: &str) -> Result<(), ObjectStorageError> {
+        let region = self.region();
+        let credentials = self.credentials.clone();
         self.within_timeout(async {
-            self.client
-                .create_bucket()
-                .bucket(bucket)
-                .send()
+            let result = if self.force_path_style {
+                Bucket::create_with_path_style(
+                    bucket,
+                    region,
+                    credentials,
+                    BucketConfiguration::default(),
+                )
                 .await
-                .map(|_| ())
-                .map_err(|error| ObjectStorageError::Request(error.to_string()))
+            } else {
+                Bucket::create(bucket, region, credentials, BucketConfiguration::default()).await
+            };
+            result.map(|_| ()).map_err(|error| ObjectStorageError::Request(error.to_string()))
         })
         .await
     }
@@ -360,17 +365,14 @@ impl ObjectStorage for S3ObjectStorage {
         content_type: Option<&str>,
         content: Bytes,
     ) -> Result<(), ObjectStorageError> {
+        let bucket = self.bucket(bucket)?;
         self.within_timeout(async {
-            let mut request =
-                self.client.put_object().bucket(bucket).key(key).body(ByteStream::from(content));
-            if let Some(content_type) = content_type {
-                request = request.content_type(content_type);
-            }
-            request
-                .send()
-                .await
-                .map(|_| ())
-                .map_err(|error| ObjectStorageError::Request(error.to_string()))
+            let result = if let Some(content_type) = content_type {
+                bucket.put_object_with_content_type(key, content.as_ref(), content_type).await
+            } else {
+                bucket.put_object(key, content.as_ref()).await
+            };
+            result.map(|_| ()).map_err(|error| ObjectStorageError::Request(error.to_string()))
         })
         .await
     }
@@ -382,19 +384,17 @@ impl ObjectStorage for S3ObjectStorage {
         content_type: Option<&str>,
         path: &std::path::Path,
     ) -> Result<(), ObjectStorageError> {
-        let body = ByteStream::from_path(path)
+        let mut file = tokio::fs::File::open(path)
             .await
             .map_err(|error| ObjectStorageError::Request(error.to_string()))?;
+        let bucket = self.bucket(bucket)?;
         self.within_timeout(async {
-            let mut request = self.client.put_object().bucket(bucket).key(key).body(body);
-            if let Some(content_type) = content_type {
-                request = request.content_type(content_type);
-            }
-            request
-                .send()
-                .await
-                .map(|_| ())
-                .map_err(|error| ObjectStorageError::Request(error.to_string()))
+            let result = if let Some(content_type) = content_type {
+                bucket.put_object_stream_with_content_type(&mut file, key, content_type).await
+            } else {
+                bucket.put_object_stream(&mut file, key).await
+            };
+            result.map(|_| ()).map_err(|error| ObjectStorageError::Request(error.to_string()))
         })
         .await
     }
@@ -417,34 +417,45 @@ impl ObjectStorage for S3ObjectStorage {
         bucket: &str,
         key: &str,
     ) -> Result<ObjectStorageStream, ObjectStorageError> {
+        let bucket = self.bucket(bucket)?;
         let response = self
             .within_timeout(async {
-                self.client
-                    .get_object()
-                    .bucket(bucket)
-                    .key(key)
-                    .send()
+                bucket
+                    .get_object_stream(key)
                     .await
                     .map_err(|error| ObjectStorageError::Request(error.to_string()))
             })
             .await?;
-        let stream = tokio_util::io::ReaderStream::new(response.body.into_async_read())
-            .map(|chunk| chunk.map_err(|error| ObjectStorageError::Request(error.to_string())));
+        let stream = futures_util::stream::unfold(response, |mut response| async move {
+            response.bytes().next().await.map(|chunk| {
+                (chunk.map_err(|error| ObjectStorageError::Request(error.to_string())), response)
+            })
+        });
         Ok(Box::pin(stream))
     }
 
     async fn delete(&self, bucket: &str, key: &str) -> Result<(), ObjectStorageError> {
+        let bucket = self.bucket(bucket)?;
         self.within_timeout(async {
-            self.client
-                .delete_object()
-                .bucket(bucket)
-                .key(key)
-                .send()
+            bucket
+                .delete_object(key)
                 .await
                 .map(|_| ())
                 .map_err(|error| ObjectStorageError::Request(error.to_string()))
         })
         .await
+    }
+}
+
+fn parse_last_modified(value: &str) -> Option<std::time::SystemTime> {
+    let timestamp =
+        time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339).ok()?;
+    let seconds = timestamp.unix_timestamp();
+    if seconds >= 0 {
+        std::time::UNIX_EPOCH.checked_add(Duration::from_secs(u64::try_from(seconds).ok()?))
+    } else {
+        std::time::UNIX_EPOCH
+            .checked_sub(Duration::from_secs(u64::try_from(seconds.checked_neg()?).ok()?))
     }
 }
 

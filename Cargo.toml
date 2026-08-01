@@ -26,10 +26,6 @@ base64 = "0.22.1"
 bcrypt = "0.17.1"
 bollard = "0.21.0"
 bytes = "1.12.1"
-aws-sdk-s3 = { version = "1.138.1", default-features = false, features = [
-    "default-https-client",
-    "rt-tokio",
-] }
 getrandom = "0.4.3"
 futures-util = "0.3.33"
 hex = "0.4.3"
@@ -64,7 +60,10 @@ tokio = { version = "1.53.0", features = [
     "sync",
     "time",
 ] }
-tokio-util = { version = "0.7.18", features = ["io"] }
+rust-s3 = { version = "0.37.2", default-features = false, features = [
+    "fail-on-err",
+    "tokio-rustls-tls",
+] }
 tower = { version = "0.5.3", features = ["util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }

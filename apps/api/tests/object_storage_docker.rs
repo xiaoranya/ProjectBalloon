@@ -16,15 +16,18 @@ async fn rustfs_put_get_delete_round_trip() {
     let bucket = env::var("PROJECT_BALLOON_TEST_S3_BUCKET")
         .unwrap_or_else(|_| "project-balloon-integration".to_owned());
     let storage = ObjectStorageHandle::new(
-        std::sync::Arc::new(S3ObjectStorage::new(S3ObjectStorageConfig {
-            endpoint: required_env("PROJECT_BALLOON_TEST_S3_ENDPOINT"),
-            region: env::var("PROJECT_BALLOON_TEST_S3_REGION")
-                .unwrap_or_else(|_| "us-east-1".to_owned()),
-            access_key: required_env("PROJECT_BALLOON_TEST_S3_ACCESS_KEY"),
-            secret_key: required_env("PROJECT_BALLOON_TEST_S3_SECRET_KEY"),
-            force_path_style: true,
-            request_timeout: Duration::from_secs(5),
-        })),
+        std::sync::Arc::new(
+            S3ObjectStorage::new(S3ObjectStorageConfig {
+                endpoint: required_env("PROJECT_BALLOON_TEST_S3_ENDPOINT"),
+                region: env::var("PROJECT_BALLOON_TEST_S3_REGION")
+                    .unwrap_or_else(|_| "us-east-1".to_owned()),
+                access_key: required_env("PROJECT_BALLOON_TEST_S3_ACCESS_KEY"),
+                secret_key: required_env("PROJECT_BALLOON_TEST_S3_SECRET_KEY"),
+                force_path_style: true,
+                request_timeout: Duration::from_secs(5),
+            })
+            .expect("object storage credentials must be valid"),
+        ),
         bucket.clone(),
     );
     storage.ensure_buckets().await.expect("integration bucket must be available");

@@ -26,7 +26,7 @@ Use one Cargo workspace with:
 - pure shared domain types and versioned wire contracts in a small number of
   library crates;
 - SQLx with explicit PostgreSQL queries and transactions;
-- Lapin for RabbitMQ, `redis` for Redis, and AWS SDK for Rust for RustFS;
+- Lapin for RabbitMQ, `redis` for Redis, and `rust-s3` for RustFS;
 - Utoipa for the reviewed OpenAPI contract generated from Rust code.
 
 The Vue frontend, PostgreSQL as source of truth, Redis as rebuildable state,

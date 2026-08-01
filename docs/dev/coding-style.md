@@ -25,7 +25,7 @@ Backend stack:
 - SQLx with PostgreSQL.
 - `redis` for Redis.
 - `lapin` for RabbitMQ.
-- AWS SDK for Rust for RustFS/S3-compatible storage.
+- `rust-s3` for RustFS/S3-compatible storage.
 - Serde for external wire formats.
 - `tracing` for structured diagnostics.
 

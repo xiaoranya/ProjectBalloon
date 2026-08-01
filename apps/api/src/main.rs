@@ -55,8 +55,8 @@ async fn main() -> Result<()> {
         info!("PostgreSQL migrations are current");
     }
 
-    let object_storage = config.object_storage_enabled.then(|| {
-        ObjectStorageHandle::with_buckets(
+    let object_storage = if config.object_storage_enabled {
+        Some(ObjectStorageHandle::with_buckets(
             Arc::new(S3ObjectStorage::new(S3ObjectStorageConfig {
                 endpoint: config.object_storage_endpoint.clone(),
                 region: config.object_storage_region.clone(),
@@ -64,11 +64,13 @@ async fn main() -> Result<()> {
                 secret_key: config.object_storage_secret_key.clone(),
                 force_path_style: config.object_storage_force_path_style,
                 request_timeout: config.object_storage_request_timeout,
-            })),
+            })?),
             config.object_storage_problem_bucket.clone(),
             config.object_storage_source_bucket.clone(),
-        )
-    });
+        ))
+    } else {
+        None
+    };
     if let Some(storage) = &object_storage {
         storage.ensure_buckets().await.context("failed to ensure object-storage buckets")?;
         info!("object-storage buckets are ready");

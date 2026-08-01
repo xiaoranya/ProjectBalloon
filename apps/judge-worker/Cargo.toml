@@ -9,7 +9,6 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
-aws-sdk-s3.workspace = true
 bollard.workspace = true
 bytes.workspace = true
 futures-util.workspace = true
@@ -17,6 +16,7 @@ hex.workspace = true
 lapin.workspace = true
 libc.workspace = true
 serde_json.workspace = true
+rust-s3.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 time.workspace = true

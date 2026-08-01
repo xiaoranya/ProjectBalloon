@@ -5,11 +5,6 @@ use std::{
     time::Duration,
 };
 
-use aws_sdk_s3::{
-    Client,
-    config::{Credentials, Region},
-    primitives::ByteStream,
-};
 use bollard::Docker;
 use bytes::Bytes;
 use lapin::{
@@ -26,6 +21,7 @@ use project_balloon_judge_worker::{
     sandbox::{DockerSandbox, DockerSandboxConfig},
     worker::JudgeEngine,
 };
+use s3::{Bucket, Region, creds::Credentials};
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 use uuid::Uuid;
@@ -51,9 +47,9 @@ async fn rabbit_rustfs_cpp_pipeline_publishes_confirmed_result() {
     let judgement_id = Uuid::new_v4();
     let source_key = format!("integration-worker/{judgement_id}/main.cpp");
     let testdata_key = format!("integration-worker/{judgement_id}/testdata.zip");
-    let s3 = s3_client(&endpoint, &access_key, &secret_key);
-    put(&s3, &source_bucket, &source_key, source.clone()).await;
-    put(&s3, &problem_bucket, &testdata_key, testdata.clone()).await;
+    put(&endpoint, &access_key, &secret_key, &source_bucket, &source_key, source.clone()).await;
+    put(&endpoint, &access_key, &secret_key, &problem_bucket, &testdata_key, testdata.clone())
+        .await;
 
     let task = JudgeTask {
         schema_version: JUDGE_TASK_SCHEMA_VERSION,
@@ -77,13 +73,16 @@ async fn rabbit_rustfs_cpp_pipeline_publishes_confirmed_result() {
     task.validate().expect("valid integration task");
     let cache = std::env::temp_dir().join(format!("project-balloon-pipeline-{judgement_id}"));
     let artifacts = ArtifactManager::new(
-        Arc::new(S3ArtifactSource::new(S3ArtifactSourceConfig {
-            endpoint,
-            region: "us-east-1".to_owned(),
-            access_key,
-            secret_key,
-            request_timeout: Duration::from_secs(5),
-        })),
+        Arc::new(
+            S3ArtifactSource::new(S3ArtifactSourceConfig {
+                endpoint: endpoint.clone(),
+                region: "us-east-1".to_owned(),
+                access_key: access_key.clone(),
+                secret_key: secret_key.clone(),
+                request_timeout: Duration::from_secs(5),
+            })
+            .expect("artifact storage credentials must be valid"),
+        ),
         cache.clone(),
         problem_bucket.clone(),
         source_bucket.clone(),
@@ -179,13 +178,8 @@ async fn rabbit_rustfs_cpp_pipeline_publishes_confirmed_result() {
     let _sent = shutdown.send(true);
     worker_task.await.expect("Worker task joins");
 
-    s3.delete_object().bucket(&source_bucket).key(&source_key).send().await.expect("delete source");
-    s3.delete_object()
-        .bucket(&problem_bucket)
-        .key(&testdata_key)
-        .send()
-        .await
-        .expect("delete test data");
+    delete(&endpoint, &access_key, &secret_key, &source_bucket, &source_key).await;
+    delete(&endpoint, &access_key, &secret_key, &problem_bucket, &testdata_key).await;
     tokio::fs::remove_dir_all(cache).await.expect("remove pipeline cache");
 }
 
@@ -193,27 +187,34 @@ fn required_env(name: &str) -> String {
     env::var(name).unwrap_or_else(|_| panic!("{name} must be set for this integration test"))
 }
 
-fn s3_client(endpoint: &str, access_key: &str, secret_key: &str) -> Client {
-    let credentials = Credentials::new(access_key, secret_key, None, None, "pipeline-test-static");
-    let config = aws_sdk_s3::Config::builder()
-        .behavior_version_latest()
-        .region(Region::new("us-east-1"))
-        .credentials_provider(credentials)
-        .endpoint_url(endpoint)
-        .force_path_style(true)
-        .build();
-    Client::from_conf(config)
+fn s3_bucket(endpoint: &str, access_key: &str, secret_key: &str, bucket: &str) -> Box<Bucket> {
+    let credentials = Credentials::new(Some(access_key), Some(secret_key), None, None, None)
+        .expect("pipeline test credentials must be valid");
+    let region = Region::Custom { region: "us-east-1".to_owned(), endpoint: endpoint.to_owned() };
+    Bucket::new(bucket, region, credentials)
+        .expect("pipeline test bucket configuration must be valid")
+        .with_path_style()
 }
 
-async fn put(client: &Client, bucket: &str, key: &str, content: Bytes) {
-    client
-        .put_object()
-        .bucket(bucket)
-        .key(key)
-        .body(ByteStream::from(content))
-        .send()
+async fn put(
+    endpoint: &str,
+    access_key: &str,
+    secret_key: &str,
+    bucket: &str,
+    key: &str,
+    content: Bytes,
+) {
+    s3_bucket(endpoint, access_key, secret_key, bucket)
+        .put_object(key, content.as_ref())
         .await
         .expect("upload integration artifact");
+}
+
+async fn delete(endpoint: &str, access_key: &str, secret_key: &str, bucket: &str, key: &str) {
+    s3_bucket(endpoint, access_key, secret_key, bucket)
+        .delete_object(key)
+        .await
+        .expect("delete integration artifact");
 }
 
 fn fixture_archive() -> Vec<u8> {
