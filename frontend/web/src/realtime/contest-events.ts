@@ -33,6 +33,8 @@ export function subscribeContestEvents(options: ContestRealtimeOptions): Contest
       : `/api/events/contests/${options.contestId}`;
   let source: EventSource | null = null;
   let pollingTimer: number | undefined;
+  let polling = false;
+  let pollInFlight = false;
   let stopped = false;
 
   const stopPolling = () => {
@@ -40,14 +42,30 @@ export function subscribeContestEvents(options: ContestRealtimeOptions): Contest
       window.clearInterval(pollingTimer);
       pollingTimer = undefined;
     }
+    polling = false;
   };
 
   const runPoll = () => {
-    if (!document.hidden) void options.poll();
+    if (stopped || !polling || document.hidden || pollInFlight) return;
+    pollInFlight = true;
+    try {
+      const result = options.poll();
+      if (result && typeof result.then === 'function') {
+        void result.then(
+          () => { pollInFlight = false; },
+          () => { pollInFlight = false; },
+        );
+      } else {
+        pollInFlight = false;
+      }
+    } catch {
+      pollInFlight = false;
+    }
   };
 
   const startPolling = () => {
-    if (pollingTimer !== undefined || stopped) return;
+    if (polling || stopped) return;
+    polling = true;
     runPoll();
     pollingTimer = window.setInterval(runPoll, pollIntervalMs);
   };

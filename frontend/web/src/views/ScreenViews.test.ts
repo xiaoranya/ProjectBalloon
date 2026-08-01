@@ -50,4 +50,24 @@ describe('screen views', () => {
     expect(localStorage.getItem('project-balloon:screen:7')).toBeNull();
     wrapper.unmount();
   });
+  it('does not overlap screen heartbeats while a request is pending', async () => {
+    vi.useFakeTimers();
+    vi.mocked(screenApi.heartbeat).mockClear();
+    let release!: (value: Awaited<ReturnType<typeof screenApi.heartbeat>>) => void;
+    const pending = new Promise<Awaited<ReturnType<typeof screenApi.heartbeat>>>((resolve) => { release = resolve; });
+    vi.mocked(screenApi.heartbeat).mockReturnValueOnce(pending);
+    const wrapper = mount(ScreenClientView);
+    await flushPromises();
+    expect(screenApi.heartbeat).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(30_000);
+    expect(screenApi.heartbeat).toHaveBeenCalledTimes(1);
+
+    release({ instanceId: 3, serverTime: '2026-07-22T01:00:00Z', commandId: null, targetView: 'SCOREBOARD', groupPlayback: null });
+    await flushPromises();
+    vi.advanceTimersByTime(10_000);
+    expect(screenApi.heartbeat).toHaveBeenCalledTimes(2);
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
 });

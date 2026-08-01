@@ -85,34 +85,34 @@ fn truncate_utf8(value: &str, max_bytes: usize) -> String {
 
 #[async_trait::async_trait]
 impl JudgeTaskHandler for JudgeEngine {
-    async fn handle(&self, task: JudgeTask, retry_count: u32) -> Result<JudgeResult, TaskFailure> {
+    async fn handle(&self, task: &JudgeTask, retry_count: u32) -> Result<JudgeResult, TaskFailure> {
         let started_at = OffsetDateTime::now_utc();
-        let artifacts = match self.artifacts.prepare(&task).await {
+        let artifacts = match self.artifacts.prepare(task).await {
             Ok(artifacts) => artifacts,
             Err(error @ (ArtifactError::HashMismatch { .. } | ArtifactError::TooLarge(_))) => {
-                return Ok(self.system_error_result(&task, started_at, error.to_string()));
+                return Ok(self.system_error_result(task, started_at, error.to_string()));
             }
             Err(error) if retry_count >= MAX_TASK_RETRIES => {
-                return Ok(self.system_error_result(&task, started_at, error.to_string()));
+                return Ok(self.system_error_result(task, started_at, error.to_string()));
             }
             Err(error) => return Err(TaskFailure::retry(error.to_string())),
         };
         match self
             .sandbox
             .judge(
-                &task,
+                task,
                 &artifacts.source,
                 &artifacts.testdata_archive,
                 artifacts.interactor.as_deref(),
             )
             .await
         {
-            Ok(judgement) => Ok(self.completed_result(&task, started_at, judgement)),
+            Ok(judgement) => Ok(self.completed_result(task, started_at, judgement)),
             Err(error @ SandboxError::InvalidTestdata(_)) => {
-                Ok(self.system_error_result(&task, started_at, error.to_string()))
+                Ok(self.system_error_result(task, started_at, error.to_string()))
             }
             Err(error) if retry_count >= MAX_TASK_RETRIES => {
-                Ok(self.system_error_result(&task, started_at, error.to_string()))
+                Ok(self.system_error_result(task, started_at, error.to_string()))
             }
             Err(error) => Err(TaskFailure::retry(error.to_string())),
         }

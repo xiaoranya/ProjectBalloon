@@ -174,6 +174,31 @@ describe('Rust contest SSE client', () => {
     subscription.stop();
   });
 
+  it('does not overlap fallback polls while an async refresh is pending', async () => {
+    let resolvePoll!: () => void;
+    const poll = vi.fn(() => new Promise<void>((resolve) => { resolvePoll = resolve; }));
+    const subscription = subscribeContestEvents({
+      contestId: 7,
+      scope: 'TEAM',
+      eventTypes: [],
+      onEvent: vi.fn(),
+      poll,
+      pollIntervalMs: 1_000,
+    });
+    const source = EventSourceMock.instances[0];
+    source.fail();
+    expect(poll).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(3_000);
+    expect(poll).toHaveBeenCalledTimes(1);
+
+    resolvePoll();
+    await Promise.resolve();
+    vi.advanceTimersByTime(1_000);
+    expect(poll).toHaveBeenCalledTimes(2);
+    subscription.stop();
+  });
+
   it('ignores a late EventSource error after the subscription has stopped', () => {
     const onConnectionChange = vi.fn();
     const subscription = subscribeContestEvents({

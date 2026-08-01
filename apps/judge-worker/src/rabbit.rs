@@ -47,7 +47,7 @@ impl TaskFailure {
 
 #[async_trait]
 pub trait JudgeTaskHandler: Send + Sync {
-    async fn handle(&self, task: JudgeTask, retry_count: u32) -> Result<JudgeResult, TaskFailure>;
+    async fn handle(&self, task: &JudgeTask, retry_count: u32) -> Result<JudgeResult, TaskFailure>;
 }
 
 pub struct RabbitJudgeWorker {
@@ -269,7 +269,7 @@ async fn process_delivery(
     }
 
     let _activity_guard = activity.begin_task();
-    let handled = handler.handle(task.clone(), retry_count(delivery, task_queue)).await;
+    let handled = handler.handle(&task, retry_count(delivery, task_queue)).await;
     match handled {
         Ok(result) => {
             if let Err(reason) = validate_handler_result(&task, &result) {

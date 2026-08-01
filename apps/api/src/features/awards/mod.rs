@@ -1,4 +1,7 @@
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    collections::HashMap,
+    net::{IpAddr, SocketAddr},
+};
 
 use axum::{
     Json,
@@ -804,26 +807,42 @@ impl AwardService {
         .fetch_all(&self.database)
         .await
         .map_err(|error| AppError::internal("load award presentation recipients", error))?;
+        let mut recipients_by_category = HashMap::<i64, Vec<PresentationRecipient>>::new();
+        for (
+            category_id,
+            id,
+            problem_id,
+            problem_alias,
+            team_id,
+            team_name,
+            school,
+            seat_no,
+            group_name,
+            participation_type,
+            star,
+            rank,
+            solved,
+            penalty_minutes,
+        ) in recipients
+        {
+            recipients_by_category.entry(category_id).or_default().push(PresentationRecipient {
+                id,
+                problem_id,
+                problem_alias,
+                team_id,
+                team_name,
+                school,
+                seat_no,
+                group_name,
+                participation_type,
+                star,
+                rank,
+                solved,
+                penalty_minutes,
+            });
+        }
         for category in &mut categories {
-            category.recipients = recipients
-                .iter()
-                .filter(|row| row.0 == category.id)
-                .map(|row| PresentationRecipient {
-                    id: row.1,
-                    problem_id: row.2,
-                    problem_alias: row.3.clone(),
-                    team_id: row.4,
-                    team_name: row.5.clone(),
-                    school: row.6.clone(),
-                    seat_no: row.7.clone(),
-                    group_name: row.8.clone(),
-                    participation_type: row.9.clone(),
-                    star: row.10,
-                    rank: row.11,
-                    solved: row.12,
-                    penalty_minutes: row.13,
-                })
-                .collect();
+            category.recipients = recipients_by_category.remove(&category.id).unwrap_or_default();
         }
         let state = sqlx::query_as::<_, (Option<i64>, String, bool, i32, OffsetDateTime)>(
             "SELECT current_category_id,status,auto_rotate,interval_seconds,updated_at FROM award_presentation_states WHERE contest_id=$1",

@@ -217,7 +217,11 @@ struct GatedHandler {
 
 #[async_trait]
 impl JudgeTaskHandler for GatedHandler {
-    async fn handle(&self, task: JudgeTask, _retry_count: u32) -> Result<JudgeResult, TaskFailure> {
+    async fn handle(
+        &self,
+        task: &JudgeTask,
+        _retry_count: u32,
+    ) -> Result<JudgeResult, TaskFailure> {
         let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
         self.maximum.fetch_max(active, Ordering::SeqCst);
         if active == 2 {
@@ -259,7 +263,11 @@ struct RecoveryHandler {
 
 #[async_trait]
 impl JudgeTaskHandler for RecoveryHandler {
-    async fn handle(&self, task: JudgeTask, _retry_count: u32) -> Result<JudgeResult, TaskFailure> {
+    async fn handle(
+        &self,
+        task: &JudgeTask,
+        _retry_count: u32,
+    ) -> Result<JudgeResult, TaskFailure> {
         let call = self.calls.fetch_add(1, Ordering::SeqCst);
         if call == 0 {
             self.first_started.notify_one();
@@ -269,7 +277,7 @@ impl JudgeTaskHandler for RecoveryHandler {
     }
 }
 
-fn accepted_result(task: JudgeTask, worker_id: &str) -> JudgeResult {
+fn accepted_result(task: &JudgeTask, worker_id: &str) -> JudgeResult {
     let now = OffsetDateTime::now_utc();
     JudgeResult {
         schema_version: JUDGE_RESULT_SCHEMA_VERSION,
