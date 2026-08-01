@@ -229,9 +229,26 @@ pub async fn update_publication(
         &request.tags.iter().map(|v| v.trim().to_ascii_lowercase()).collect::<Vec<_>>(),
     )
     .map_err(|e| AppError::internal("encode tags", e))?;
+    let mut transaction = state
+        .database()
+        .begin()
+        .await
+        .map_err(|e| AppError::internal("begin problem publication update", e))?;
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM problems WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
+    )
+    .bind(problem_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(|e| AppError::internal("lock problem for publication update", e))?
+    .ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem not found"))?;
     sqlx::query("INSERT INTO problem_bank_entries(problem_id,visibility,difficulty,tags,published_at,updated_at) VALUES($1,$2,$3,$4,CASE WHEN $2='PUBLIC' THEN coalesce((SELECT published_at FROM problem_bank_entries WHERE problem_id=$1),now()) ELSE NULL END,now()) ON CONFLICT(problem_id) DO UPDATE SET visibility=EXCLUDED.visibility,difficulty=EXCLUDED.difficulty,tags=EXCLUDED.tags,published_at=EXCLUDED.published_at,updated_at=now()")
-        .bind(problem_id).bind(&request.visibility).bind(request.difficulty).bind(tags).execute(state.database()).await.map_err(|e| AppError::internal("update problem publication", e))?;
-    let row = sqlx::query_as::<_, BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.id=$1").bind(problem_id).fetch_optional(state.database()).await.map_err(|e| AppError::internal("load problem publication", e))?.ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem not found"))?;
+        .bind(problem_id).bind(&request.visibility).bind(request.difficulty).bind(tags).execute(&mut *transaction).await.map_err(|e| AppError::internal("update problem publication", e))?;
+    let row = sqlx::query_as::<_, BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.id=$1 AND p.deleted_at IS NULL").bind(problem_id).fetch_one(&mut *transaction).await.map_err(|e| AppError::internal("load problem publication", e))?;
+    transaction
+        .commit()
+        .await
+        .map_err(|e| AppError::internal("commit problem publication update", e))?;
     let _ = context;
     Ok(Json(row))
 }

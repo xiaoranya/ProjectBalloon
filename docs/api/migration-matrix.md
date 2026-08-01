@@ -12,16 +12,16 @@ for new Rust behavior. Every operation moves through one of these states:
 
 ## Reviewed Route Inventory
 
-Snapshot date: 2026-07-22. Path-parameter names such as `{id}` and
+Snapshot date: 2026-08-01. Path-parameter names such as `{id}` and
 `{contest_id}` are treated as equivalent.
 
 | Inventory | Operations |
 |---|---:|
 | Legacy OpenAPI baseline | 147 |
-| Current Axum router | 168 |
+| Current Axum router | 208 |
 | Same method and normalized path | 108 |
 | Explicit Rust redesigns of legacy operations | 39 |
-| Rust-only replacement or extension operations | 57 |
+| Rust-only replacement or extension operations | 100 |
 | Unreviewed legacy operations | 0 |
 
 Run `python3 scripts/check-api-compat.py --check` after changing either the
@@ -46,10 +46,10 @@ The 39 non-identical legacy routes are accounted for as follows:
 method, path, and response fields. Rust counts `PUBLISHING` together with
 `PENDING` Outbox rows because a leased-but-unconfirmed task is not drained.
 
-On 2026-07-26, `scripts/test/docker-integration.sh` passed the complete
-Docker-backed integration set: 33 API/PostgreSQL/Redis/RustFS tests and 14
-Judge Worker/RabbitMQ/Docker sandbox tests. These remain ignored in the default
-offline test command because they require a Docker daemon and fixed images.
+The latest run of `scripts/test/docker-integration.sh` passed the complete
+Docker-backed API, PostgreSQL, Redis, RustFS, RabbitMQ, and Judge sandbox
+integration set. These remain ignored in the default offline test command
+because they require a Docker daemon and fixed images.
 
 ## Domain Review Summary
 

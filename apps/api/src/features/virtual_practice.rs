@@ -4,6 +4,7 @@ use axum::{
     extract::{Path, State, rejection::JsonRejection},
 };
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use std::collections::HashSet;
 use time::OffsetDateTime;
 use utoipa::ToSchema;
@@ -47,7 +48,7 @@ pub struct VirtualSessionDetail {
     problems: Vec<VirtualProblemResponse>,
 }
 
-const SESSION_SELECT: &str = "SELECT s.id,s.title,s.start_at,s.end_at,now() AS server_time,CASE WHEN s.archived_at IS NOT NULL THEN 'ARCHIVED' WHEN now()<s.start_at THEN 'SCHEDULED' WHEN now()<s.end_at THEN 'RUNNING' ELSE 'ENDED' END AS status,count(DISTINCT i.problem_id)::bigint AS total_problems,count(DISTINCT sub.problem_id) FILTER(WHERE sub.status='ACCEPTED')::bigint AS solved_problems FROM practice_virtual_sessions s JOIN practice_virtual_items i ON i.session_id=s.id LEFT JOIN submissions sub ON sub.virtual_session_id=s.id AND sub.participant_user_id=s.user_id";
+const SESSION_SELECT: &str = "SELECT s.id,s.title,s.start_at,s.end_at,now() AS server_time,CASE WHEN s.archived_at IS NOT NULL THEN 'ARCHIVED' WHEN now()<s.start_at THEN 'SCHEDULED' WHEN now()<s.end_at THEN 'RUNNING' ELSE 'ENDED' END AS status,count(DISTINCT i.problem_id) FILTER(WHERE problem.id IS NOT NULL AND bank.problem_id IS NOT NULL)::bigint AS total_problems,count(DISTINCT sub.problem_id) FILTER(WHERE sub.status='ACCEPTED' AND problem.id IS NOT NULL AND bank.problem_id IS NOT NULL)::bigint AS solved_problems FROM practice_virtual_sessions s JOIN practice_virtual_items i ON i.session_id=s.id LEFT JOIN problems problem ON problem.id=i.problem_id AND problem.deleted_at IS NULL LEFT JOIN problem_bank_entries bank ON bank.problem_id=problem.id AND bank.visibility='PUBLIC' LEFT JOIN submissions sub ON sub.virtual_session_id=s.id AND sub.participant_user_id=s.user_id";
 
 #[utoipa::path(post,path="/api/practice/virtual-sessions",operation_id="createPracticeVirtualSession",tag="practice",request_body=CreateVirtualSessionRequest,responses((status=201,body=VirtualSessionResponse)),security(("session_cookie"=[],"csrf_cookie"=[],"csrf_header"=[])))]
 pub async fn create(
@@ -73,7 +74,9 @@ pub async fn create(
     if request.problem_ids.iter().any(|id| *id <= 0 || !seen.insert(*id)) {
         return Err(AppError::validation("problemIds", "must be positive and unique"));
     }
-    let public=sqlx::query_scalar::<_,i64>("SELECT count(*) FROM problem_bank_entries WHERE visibility='PUBLIC' AND problem_id=ANY($1)").bind(&request.problem_ids).fetch_one(state.database()).await.map_err(|e|AppError::internal("validate virtual problems",e))?;
+    let public = count_active_public_problems(state.database(), &request.problem_ids)
+        .await
+        .map_err(|e| AppError::internal("validate virtual problems", e))?;
     if usize::try_from(public).ok() != Some(request.problem_ids.len()) {
         return Err(AppError::conflict(
             "VIRTUAL_PROBLEM_NOT_PUBLIC",
@@ -127,7 +130,7 @@ pub async fn get(
 ) -> Result<Json<VirtualSessionDetail>, AppError> {
     context.require_password_ready()?;
     let session = load_session(&state, id, context.user().id).await?;
-    let problems=sqlx::query_as::<_,VirtualProblemResponse>("SELECT i.problem_id,p.slug,p.title,i.position,EXISTS(SELECT 1 FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2 AND s.status='ACCEPTED') AS solved,(SELECT count(*) FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2)::bigint AS attempts FROM practice_virtual_items i JOIN problems p ON p.id=i.problem_id WHERE i.session_id=$1 ORDER BY i.position").bind(id).bind(context.user().id).fetch_all(state.database()).await.map_err(|e|AppError::internal("load virtual problems",e))?;
+    let problems=sqlx::query_as::<_,VirtualProblemResponse>("SELECT i.problem_id,p.slug,p.title,i.position,EXISTS(SELECT 1 FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2 AND s.status='ACCEPTED') AS solved,(SELECT count(*) FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2)::bigint AS attempts FROM practice_virtual_items i JOIN problems p ON p.id=i.problem_id AND p.deleted_at IS NULL JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' WHERE i.session_id=$1 ORDER BY i.position").bind(id).bind(context.user().id).fetch_all(state.database()).await.map_err(|e|AppError::internal("load virtual problems",e))?;
     Ok(Json(VirtualSessionDetail { session, problems }))
 }
 
@@ -167,4 +170,60 @@ async fn load_session(
         .ok_or_else(|| {
             AppError::not_found("VIRTUAL_SESSION_NOT_FOUND", "Virtual session not found")
         })
+}
+
+async fn count_active_public_problems(
+    database: &PgPool,
+    problem_ids: &[i64],
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM problem_bank_entries bank JOIN problems problem ON problem.id=bank.problem_id AND problem.deleted_at IS NULL WHERE bank.visibility='PUBLIC' AND bank.problem_id=ANY($1)",
+    )
+    .bind(problem_ids)
+    .fetch_one(database)
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::PgPool;
+
+    use super::count_active_public_problems;
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn virtual_sessions_reject_soft_deleted_public_problems(pool: PgPool) {
+        let active = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems (slug, title) VALUES ('virtual-active', 'Active') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert active problem");
+        let deleted = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems (slug, title) VALUES ('virtual-deleted', 'Deleted') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert deleted problem");
+        sqlx::query(
+            "INSERT INTO problem_bank_entries (problem_id, visibility, tags, published_at) VALUES ($1, 'PUBLIC', '[]', now()), ($2, 'PUBLIC', '[]', now())",
+        )
+        .bind(active)
+        .bind(deleted)
+        .execute(&pool)
+        .await
+        .expect("insert public problems");
+        sqlx::query("UPDATE problems SET deleted_at=now() WHERE id=$1")
+            .bind(deleted)
+            .execute(&pool)
+            .await
+            .expect("soft-delete problem");
+
+        assert_eq!(
+            count_active_public_problems(&pool, &[active, deleted])
+                .await
+                .expect("count public problems"),
+            1
+        );
+    }
 }
