@@ -20,15 +20,19 @@ manifest.txt
 SHA256SUMS
 ```
 
-The script uses the active `deploy/compose/.env.rust` without evaluating it as
-shell code. PostgreSQL is dumped with `--clean --if-exists --no-owner`; every
-RustFS bucket returned by the S3 API is copied. Runtime secrets are excluded from
-the configuration archive.
+The script loads the configured environment without evaluating it as shell
+code. In a binary installation, `PROJECT_BALLOON_DATABASE_MODE=direct` uses
+`DATABASE_URL` and the host `pg_dump` command, so Docker is not required.
+PostgreSQL is dumped with `--clean --if-exists --no-owner`; every RustFS bucket
+returned by the S3 API is copied. Runtime secrets are excluded from the
+configuration archive.
 
 Set `BACKUP_OBJECT_STORAGE_ENDPOINT` in `.env.rust` when RustFS is not reachable
 from the host at `http://127.0.0.1:9000`.
 
-Required tools are Docker Compose, gzip, sha256sum, tar, and AWS CLI v2.
+Required tools are gzip, sha256sum, tar, PostgreSQL client tools (`pg_dump` and
+`psql`), and AWS CLI v2. Legacy Compose mode additionally requires Docker
+Compose and reads `deploy/compose/.env.rust`.
 
 ## Restore a backup
 
@@ -41,9 +45,11 @@ PROJECT_BALLOON_RESTORE_ACK=I_UNDERSTAND_THIS_REPLACES_CURRENT_DATA \
 ```
 
 Before modifying state, the script verifies every checksum, the backup format,
-and the configured database name. It stops `monitor` and `app`, keeps `data`
-running, restores PostgreSQL, then restores RustFS. It deliberately does not
-restart application services automatically.
+and the configured database name. Binary mode stops the API and Judge Worker,
+restores PostgreSQL through `psql`, then restores RustFS. It deliberately does
+not restart application services automatically. Legacy Compose mode stops
+`monitor` and `app`, keeps `data` running, and restores PostgreSQL through the
+PostgreSQL container.
 
 ## Required backup points
 

@@ -242,15 +242,20 @@ Before opening a pull request or merging feature work, run:
 
 ```text
 cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo nextest run --workspace --all-features
-cargo sqlx prepare --check --workspace
+cargo check-all
+cargo lint
+cargo test-all
 cargo deny check
 
 cd frontend/web
 npm run typecheck
 npm test
 ```
+
+When compile-time SQLx query macros are introduced, also run
+`cargo sqlx prepare --check --workspace` and commit the generated `.sqlx`
+metadata. The current workspace uses runtime SQLx queries, so no metadata
+directory is required yet.
 
 Integration tests that require PostgreSQL, RabbitMQ, Redis, RustFS, or the
 development sandbox must declare that requirement and fail with an actionable

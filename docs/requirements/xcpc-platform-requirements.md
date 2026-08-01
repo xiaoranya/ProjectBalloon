@@ -67,13 +67,13 @@ Judge Worker 集群
 | 对象存储 | RustFS |
 | 判题沙箱 | isolate + cgroups |
 | 反向代理 | Nginx |
-| 部署 | Docker Compose + Docker 重启策略 |
+| 部署 | systemd 管理 API/Worker + Docker/Podman 判题沙箱 |
 | 自动打印 | CUPS |
 | 监控 | Prometheus + Grafana |
 | 日志 | Loki + Promtail |
-| 镜像分发 | 离线镜像 tar 包 |
+| 镜像分发 | Judge Runtime 离线镜像 tar 包 |
 | 实时事件 | SSE |
-| 构建与离线交付 | Docker Engine 离线安装包 + Docker Compose Plugin 离线安装包 + 镜像 tar 包 + Compose 文件 + 运维脚本 |
+| 构建与离线交付 | API/Worker 二进制 + 前端静态文件 + Judge Runtime 镜像 tar 包 + systemd/Nginx 配置 + 运维脚本 |
 
 ## 5. 内网部署要求
 
@@ -88,11 +88,10 @@ Judge Worker 集群
 - 不依赖第三方登录、短信、云监控等外部服务。
 - 前端字体、图标、代码编辑器、MathJax/KaTeX、代码高亮资源全部本地化。
 - Element Plus 组件库及其字体、图标资源随前端构建产物离线发布，不依赖任何 CDN。
-- 提供 Docker Engine 离线安装包、Docker Compose Plugin 离线安装包、镜像 tar 包、Compose 文件和恢复脚本。
-- 平台应用和中间件统一由按机器角色拆分的 Docker Compose 文件管理，不为每个角色安装应用级 systemd unit。
-- 所有常驻服务使用 Docker `restart: unless-stopped` 策略，由开机启动的 Docker daemon 恢复容器。
-- 服务安装、启动、停止、重启和状态检查统一通过 `install.sh`、`start.sh`、`stop.sh`、`restart.sh` 和 `status.sh` 执行。
-- Judge 主机的 rootless Podman API socket 可以使用专用 systemd unit；该 unit 只管理判题沙箱运行时，不管理平台应用容器。
+- 提供 API/Worker 二进制、前端静态文件、Judge Runtime 镜像 tar 包、systemd unit、Nginx 配置和恢复脚本。
+- PostgreSQL、Redis、RabbitMQ、RustFS 由部署方自行提供，发行包不负责创建或升级这些有状态服务。
+- API 和 Judge Worker 由 systemd 管理；Judge Worker 通过 Docker/Podman socket 启动隔离的判题容器。
+- 服务安装和首轮配置通过发行包根目录的 `install.sh` 完成，运行状态通过 systemd 和健康接口检查。
 
 标准部署形态：
 
@@ -107,65 +106,23 @@ Judge Worker 集群
 
 正式比赛采用上述标准部署形态，判题服务与数据库部署在不同机器上。
 
-离线部署包目录结构：
+二进制发行包目录结构：
 
 ```text
-images/
-  xcpc-api.tar
-  xcpc-gateway.tar
-  xcpc-judge-worker.tar
-  postgres-16.tar
-  redis-7.tar
-  rabbitmq-3.tar
-  rustfs.tar
-  prometheus.tar
-  grafana.tar
-  loki.tar
-  promtail.tar
+bin/
+  project-balloon-api
+  project-balloon-judge-worker
+  bootstrap-admin
 
-packages/
-  docker-engine/
-  docker-compose-plugin/
-  podman/
-  shadow-utils/
-  rootless-network/
-  runsc/
-  aws-cli/
-  checksums.txt
-
-compose/
-  gateway.docker-compose.yml
-  app.docker-compose.yml
-  data.docker-compose.yml
-  judge.docker-compose.yml
-  monitor.docker-compose.yml
-
+web/
+judge-images/
+  judge-runtime-*.tar
+systemd/
 config/
-  gateway.env
-  app.env
-  data.env
-  judge.env
-  monitor.env
-  nginx/
-  prometheus/
-  grafana/
-  loki/
-  rabbitmq/
-  rustfs/
-
-scripts/
-  install-docker.sh
-  install-judge-host.sh
-  install-aws-cli.sh
-  load-images.sh
-  install.sh
-  start.sh
-  stop.sh
-  restart.sh
-  status.sh
-  backup.sh
-  restore.sh
-  healthcheck.sh
+nginx/
+scripts/backup/
+install.sh
+PACKAGE-SHA256SUMS
 
 docs/
   install.md
@@ -176,24 +133,22 @@ docs/
 现场部署流程：
 
 ```text
-拷贝离线部署包到服务器
+拷贝二进制发行包到服务器
   ↓
-执行 install-docker.sh 安装 Docker Engine 和 Docker Compose Plugin
+部署 PostgreSQL、Redis、RabbitMQ、RustFS 和 Docker/Podman
   ↓
-Judge 主机执行 install-judge-host.sh，数据/备份主机执行 install-aws-cli.sh
+执行 install.sh --no-start 导入判题镜像并安装 systemd unit
   ↓
-执行 load-images.sh 导入全部镜像 tar 包
+填写 /etc/project-balloon/project-balloon.env
   ↓
-按机器角色应用对应 .env 和 docker-compose.yml
+再次执行 install.sh 启动 API 和 Judge Worker
   ↓
-执行 install.sh 初始化配置、目录和权限，并校验 Compose 配置及主机依赖
+执行 bootstrap-admin 创建首个管理员
   ↓
-执行 start.sh 启动服务
-  ↓
-执行 healthcheck.sh 检查系统状态
+执行健康检查和备份验证
 ```
 
-Compose 文件中的镜像名称必须使用固定版本，不使用 `latest` 标签，不依赖现场公网拉取镜像。
+Judge Runtime 镜像名称必须使用固定版本，不使用 `latest` 标签，不依赖现场公网拉取镜像。基础服务的版本、升级和备份由部署方负责。
 
 ## 6. 功能范围
 

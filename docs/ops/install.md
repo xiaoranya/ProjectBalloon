@@ -1,105 +1,104 @@
-# Offline Install
+# Binary Install
 
-The active Rust deployment uses three Compose projects on the shared
-`project-balloon` network:
-
-- `data`: PostgreSQL, Redis, RabbitMQ, and RustFS;
-- `app`: Axum API, Rust Judge Worker, and the Nginx-served Vue application;
-- `monitor`: Prometheus, Grafana, Loki, Promtail, and exporters.
-
-The nested `ProjectBalloon/` Java tree is not used by this procedure.
+The default release is a binary package. It contains the API, Judge Worker,
+bootstrap CLI, Vue static files, and four Judge Runtime images. PostgreSQL,
+Redis, RabbitMQ, RustFS, Docker or Podman, and optional CUPS/Nginx services are
+host-managed prerequisites.
 
 ## Host prerequisites
 
-Install these from trusted offline media before running the platform scripts:
+Install these from trusted media or the host distribution before installation:
 
-- Docker Engine and the Docker Compose plugin;
-- `curl`, `gzip`, and GNU coreutils;
-- AWS CLI v2 for PostgreSQL/RustFS backup and restore.
+- systemd;
+- Docker Engine or Podman with a socket accessible to the Judge Worker;
+- PostgreSQL, Redis, RabbitMQ, and RustFS or another S3-compatible service;
+- `tar`, `gzip`, `sha256sum`, and GNU coreutils;
+- `postgresql-client` (`pg_dump` and `psql`) for direct binary-mode backups and restores;
+- AWS CLI v2 for RustFS/S3 backup and restore;
+- Nginx for the bundled frontend configuration;
+- `cups-client`, `cups-filters`, and a configured CUPS printer when printing is enabled.
 
-The release package currently contains application and middleware image archives.
-Packaging the host OS dependencies themselves remains release-engineering work
-because the exact RPM/DEB closure depends on the selected distribution.
+The installer does not create databases, queues, object-storage credentials, or
+production secrets. It does import the four Judge Runtime images and creates
+the application users, directories, environment file, systemd units, and Nginx
+configuration.
 
-## Build an offline package
+## Install a release
 
-On a connected release machine, pull the pinned middleware images and then run:
+Extract the published archive and run the installer as root:
 
 ```text
-scripts/release/build-images.sh
-scripts/release/export-images.sh
-scripts/release/make-offline-package.sh
+tar -xzf project-balloon-<version>-<target>.tar.gz
+cd project-balloon-<version>-<target>
+sudo ./install.sh --no-start
 ```
 
-`build-images.sh` builds the API, Worker, web, and four Judge runtime images.
-`export-images.sh` writes Docker archives plus `images/SHA256SUMS`.
-`make-offline-package.sh` verifies those archives and creates
-`dist/project-balloon-offline-<version>` without copying runtime secrets.
-
-## Install on the contest host
-
-From the unpacked package root:
+The first run creates `/etc/project-balloon/project-balloon.env` and exits so
+that external service URLs and secrets can be reviewed. Edit that file, then
+run the installer again:
 
 ```text
-scripts/deploy/load-images.sh
-scripts/deploy/install.sh
-$EDITOR deploy/compose/.env.rust
-scripts/deploy/install.sh
-scripts/deploy/start.sh all
-scripts/deploy/healthcheck.sh all
+sudoedit /etc/project-balloon/project-balloon.env
+sudo ./install.sh
 ```
 
-The first `install.sh` run creates `deploy/compose/.env.rust` with mode `0600`
-and exits so the operator can replace every `CHANGE_ME` value. The second run
-reasserts mode `0600` and validates all three Compose projects. The populated env file is ignored by Git
-and excluded from offline packages and configuration backups.
+The second run imports the Judge Runtime images, installs or refreshes the
+systemd units, validates CUPS when enabled, reloads Nginx when available, and
+starts the API and Judge Worker. The API runs embedded SQLx migrations when
+`PROJECT_BALLOON_RUN_MIGRATIONS=true`.
 
-The default web endpoint is `http://<host>:8088`; `/api/health` is the dependency
-readiness endpoint and `/livez` is process liveness. If HTTPS terminates in front
-of Nginx, set `PROJECT_BALLOON_SECURE_COOKIES=true` before the second
-`install.sh` run.
+The application is installed under `/opt/project-balloon`. The service users
+are `project-balloon-api` and `project-balloon-worker`; the latter must be able
+to access the Docker/Podman socket. Override the prefix, config directory, or
+socket group with installer options when the host layout requires it.
 
-## Routine control
-
-All lifecycle commands accept `data`, `app`, `monitor`, or `all`:
+Bootstrap the first administrator once the API can reach PostgreSQL:
 
 ```text
-scripts/deploy/start.sh <role>
-scripts/deploy/stop.sh <role>
-scripts/deploy/restart.sh <role>
-scripts/deploy/status.sh <role>
-scripts/deploy/healthcheck.sh <role>
+sudoedit /etc/project-balloon/bootstrap-admin.env
+sudo sh -c 'set -a; . /etc/project-balloon/bootstrap-admin.env; set +a; exec /opt/project-balloon/bin/bootstrap-admin'
 ```
 
-`all` starts data first and stops it last. Start commands use `--no-build`, so an
-air-gapped host cannot accidentally attempt a source build or dependency fetch.
+Remove or rotate the bootstrap password after the command succeeds.
 
-## Judge host warning
-
-The current `app` Compose defaults to the host Docker socket and is the reviewed
-single-host development/rehearsal topology. For production, set
-`XCPC_SANDBOX_SOCKET_HOST`, `XCPC_SANDBOX_SOCKET`, `XCPC_SANDBOX_SOCKET_GID`, and
-`XCPC_SANDBOX_RUNTIME=runsc` in `.env.rust`. `install.sh` then fails unless the
-runtime is registered and can start a fixed Judge image. A rootless
-Podman-compatible API, matching socket/cache mounts, and execution of the
-sandbox and broker-restart tests are still required; do not claim production
-acceptance from a sibling-Docker rehearsal.
-
-## Backup and restore
-
-Create an atomic PostgreSQL and RustFS backup with:
+## Service operations
 
 ```text
-scripts/backup/backup.sh
+sudo systemctl status project-balloon-api project-balloon-judge-worker
+sudo systemctl restart project-balloon-api project-balloon-judge-worker
+sudo journalctl -u project-balloon-api -u project-balloon-judge-worker -f
+curl --fail http://127.0.0.1:8080/livez
 ```
 
-A restore replaces the configured database and mirrors backed-up objects with
-`--delete`; it therefore requires an explicit acknowledgement:
+The installer writes a frontend configuration to
+`/etc/nginx/conf.d/project-balloon.conf` on distributions using `conf.d`, or
+to the `sites-available`/`sites-enabled` layout. Put TLS termination in front
+of this configuration and keep `PROJECT_BALLOON_SECURE_COOKIES=true` for the
+production environment.
+
+## Backups
+
+The installer places `scripts/backup` under `/opt/project-balloon/scripts/backup`.
+With the default `PROJECT_BALLOON_DATABASE_MODE=direct`, the scripts use the
+host PostgreSQL client tools and `DATABASE_URL`; they do not require Docker.
+Set `BACKUP_OBJECT_STORAGE_ENDPOINT` when RustFS is not reachable at the
+default endpoint, then run:
 
 ```text
+sudo /opt/project-balloon/scripts/backup/backup.sh /var/backups/project-balloon
 PROJECT_BALLOON_RESTORE_ACK=I_UNDERSTAND_THIS_REPLACES_CURRENT_DATA \
-  scripts/backup/restore.sh backups/project-balloon-<timestamp>
+  sudo -E /opt/project-balloon/scripts/backup/restore.sh \
+  /var/backups/project-balloon/project-balloon-<timestamp>
 ```
 
-After restore, start `app` and `monitor`, run the health check, and verify contest,
-submission, scoreboard, Resolver, award, balloon, and printing state.
+Redis is rebuildable and RabbitMQ should be drained before a final contest
+backup. The scripts retain `compose` mode for legacy single-host deployments;
+set `PROJECT_BALLOON_DATABASE_MODE=compose` in that environment.
+
+## Compatibility Compose mode
+
+The repository still contains `deploy/compose/` for development and single-host
+rehearsal. It builds the API, Worker, and Web images and can start the data and
+monitoring stacks, but it is not the default binary release path. Use the
+Compose scripts only when the host intentionally manages the complete stack as
+containers.

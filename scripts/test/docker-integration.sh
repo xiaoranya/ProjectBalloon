@@ -9,9 +9,20 @@ REDIS_CONTAINER="$PREFIX-redis"
 RABBIT_CONTAINER="$PREFIX-rabbitmq"
 RUSTFS_CONTAINER="$PREFIX-rustfs"
 API_PID=""
+DIAGNOSTICS_DIR="${PROJECT_BALLOON_IT_DIAGNOSTICS_DIR:-}"
 
 log() { printf '[docker-it] %s\n' "$*"; }
 die() { printf '[docker-it] ERROR: %s\n' "$*" >&2; exit 1; }
+
+collect_diagnostics() {
+  [ -n "$DIAGNOSTICS_DIR" ] || return 0
+  mkdir -p "$DIAGNOSTICS_DIR"
+  for container in "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" \
+    "$RABBIT_CONTAINER" "$RUSTFS_CONTAINER"; do
+    docker inspect "$container" >"$DIAGNOSTICS_DIR/$container.inspect.json" 2>&1 || true
+    docker logs "$container" >"$DIAGNOSTICS_DIR/$container.log" 2>&1 || true
+  done
+}
 
 pick_port() {
   local candidate
@@ -36,6 +47,9 @@ cleanup() {
   if [ -n "$API_PID" ] && kill -0 "$API_PID" 2>/dev/null; then
     kill -INT "$API_PID" 2>/dev/null || true
     wait "$API_PID" 2>/dev/null || true
+  fi
+  if [ "$status" -ne 0 ]; then
+    collect_diagnostics
   fi
   docker rm -f "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" \
     "$RABBIT_CONTAINER" "$RUSTFS_CONTAINER" >/dev/null 2>&1 || true

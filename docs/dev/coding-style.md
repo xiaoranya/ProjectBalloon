@@ -159,7 +159,8 @@ Frontend guidelines:
 - Test retry, redelivery, duplicate delivery, timeout, cancellation, and
   shutdown behavior.
 - Required checks are `cargo fmt --check`, Clippy with warnings denied, workspace
-  tests, SQLx metadata verification, and dependency/license auditing.
+  tests, SQLx metadata verification when compile-time query macros are used, and
+  dependency/license auditing.
 - Unsafe Rust is disallowed by default. Any exception requires an architecture
   decision, a documented invariant, and focused tests.
 

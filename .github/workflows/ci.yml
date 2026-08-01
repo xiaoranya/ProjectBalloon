@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -12,28 +16,60 @@ jobs:
   rust:
     name: Rust checks
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16.6
+        env:
+          POSTGRES_DB: project_balloon_ci
+          POSTGRES_USER: project_balloon_ci
+          POSTGRES_PASSWORD: project-balloon-ci-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U project_balloon_ci -d project_balloon_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://project_balloon_ci:project-balloon-ci-password@localhost:5432/project_balloon_ci
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           toolchain: 1.94.0
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - run: cargo fmt --all --check
       - run: cargo check-all
       - run: cargo lint
       # Environment-backed tests run in the scheduled/manual Docker workflow.
       - run: cargo test-all
+      - name: Install SQLx CLI
+        run: |
+          if rg -q 'sqlx::(query|query_as|query_scalar|query_file)!' apps crates; then
+            cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features rustls,postgres
+          else
+            echo 'No SQLx compile-time query macros found; SQLx metadata is not required.'
+          fi
+      - name: Verify SQLx query metadata
+        run: |
+          if rg -q 'sqlx::(query|query_as|query_scalar|query_file)!' apps crates; then
+            cargo sqlx prepare --check --workspace
+          else
+            echo 'SQLx metadata check skipped because the workspace uses runtime SQLx queries.'
+          fi
 
   frontend:
     name: Frontend checks
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend/web
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
@@ -45,9 +81,118 @@ jobs:
   compatibility:
     name: API compatibility snapshot
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
       - run: python3 scripts/check-api-compat.py --check
+
+  quality:
+    name: Dependency and license checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          rust-version: 1.94.0
+
+  containers:
+    name: Judge runtime build (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: judge-runtime-c
+            context: deploy/judge/runtimes/c
+            dockerfile: Dockerfile
+            image: judge-runtime-c:ci
+          - name: judge-runtime-cpp
+            context: deploy/judge/runtimes/cpp
+            dockerfile: Dockerfile
+            image: judge-runtime-cpp:ci
+          - name: judge-runtime-java
+            context: deploy/judge/runtimes/java
+            dockerfile: Dockerfile
+            image: judge-runtime-java:ci
+          - name: judge-runtime-python
+            context: deploy/judge/runtimes/python
+            dockerfile: Dockerfile
+            image: judge-runtime-python:ci
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build image
+        run: >-
+          docker buildx build --load --pull=false
+          --tag "${{ matrix.image }}"
+          --file "${{ matrix.dockerfile }}"
+          "${{ matrix.context }}"
+      - name: Scan image for critical vulnerabilities
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        with:
+          image-ref: ${{ matrix.image }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL
+      - name: Verify judge runtime image
+        if: startsWith(matrix.name, 'judge-runtime-')
+        run: docker run --rm --entrypoint /usr/bin/time "${{ matrix.image }}" --version
+
+  binaries:
+    name: Binary release build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: 1.94.0
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/web/package-lock.json
+      - run: npm ci
+        working-directory: frontend/web
+      - run: scripts/release/build-binaries.sh
+      - name: Verify binary staging
+        run: |
+          test -x dist/binary-staging/bin/project-balloon-api
+          test -x dist/binary-staging/bin/project-balloon-judge-worker
+          test -x dist/binary-staging/bin/bootstrap-admin
+          test -s dist/binary-staging/web/index.html
+
+  compose:
+    name: Compose configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Validate Compose files
+        run: |
+          set -euo pipefail
+          export POSTGRES_PASSWORD=ci-postgres-password
+          export REDIS_PASSWORD=ci-redis-password
+          export RABBITMQ_PASSWORD=ci-rabbitmq-password
+          export PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY=ci-access-key
+          export PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY=ci-rustfs-secret
+          export DATABASE_URL=postgresql://ci:ci@postgres:5432/project_balloon
+          export PROJECT_BALLOON_TRUSTED_PROXY_CIDRS=127.0.0.1/32
+          export PROJECT_BALLOON_CSRF_SECRET=ci-csrf-secret-with-more-than-32-bytes
+          export REDIS_URL=redis://:ci-redis-password@redis:6379/0
+          export PROJECT_BALLOON_OBJECT_STORAGE_ENDPOINT=http://rustfs:9000
+          export PROJECT_BALLOON_OBJECT_STORAGE_REGION=us-east-1
+          export PROJECT_BALLOON_RABBITMQ_URL=amqp://ci:ci-rabbitmq-password@rabbitmq:5672/project_balloon
+          export GRAFANA_ADMIN_PASSWORD=ci-grafana-password
+          export POSTGRES_EXPORTER_DSN=postgresql://ci:ci@postgres:5432/project_balloon?sslmode=disable
+          docker compose -f deploy/compose/data.docker-compose.yml config --quiet
+          docker compose -f deploy/compose/rust-app.docker-compose.yml config --quiet
+          docker compose -f deploy/observability/compose.yml config --quiet

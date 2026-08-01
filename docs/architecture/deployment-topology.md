@@ -31,34 +31,34 @@ The production target should avoid co-locating judge workers with the database. 
 
 Acceptable development or rehearsal deployments may use fewer machines, but production documentation and scripts should keep role separation clear.
 
-## Offline Package Mapping
+## Binary Release Package Mapping
 
 Source repository directories map to the release package as follows:
 
-| Source | Offline package output |
+| Source | Binary package output |
 |---|---|
-| `deploy/compose/` | `compose/` |
-| `deploy/config/` | `config/` |
-| `scripts/deploy/` | `scripts/` |
-| `scripts/backup/` | `scripts/` |
-| `docs/ops/` | `docs/` |
-| built Docker images | `images/*.tar` |
-| offline installers | `packages/` |
+| Rust release binaries | `bin/` |
+| Vue production build | `web/` |
+| Judge Runtime images | `judge-images/*.tar` |
+| systemd units and environment templates | `systemd/`, `config/` |
+| Nginx template | `nginx/` |
+| backup scripts | `scripts/backup/` |
+| deployment script libraries | `scripts/lib/` |
 
 Generated release package shape:
 
 ```text
-xcpc-platform-offline-vX.Y.Z/
-  images/
-  packages/                 # Docker, Compose, Podman, runsc, AWS CLI + checksums
-  deploy/
-    compose/
-    config/
-  judge/runtimes/runtime-images.properties
-  frontend/web/dist/
-  scripts/
+project-balloon-vX.Y.Z-linux-amd64/
+  bin/
+  web/
+  judge-images/
+  systemd/
+  config/
+  nginx/
+  scripts/backup/
   docs/
-  VERSION
+  install.sh
+  PACKAGE-SHA256SUMS
 ```
 
 ## Compose Files
@@ -81,22 +81,20 @@ Compose images must use fixed version tags. `latest` is not allowed for official
 - Service passwords, tokens, RustFS keys, database credentials, and live tokens are secrets.
 - Nginx, Prometheus, Grafana, Loki, RabbitMQ, and RustFS templates live under `deploy/config/`.
 
-## Deployment Flow
+## Binary Deployment Flow
 
 ```text
-Copy offline package to target host (single-host default)
-  -> install Docker Engine and Docker Compose Plugin from approved offline media
-  -> load image tar files (load-images.sh)
-  -> seed .env.rust and validate secrets (install.sh)
-  -> fill in secrets in deploy/compose/.env.rust
-  -> start services via docker compose (start.sh)
-  -> run health check (healthcheck.sh)
+Copy binary release archive to target host
+  -> install external PostgreSQL, Redis, RabbitMQ, RustFS, and Docker/Podman
+  -> run install.sh --no-start
+  -> fill in /etc/project-balloon/project-balloon.env
+  -> run install.sh to import Judge images and start systemd services
+  -> bootstrap the first administrator
+  -> run health checks and verify backups
 ```
 
-The single-host compose model runs every role on one host from the package
-root; the earlier `/opt/xcpc` + systemd-unit layout is removed (see
-`docs/ops/install.md#upgrade-from-the-systemd-model`). Multi-host role
-separation remains available as an advanced configuration via the explicit
-PostgreSQL, Redis, RabbitMQ, and object-storage host/endpoint variables.
+The binary model keeps stateful services outside the application package. API
+and Worker processes can run on separate hosts, while Judge Workers retain
+access to their local Docker/Podman sandbox socket and runtime images.
 
 The flow must be repeatable. Scripts should fail fast and print the failed step clearly.

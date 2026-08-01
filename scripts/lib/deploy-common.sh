@@ -6,7 +6,13 @@
 PB_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PB_ROOT="$(cd "$PB_SCRIPT_DIR/../.." && pwd)"
 PB_COMPOSE_DIR="$PB_ROOT/deploy/compose"
-PB_ENV_FILE="${PROJECT_BALLOON_ENV_FILE:-$PB_COMPOSE_DIR/.env.rust}"
+if [ -n "${PROJECT_BALLOON_ENV_FILE:-}" ]; then
+  PB_ENV_FILE="$PROJECT_BALLOON_ENV_FILE"
+elif [ -f "$PB_COMPOSE_DIR/.env.rust" ]; then
+  PB_ENV_FILE="$PB_COMPOSE_DIR/.env.rust"
+else
+  PB_ENV_FILE="/etc/project-balloon/project-balloon.env"
+fi
 
 pb_die() {
   printf '[deploy] ERROR: %s\n' "$*" >&2
