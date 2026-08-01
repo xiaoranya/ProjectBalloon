@@ -11,7 +11,7 @@ This document defines the standard offline LAN deployment shape.
 | `app-02` | API backend, Judge Scheduler | Second API node and scheduler host |
 | `data-01` | PostgreSQL, Redis, RabbitMQ, RustFS | Stateful services; separate from judge workers |
 | `judge-01` to `judge-N` | Judge Worker | CPU-intensive and isolated execution hosts |
-| `backup-01` | Backup storage, image backup, standby services | Stores backups and offline package copies |
+| `backup-01` | Backup storage, image backup, standby services | Stores backups and binary package copies |
 
 ## Network Zones
 
@@ -85,10 +85,12 @@ Compose images must use fixed version tags. `latest` is not allowed for official
 
 ```text
 Copy binary release archive to target host
-  -> install external PostgreSQL, Redis, RabbitMQ, RustFS, and Docker/Podman
-  -> run install.sh --no-start
+  -> install external PostgreSQL, Redis, RabbitMQ, and RustFS
+  -> run install.sh --role api --no-start on app/gateway hosts
+  -> install Docker/Podman on judge hosts
+  -> run install.sh --role worker --skip-nginx --no-start on judge hosts
   -> fill in /etc/project-balloon/project-balloon.env
-  -> run install.sh to import Judge images and start systemd services
+  -> run the corresponding role again to import images and start services
   -> bootstrap the first administrator
   -> run health checks and verify backups
 ```

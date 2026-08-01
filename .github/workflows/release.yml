@@ -51,6 +51,12 @@ jobs:
           archive="dist/${package}.tar.gz"
           tar -C dist -czf "$archive" "$package"
           tar -tzf "$archive" >/dev/null
+          (
+            cd "dist/$package"
+            sha256sum -c PACKAGE-SHA256SUMS
+            bash -n install.sh scripts/backup/*.sh scripts/lib/*.sh
+            ./install.sh --help >/dev/null
+          )
           (cd dist && sha256sum "$(basename "$archive")" > SHA256SUMS)
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         if: startsWith(github.ref, 'refs/tags/')

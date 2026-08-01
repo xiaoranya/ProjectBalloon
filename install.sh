@@ -10,6 +10,7 @@ API_USER="project-balloon-api"
 WORKER_USER="project-balloon-worker"
 CONTAINER_CLI="${PROJECT_BALLOON_CONTAINER_CLI:-}"
 CONTAINER_GROUP="${PROJECT_BALLOON_CONTAINER_GROUP:-}"
+ROLE=all
 NO_START=0
 INSTALL_NGINX=1
 
@@ -22,6 +23,7 @@ the bundled frontend. PostgreSQL, Redis, RabbitMQ, RustFS, Docker/Podman,
 CUPS, and Nginx remain host-managed prerequisites.
 
 Options:
+  --role ROLE             Install all, api, or worker components (default: all)
   --no-start              Install and configure without starting services
   --skip-nginx            Do not install the bundled Nginx configuration
   --prefix PATH           Installation prefix (default: /opt/project-balloon)
@@ -43,6 +45,11 @@ log() {
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --role)
+      [ "$#" -ge 2 ] || die '--role requires all, api, or worker'
+      ROLE="$2"
+      shift
+      ;;
     --no-start) NO_START=1 ;;
     --skip-nginx) INSTALL_NGINX=0 ;;
     --prefix)
@@ -70,6 +77,13 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+
+case "$ROLE" in
+  all) INSTALL_API=1; INSTALL_WORKER=1 ;;
+  api) INSTALL_API=1; INSTALL_WORKER=0 ;;
+  worker) INSTALL_API=0; INSTALL_WORKER=1 ;;
+  *) die "unsupported role: $ROLE (expected all, api, or worker)" ;;
+esac
 
 [ "$(id -u)" -eq 0 ] || die 'run this installer as root'
 [ -d "$PACKAGE_ROOT/bin" ] || die "missing binary directory in package: $PACKAGE_ROOT/bin"
@@ -116,33 +130,39 @@ add_group_if_present() {
   fi
 }
 
-if [ -z "$CONTAINER_CLI" ]; then
-  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-    CONTAINER_CLI=docker
-  elif command -v podman >/dev/null 2>&1; then
-    CONTAINER_CLI=podman
-  else
-    die 'a working Docker or Podman installation is required'
+if [ "$INSTALL_WORKER" -eq 1 ]; then
+  if [ -z "$CONTAINER_CLI" ]; then
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+      CONTAINER_CLI=docker
+    elif command -v podman >/dev/null 2>&1; then
+      CONTAINER_CLI=podman
+    else
+      die 'a working Docker or Podman installation is required for the worker role'
+    fi
   fi
-fi
-case "$CONTAINER_CLI" in
-  docker|podman) command -v "$CONTAINER_CLI" >/dev/null 2>&1 || die "$CONTAINER_CLI is not installed" ;;
-  *) die "unsupported container CLI: $CONTAINER_CLI" ;;
-esac
+  case "$CONTAINER_CLI" in
+    docker|podman) command -v "$CONTAINER_CLI" >/dev/null 2>&1 || die "$CONTAINER_CLI is not installed" ;;
+    *) die "unsupported container CLI: $CONTAINER_CLI" ;;
+  esac
 
-if [ -z "$CONTAINER_GROUP" ]; then
-  if getent group "$CONTAINER_CLI" >/dev/null; then
-    CONTAINER_GROUP="$CONTAINER_CLI"
+  if [ -z "$CONTAINER_GROUP" ]; then
+    if getent group "$CONTAINER_CLI" >/dev/null; then
+      CONTAINER_GROUP="$CONTAINER_CLI"
+    fi
   fi
+  [ -n "$CONTAINER_GROUP" ] || die 'could not determine the container socket group; use --container-group'
+  getent group "$CONTAINER_GROUP" >/dev/null || die "container group does not exist: $CONTAINER_GROUP"
 fi
-[ -n "$CONTAINER_GROUP" ] || die 'could not determine the container socket group; use --container-group'
-getent group "$CONTAINER_GROUP" >/dev/null || die "container group does not exist: $CONTAINER_GROUP"
 
 ensure_group "$APP_GROUP"
-ensure_user "$API_USER"
-ensure_user "$WORKER_USER"
-add_group_if_present "$API_USER" lp
-usermod --append --groups "$CONTAINER_GROUP" "$WORKER_USER"
+if [ "$INSTALL_API" -eq 1 ]; then
+  ensure_user "$API_USER"
+  add_group_if_present "$API_USER" lp
+fi
+if [ "$INSTALL_WORKER" -eq 1 ]; then
+  ensure_user "$WORKER_USER"
+  usermod --append --groups "$CONTAINER_GROUP" "$WORKER_USER"
+fi
 
 install -d -o root -g root -m 0755 "$PREFIX"
 install -d -o root -g root -m 0755 "$PREFIX/bin"
@@ -150,7 +170,12 @@ install -d -o root -g root -m 0755 "$PREFIX/scripts/backup" "$PREFIX/scripts/lib
 rm -rf "$PREFIX/web"
 install -d -o root -g root -m 0755 "$PREFIX/web"
 
-for binary in project-balloon-api project-balloon-judge-worker bootstrap-admin; do
+if [ "$INSTALL_API" -eq 1 ]; then
+  binaries=(project-balloon-api bootstrap-admin)
+else
+  binaries=(project-balloon-judge-worker)
+fi
+for binary in "${binaries[@]}"; do
   [ -f "$PACKAGE_ROOT/bin/$binary" ] || die "missing release binary: $PACKAGE_ROOT/bin/$binary"
   install -o root -g root -m 0755 "$PACKAGE_ROOT/bin/$binary" "$PREFIX/bin/$binary"
 done
@@ -176,7 +201,7 @@ else
   chown root:"$APP_GROUP" "$ENV_FILE"
   chmod 0640 "$ENV_FILE"
 fi
-if [ ! -f "$BOOTSTRAP_ENV_FILE" ]; then
+if [ "$INSTALL_API" -eq 1 ] && [ ! -f "$BOOTSTRAP_ENV_FILE" ]; then
   [ -f "$PACKAGE_ROOT/config/bootstrap-admin.env.example" ] \
     || die 'missing bootstrap-admin.env.example in release package'
   install -o root -g root -m 0600 \
@@ -196,32 +221,38 @@ JUDGE_CACHE_DIR="${JUDGE_CACHE_DIR:-/var/cache/project-balloon/judge}"
 XCPC_SANDBOX_SOCKET="${XCPC_SANDBOX_SOCKET:-/var/run/docker.sock}"
 PROJECT_BALLOON_CUPS_ENABLED="${PROJECT_BALLOON_CUPS_ENABLED:-false}"
 
-install -d -o "$WORKER_USER" -g "$APP_GROUP" -m 0700 "$JUDGE_CACHE_DIR"
-install -d -o "$API_USER" -g "$APP_GROUP" -m 0750 /var/lib/project-balloon
+if [ "$INSTALL_WORKER" -eq 1 ]; then
+  install -d -o "$WORKER_USER" -g "$APP_GROUP" -m 0700 "$JUDGE_CACHE_DIR"
+fi
+STATE_OWNER="$WORKER_USER"
+[ "$INSTALL_API" -eq 1 ] && STATE_OWNER="$API_USER"
+install -d -o "$STATE_OWNER" -g "$APP_GROUP" -m 0750 /var/lib/project-balloon
 
-if [ "$PROJECT_BALLOON_CUPS_ENABLED" = true ]; then
+if [ "$INSTALL_API" -eq 1 ] && [ "$PROJECT_BALLOON_CUPS_ENABLED" = true ]; then
   command -v cupsfilter >/dev/null 2>&1 || die 'CUPS is enabled but cupsfilter is not installed'
   command -v lpstat >/dev/null 2>&1 || die 'CUPS is enabled but lpstat is not installed'
   [ -f /usr/share/ppd/cupsfilters/Generic-PDF_Printer-PDF.ppd ] \
     || die 'CUPS is enabled but the Generic PDF PPD is not installed'
 fi
 
-if [ ! -S "$XCPC_SANDBOX_SOCKET" ]; then
+if [ "$INSTALL_WORKER" -eq 1 ] && [ ! -S "$XCPC_SANDBOX_SOCKET" ]; then
   [ "$NO_START" -eq 1 ] || die "sandbox socket is not available: $XCPC_SANDBOX_SOCKET"
   log "warning: sandbox socket is not available yet: $XCPC_SANDBOX_SOCKET"
 fi
 
-if [ -f "$PACKAGE_ROOT/judge-images/SHA256SUMS" ]; then
+if [ "$INSTALL_WORKER" -eq 1 ] && [ -f "$PACKAGE_ROOT/judge-images/SHA256SUMS" ]; then
   (cd "$PACKAGE_ROOT/judge-images" && sha256sum -c SHA256SUMS)
 fi
-shopt -s nullglob
-judge_archives=("$PACKAGE_ROOT"/judge-images/*.tar)
-[ "${#judge_archives[@]}" -gt 0 ] || die 'no Judge Runtime image archives found'
-for archive in "${judge_archives[@]}"; do
-  log "loading $(basename "$archive") with $CONTAINER_CLI"
-  "$CONTAINER_CLI" load --input "$archive" >/dev/null
-done
-shopt -u nullglob
+if [ "$INSTALL_WORKER" -eq 1 ]; then
+  shopt -s nullglob
+  judge_archives=("$PACKAGE_ROOT"/judge-images/*.tar)
+  [ "${#judge_archives[@]}" -gt 0 ] || die 'no Judge Runtime image archives found'
+  for archive in "${judge_archives[@]}"; do
+    log "loading $(basename "$archive") with $CONTAINER_CLI"
+    "$CONTAINER_CLI" load --input "$archive" >/dev/null
+  done
+  shopt -u nullglob
+fi
 
 render_unit() {
   local name="$1" api_groups="$2" container_group="$3"
@@ -233,6 +264,7 @@ render_unit() {
     -e "s|@WORKER_USER@|$WORKER_USER|g" \
     -e "s|@API_SUPPLEMENTARY_GROUPS@|$api_groups|g" \
     -e "s|@CONTAINER_GROUP@|$container_group|g" \
+    -e "s|@JUDGE_CACHE_DIR@|$JUDGE_CACHE_DIR|g" \
     "$PACKAGE_ROOT/systemd/$name" > "$SYSTEMD_DIR/$name"
   chmod 0644 "$SYSTEMD_DIR/$name"
 }
@@ -241,13 +273,23 @@ API_SUPPLEMENTARY_GROUPS="$APP_GROUP"
 if getent group lp >/dev/null; then
   API_SUPPLEMENTARY_GROUPS="$API_SUPPLEMENTARY_GROUPS lp"
 fi
-render_unit project-balloon-api.service "$API_SUPPLEMENTARY_GROUPS" "$CONTAINER_GROUP"
-render_unit project-balloon-judge-worker.service "$API_SUPPLEMENTARY_GROUPS" "$CONTAINER_GROUP"
+if [ "$INSTALL_API" -eq 1 ]; then
+  render_unit project-balloon-api.service "$API_SUPPLEMENTARY_GROUPS" "${CONTAINER_GROUP:-$APP_GROUP}"
+fi
+if [ "$INSTALL_WORKER" -eq 1 ]; then
+  render_unit project-balloon-judge-worker.service "$API_SUPPLEMENTARY_GROUPS" "$CONTAINER_GROUP"
+fi
 systemctl daemon-reload
-systemctl enable project-balloon-api.service project-balloon-judge-worker.service >/dev/null
+if [ "$INSTALL_API" -eq 1 ] && [ "$INSTALL_WORKER" -eq 1 ]; then
+  systemctl enable project-balloon-api.service project-balloon-judge-worker.service >/dev/null
+elif [ "$INSTALL_API" -eq 1 ]; then
+  systemctl enable project-balloon-api.service >/dev/null
+else
+  systemctl enable project-balloon-judge-worker.service >/dev/null
+fi
 
-if [ "$INSTALL_NGINX" -eq 1 ] && command -v nginx >/dev/null 2>&1; then
-  NGINX_CONF="/etc/project-balloon/project-balloon.nginx.conf"
+if [ "$INSTALL_API" -eq 1 ] && [ "$INSTALL_NGINX" -eq 1 ] && command -v nginx >/dev/null 2>&1; then
+  NGINX_CONF="$CONFIG_DIR/project-balloon.nginx.conf"
   sed -e "s|@PREFIX@|$PREFIX|g" "$PACKAGE_ROOT/nginx/project-balloon.nginx.conf" \
     > "$NGINX_CONF"
   if [ -d /etc/nginx/conf.d ]; then
@@ -261,7 +303,7 @@ if [ "$INSTALL_NGINX" -eq 1 ] && command -v nginx >/dev/null 2>&1; then
   if [ "$NO_START" -eq 0 ]; then
     systemctl reload nginx 2>/dev/null || systemctl start nginx
   fi
-elif [ "$INSTALL_NGINX" -eq 1 ]; then
+elif [ "$INSTALL_API" -eq 1 ] && [ "$INSTALL_NGINX" -eq 1 ]; then
   log 'Nginx is not installed; frontend files are ready under the installation prefix'
 fi
 
@@ -270,20 +312,24 @@ if [ "$CONFIG_CREATED" -ne 0 ]; then
   exit 2
 fi
 
-if [ "$NO_START" -eq 0 ]; then
+if [ "$NO_START" -eq 0 ] && [ "$INSTALL_API" -eq 1 ]; then
   systemctl restart project-balloon-api.service
   systemctl is-active --quiet project-balloon-api.service || {
     journalctl -u project-balloon-api.service -n 80 --no-pager >&2 || true
     die 'API service did not become active'
   }
+fi
+if [ "$NO_START" -eq 0 ] && [ "$INSTALL_WORKER" -eq 1 ]; then
   systemctl restart project-balloon-judge-worker.service
   systemctl is-active --quiet project-balloon-judge-worker.service || {
     journalctl -u project-balloon-judge-worker.service -n 80 --no-pager >&2 || true
     die 'Judge Worker service did not become active'
   }
-  log 'API and Judge Worker services are active'
-else
+fi
+if [ "$NO_START" -ne 0 ]; then
   log 'services installed but not started (--no-start)'
+else
+  log "${ROLE} services are active"
 fi
 
 log "installation complete under $PREFIX"

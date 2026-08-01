@@ -129,7 +129,7 @@ SSE payloads should avoid sensitive information on public, screen, and live chan
 - Redis data is rebuildable and must not be the only copy of contest results.
 - RabbitMQ queues must use ACK, retry, and dead-letter handling for judge tasks.
 - Resolver must use immutable snapshots generated after contest finalization.
-- Offline package versions must be fixed and reproducible.
+- Binary release packages must be fixed and reproducible.
 - Operators must have one-command health check, backup, restore, start, stop, and status scripts.
 
 ## Initial Non-Goals

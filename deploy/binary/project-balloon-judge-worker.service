@@ -20,7 +20,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/var/cache/project-balloon /var/lib/project-balloon
+ReadWritePaths=@JUDGE_CACHE_DIR@ /var/lib/project-balloon
 LimitNOFILE=65536
 
 [Install]

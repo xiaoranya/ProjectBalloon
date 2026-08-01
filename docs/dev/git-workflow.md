@@ -12,7 +12,7 @@ Use a lightweight release workflow.
 | `develop` | Integration branch for normal development |
 | `feature/*` | Feature development |
 | `fix/*` | Normal bug fixes |
-| `release/*` | Release stabilization and offline package validation |
+| `release/*` | Release stabilization and binary package validation |
 | `hotfix/*` | Urgent fixes based on `main` |
 
 Feature branch examples:
@@ -24,7 +24,7 @@ Feature branch examples:
 - `feature/resolver`
 - `feature/printing-balloon`
 - `feature/screen-live`
-- `feature/offline-package`
+- `feature/binary-distribution`
 
 ## Commit Messages
 
@@ -71,8 +71,8 @@ Examples:
 feat(backend): add team account import
 feat(judge): add rabbitmq task consumer
 fix(scoreboard): hide frozen submissions on public board
-docs(deploy): add offline install procedure
-build(release): generate offline package
+docs(deploy): add binary install procedure
+build(release): generate binary package
 ```
 
 ## Release Flow
@@ -82,7 +82,7 @@ Normal release:
 ```text
 develop
   -> release/X.Y.Z
-  -> validate migrations, tests, compose, offline package
+  -> validate migrations, tests, Compose compatibility, binary package
   -> merge to main
   -> tag vX.Y.Z
   -> merge back to develop
@@ -91,13 +91,12 @@ develop
 Official contest release candidate should include:
 
 - Built frontend.
-- Built backend image.
-- Built judge worker image.
-- Fixed-version Compose files.
-- Offline image tar files.
-- Offline Docker Engine and Compose Plugin packages.
+- Built API and Judge Worker binaries.
+- Built frontend static files.
+- Fixed-version Judge Runtime image tar files.
+- External-service prerequisites documented separately.
 - Checksums.
-- Install and recovery docs.
+- Install, backup, and recovery docs.
 
 ## Tags
 
@@ -109,10 +108,10 @@ v1.0.1
 v1.1.0
 ```
 
-Optional offline package tags:
+Optional contest package tags:
 
 ```text
-offline-v1.0.0
+contest-package-v1.0.0
 ```
 
 Contest-specific internal tags may be used for traceability, for example:
@@ -129,7 +128,7 @@ Before merging:
 - Database migrations are reversible or have a documented forward-only reason.
 - Public/live/screen APIs do not expose sensitive data.
 - Operational docs are updated for deployment or recovery changes.
-- Offline deployment impact is considered.
+- Binary deployment impact is considered.
 - New secrets are represented only as `.env.example` placeholders.
 
 ## Protected Mainline Expectations

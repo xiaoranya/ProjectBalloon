@@ -135,13 +135,15 @@ docs/
 ```text
 拷贝二进制发行包到服务器
   ↓
-部署 PostgreSQL、Redis、RabbitMQ、RustFS 和 Docker/Podman
+部署 PostgreSQL、Redis、RabbitMQ、RustFS
   ↓
-执行 install.sh --no-start 导入判题镜像并安装 systemd unit
+在 app/gateway 主机执行 install.sh --role api --no-start
+  ↓
+在 judge 主机部署 Docker/Podman，并执行 install.sh --role worker --no-start
   ↓
 填写 /etc/project-balloon/project-balloon.env
   ↓
-再次执行 install.sh 启动 API 和 Judge Worker
+再次执行对应 role 的 install.sh 启动服务
   ↓
 执行 bootstrap-admin 创建首个管理员
   ↓
@@ -643,7 +645,7 @@ screen_heartbeats
 - 一键备份脚本。
 - 数据恢复流程。
 - 服务重启脚本。
-- 离线镜像包。
+- Judge Runtime 离线镜像 tar 包。
 - 配置备份。
 - 压测脚本。
 

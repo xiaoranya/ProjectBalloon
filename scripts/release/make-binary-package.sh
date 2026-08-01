@@ -53,6 +53,9 @@ must be supplied by the operator.
 
 Install as root:
   ./install.sh
+For separated hosts:
+  ./install.sh --role api
+  ./install.sh --role worker --skip-nginx --container-group docker
 Edit /etc/project-balloon/project-balloon.env, then run ./install.sh again.
 EOF
 

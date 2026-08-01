@@ -32,6 +32,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y cups-filters
+          test -f /usr/share/ppd/cupsfilters/Generic-PDF_Printer-PDF.ppd
       - name: Build Judge Runtime images
         run: scripts/build-judge-runtimes.sh
       - run: scripts/test/docker-integration.sh

@@ -30,7 +30,8 @@ Sibling Docker remains a development-only exception in
 4. Create `XCPC_JUDGE_CACHE_DIR` owned by `10001:10001` with mode `0700`.
 5. Start the dedicated rootless Podman API service and set
    `XCPC_SANDBOX_SOCKET=/run/xcpc-judge/podman.sock`.
-6. Load the five runtime images into the rootless Podman image store.
+6. Load the four runtime images (C, C++, Java, and Python) into the rootless
+   Podman image store.
 
 Preflight must fail if the socket, runtime images, cache directory, S3 buckets,
 or RabbitMQ are unavailable. A release candidate is not contest-ready until the

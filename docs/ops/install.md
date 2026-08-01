@@ -10,13 +10,18 @@ host-managed prerequisites.
 Install these from trusted media or the host distribution before installation:
 
 - systemd;
-- Docker Engine or Podman with a socket accessible to the Judge Worker;
 - PostgreSQL, Redis, RabbitMQ, and RustFS or another S3-compatible service;
 - `tar`, `gzip`, `sha256sum`, and GNU coreutils;
 - `postgresql-client` (`pg_dump` and `psql`) for direct binary-mode backups and restores;
 - AWS CLI v2 for RustFS/S3 backup and restore;
 - Nginx for the bundled frontend configuration;
 - `cups-client`, `cups-filters`, and a configured CUPS printer when printing is enabled.
+
+The `api` role does not require Docker or Podman. The `worker` and `all` roles
+require Docker Engine or a preconfigured rootful Podman service with a socket
+accessible to the Judge Worker. Rootless Podman setup, its user service, and
+the rootless image store remain host preparation steps described by the sandbox
+ADR; the installer does not create that service automatically.
 
 The installer does not create databases, queues, object-storage credentials, or
 production secrets. It does import the four Judge Runtime images and creates
@@ -33,6 +38,20 @@ cd project-balloon-<version>-<target>
 sudo ./install.sh --no-start
 ```
 
+For the separated topology, install only the relevant role on each host:
+
+```text
+# app/gateway host
+sudo ./install.sh --role api --no-start
+
+# judge host
+sudo ./install.sh --role worker --skip-nginx --no-start --container-group docker
+```
+
+Both hosts must receive the same external-service configuration, while each
+Judge host additionally needs its local sandbox socket and imported runtime
+images. The default `all` role remains convenient for a single-host rehearsal.
+
 The first run creates `/etc/project-balloon/project-balloon.env` and exits so
 that external service URLs and secrets can be reviewed. Edit that file, then
 run the installer again:
@@ -42,9 +61,10 @@ sudoedit /etc/project-balloon/project-balloon.env
 sudo ./install.sh
 ```
 
-The second run imports the Judge Runtime images, installs or refreshes the
-systemd units, validates CUPS when enabled, reloads Nginx when available, and
-starts the API and Judge Worker. The API runs embedded SQLx migrations when
+The second run imports the Judge Runtime images when the selected role includes
+the Worker, installs or refreshes the relevant systemd units, validates CUPS
+when the API role enables it, reloads Nginx when available, and starts the
+selected services. The API runs embedded SQLx migrations when
 `PROJECT_BALLOON_RUN_MIGRATIONS=true`.
 
 The application is installed under `/opt/project-balloon`. The service users
