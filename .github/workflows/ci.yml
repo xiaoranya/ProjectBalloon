@@ -130,7 +130,7 @@ jobs:
         run: >-
           docker buildx build --load --pull=false
           --tag "${{ matrix.image }}"
-          --file "${{ matrix.dockerfile }}"
+          --file "${{ matrix.context }}/${{ matrix.dockerfile }}"
           "${{ matrix.context }}"
       - name: Scan image for critical vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
