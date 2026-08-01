@@ -69,15 +69,15 @@ jobs:
           case "${{ matrix.target }}" in
             x86_64-*) expected='x86_64' ;;
             aarch64-*) expected='aarch64' ;;
-           *) echo "unsupported target architecture: ${{ matrix.target }}" >&2; exit 1 ;;
-         esac
+            *) echo "unsupported target architecture: ${{ matrix.target }}" >&2; exit 1 ;;
+          esac
           # macOS on Apple Silicon reports arm64 via uname -m; Linux reports aarch64.
           normalized="$actual"
           [ "$normalized" = "arm64" ] && normalized='aarch64'
           [ "$normalized" = "$expected" ] || {
-           echo "runner architecture $actual does not match target ${{ matrix.target }}" >&2
-           exit 1
-         }
+            echo "runner architecture $actual does not match target ${{ matrix.target }}" >&2
+            exit 1
+          }
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
         if: matrix.runtime_images
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
