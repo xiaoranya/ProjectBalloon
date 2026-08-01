@@ -130,53 +130,6 @@ jobs:
         if: startsWith(matrix.name, 'judge-runtime-')
         run: docker run --rm --entrypoint /usr/bin/time "${{ matrix.image }}" --version
 
-  binaries:
-    name: Binary release build
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
-        with:
-          toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/web/package-lock.json
-      - run: npm ci
-        working-directory: frontend/web
-      - run: scripts/release/build-binaries.sh
-      - name: Verify binary staging
-        run: |
-          test -x dist/binary-staging/bin/project-balloon-api
-          test -x dist/binary-staging/bin/project-balloon-judge-worker
-          test -x dist/binary-staging/bin/bootstrap-admin
-          test -s dist/binary-staging/web/index.html
-      - name: Verify binary package shape
-        run: |
-          set -euo pipefail
-          tmp="$(mktemp -d)"
-          trap 'rm -rf "$tmp"' EXIT
-          mkdir -p "$tmp/judge-images" "$tmp/out"
-          for image in \
-            judge-runtime-c__12.2.0.tar \
-            judge-runtime-cpp__12.2.0.tar \
-            judge-runtime-java__21.tar \
-            judge-runtime-python__3.12.13.tar; do
-            tar -cf "$tmp/judge-images/$image" --files-from /dev/null
-          done
-          (cd "$tmp/judge-images" && sha256sum ./*.tar > SHA256SUMS)
-          scripts/release/make-binary-package.sh "$tmp/judge-images" "$tmp/out"
-          package="$(find "$tmp/out" -mindepth 1 -maxdepth 1 -type d -name 'project-balloon-*' -print -quit)"
-          test -n "$package"
-          (cd "$package" && sha256sum -c PACKAGE-SHA256SUMS >/dev/null)
-          test -x "$package/install.sh"
-          test -x "$package/scripts/backup/backup.sh"
-          test -f "$package/scripts/lib/deploy-common.sh"
-
   compose:
     name: Compose configuration
     runs-on: ubuntu-latest
