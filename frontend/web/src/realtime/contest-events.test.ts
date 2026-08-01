@@ -191,4 +191,21 @@ describe('Rust contest SSE client', () => {
 
     expect(onConnectionChange).not.toHaveBeenCalled();
   });
+
+  it('ignores a late EventSource message after the subscription has stopped', () => {
+    const onEvent = vi.fn();
+    const subscription = subscribeContestEvents({
+      contestId: 7,
+      scope: 'TEAM',
+      eventTypes: ['CLARIFICATION_UPDATED'],
+      onEvent,
+      poll: vi.fn(),
+    });
+    const source = EventSourceMock.instances[0];
+    subscription.stop();
+
+    source.message({ ...baseEvent, type: 'CLARIFICATION_UPDATED' });
+
+    expect(onEvent).not.toHaveBeenCalled();
+  });
 });

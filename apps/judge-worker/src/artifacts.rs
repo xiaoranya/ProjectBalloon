@@ -9,7 +9,7 @@ use bytes::{Bytes, BytesMut};
 use project_balloon_contracts::JudgeTask;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tokio::time::timeout;
+use tokio::{io::AsyncReadExt, time::timeout};
 use uuid::Uuid;
 
 #[derive(Debug, Error)]
@@ -180,9 +180,10 @@ impl ArtifactManager {
         let path = self.testdata_path(task);
         if let Ok(metadata) = tokio::fs::metadata(&path).await {
             self.validate_size_u64(metadata.len())?;
-            let cached = tokio::fs::read(&path).await?;
-            if verify_hash("test data", &cached, &task.testdata_sha256).is_ok() {
-                return Ok(path);
+            match verify_file_hash(&path, &task.testdata_sha256, self.max_artifact_bytes).await {
+                Ok(()) => return Ok(path),
+                Err(ArtifactError::HashMismatch { .. }) => {}
+                Err(error) => return Err(error),
             }
             remove_if_present(&path).await?;
         }
@@ -215,6 +216,37 @@ fn verify_hash(kind: &'static str, content: &[u8], expected: &str) -> Result<(),
     let actual = hex::encode(Sha256::digest(content));
     if actual != expected {
         return Err(ArtifactError::HashMismatch { kind, expected: expected.to_owned(), actual });
+    }
+    Ok(())
+}
+
+async fn verify_file_hash(
+    path: &std::path::Path,
+    expected: &str,
+    max_bytes: u64,
+) -> Result<(), ArtifactError> {
+    let mut file = tokio::fs::File::open(path).await?;
+    let mut hasher = Sha256::new();
+    let mut total = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+        total = total.saturating_add(u64::try_from(read).unwrap_or(u64::MAX));
+        if total > max_bytes {
+            return Err(ArtifactError::TooLarge(max_bytes));
+        }
+        hasher.update(&buffer[..read]);
+    }
+    let actual = hex::encode(hasher.finalize());
+    if actual != expected {
+        return Err(ArtifactError::HashMismatch {
+            kind: "test data",
+            expected: expected.to_owned(),
+            actual,
+        });
     }
     Ok(())
 }

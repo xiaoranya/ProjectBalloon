@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     net::{IpAddr, SocketAddr},
 };
 
@@ -9,7 +9,7 @@ use axum::{
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
 use time::OffsetDateTime;
 use utoipa::ToSchema;
 
@@ -495,9 +495,20 @@ async fn replace_items(
         .execute(&mut **tx)
         .await
         .map_err(|e| AppError::internal("replace screen playlist items", e))?;
-    for (index, item) in items.iter().enumerate() {
-        sqlx::query("INSERT INTO screen_playlist_items(playlist_id,target_view,duration_seconds,display_order) VALUES($1,$2,$3,$4)").bind(id).bind(&item.target_view).bind(item.duration_seconds).bind(i32::try_from(index + 1).unwrap_or(i32::MAX)).execute(&mut **tx).await.map_err(|e| AppError::internal("create screen playlist item", e))?;
-    }
+    let mut query = QueryBuilder::<Postgres>::new(
+        "INSERT INTO screen_playlist_items(playlist_id,target_view,duration_seconds,display_order) ",
+    );
+    query.push_values(items.iter().enumerate(), |mut bind, (index, item)| {
+        bind.push_bind(id)
+            .push_bind(&item.target_view)
+            .push_bind(item.duration_seconds)
+            .push_bind(i32::try_from(index + 1).unwrap_or(i32::MAX));
+    });
+    query
+        .build()
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| AppError::internal("create screen playlist items", e))?;
     Ok(())
 }
 async fn ensure_group_name(
@@ -543,13 +554,18 @@ async fn replace_members(
         .execute(&mut **tx)
         .await
         .map_err(|e| AppError::internal("replace screen group members", e))?;
-    for id in ids {
-        sqlx::query("INSERT INTO screen_group_members(group_id,screen_instance_id) VALUES($1,$2)")
-            .bind(group)
-            .bind(id)
+    if !ids.is_empty() {
+        let mut query = QueryBuilder::<Postgres>::new(
+            "INSERT INTO screen_group_members(group_id,screen_instance_id) ",
+        );
+        query.push_values(ids.iter(), |mut bind, id| {
+            bind.push_bind(group).push_bind(*id);
+        });
+        query
+            .build()
             .execute(&mut **tx)
             .await
-            .map_err(|e| AppError::internal("add screen group member", e))?;
+            .map_err(|e| AppError::internal("add screen group members", e))?;
     }
     Ok(())
 }
@@ -557,8 +573,28 @@ async fn hydrate_playlists(
     pool: &PgPool,
     mut rows: Vec<PlaylistResponse>,
 ) -> Result<Vec<PlaylistResponse>, AppError> {
+    let playlist_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    if playlist_ids.is_empty() {
+        return Ok(rows);
+    }
+    let items = sqlx::query_as::<_, (i64, i64, String, i32, i32)>(
+        "SELECT playlist_id,id,target_view,duration_seconds,display_order FROM screen_playlist_items WHERE playlist_id=ANY($1) ORDER BY playlist_id,display_order",
+    )
+    .bind(&playlist_ids)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::internal("load screen playlist items", e))?;
+    let mut items_by_playlist = HashMap::<i64, Vec<PlaylistItemResponse>>::new();
+    for (playlist_id, id, target_view, duration_seconds, display_order) in items {
+        items_by_playlist.entry(playlist_id).or_default().push(PlaylistItemResponse {
+            id,
+            target_view,
+            duration_seconds,
+            display_order,
+        });
+    }
     for row in &mut rows {
-        row.items = sqlx::query_as("SELECT id,target_view,duration_seconds,display_order FROM screen_playlist_items WHERE playlist_id=$1 ORDER BY display_order").bind(row.id).fetch_all(pool).await.map_err(|e| AppError::internal("load screen playlist items", e))?;
+        row.items = items_by_playlist.remove(&row.id).unwrap_or_default();
     }
     Ok(rows)
 }
@@ -570,8 +606,23 @@ async fn hydrate_groups(
     pool: &PgPool,
     mut rows: Vec<GroupResponse>,
 ) -> Result<Vec<GroupResponse>, AppError> {
+    let group_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    if group_ids.is_empty() {
+        return Ok(rows);
+    }
+    let members = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT group_id,screen_instance_id FROM screen_group_members WHERE group_id=ANY($1) ORDER BY group_id,created_at,id",
+    )
+    .bind(&group_ids)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::internal("load screen group members", e))?;
+    let mut members_by_group = HashMap::<i64, Vec<i64>>::new();
+    for (group_id, instance_id) in members {
+        members_by_group.entry(group_id).or_default().push(instance_id);
+    }
     for row in &mut rows {
-        row.instance_ids = sqlx::query_scalar("SELECT screen_instance_id FROM screen_group_members WHERE group_id=$1 ORDER BY created_at,id").bind(row.id).fetch_all(pool).await.map_err(|e| AppError::internal("load screen group members", e))?;
+        row.instance_ids = members_by_group.remove(&row.id).unwrap_or_default();
     }
     Ok(rows)
 }

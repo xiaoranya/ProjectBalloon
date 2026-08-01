@@ -156,39 +156,31 @@ impl ObjectStorageCleanupRunner {
         )
         .fetch_one(&self.database)
         .await?;
-        let candidates = sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM submissions WHERE submission_scope='PRACTICE' AND source_deleted_at IS NULL AND submitted_at < now() - make_interval(days => $1) AND status NOT IN ('PENDING','JUDGING') ORDER BY submitted_at,id LIMIT $2",
+        let candidates = sqlx::query_as::<_, (i64, String)>(
+            "SELECT id, source_object_key FROM submissions WHERE submission_scope='PRACTICE' AND source_deleted_at IS NULL AND submitted_at < now() - make_interval(days => $1) AND status NOT IN ('PENDING','JUDGING') ORDER BY submitted_at,id LIMIT $2",
         )
         .bind(days)
         .bind(self.config.batch_size)
         .fetch_all(&self.database)
         .await?;
-        let mut purged = 0;
-        for id in candidates {
-            let mut transaction = self.database.begin().await?;
-            let Some(key) = sqlx::query_scalar::<_, String>(
-                "SELECT source_object_key FROM submissions WHERE id=$1 AND submission_scope='PRACTICE' AND source_deleted_at IS NULL AND submitted_at < now() - make_interval(days => $2) AND status NOT IN ('PENDING','JUDGING') FOR UPDATE",
-            )
-            .bind(id)
-            .bind(days)
-            .fetch_optional(&mut *transaction)
-            .await?
-            else {
-                transaction.rollback().await?;
-                continue;
-            };
-            if self.storage.backend().delete(self.storage.source_bucket(), &key).await.is_err() {
-                transaction.rollback().await?;
-                continue;
+        let mut deleted_ids = Vec::with_capacity(candidates.len());
+        for (id, key) in candidates {
+            match self.storage.backend().delete(self.storage.source_bucket(), &key).await {
+                Ok(()) => deleted_ids.push(id),
+                Err(error) => warn!(submission_id = id, %error, "practice source deletion failed"),
             }
-            let updated = sqlx::query("UPDATE submissions SET source_deleted_at=now() WHERE id=$1 AND source_deleted_at IS NULL")
-                .bind(id)
-                .execute(&mut *transaction)
-                .await?;
-            transaction.commit().await?;
-            purged += usize::try_from(updated.rows_affected()).unwrap_or(0);
         }
-        Ok(purged)
+        if deleted_ids.is_empty() {
+            return Ok(0);
+        }
+        let purged = sqlx::query(
+            "UPDATE submissions SET source_deleted_at=now() WHERE id=ANY($1) AND submission_scope='PRACTICE' AND source_deleted_at IS NULL AND submitted_at < now() - make_interval(days => $2) AND status NOT IN ('PENDING','JUDGING')",
+        )
+        .bind(&deleted_ids)
+        .bind(days)
+        .execute(&self.database)
+        .await?;
+        Ok(usize::try_from(purged.rows_affected()).unwrap_or(0))
     }
 
     async fn claim(&self) -> Result<Vec<ClaimedCleanup>, sqlx::Error> {
@@ -274,6 +266,31 @@ pub async fn enqueue_cleanup(
     )
     .bind(bucket)
     .bind(object_key)
+    .bind(reason)
+    .execute(database)
+    .await
+    .map(|_| ())
+}
+
+async fn enqueue_cleanup_batch(
+    database: &PgPool,
+    bucket: &str,
+    object_keys: &[String],
+    reason: &str,
+) -> Result<(), sqlx::Error> {
+    if object_keys.is_empty() {
+        return Ok(());
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO object_storage_cleanup_tasks (bucket, object_key, reason)
+        SELECT $1, object_key, $3
+        FROM unnest($2::text[]) AS object_key
+        ON CONFLICT (bucket, object_key) DO NOTHING
+        "#,
+    )
+    .bind(bucket)
+    .bind(object_keys)
     .bind(reason)
     .execute(database)
     .await
@@ -400,13 +417,15 @@ pub async fn scan_object_integrity(
             .list_objects(bucket, token.as_deref())
             .await
             .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        let mut orphan_keys = Vec::new();
         for object in page.objects {
             missing.remove(&object.key);
             if is_orphan_candidate(&object, prefixes, referenced_keys, grace) {
-                enqueue_cleanup(database, bucket, &object.key, "ORPHAN_SCAN").await?;
-                queued_orphans += 1;
+                orphan_keys.push(object.key);
             }
         }
+        enqueue_cleanup_batch(database, bucket, &orphan_keys, "ORPHAN_SCAN").await?;
+        queued_orphans += orphan_keys.len();
         token = page.next_continuation_token;
         if token.is_none() {
             break;

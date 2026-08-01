@@ -4,7 +4,7 @@ use axum::{
     extract::{Path, State, rejection::JsonRejection},
 };
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, QueryBuilder};
 use std::collections::HashSet;
 use time::OffsetDateTime;
 use utoipa::ToSchema;
@@ -88,18 +88,28 @@ pub async fn create(
         .begin()
         .await
         .map_err(|e| AppError::internal("begin virtual session", e))?;
-    let id=sqlx::query_scalar::<_,i64>("INSERT INTO practice_virtual_sessions(user_id,title,start_at,end_at) VALUES($1,$2,now(),now()+make_interval(mins=>$3)) RETURNING id").bind(context.user().id).bind(request.title.trim()).bind(request.duration_minutes).fetch_one(&mut *tx).await.map_err(|e|AppError::internal("create virtual session",e))?;
-    for (index, problem) in request.problem_ids.iter().enumerate() {
-        sqlx::query(
-            "INSERT INTO practice_virtual_items(session_id,problem_id,position) VALUES($1,$2,$3)",
-        )
-        .bind(id)
-        .bind(problem)
-        .bind(i32::try_from(index + 1).unwrap_or(i32::MAX))
+    let id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO practice_virtual_sessions(user_id,title,start_at,end_at) VALUES($1,$2,now(),now()+make_interval(mins=>$3)) RETURNING id",
+    )
+    .bind(context.user().id)
+    .bind(request.title.trim())
+    .bind(request.duration_minutes)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| AppError::internal("create virtual session", e))?;
+    let mut items = QueryBuilder::<Postgres>::new(
+        "INSERT INTO practice_virtual_items(session_id,problem_id,position) ",
+    );
+    items.push_values(request.problem_ids.iter().enumerate(), |mut bind, (index, problem)| {
+        bind.push_bind(id)
+            .push_bind(*problem)
+            .push_bind(i32::try_from(index + 1).unwrap_or(i32::MAX));
+    });
+    items
+        .build()
         .execute(&mut *tx)
         .await
-        .map_err(|e| AppError::internal("insert virtual problem", e))?;
-    }
+        .map_err(|e| AppError::internal("insert virtual problems", e))?;
     tx.commit().await.map_err(|e| AppError::internal("commit virtual session", e))?;
     Ok((axum::http::StatusCode::CREATED, Json(load_session(&state, id, context.user().id).await?)))
 }
@@ -130,7 +140,14 @@ pub async fn get(
 ) -> Result<Json<VirtualSessionDetail>, AppError> {
     context.require_password_ready()?;
     let session = load_session(&state, id, context.user().id).await?;
-    let problems=sqlx::query_as::<_,VirtualProblemResponse>("SELECT i.problem_id,p.slug,p.title,i.position,EXISTS(SELECT 1 FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2 AND s.status='ACCEPTED') AS solved,(SELECT count(*) FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2)::bigint AS attempts FROM practice_virtual_items i JOIN problems p ON p.id=i.problem_id AND p.deleted_at IS NULL JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' WHERE i.session_id=$1 ORDER BY i.position").bind(id).bind(context.user().id).fetch_all(state.database()).await.map_err(|e|AppError::internal("load virtual problems",e))?;
+    let problems = sqlx::query_as::<_, VirtualProblemResponse>(
+        "SELECT i.problem_id,p.slug,p.title,i.position,EXISTS(SELECT 1 FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2 AND s.status='ACCEPTED') AS solved,(SELECT count(*) FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2)::bigint AS attempts FROM practice_virtual_items i JOIN problems p ON p.id=i.problem_id AND p.deleted_at IS NULL JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' WHERE i.session_id=$1 ORDER BY i.position",
+    )
+    .bind(id)
+    .bind(context.user().id)
+    .fetch_all(state.database())
+    .await
+    .map_err(|e| AppError::internal("load virtual problems", e))?;
     Ok(Json(VirtualSessionDetail { session, problems }))
 }
 

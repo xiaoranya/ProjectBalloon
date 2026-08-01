@@ -19,6 +19,14 @@ struct RedisMessage {
     event: RealtimeEvent,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RedisPublishMessage<'a> {
+    origin_instance_id: Uuid,
+    team_id: Option<i64>,
+    event: &'a RealtimeEvent,
+}
+
 #[derive(Clone)]
 pub enum RealtimePublisher {
     Local { hub: RealtimeHub },
@@ -70,12 +78,12 @@ impl RealtimePublisher {
                 Ok(())
             }
             Self::Redis { hub, connection, channel, instance_id } => {
-                hub.publish(envelope.clone());
-                let payload = serde_json::to_string(&RedisMessage {
+                let payload = serde_json::to_string(&RedisPublishMessage {
                     origin_instance_id: *instance_id,
                     team_id: envelope.team_id,
-                    event: envelope.event,
+                    event: &envelope.event,
                 })?;
+                hub.publish(envelope);
                 let mut connection = connection.clone();
                 let _subscriber_count: usize =
                     connection.publish(channel.as_ref(), payload).await?;

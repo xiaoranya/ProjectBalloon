@@ -53,6 +53,7 @@ export function subscribeContestEvents(options: ContestRealtimeOptions): Contest
   };
 
   const handleMessage = (message: MessageEvent<string>) => {
+    if (stopped) return;
     try {
       const event = JSON.parse(message.data) as RealtimeEvent;
       if (

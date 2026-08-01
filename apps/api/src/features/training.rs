@@ -3,7 +3,7 @@ use axum::{
     extract::{Path, Query, State, rejection::JsonRejection},
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool, Postgres, Transaction};
+use sqlx::{FromRow, PgPool, Postgres, QueryBuilder, Transaction};
 use std::collections::HashSet;
 use utoipa::ToSchema;
 
@@ -393,8 +393,21 @@ async fn write_set(
         .execute(&mut **tx)
         .await
         .map_err(|e| AppError::internal("replace training items", e))?;
-    for (index, item) in request.items.iter().enumerate() {
-        sqlx::query("INSERT INTO training_set_items(set_id,problem_id,position,required) VALUES($1,$2,$3,$4)").bind(id).bind(item.problem_id).bind(i32::try_from(index+1).unwrap_or(i32::MAX)).bind(item.required).execute(&mut **tx).await.map_err(|e| AppError::internal("insert training item",e))?;
+    if !request.items.is_empty() {
+        let mut query = QueryBuilder::<Postgres>::new(
+            "INSERT INTO training_set_items(set_id,problem_id,position,required) ",
+        );
+        query.push_values(request.items.iter().enumerate(), |mut bind, (index, item)| {
+            bind.push_bind(id)
+                .push_bind(item.problem_id)
+                .push_bind(i32::try_from(index + 1).unwrap_or(i32::MAX))
+                .push_bind(item.required);
+        });
+        query
+            .build()
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| AppError::internal("insert training items", e))?;
     }
     Ok(id)
 }
