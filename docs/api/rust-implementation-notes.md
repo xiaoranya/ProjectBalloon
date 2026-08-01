@@ -76,7 +76,9 @@ indexes, with scores required to sum exactly to the problem maximum. Judgement
 results persist the total and each subtask score, and the scoreboard ranks by
 total score. Contest-level `FULL`, `SCORE_ONLY`, and `NONE` feedback policies
 redact team-facing test details during a running contest while administrators
-retain the complete audit view.
+retain the complete audit view. The masking is applied consistently to both the
+team submission list and the detail view, so a restricted policy cannot be
+bypassed by listing submissions instead of opening them.
 
 ## P2 Interactive and Output-only Judging
 

@@ -14,9 +14,9 @@ crates/test-support/  Shared deterministic test fixtures
 docs/                 Requirements, architecture, API, and operations
 ```
 
-The nested `ProjectBalloon/` directory contains the previous implementation and
-is temporarily retained as a behavioral and contract reference. New Rust code
-must not depend on it.
+The previous implementation was fully migrated and removed; the contracts and
+migration-compatibility tests under `crates/` and `docs/api/migration-matrix.md`
+preserve the behavioral baseline.
 
 ## Bootstrap Checks
 

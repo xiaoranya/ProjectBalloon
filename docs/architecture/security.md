@@ -71,8 +71,10 @@ Before login, the frontend obtains a CSRF token from `GET /api/auth/csrf`. It
 sends the returned value in `X-XSRF-TOKEN` for every state-changing request.
 The readable `XSRF-TOKEN` cookie and header must match, and the server verifies
 the token signature. `PROJECT_BALLOON_CSRF_SECRET` must be an independently
-generated deployment secret; the checked-in development value is rejected when
-secure cookies are enabled.
+generated deployment secret. The checked-in development value is rejected
+unconditionally unless `PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET=true` is set for
+local development, and it is never accepted together with secure cookies, so a
+default deployment cannot sign CSRF tokens with a publicly known key.
 
 ## Staff Account Administration
 

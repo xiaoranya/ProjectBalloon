@@ -146,7 +146,8 @@ Important API environment variables:
 | `PROJECT_BALLOON_RUN_MIGRATIONS` | `true` | Run embedded SQLx migrations at startup |
 | `PROJECT_BALLOON_SESSION_TTL_SECONDS` | `43200` | Browser session lifetime |
 | `PROJECT_BALLOON_SECURE_COOKIES` | `false` | Add the cookie `Secure` attribute; required in production |
-| `PROJECT_BALLOON_CSRF_SECRET` | development-only value | HMAC secret for CSRF tokens; replace in every deployment |
+| `PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET` | `false` | Permit the checked-in development CSRF secret; set `true` for local development only |
+| `PROJECT_BALLOON_CSRF_SECRET` | development-only value | HMAC secret for CSRF tokens; startup refuses the development value unless the flag above is set, and refuses it outright with secure cookies |
 | `PROJECT_BALLOON_REALTIME_DISPATCHER_ENABLED` | `true` | Claim and publish durable realtime outbox rows |
 | `PROJECT_BALLOON_REALTIME_CHANNEL_CAPACITY` | `1024` | Per-process SSE broadcast buffer |
 | `PROJECT_BALLOON_REALTIME_POLL_MILLISECONDS` | `250` | Outbox polling interval |
@@ -186,8 +187,9 @@ Browser authentication workflow:
 4. Continue sending the CSRF header for `POST`, `PUT`, `PATCH`, and `DELETE`
    requests. The session itself is held in the `HttpOnly` `PB_SESSION` cookie.
 
-The development CSRF secret is deliberately unusable with secure cookies. Set
-a deployment-specific secret before enabling
+The development CSRF secret is a public value, so startup refuses it unless
+`PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET=true` is set, and it remains unusable
+with secure cookies. Set a deployment-specific secret before enabling
 `PROJECT_BALLOON_SECURE_COOKIES=true`.
 
 Local development may leave Redis fanout disabled and use the in-process Tokio

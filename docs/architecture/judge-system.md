@@ -44,7 +44,8 @@ Recommended RabbitMQ queues:
 
 - `judge.tasks`: normal judge tasks.
 - `judge.retry`: delayed or retry tasks.
-- `judge.dead`: tasks requiring manual inspection.
+- `judge.dead`: tasks that exhausted retries or results permanently rejected.
+- `judge.rejudge`: explicit rejudge tasks if separated from normal queue.
 
 The Rust API also declares `judge.rejudge` and `judge.results` to preserve the
 reviewed cross-service topology. Submission Outbox rows use expiring PostgreSQL
@@ -53,7 +54,15 @@ once. The Rust result consumer deduplicates by immutable result message UUID in
 the same transaction that persists the judgement, runs, submission status, and
 TEAM event. It ACKs only after commit; invalid/conflicting messages dead-letter
 and transient database failures requeue.
-- `judge.rejudge`: explicit rejudge tasks if separated from normal queue.
+
+A dedicated dead-letter consumer reads `judge.dead`. Each message (a
+dead-lettered `JudgeTask` or a permanently rejected `JudgeResult`) carries the
+judgement and submission it belongs to; the consumer atomically marks a
+submission that is genuinely stuck in `judging`/`pending` as `system_error`
+(with an audit row and a realtime TEAM event) and acknowledges the message. A
+judgement that is already completed or superseded is left untouched, so recovery
+is idempotent. This guarantees a dead-lettered task never leaves a submission
+reporting "judging" forever.
 
 Workers must ACK after the system has either persisted a final result or safely moved the task to a retry/dead-letter path. Unhandled worker process exits should not silently lose tasks.
 
