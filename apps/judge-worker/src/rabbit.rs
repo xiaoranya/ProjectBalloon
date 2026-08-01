@@ -287,7 +287,7 @@ async fn process_delivery(
             )
             .await
             {
-                requeue(delivery).await?;
+                reject_for_retry(delivery).await?;
                 return Err(reason);
             }
             delivery.ack(BasicAckOptions::default()).await.map_err(|error| error.to_string())?;
@@ -393,7 +393,7 @@ async fn dead_letter_and_ack(
     )
     .await
     {
-        requeue(delivery).await?;
+        reject_for_retry(delivery).await?;
         return Err(error);
     }
     delivery.ack(BasicAckOptions::default()).await.map_err(|error| error.to_string())?;
@@ -444,10 +444,22 @@ async fn publish_persistent(
     }
 }
 
-async fn requeue(delivery: &Delivery) -> Result<(), String> {
-    delivery
-        .nack(BasicNackOptions { multiple: false, requeue: true })
-        .await
-        .map_err(|error| error.to_string())?;
+async fn reject_for_retry(delivery: &Delivery) -> Result<(), String> {
+    delivery.nack(retry_nack_options()).await.map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn retry_nack_options() -> BasicNackOptions {
+    BasicNackOptions { multiple: false, requeue: false }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::retry_nack_options;
+
+    #[test]
+    fn retry_rejection_enters_dead_letter_flow() {
+        let options = retry_nack_options();
+        assert!(!options.requeue);
+    }
 }

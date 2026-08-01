@@ -21,6 +21,7 @@ use super::model::{
     AttachmentKind, ProblemAttachmentResponse, ProblemListQuery, ProblemResponse, ProblemRow,
     ProblemStatementResponse, ProblemStatementRow, ProblemTestdataResponse,
     ProblemTestdataVersionResponse, ValidatedProblem, ValidatedProblemUpdate, ValidatedStatement,
+    validate_languages_for_judge_mode,
 };
 use super::testdata_archive;
 
@@ -216,6 +217,9 @@ impl ProblemService {
             Some(row) => row,
             None => return Err(classify_missing_or_stale(&mut transaction, problem_id).await?),
         };
+        let languages: Vec<String> = serde_json::from_str(&row.languages)
+            .map_err(|error| AppError::internal("decode updated problem languages", error))?;
+        validate_languages_for_judge_mode(&languages, &row.judge_mode)?;
         record_audit(&mut transaction, actor.id, "PROBLEM_UPDATED", problem_id, request_ip).await?;
         transaction
             .commit()

@@ -112,6 +112,10 @@ step history, and prevents official source data from changing after run creation
 to the official Resolver final snapshot, adds an explicit draft/frozen award set, and preserves
 manual adjustments with optimistic versions.
 
+`20260801010000_realtime_outbox_lease.sql` adds owner-bound realtime publication leases so an
+expired API instance cannot overwrite a newer dispatcher result, while preserving one final
+delivery attempt after an expired lease reaches the retry limit.
+
 It was generated from the effective PostgreSQL schema after applying the
 previous V001-V031 migration history, then stripped of `pg_dump` session and
 client meta-commands. The baseline was verified against the previous result:

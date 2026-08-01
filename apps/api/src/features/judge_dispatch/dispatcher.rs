@@ -93,11 +93,14 @@ impl SubmissionOutboxDispatcher {
             WITH candidates AS (
                 SELECT id
                 FROM submission_outbox
-                WHERE attempts < $1
-                  AND (
-                    (status IN ('PENDING', 'FAILED') AND available_at <= now())
-                    OR (status = 'PUBLISHING' AND lease_until < now())
-                  )
+                WHERE (
+                    (status IN ('PENDING', 'FAILED')
+                        AND attempts < $1
+                        AND available_at <= now())
+                    OR (status = 'PUBLISHING'
+                        AND attempts <= $1
+                        AND lease_until < now())
+                )
                 ORDER BY available_at, created_at, id
                 LIMIT $2
                 FOR UPDATE SKIP LOCKED
@@ -335,7 +338,7 @@ mod tests {
                 lease: Duration::from_secs(30),
                 retry_base: Duration::from_secs(60),
                 batch_size: 10,
-                max_attempts: 8,
+                max_attempts: 2,
             },
         );
         assert_eq!(dispatcher.dispatch_once().await.expect("first dispatch"), 2);
@@ -351,7 +354,7 @@ mod tests {
         sqlx::query(
             r#"
             UPDATE submission_outbox
-            SET status = 'PUBLISHING', lease_owner = $2,
+            SET status = 'PUBLISHING', attempts = 2, lease_owner = $2,
                 lease_until = now() - interval '1 second'
             WHERE judgement_id = $1
             "#,
@@ -369,7 +372,7 @@ mod tests {
         .fetch_one(&pool)
         .await
         .expect("load recovered row");
-        assert_eq!((recovered.0.as_str(), recovered.1, recovered.2), ("SENT", 2, true));
+        assert_eq!((recovered.0.as_str(), recovered.1, recovered.2), ("SENT", 3, true));
         assert_eq!(
             publisher.calls.lock().expect("publisher calls lock").as_slice(),
             &[judgement_ids[0], judgement_ids[1], judgement_ids[1]]

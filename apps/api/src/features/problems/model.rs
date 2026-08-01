@@ -157,14 +157,7 @@ impl CreateProblemRequest {
         )?;
         let configured_languages: Vec<String> = serde_json::from_str(&languages_json)
             .map_err(|error| AppError::internal("decode validated languages", error))?;
-        if (judge_mode == "OUTPUT_ONLY")
-            != (configured_languages.len() == 1 && configured_languages[0] == "output")
-        {
-            return Err(AppError::validation(
-                "languages",
-                "OUTPUT_ONLY requires only the output language",
-            ));
-        }
+        validate_languages_for_judge_mode(&configured_languages, &judge_mode)?;
         Ok(ValidatedProblem {
             slug,
             title,
@@ -537,6 +530,23 @@ fn validate_languages(mut values: Vec<String>) -> Result<String, AppError> {
         .map_err(|error| AppError::internal("encode problem languages", error))
 }
 
+pub(super) fn validate_languages_for_judge_mode(
+    languages: &[String],
+    judge_mode: &str,
+) -> Result<(), AppError> {
+    let output_only = judge_mode == "OUTPUT_ONLY";
+    let only_output = languages.len() == 1 && languages[0] == "output";
+    if output_only != only_output
+        || (!output_only && languages.iter().any(|language| language == "output"))
+    {
+        return Err(AppError::validation(
+            "languages",
+            "OUTPUT_ONLY requires only the output language, and other modes cannot use output",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_lang_code(value: String) -> Result<String, AppError> {
     validate_lang_code_field("defaultLangCode", value)
 }
@@ -613,6 +623,37 @@ mod tests {
             .validate()
             .is_err()
         );
+    }
+
+    #[test]
+    fn output_language_is_exclusive_to_output_only_mode() {
+        let mixed = CreateProblemRequest {
+            slug: "mixed".into(),
+            title: "Mixed".into(),
+            time_limit_ms: None,
+            memory_limit_mb: None,
+            output_limit_kb: None,
+            languages: Some(vec!["cpp".into(), "output".into()]),
+            default_lang_code: None,
+            judge_mode: None,
+            interactor_object_key: None,
+            interactor_sha256: None,
+        };
+        assert!(mixed.validate().is_err());
+
+        let output_only = CreateProblemRequest {
+            slug: "output".into(),
+            title: "Output".into(),
+            time_limit_ms: None,
+            memory_limit_mb: None,
+            output_limit_kb: None,
+            languages: Some(vec!["output".into()]),
+            default_lang_code: None,
+            judge_mode: Some("OUTPUT_ONLY".into()),
+            interactor_object_key: None,
+            interactor_sha256: None,
+        };
+        assert!(output_only.validate().is_ok());
     }
 
     #[test]
