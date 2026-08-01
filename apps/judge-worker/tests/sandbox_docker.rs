@@ -245,7 +245,8 @@ fn test_sandbox(root: std::path::PathBuf) -> DockerSandbox {
         socket: "/var/run/docker.sock".into(),
         cache_dir: root.clone(),
         runtime: None,
-        user: "1000:1000".to_owned(),
+        user: std::env::var("PROJECT_BALLOON_TEST_SANDBOX_USER")
+            .unwrap_or_else(|_| "1000:1000".to_owned()),
         c_image: "judge-runtime-c:12.2.0".to_owned(),
         cpp_image: "judge-runtime-cpp:12.2.0".to_owned(),
         java_image: "judge-runtime-java:21".to_owned(),

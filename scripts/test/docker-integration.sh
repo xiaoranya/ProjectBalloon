@@ -78,6 +78,7 @@ unique_ports="$(printf '%s\n' "$POSTGRES_PORT" "$REDIS_PORT" "$RABBIT_PORT" "$RU
 [ "$unique_ports" -eq 5 ] || die 'selected integration-test ports are not unique; retry the command'
 
 cd "$ROOT"
+export PROJECT_BALLOON_TEST_SANDBOX_USER="${PROJECT_BALLOON_TEST_SANDBOX_USER:-$(id -u):$(id -g)}"
 log 'starting isolated PostgreSQL, Redis, RabbitMQ, and RustFS'
 docker run -d --name "$POSTGRES_CONTAINER" \
   -e POSTGRES_DB=project_balloon_test \

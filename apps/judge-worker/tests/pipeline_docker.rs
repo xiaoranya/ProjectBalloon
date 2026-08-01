@@ -94,7 +94,8 @@ async fn rabbit_rustfs_cpp_pipeline_publishes_confirmed_result() {
         socket: "/var/run/docker.sock".into(),
         cache_dir: cache.clone(),
         runtime: None,
-        user: "1000:1000".to_owned(),
+        user: env::var("PROJECT_BALLOON_TEST_SANDBOX_USER")
+            .unwrap_or_else(|_| "1000:1000".to_owned()),
         c_image: "judge-runtime-c:12.2.0".to_owned(),
         cpp_image: "judge-runtime-cpp:12.2.0".to_owned(),
         java_image: "judge-runtime-java:21".to_owned(),
@@ -166,7 +167,13 @@ async fn rabbit_rustfs_cpp_pipeline_publishes_confirmed_result() {
     let result: JudgeResult =
         serde_json::from_slice(&message.data).expect("deserialize Worker result");
     assert_eq!(result.message_id, judgement_id);
-    assert_eq!(result.verdict, JudgeVerdict::Accepted);
+    assert_eq!(
+        result.verdict,
+        JudgeVerdict::Accepted,
+        "compile_log={:?}, runs={:?}",
+        result.compile_log,
+        result.runs
+    );
     assert_eq!(result.runs.len(), 2);
     message.ack(BasicAckOptions::default()).await.expect("ack observed result");
     let _sent = shutdown.send(true);
