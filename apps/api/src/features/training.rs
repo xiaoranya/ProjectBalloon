@@ -38,7 +38,7 @@ pub struct BankProblem {
     pub statement: Option<String>,
     pub difficulty: Option<i16>,
     pub tags: serde_json::Value,
-    pub published_at: time::OffsetDateTime,
+    pub published_at: Option<time::OffsetDateTime>,
 }
 
 #[derive(Debug, Serialize, ToSchema, FromRow)]
@@ -642,8 +642,8 @@ mod tests {
     use sqlx::PgPool;
 
     use super::{
-        SetItemRequest, SetRequest, load_public_training_items, load_public_training_set,
-        load_public_training_sets, write_set,
+        BankProblem, SetItemRequest, SetRequest, load_public_training_items,
+        load_public_training_set, load_public_training_sets, write_set,
     };
 
     #[sqlx::test(migrations = "../../migrations")]
@@ -727,6 +727,34 @@ mod tests {
         let mut tx = pool.begin().await.expect("begin invalid training set update");
         assert!(write_set(&mut tx, Some(set_id), &request, "PUBLIC", user_id).await.is_err());
         tx.rollback().await.expect("rollback invalid training set update");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn private_problem_publication_response_allows_missing_published_at(pool: PgPool) {
+        let problem_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems (slug, title) VALUES ('training-private-response', 'Private response') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert private problem");
+        sqlx::query(
+            "INSERT INTO problem_bank_entries (problem_id, visibility, tags, published_at) VALUES ($1, 'PRIVATE', '[]', NULL)",
+        )
+        .bind(problem_id)
+        .execute(&pool)
+        .await
+        .expect("insert private publication");
+
+        let row = sqlx::query_as::<_, BankProblem>(
+            "SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.id=$1",
+        )
+        .bind(problem_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load private publication response");
+
+        assert_eq!(row.published_at, None);
     }
 }
 

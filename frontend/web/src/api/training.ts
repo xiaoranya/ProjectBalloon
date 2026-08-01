@@ -8,7 +8,7 @@ export interface BankProblem {
   statement: string | null;
   difficulty: number | null;
   tags: string[];
-  publishedAt: string;
+  publishedAt: string | null;
 }
 
 export interface TrainingSet {
@@ -38,7 +38,7 @@ export interface TrainingSetDetail {
 export interface TrainingEnrollment {
   id: number;
   setId: number;
-  teamId: number;
+  teamId: number | null;
   status: 'ACTIVE' | 'COMPLETED' | 'ABANDONED';
   startedAt: string;
   completedAt: string | null;

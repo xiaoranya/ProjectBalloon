@@ -249,7 +249,7 @@ impl PresentationService {
                 "SELECT EXISTS(SELECT 1 FROM presentation_templates WHERE id=$1)",
             )
             .bind(id)
-            .fetch_one(&self.database)
+            .fetch_one(&mut *tx)
             .await
             .map_err(|e| AppError::internal("check custom presentation template", e))?;
             if !exists {
@@ -774,6 +774,13 @@ mod tests {
             roles: vec!["SCREEN_OPERATOR".into()],
             password_reset_required: false,
         };
+        let custom_template = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO presentation_templates(name,created_by_user_id) VALUES('Integration Template',$1) RETURNING id",
+        )
+        .bind(user)
+        .fetch_one(&pool)
+        .await
+        .expect("custom presentation template");
         let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
         let service = PresentationService::new(pool.clone());
         assert!(
@@ -794,8 +801,8 @@ mod tests {
                     row_limit: 12,
                     show_announcements: true,
                     announcement_interval_seconds: 10,
-                    template: Some("CINEMATIC".into()),
-                    custom_template_id: None,
+                    template: Some("CUSTOM".into()),
+                    custom_template_id: Some(custom_template),
                 },
                 &actor,
                 ip,
@@ -803,7 +810,8 @@ mod tests {
             .await
             .expect("publish screen");
         assert!(config.enabled);
-        assert_eq!(config.template, "CINEMATIC");
+        assert_eq!(config.template, "CUSTOM");
+        assert_eq!(config.custom_template_id, Some(custom_template));
         let registration = service
             .register(RegisterRequest { contest_id: contest, name: " Main Hall ".into() }, ip)
             .await
