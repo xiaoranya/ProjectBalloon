@@ -556,6 +556,32 @@ mod tests {
     }
 
     #[test]
+    fn judge_result_requires_runs_for_runtime_verdicts_and_rejects_controlled_worker_ids() {
+        let now = time::OffsetDateTime::now_utc();
+        let judgement_id = Uuid::new_v4();
+        let mut result = JudgeResult {
+            schema_version: JUDGE_RESULT_SCHEMA_VERSION,
+            message_id: judgement_id,
+            judgement_id,
+            submission_id: 42,
+            worker_id: "worker-1".to_owned(),
+            verdict: JudgeVerdict::WrongAnswer,
+            total_time_ms: 0,
+            peak_memory_kb: 0,
+            compile_log: None,
+            started_at: now,
+            completed_at: now,
+            runs: Vec::new(),
+        };
+        assert!(matches!(result.validate(), Err(super::ContractError::MissingRunsForVerdict)));
+
+        result.verdict = JudgeVerdict::CompileError;
+        assert!(result.validate().is_ok());
+        result.worker_id = "worker-\n1".to_owned();
+        assert!(matches!(result.validate(), Err(super::ContractError::InvalidWorkerId)));
+    }
+
+    #[test]
     fn worker_heartbeat_rejects_overcommitted_capacity() {
         let now = time::OffsetDateTime::now_utc();
         let mut heartbeat = WorkerHeartbeat {

@@ -462,6 +462,15 @@ pub async fn progress(
 ) -> Result<Json<Enrollment>, AppError> {
     context.require_password_ready()?;
     let Json(request) = payload.map_err(|_| AppError::validation("request", "invalid progress"))?;
+    validate_progress_request(&request)?;
+    let team_id = team_for_user(&state, context.user().id).await?;
+    let owner_id = team_id.unwrap_or(context.user().id);
+    let is_team = team_id.is_some();
+    let result=sqlx::query_as::<_,Enrollment>("WITH e AS (SELECT e.* FROM training_enrollments e JOIN training_set_items i ON i.set_id=e.set_id AND i.problem_id=$4 WHERE e.id=$1 AND e.status IN ('ACTIVE','COMPLETED') AND (($3 AND e.team_id=$2) OR (NOT $3 AND e.user_id=$2))), p AS (INSERT INTO training_progress(enrollment_id,problem_id,status,attempts,best_score,solved_at) SELECT $1,$4,$5,0,0,NULL FROM e ON CONFLICT(enrollment_id,problem_id) DO UPDATE SET status=CASE WHEN training_progress.status='SOLVED' THEN 'SOLVED' ELSE EXCLUDED.status END,updated_at=now() RETURNING enrollment_id) UPDATE training_enrollments SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN 'COMPLETED' ELSE 'ACTIVE' END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN coalesce(training_enrollments.completed_at,now()) ELSE NULL END,updated_at=now() FROM e WHERE training_enrollments.id=e.id RETURNING training_enrollments.id,training_enrollments.set_id,training_enrollments.team_id,training_enrollments.user_id,training_enrollments.status,training_enrollments.started_at,training_enrollments.completed_at").bind(enrollment_id).bind(owner_id).bind(is_team).bind(request.problem_id).bind(&request.status).fetch_optional(state.database()).await.map_err(|e|AppError::internal("update training progress",e))?.ok_or_else(||AppError::not_found("ENROLLMENT_NOT_FOUND","Enrollment not found"))?;
+    Ok(Json(result))
+}
+
+fn validate_progress_request(request: &ProgressRequest) -> Result<(), AppError> {
     if request.problem_id <= 0
         || !matches!(request.status.as_str(), "TODO" | "IN_PROGRESS")
         || request.score != 0
@@ -471,11 +480,7 @@ pub async fn progress(
             "client progress may only set TODO or IN_PROGRESS with a zero score",
         ));
     }
-    let team_id = team_for_user(&state, context.user().id).await?;
-    let owner_id = team_id.unwrap_or(context.user().id);
-    let is_team = team_id.is_some();
-    let result=sqlx::query_as::<_,Enrollment>("WITH e AS (SELECT e.* FROM training_enrollments e JOIN training_set_items i ON i.set_id=e.set_id AND i.problem_id=$4 WHERE e.id=$1 AND e.status IN ('ACTIVE','COMPLETED') AND (($3 AND e.team_id=$2) OR (NOT $3 AND e.user_id=$2))), p AS (INSERT INTO training_progress(enrollment_id,problem_id,status,attempts,best_score,solved_at) SELECT $1,$4,$5,0,0,NULL FROM e ON CONFLICT(enrollment_id,problem_id) DO UPDATE SET status=CASE WHEN training_progress.status='SOLVED' THEN 'SOLVED' ELSE EXCLUDED.status END,updated_at=now() RETURNING enrollment_id) UPDATE training_enrollments SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN 'COMPLETED' ELSE 'ACTIVE' END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress tp WHERE tp.enrollment_id=e.id AND tp.problem_id=i.problem_id AND tp.status='SOLVED')) THEN coalesce(training_enrollments.completed_at,now()) ELSE NULL END,updated_at=now() FROM e WHERE training_enrollments.id=e.id RETURNING training_enrollments.id,training_enrollments.set_id,training_enrollments.team_id,training_enrollments.user_id,training_enrollments.status,training_enrollments.started_at,training_enrollments.completed_at").bind(enrollment_id).bind(owner_id).bind(is_team).bind(request.problem_id).bind(&request.status).fetch_optional(state.database()).await.map_err(|e|AppError::internal("update training progress",e))?.ok_or_else(||AppError::not_found("ENROLLMENT_NOT_FOUND","Enrollment not found"))?;
-    Ok(Json(result))
+    Ok(())
 }
 
 #[utoipa::path(get, path = "/api/practice/favorites", operation_id = "listPracticeFavorites", tag = "practice", responses((status = 200, body = [BankProblem])), security(("session_cookie" = [])))]
@@ -642,9 +647,67 @@ mod tests {
     use sqlx::PgPool;
 
     use super::{
-        BankProblem, SetItemRequest, SetRequest, load_public_training_items,
-        load_public_training_set, load_public_training_sets, write_set,
+        BankProblem, BankQuery, ProgressRequest, SetItemRequest, SetRequest,
+        load_public_training_items, load_public_training_set, load_public_training_sets,
+        validate_page, validate_progress_request, validate_set_request, write_set,
     };
+
+    #[test]
+    fn training_queries_and_sets_reject_invalid_bounds_and_duplicate_items() {
+        assert_eq!(
+            validate_page(&BankQuery { page: 2, size: 25, tag: None, difficulty: None })
+                .expect("valid page"),
+            (25, 50)
+        );
+        assert!(
+            validate_page(&BankQuery { page: 2, size: 0, tag: None, difficulty: None }).is_err()
+        );
+        assert!(
+            validate_page(&BankQuery { page: 2, size: 101, tag: None, difficulty: None }).is_err()
+        );
+
+        let mut valid = SetRequest {
+            slug: "graphs-101".into(),
+            title: "Graphs".into(),
+            description: String::new(),
+            visibility: String::new(),
+            items: vec![SetItemRequest { problem_id: 7, required: true }],
+        };
+        assert_eq!(validate_set_request(&valid).expect("default visibility"), "DRAFT");
+        valid.visibility = "PUBLIC".into();
+        assert_eq!(validate_set_request(&valid).expect("public set"), "PUBLIC");
+
+        valid.items.push(SetItemRequest { problem_id: 7, required: false });
+        assert!(validate_set_request(&valid).is_err());
+        valid.items[1].problem_id = 0;
+        assert!(validate_set_request(&valid).is_err());
+    }
+
+    #[test]
+    fn client_training_progress_cannot_claim_a_solution_or_score() {
+        let valid = ProgressRequest { problem_id: 7, status: "IN_PROGRESS".into(), score: 0 };
+        assert!(validate_progress_request(&valid).is_ok());
+        assert!(
+            validate_progress_request(&ProgressRequest { status: "SOLVED".into(), ..valid })
+                .is_err()
+        );
+        assert!(
+            validate_progress_request(&ProgressRequest {
+                problem_id: 7,
+                status: "IN_PROGRESS".into(),
+                score: 100,
+            })
+            .is_err()
+        );
+        assert!(
+            validate_progress_request(&ProgressRequest {
+                problem_id: 0,
+                status: "IN_PROGRESS".into(),
+                score: 0,
+            })
+            .is_err()
+        );
+    }
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]

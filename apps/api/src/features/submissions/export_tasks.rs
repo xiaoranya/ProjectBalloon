@@ -32,7 +32,11 @@ pub struct CreateExportTaskRequest {
 mod tests {
     use std::time::Duration;
 
+    use sqlx::PgPool;
+    use uuid::Uuid;
+
     use super::{ExportTaskKind, retry_delay};
+    use crate::features::submissions::SubmissionService;
 
     #[test]
     fn export_kinds_have_stable_wire_names() {
@@ -52,6 +56,89 @@ mod tests {
         assert_eq!(retry_delay(base, 1), Duration::from_secs(5));
         assert_eq!(retry_delay(base, 4), Duration::from_secs(40));
         assert_eq!(retry_delay(base, 100), Duration::from_secs(3_600));
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn export_leases_are_owner_bound_and_expired_outputs_are_queued_for_cleanup(
+        pool: PgPool,
+    ) {
+        let user_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO users (username, password_hash, display_name, user_type) VALUES ('export-lease-test', 'hash', 'Export Lease', 'SUPER_ADMIN') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert export user");
+        let contest_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO contests (name, status, visibility) VALUES ('Export Lease Contest', 'DRAFT', 'PRIVATE') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert export contest");
+        let task_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO submission_export_tasks (contest_id, requested_by, kind) VALUES ($1, $2, 'METADATA_CSV') RETURNING id",
+        )
+        .bind(contest_id)
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("insert export task");
+        let service = SubmissionService::new(pool.clone());
+        let owner = Uuid::new_v4();
+        let claimed = service
+            .claim_export_task(owner, Duration::from_secs(30))
+            .await
+            .expect("claim export task")
+            .expect("claimed task");
+        assert_eq!((claimed.id, claimed.attempts), (task_id, 1));
+        assert!(
+            !service
+                .complete_export_task(
+                    task_id,
+                    Uuid::new_v4(),
+                    "sources",
+                    "exports/stale.csv",
+                    time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+                )
+                .await
+                .expect("reject stale completion owner")
+        );
+        assert!(
+            service
+                .complete_export_task(
+                    task_id,
+                    owner,
+                    "sources",
+                    "exports/valid.csv",
+                    time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+                )
+                .await
+                .expect("complete export task")
+        );
+
+        sqlx::query(
+            "UPDATE submission_export_tasks SET status='SUCCEEDED', output_bucket='sources', output_object_key='exports/expired.csv', expires_at=now()-interval '1 second' WHERE id=$1",
+        )
+        .bind(task_id)
+        .execute(&pool)
+        .await
+        .expect("expire export output");
+        assert_eq!(service.expire_export_tasks(10).await.expect("expire exports"), 1);
+        let status = sqlx::query_scalar::<_, String>(
+            "SELECT status FROM submission_export_tasks WHERE id=$1",
+        )
+        .bind(task_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load expired export task");
+        assert_eq!(status, "EXPIRED");
+        let cleanup = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM object_storage_cleanup_tasks WHERE bucket='sources' AND object_key='exports/expired.csv' AND reason='EXPORT_EXPIRED'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("load export cleanup task");
+        assert_eq!(cleanup, 1);
     }
 }
 

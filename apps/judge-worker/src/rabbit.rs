@@ -455,11 +455,94 @@ fn retry_nack_options() -> BasicNackOptions {
 
 #[cfg(test)]
 mod tests {
-    use super::retry_nack_options;
+    use std::collections::BTreeMap;
+
+    use lapin::{
+        BasicProperties,
+        message::Delivery,
+        types::{AMQPValue, FieldArray, FieldTable, LongString, ShortString},
+    };
+    use project_balloon_contracts::{
+        JUDGE_RESULT_SCHEMA_VERSION, JudgeResult, JudgeRunResult, JudgeTask, JudgeVerdict,
+    };
+    use time::OffsetDateTime;
+    use uuid::Uuid;
+
+    use super::{retry_count, retry_nack_options, validate_handler_result};
 
     #[test]
     fn retry_rejection_enters_dead_letter_flow() {
         let options = retry_nack_options();
         assert!(!options.requeue);
+    }
+
+    #[test]
+    fn retry_count_only_sums_deaths_from_the_active_task_queue() {
+        let mut task_death = FieldTable::default();
+        task_death.insert(
+            ShortString::from("queue"),
+            AMQPValue::LongString(LongString::from("custom.tasks")),
+        );
+        task_death.insert(ShortString::from("count"), AMQPValue::LongInt(2));
+        let mut retry_death = FieldTable::default();
+        retry_death.insert(
+            ShortString::from("queue"),
+            AMQPValue::LongString(LongString::from("judge.retry")),
+        );
+        retry_death.insert(ShortString::from("count"), AMQPValue::LongLongInt(7));
+        let headers = FieldTable::from(BTreeMap::from([(
+            ShortString::from("x-death"),
+            AMQPValue::FieldArray(FieldArray::from(vec![
+                AMQPValue::FieldTable(task_death),
+                AMQPValue::FieldTable(retry_death),
+            ])),
+        )]));
+        let mut delivery =
+            Delivery::mock(1, ShortString::from(""), ShortString::from("task"), false, Vec::new());
+        delivery.properties = BasicProperties::default().with_headers(headers);
+
+        assert_eq!(retry_count(&delivery, "custom.tasks"), 2);
+        assert_eq!(retry_count(&delivery, "judge.tasks"), 0);
+    }
+
+    #[test]
+    fn handler_result_must_keep_task_identity() {
+        let now = OffsetDateTime::now_utc();
+        let judgement_id = Uuid::new_v4();
+        let task = JudgeTask {
+            schema_version: 1,
+            judgement_id,
+            submission_id: 42,
+            problem_id: 7,
+            testdata_version: 1,
+            testdata_object_key: "problems/7/v1.zip".into(),
+            testdata_sha256: "a".repeat(64),
+            source_object_key: "submissions/42/main.cpp".into(),
+            source_sha256: "b".repeat(64),
+            language: "cpp".into(),
+            time_limit_ms: 1000,
+            memory_limit_mb: 256,
+            output_limit_kb: 64,
+            language_multiplier: 1.0,
+            judge_mode: Default::default(),
+            interactor_object_key: None,
+            interactor_sha256: None,
+        };
+        let result = JudgeResult {
+            schema_version: JUDGE_RESULT_SCHEMA_VERSION,
+            message_id: judgement_id,
+            judgement_id: Uuid::new_v4(),
+            submission_id: 42,
+            worker_id: "worker-1".into(),
+            verdict: JudgeVerdict::CompileError,
+            total_time_ms: 0,
+            peak_memory_kb: 0,
+            compile_log: None,
+            started_at: now,
+            completed_at: now,
+            runs: Vec::<JudgeRunResult>::new(),
+        };
+
+        assert!(validate_handler_result(&task, &result).is_err());
     }
 }

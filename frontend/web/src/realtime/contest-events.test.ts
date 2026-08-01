@@ -129,4 +129,66 @@ describe('Rust contest SSE client', () => {
     expect(EventSourceMock.instances[0].url).toBe('/api/public/events/contests/9');
     subscription.stop();
   });
+
+  it('starts fallback polling for malformed messages and stops it after a valid connection event', () => {
+    const poll = vi.fn();
+    const subscription = subscribeContestEvents({
+      contestId: 7,
+      scope: 'TEAM',
+      eventTypes: [],
+      onEvent: vi.fn(),
+      poll,
+      pollIntervalMs: 1_000,
+    });
+    const source = EventSourceMock.instances[0];
+
+    source.dispatchEvent(new MessageEvent('message', { data: '{malformed' }));
+    expect(poll).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1_000);
+    expect(poll).toHaveBeenCalledTimes(2);
+
+    source.message({ ...baseEvent, type: 'CONNECTED' });
+    vi.advanceTimersByTime(2_000);
+    expect(poll).toHaveBeenCalledTimes(2);
+    subscription.stop();
+  });
+
+  it('defers fallback polling while the document is hidden and resumes on visibility change', () => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    const poll = vi.fn();
+    const subscription = subscribeContestEvents({
+      contestId: 7,
+      scope: 'TEAM',
+      eventTypes: [],
+      onEvent: vi.fn(),
+      poll,
+      pollIntervalMs: 1_000,
+    });
+    const source = EventSourceMock.instances[0];
+    source.fail();
+    expect(poll).not.toHaveBeenCalled();
+
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(poll).toHaveBeenCalledTimes(1);
+    subscription.stop();
+  });
+
+  it('ignores a late EventSource error after the subscription has stopped', () => {
+    const onConnectionChange = vi.fn();
+    const subscription = subscribeContestEvents({
+      contestId: 7,
+      scope: 'TEAM',
+      eventTypes: [],
+      onEvent: vi.fn(),
+      onConnectionChange,
+      poll: vi.fn(),
+    });
+    const source = EventSourceMock.instances[0];
+    subscription.stop();
+
+    source.fail();
+
+    expect(onConnectionChange).not.toHaveBeenCalled();
+  });
 });

@@ -82,6 +82,7 @@ export function subscribeContestEvents(options: ContestRealtimeOptions): Contest
     source = new EventSource(path);
     source.addEventListener('message', handleMessage as EventListener);
     source.addEventListener('error', () => {
+      if (stopped) return;
       options.onConnectionChange?.(false);
       startPolling();
     });
