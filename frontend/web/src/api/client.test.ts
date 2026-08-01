@@ -95,5 +95,8 @@ describe('apiRequest', () => {
     expect(getErrorMessage(new ApiError(400, 'BAD_REQUEST', 'SOURCE_EXTENSION_MISMATCH'))).toBe(
       '源码扩展名与所选语言不匹配',
     );
+    expect(getErrorMessage(new ApiError(400, 'BAD_REQUEST', 'SOURCE_TOO_LARGE'))).toBe(
+      '源码文件不能超过 64 KiB',
+    );
   });
 });

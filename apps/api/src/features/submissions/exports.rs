@@ -198,7 +198,11 @@ async fn build_sources_archive_file(
     for row in &rows {
         let bytes = storage
             .backend()
-            .get(storage.source_bucket(), &row.source_object_key)
+            .get_limited(
+                storage.source_bucket(),
+                &row.source_object_key,
+                super::model::MAX_SOURCE_BYTES,
+            )
             .await
             .map_err(|error| AppError::internal("download source for export", error))?;
         let actual_size = i64::try_from(bytes.len())
@@ -245,7 +249,11 @@ async fn load_source_files(
     for row in rows {
         let bytes = storage
             .backend()
-            .get(storage.source_bucket(), &row.source_object_key)
+            .get_limited(
+                storage.source_bucket(),
+                &row.source_object_key,
+                super::model::MAX_SOURCE_BYTES,
+            )
             .await
             .map_err(|error| AppError::internal("download source for export", error))?;
         let actual_size = i64::try_from(bytes.len())

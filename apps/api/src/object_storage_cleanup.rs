@@ -99,11 +99,11 @@ impl ObjectStorageCleanupRunner {
             let references = referenced_object_keys(&self.database, &self.storage, bucket).await?;
             let prefixes: &[&str] = if self.storage.problem_bucket() == self.storage.source_bucket()
             {
-                &["problems/", "submissions/", "prints/"]
+                &["problems/", "submissions/", "practice-submissions/", "prints/", "exports/"]
             } else if bucket == self.storage.problem_bucket() {
                 &["problems/"]
             } else {
-                &["submissions/", "prints/"]
+                &["submissions/", "practice-submissions/", "prints/", "exports/"]
             };
             let report = scan_object_integrity(
                 &self.database,
@@ -156,22 +156,36 @@ impl ObjectStorageCleanupRunner {
         )
         .fetch_one(&self.database)
         .await?;
-        let candidates = sqlx::query_as::<_, (i64, String)>(
-            "SELECT id,source_object_key FROM submissions WHERE submission_scope='PRACTICE' AND source_deleted_at IS NULL AND submitted_at < now() - make_interval(days => $1) AND status NOT IN ('PENDING','JUDGING') ORDER BY submitted_at,id LIMIT $2",
+        let candidates = sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM submissions WHERE submission_scope='PRACTICE' AND source_deleted_at IS NULL AND submitted_at < now() - make_interval(days => $1) AND status NOT IN ('PENDING','JUDGING') ORDER BY submitted_at,id LIMIT $2",
         )
         .bind(days)
         .bind(self.config.batch_size)
         .fetch_all(&self.database)
         .await?;
         let mut purged = 0;
-        for (id, key) in candidates {
+        for id in candidates {
+            let mut transaction = self.database.begin().await?;
+            let Some(key) = sqlx::query_scalar::<_, String>(
+                "SELECT source_object_key FROM submissions WHERE id=$1 AND submission_scope='PRACTICE' AND source_deleted_at IS NULL AND submitted_at < now() - make_interval(days => $2) AND status NOT IN ('PENDING','JUDGING') FOR UPDATE",
+            )
+            .bind(id)
+            .bind(days)
+            .fetch_optional(&mut *transaction)
+            .await?
+            else {
+                transaction.rollback().await?;
+                continue;
+            };
             if self.storage.backend().delete(self.storage.source_bucket(), &key).await.is_err() {
+                transaction.rollback().await?;
                 continue;
             }
             let updated = sqlx::query("UPDATE submissions SET source_deleted_at=now() WHERE id=$1 AND source_deleted_at IS NULL")
                 .bind(id)
-                .execute(&self.database)
+                .execute(&mut *transaction)
                 .await?;
+            transaction.commit().await?;
             purged += usize::try_from(updated.rows_affected()).unwrap_or(0);
         }
         Ok(purged)
@@ -483,7 +497,10 @@ pub async fn referenced_object_keys(
              WHERE interactor_object_key IS NOT NULL
              UNION SELECT source_object_key FROM submissions WHERE source_deleted_at IS NULL
              UNION SELECT pdf_object_key FROM print_requests
-             WHERE pdf_bucket = $1 AND pdf_object_key IS NOT NULL",
+             WHERE pdf_bucket = $1 AND pdf_object_key IS NOT NULL
+             UNION SELECT output_object_key FROM submission_export_tasks
+             WHERE output_bucket = $1 AND output_object_key IS NOT NULL
+               AND status = 'SUCCEEDED' AND expires_at > now()",
             )
             .bind(bucket)
             .fetch_all(database)
@@ -495,7 +512,10 @@ pub async fn referenced_object_keys(
              UNION SELECT testdata_object_key FROM problems
              WHERE testdata_object_key IS NOT NULL
              UNION SELECT interactor_object_key FROM problems
-             WHERE interactor_object_key IS NOT NULL",
+             WHERE interactor_object_key IS NOT NULL
+             UNION SELECT output_object_key FROM submission_export_tasks
+             WHERE output_bucket = $1 AND output_object_key IS NOT NULL
+               AND status = 'SUCCEEDED' AND expires_at > now()",
             )
             .fetch_all(database)
             .await?
@@ -503,7 +523,10 @@ pub async fn referenced_object_keys(
             sqlx::query_scalar(
                 "SELECT source_object_key FROM submissions WHERE source_deleted_at IS NULL
              UNION SELECT pdf_object_key FROM print_requests
-             WHERE pdf_bucket = $1 AND pdf_object_key IS NOT NULL",
+             WHERE pdf_bucket = $1 AND pdf_object_key IS NOT NULL
+             UNION SELECT output_object_key FROM submission_export_tasks
+             WHERE output_bucket = $1 AND output_object_key IS NOT NULL
+               AND status = 'SUCCEEDED' AND expires_at > now()",
             )
             .bind(bucket)
             .fetch_all(database)

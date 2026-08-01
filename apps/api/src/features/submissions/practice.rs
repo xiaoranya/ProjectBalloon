@@ -234,11 +234,11 @@ impl SubmissionService {
         storage: &ObjectStorageHandle,
     ) -> Result<PracticeSubmissionDetail, AppError> {
         let summary=sqlx::query_as::<_,PracticeSubmissionSummary>("SELECT s.id,s.problem_id,p.slug AS problem_slug,p.title AS problem_title,s.training_enrollment_id,s.language,s.source_size_bytes,s.status,s.submitted_at,s.judged_at,j.id AS active_judgement_id,j.verdict,j.total_time_ms,j.peak_memory_kb,CASE WHEN j.verdict='ACCEPTED' THEN 100 WHEN j.completed_at IS NOT NULL THEN 0 ELSE NULL END AS score FROM submissions s JOIN problems p ON p.id=s.problem_id LEFT JOIN judgements j ON j.submission_id=s.id AND j.active_marker IS TRUE WHERE s.id=$1 AND s.submission_scope='PRACTICE' AND s.participant_user_id=$2").bind(submission_id).bind(actor.id).fetch_optional(&self.database).await.map_err(|e|AppError::internal("load practice submission",e))?.ok_or_else(||AppError::not_found("SUBMISSION_NOT_FOUND","Practice submission not found"))?;
-        let (key, hash, deleted_at) = sqlx::query_as::<
+        let (key, hash, source_size_bytes, deleted_at) = sqlx::query_as::<
             _,
-            (String, Option<String>, Option<OffsetDateTime>),
+            (String, Option<String>, i32, Option<OffsetDateTime>),
         >(
-            "SELECT source_object_key,source_sha256,source_deleted_at FROM submissions WHERE id=$1",
+            "SELECT source_object_key,source_sha256,source_size_bytes,source_deleted_at FROM submissions WHERE id=$1",
         )
         .bind(submission_id)
         .fetch_one(&self.database)
@@ -249,11 +249,32 @@ impl SubmissionService {
         } else if summary.language == "output" {
             "[Output-only ZIP archive]".into()
         } else {
+            let expected_source_size = usize::try_from(source_size_bytes).unwrap_or(0);
+            if expected_source_size == 0 || expected_source_size > super::model::MAX_SOURCE_BYTES {
+                return Err(AppError::conflict(
+                    "SUBMISSION_SOURCE_SIZE_MISMATCH",
+                    "Stored practice source has an unsupported recorded size",
+                ));
+            }
             let bytes = storage
                 .backend()
-                .get(storage.source_bucket(), &key)
+                .get_limited(storage.source_bucket(), &key, expected_source_size)
                 .await
                 .map_err(|e| AppError::internal("download practice source", e))?;
+            if bytes.len() != expected_source_size {
+                return Err(AppError::conflict(
+                    "SUBMISSION_SOURCE_SIZE_MISMATCH",
+                    "Stored practice source does not match its recorded size",
+                ));
+            }
+            if let Some(expected_hash) = hash.as_deref()
+                && hex::encode(Sha256::digest(&bytes)) != expected_hash
+            {
+                return Err(AppError::conflict(
+                    "SUBMISSION_SOURCE_HASH_MISMATCH",
+                    "Stored practice source failed integrity verification",
+                ));
+            }
             String::from_utf8(bytes.to_vec()).map_err(|_| {
                 AppError::conflict(
                     "SUBMISSION_SOURCE_INVALID",

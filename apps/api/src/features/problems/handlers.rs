@@ -378,7 +378,7 @@ pub async fn download_attachment(
         .await?;
     let stream = storage
         .backend()
-        .get_stream(storage.problem_bucket(), &download.object_key)
+        .get_stream_limited(storage.problem_bucket(), &download.object_key, 20 * 1024 * 1024)
         .await
         .map_err(|error| AppError::internal("stream problem attachment object", error))?;
     let mut response = Response::new(Body::from_stream(stream));

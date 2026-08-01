@@ -6,7 +6,7 @@ use aws_sdk_s3::{
     config::{Credentials, Region},
     primitives::ByteStream,
 };
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use futures_util::{Stream, StreamExt};
 use thiserror::Error;
 use tokio::time::timeout;
@@ -69,6 +69,21 @@ pub trait ObjectStorage: Send + Sync {
 
     async fn get(&self, bucket: &str, key: &str) -> Result<Bytes, ObjectStorageError>;
 
+    async fn get_limited(
+        &self,
+        bucket: &str,
+        key: &str,
+        max_bytes: usize,
+    ) -> Result<Bytes, ObjectStorageError> {
+        let content = self.get(bucket, key).await?;
+        if content.len() > max_bytes {
+            return Err(ObjectStorageError::Request(format!(
+                "object exceeds the {max_bytes} byte read limit"
+            )));
+        }
+        Ok(content)
+    }
+
     async fn get_stream(
         &self,
         bucket: &str,
@@ -76,6 +91,41 @@ pub trait ObjectStorage: Send + Sync {
     ) -> Result<ObjectStorageStream, ObjectStorageError> {
         let bytes = self.get(bucket, key).await?;
         Ok(Box::pin(futures_util::stream::once(async move { Ok(bytes) })))
+    }
+
+    async fn get_stream_limited(
+        &self,
+        bucket: &str,
+        key: &str,
+        max_bytes: usize,
+    ) -> Result<ObjectStorageStream, ObjectStorageError> {
+        let stream = self.get_stream(bucket, key).await?;
+        let capped = futures_util::stream::unfold(
+            (stream, 0_usize, false),
+            move |(mut stream, total, failed)| async move {
+                if failed {
+                    return None;
+                }
+                match stream.next().await {
+                    Some(Ok(chunk)) => {
+                        let next_total = total.saturating_add(chunk.len());
+                        if next_total > max_bytes {
+                            Some((
+                                Err(ObjectStorageError::Request(format!(
+                                    "object exceeds the {max_bytes} byte stream limit"
+                                ))),
+                                (stream, next_total, true),
+                            ))
+                        } else {
+                            Some((Ok(chunk), (stream, next_total, false)))
+                        }
+                    }
+                    Some(Err(error)) => Some((Err(error), (stream, total, true))),
+                    None => None,
+                }
+            },
+        );
+        Ok(Box::pin(capped))
     }
 
     async fn delete(&self, bucket: &str, key: &str) -> Result<(), ObjectStorageError>;
@@ -89,6 +139,8 @@ pub struct ObjectStoragePage {
 
 pub type ObjectStorageStream =
     Pin<Box<dyn Stream<Item = Result<Bytes, ObjectStorageError>> + Send + 'static>>;
+
+const MAX_BUFFERED_OBJECT_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct ObjectStorageHandle {
@@ -185,6 +237,46 @@ impl S3ObjectStorage {
         request: impl Future<Output = Result<T, ObjectStorageError>>,
     ) -> Result<T, ObjectStorageError> {
         timeout(self.request_timeout, request).await.map_err(|_| ObjectStorageError::Timeout)?
+    }
+
+    async fn get_limited_inner(
+        &self,
+        bucket: &str,
+        key: &str,
+        max_bytes: usize,
+    ) -> Result<Bytes, ObjectStorageError> {
+        self.within_timeout(async {
+            let response = self
+                .client
+                .get_object()
+                .bucket(bucket)
+                .key(key)
+                .send()
+                .await
+                .map_err(|error| ObjectStorageError::Request(error.to_string()))?;
+            if response.content_length().is_some_and(|length| {
+                length < 0
+                    || u64::try_from(length).ok().is_some_and(|length| length > max_bytes as u64)
+            }) {
+                return Err(ObjectStorageError::Request(format!(
+                    "object exceeds the {max_bytes} byte read limit"
+                )));
+            }
+            let mut stream = tokio_util::io::ReaderStream::new(response.body.into_async_read());
+            let mut content = BytesMut::new();
+            while let Some(chunk) = stream.next().await {
+                let chunk =
+                    chunk.map_err(|error| ObjectStorageError::Request(error.to_string()))?;
+                if content.len().saturating_add(chunk.len()) > max_bytes {
+                    return Err(ObjectStorageError::Request(format!(
+                        "object exceeds the {max_bytes} byte read limit"
+                    )));
+                }
+                content.extend_from_slice(&chunk);
+            }
+            Ok(content.freeze())
+        })
+        .await
     }
 }
 
@@ -308,23 +400,16 @@ impl ObjectStorage for S3ObjectStorage {
     }
 
     async fn get(&self, bucket: &str, key: &str) -> Result<Bytes, ObjectStorageError> {
-        self.within_timeout(async {
-            let response = self
-                .client
-                .get_object()
-                .bucket(bucket)
-                .key(key)
-                .send()
-                .await
-                .map_err(|error| ObjectStorageError::Request(error.to_string()))?;
-            response
-                .body
-                .collect()
-                .await
-                .map(|body| body.into_bytes())
-                .map_err(|error| ObjectStorageError::Request(error.to_string()))
-        })
-        .await
+        self.get_limited_inner(bucket, key, MAX_BUFFERED_OBJECT_BYTES).await
+    }
+
+    async fn get_limited(
+        &self,
+        bucket: &str,
+        key: &str,
+        max_bytes: usize,
+    ) -> Result<Bytes, ObjectStorageError> {
+        self.get_limited_inner(bucket, key, max_bytes).await
     }
 
     async fn get_stream(
@@ -396,7 +481,7 @@ pub mod keys {
 mod tests {
     use async_trait::async_trait;
     use bytes::Bytes;
-    use futures_util::TryStreamExt;
+    use futures_util::{StreamExt, TryStreamExt};
 
     use super::{ObjectStorage, ObjectStorageError, keys};
 
@@ -450,5 +535,23 @@ mod tests {
             .await
             .expect("read object stream");
         assert_eq!(chunks, vec![Bytes::from_static(b"streamed")]);
+    }
+
+    #[tokio::test]
+    async fn buffered_reads_and_streams_enforce_limits() {
+        assert!(BufferedStorage.get_limited("bucket", "key", 7).await.is_err());
+        let mut stream = BufferedStorage
+            .get_stream_limited("bucket", "key", 8)
+            .await
+            .expect("create capped object stream");
+        assert!(stream.next().await.expect("first capped chunk").is_ok());
+        assert!(stream.next().await.is_none());
+
+        let mut stream = BufferedStorage
+            .get_stream_limited("bucket", "key", 6)
+            .await
+            .expect("create rejecting object stream");
+        assert!(stream.next().await.expect("oversized chunk").is_err());
+        assert!(stream.next().await.is_none());
     }
 }

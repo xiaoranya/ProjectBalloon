@@ -151,7 +151,11 @@ impl SubmissionService {
         let mut updated = 0_i64;
         let mut failed = 0_i64;
         for (submission_id, object_key, expected_hash) in candidates {
-            let source = match storage.backend().get(storage.source_bucket(), &object_key).await {
+            let source = match storage
+                .backend()
+                .get_limited(storage.source_bucket(), &object_key, super::model::MAX_SOURCE_BYTES)
+                .await
+            {
                 Ok(source) if hex::encode(sha2::Sha256::digest(&source)) == expected_hash => source,
                 _ => {
                     failed += 1;
@@ -557,18 +561,42 @@ async fn detail(
     .await
     .map_err(|error| AppError::internal("load submission detail", error))?
     .ok_or_else(submission_not_found)?;
-    let (source_object_key, source_sha256) = sqlx::query_as::<_, (String, Option<String>)>(
-        "SELECT source_object_key, source_sha256 FROM submissions WHERE id = $1",
+    let (source_object_key, source_sha256, source_size_bytes) = sqlx::query_as::<
+        _,
+        (String, Option<String>, i32),
+    >(
+        "SELECT source_object_key, source_sha256, source_size_bytes FROM submissions WHERE id = $1",
     )
     .bind(submission_id)
     .fetch_one(database)
     .await
     .map_err(|error| AppError::internal("load submission source metadata", error))?;
+    let expected_source_size = usize::try_from(source_size_bytes).unwrap_or(0);
+    if expected_source_size == 0 || expected_source_size > super::model::MAX_SOURCE_BYTES {
+        return Err(AppError::conflict(
+            "SUBMISSION_SOURCE_SIZE_MISMATCH",
+            "Stored submission source has an unsupported recorded size",
+        ));
+    }
     let source = storage
         .backend()
-        .get(storage.source_bucket(), &source_object_key)
+        .get_limited(storage.source_bucket(), &source_object_key, expected_source_size)
         .await
         .map_err(|error| AppError::internal("download submission source", error))?;
+    if source.len() != expected_source_size {
+        return Err(AppError::conflict(
+            "SUBMISSION_SOURCE_SIZE_MISMATCH",
+            "Stored submission source does not match its recorded size",
+        ));
+    }
+    if let Some(expected_hash) = source_sha256.as_deref()
+        && hex::encode(sha2::Sha256::digest(&source)) != expected_hash
+    {
+        return Err(AppError::conflict(
+            "SUBMISSION_SOURCE_HASH_MISMATCH",
+            "Stored submission source failed integrity verification",
+        ));
+    }
     let source = if summary.language == "output" {
         "[Output-only ZIP archive]".to_owned()
     } else {

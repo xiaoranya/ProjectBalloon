@@ -149,7 +149,7 @@ const businessMessages: Record<string, string> = {
   LANGUAGE_NOT_ALLOWED: '该题目不允许使用所选语言',
   PROBLEM_LANGUAGES_INVALID: '题目语言配置异常，请联系管理员',
   SOURCE_REQUIRED: '请选择源码文件',
-  SOURCE_TOO_LARGE: '源码文件不能超过 256 KiB',
+  SOURCE_TOO_LARGE: '源码文件不能超过 64 KiB',
   SOURCE_EXTENSION_MISMATCH: '源码扩展名与所选语言不匹配',
   INVALID_METADATA_JSON: '提交信息格式不正确',
   RATE_LIMIT_EXCEEDED: '操作过于频繁，请稍后重试',

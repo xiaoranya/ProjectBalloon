@@ -63,7 +63,7 @@
                 <ElIcon class="upload-icon"><UploadFilled /></ElIcon>
                 <div>拖放源码到这里，或点击选择</div>
                 <template #tip>
-                  <span>最大 256 KiB，扩展名需与提交类型匹配</span>
+                  <span>最大 64 KiB，扩展名需与提交类型匹配</span>
                 </template>
               </ElUpload>
             </ElFormItem>
@@ -152,8 +152,8 @@ async function loadProblem() {
 function onFileChange(uploadFile: UploadFile) {
   const file = uploadFile.raw ?? null;
   submitError.value = '';
-  if (file && file.size > 262_144) {
-    submitError.value = '提交文件不能超过 256 KiB';
+  if (file && file.size > 65_536) {
+    submitError.value = '提交文件不能超过 64 KiB';
     sourceFile.value = null;
     uploadRef.value?.clearFiles();
     return;

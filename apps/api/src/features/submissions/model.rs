@@ -8,6 +8,7 @@ use crate::{error::AppError, pagination::checked_offset};
 
 const DEFAULT_PAGE_SIZE: u32 = 25;
 const MAX_PAGE_SIZE: u32 = 100;
+pub(crate) const MAX_SOURCE_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -280,8 +281,8 @@ impl SubmitMetadata {
         if self.problem_id <= 0 {
             return Err(AppError::validation("problemId", "must be positive"));
         }
-        if source.is_empty() || source.len() > 256 * 1024 {
-            return Err(AppError::validation("source", "must contain between 1 byte and 256 KiB"));
+        if source.is_empty() || source.len() > MAX_SOURCE_BYTES {
+            return Err(AppError::validation("source", "must contain between 1 byte and 64 KiB"));
         }
         let language = self.language.trim().to_ascii_lowercase();
         if language != "output" && std::str::from_utf8(&source).is_err() {
@@ -565,7 +566,9 @@ pub struct RunDetail {
 mod tests {
     use bytes::Bytes;
 
-    use super::{SubmitMetadata, source_fingerprint, source_similarity_signature};
+    use super::{
+        MAX_SOURCE_BYTES, SubmitMetadata, source_fingerprint, source_similarity_signature,
+    };
 
     #[test]
     fn source_fingerprint_ignores_comments_and_formatting_but_keeps_literals() {
@@ -604,6 +607,16 @@ mod tests {
         assert!(
             SubmitMetadata { problem_id: 1, language: "cpp".into() }
                 .validate("main.cpp", Bytes::from_static(&[0xff, 0xfe]))
+                .is_err()
+        );
+        assert!(
+            SubmitMetadata { problem_id: 1, language: "cpp".into() }
+                .validate("main.cpp", Bytes::from(vec![b'a'; MAX_SOURCE_BYTES]))
+                .is_ok()
+        );
+        assert!(
+            SubmitMetadata { problem_id: 1, language: "cpp".into() }
+                .validate("main.cpp", Bytes::from(vec![b'a'; MAX_SOURCE_BYTES + 1]))
                 .is_err()
         );
     }

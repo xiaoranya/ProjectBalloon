@@ -556,7 +556,7 @@ impl ProblemService {
             self.download_attachment_reference(problem_id, attachment_id, actor).await?;
         let content = storage
             .backend()
-            .get(storage.problem_bucket(), &reference.object_key)
+            .get_limited(storage.problem_bucket(), &reference.object_key, 20 * 1024 * 1024)
             .await
             .map_err(|error| AppError::internal("download problem attachment object", error))?;
         Ok(AttachmentDownload {
@@ -1117,7 +1117,7 @@ async fn testdata_download_body(
 ) -> Result<Body, AppError> {
     let stream = storage
         .backend()
-        .get_stream(storage.problem_bucket(), object_key)
+        .get_stream_limited(storage.problem_bucket(), object_key, 256 * 1024 * 1024)
         .await
         .map_err(|error| AppError::internal("stream problem test data", error))?;
     // The hasher, expected digest, and logging key travel through the unfold

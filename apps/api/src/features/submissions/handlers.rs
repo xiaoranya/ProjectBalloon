@@ -750,7 +750,7 @@ pub async fn download_export_task(
     })?;
     let stream = required_storage(&state)?
         .backend()
-        .get_stream(bucket, key)
+        .get_stream_limited(bucket, key, 2 * 1024 * 1024 * 1024)
         .await
         .map_err(|error| AppError::internal("download export task output", error))?;
     let (suffix, content_type) = if task.kind == "METADATA_CSV" {
