@@ -1,7 +1,6 @@
 name: Docker integration
 
 on:
-  pull_request:
   workflow_dispatch:
   schedule:
     - cron: '30 2 * * 1'

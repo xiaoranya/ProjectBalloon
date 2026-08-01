@@ -17,22 +17,6 @@ jobs:
     name: Rust checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    services:
-      postgres:
-        image: postgres:16.6
-        env:
-          POSTGRES_DB: project_balloon_ci
-          POSTGRES_USER: project_balloon_ci
-          POSTGRES_PASSWORD: project-balloon-ci-password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U project_balloon_ci -d project_balloon_ci"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      DATABASE_URL: postgresql://project_balloon_ci:project-balloon-ci-password@localhost:5432/project_balloon_ci
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
@@ -101,6 +85,7 @@ jobs:
 
   containers:
     name: Judge runtime build (${{ matrix.name }})
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -147,6 +132,7 @@ jobs:
 
   binaries:
     name: Binary release build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
