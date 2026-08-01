@@ -32,7 +32,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y cups-client cups-filters
-          test -x "$(command -v cupsfilter)"
+          echo /usr/sbin >> "$GITHUB_PATH"
+          export PATH="/usr/sbin:$PATH"
+          test -x /usr/sbin/cupsfilter
           test -f /usr/share/ppd/cupsfilters/Generic-PDF_Printer-PDF.ppd
       - name: Build Judge Runtime images
         run: scripts/build-judge-runtimes.sh
