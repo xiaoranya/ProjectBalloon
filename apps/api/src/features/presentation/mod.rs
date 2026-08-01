@@ -350,8 +350,10 @@ impl PresentationService {
         }
         let command = sqlx::query_as::<_, (i64, String)>("SELECT id,target_view FROM screen_commands WHERE screen_instance_id=$1 AND acknowledged_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 1 FOR UPDATE")
             .bind(instance).fetch_optional(&mut *tx).await.map_err(|error| AppError::internal("load screen command", error))?;
-        sqlx::query("UPDATE screen_commands SET acknowledged_at=now() WHERE screen_instance_id=$1 AND acknowledged_at IS NULL")
-            .bind(instance).execute(&mut *tx).await.map_err(|error| AppError::internal("acknowledge screen commands", error))?;
+        if let Some((command_id, _)) = command.as_ref() {
+            sqlx::query("UPDATE screen_commands SET acknowledged_at=now() WHERE id=$1 AND acknowledged_at IS NULL")
+                .bind(command_id).execute(&mut *tx).await.map_err(|error| AppError::internal("acknowledge screen command", error))?;
+        }
         let group_playback = orchestration::playback_for_instance(&mut tx, instance).await?;
         tx.commit().await.map_err(|error| AppError::internal("commit screen heartbeat", error))?;
         Ok(HeartbeatResponse {

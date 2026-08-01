@@ -2,7 +2,7 @@ use std::net::IpAddr;
 
 use project_balloon_domain::{
     ContestExtensionError, ContestSchedule as DomainContestSchedule, ContestTransitionError,
-    extend_contest_end, validate_contest_transition,
+    validate_contest_end_extension, validate_contest_transition,
 };
 use sqlx::{PgPool, Postgres, Transaction};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -531,7 +531,7 @@ impl ContestService {
         require_manage(&mut transaction, contest_id, actor).await?;
         let current = lock_active_contest(&mut transaction, contest_id).await?;
         let status: ContestStatus = current.status.parse()?;
-        let previous_end_at = extend_contest_end(
+        let previous_end_at = validate_contest_end_extension(
             status.domain(),
             current.end_at,
             request.expected_end_at,

@@ -15,6 +15,9 @@ use super::{
 };
 
 const LOGIN_ATTEMPT_LIMIT: i64 = 10;
+const REGISTER_ATTEMPT_LIMIT: i64 = 5;
+const PASSWORD_CHANGE_ATTEMPT_LIMIT: i64 = 10;
+const PROFILE_UPDATE_ATTEMPT_LIMIT: i64 = 30;
 const SESSION_TOKEN_BYTES: usize = 32;
 
 const USER_COLUMNS: &str = r#"
@@ -74,7 +77,7 @@ impl AuthService {
         let username = request.username;
         let password = request.password;
 
-        if self.failed_login_count(&username, &request_ip).await? >= LOGIN_ATTEMPT_LIMIT {
+        if self.failed_login_count(&request_ip).await? >= LOGIN_ATTEMPT_LIMIT {
             return Err(AppError::too_many_requests(
                 "RATE_LIMIT_EXCEEDED",
                 "Too many login attempts; try again later",
@@ -82,10 +85,10 @@ impl AuthService {
         }
 
         let Some(row) = self.load_user_by_username(&username).await? else {
-            password::hash(password)
+            password::verify_dummy(password)
                 .await
-                .map_err(|error| AppError::internal("dummy password hashing failed", error))?;
-            if !self.record_failed_login(&username, &request_ip).await? {
+                .map_err(|error| AppError::internal("dummy password verification failed", error))?;
+            if !self.record_failed_login(&username, &request_ip, LOGIN_ATTEMPT_LIMIT).await? {
                 return Err(rate_limited());
             }
             return Err(invalid_credentials());
@@ -95,7 +98,7 @@ impl AuthService {
             .await
             .map_err(|error| AppError::internal("password verification failed", error))?;
         if !password_matches || !row.enabled {
-            if !self.record_failed_login(&username, &request_ip).await? {
+            if !self.record_failed_login(&username, &request_ip, LOGIN_ATTEMPT_LIMIT).await? {
                 return Err(rate_limited());
             }
             return Err(invalid_credentials());
@@ -144,7 +147,7 @@ impl AuthService {
                 .rollback()
                 .await
                 .map_err(|error| AppError::internal("rollback stale login", error))?;
-            if !self.record_failed_login(&username, &request_ip).await? {
+            if !self.record_failed_login(&username, &request_ip, LOGIN_ATTEMPT_LIMIT).await? {
                 return Err(rate_limited());
             }
             return Err(invalid_credentials());
@@ -192,6 +195,12 @@ impl AuthService {
         request.validate()?;
         let username = request.username.trim().to_owned();
         let display_name = request.display_name.trim().to_owned();
+        let request_ip_text = request_ip.to_string();
+        if self.recent_auth_action_count("auth.register", &request_ip_text).await?
+            >= REGISTER_ATTEMPT_LIMIT
+        {
+            return Err(rate_limited());
+        }
         let password_hash = password::hash(request.password.clone())
             .await
             .map_err(|e| AppError::internal("hash registration password", e))?;
@@ -199,12 +208,17 @@ impl AuthService {
             .bind(&username).bind(password_hash).bind(&display_name).execute(&self.database).await;
         match inserted {
             Ok(_) => {
+                self.record_auth_action("auth.register", &request_ip_text, "success").await?;
                 self.login(LoginRequest { username, password: request.password }, request_ip).await
             }
             Err(sqlx::Error::Database(error)) if error.constraint().is_some() => {
+                self.record_auth_action_failure("auth.register", &request_ip_text).await?;
                 Err(AppError::conflict("USERNAME_TAKEN", "Username is already registered"))
             }
-            Err(error) => Err(AppError::internal("create individual account", error)),
+            Err(error) => {
+                self.record_auth_action_failure("auth.register", &request_ip_text).await?;
+                Err(AppError::internal("create individual account", error))
+            }
         }
     }
 
@@ -279,6 +293,12 @@ impl AuthService {
         request_ip: IpAddr,
     ) -> Result<AuthUser, AppError> {
         request.validate()?;
+        let request_ip_text = request_ip.to_string();
+        if self.recent_auth_action_count("PASSWORD_CHANGE_FAILED", &request_ip_text).await?
+            >= PASSWORD_CHANGE_ATTEMPT_LIMIT
+        {
+            return Err(rate_limited());
+        }
         let stored_hash = sqlx::query_scalar::<_, String>(
             "SELECT password_hash FROM users WHERE id = $1 AND enabled = true",
         )
@@ -292,6 +312,7 @@ impl AuthService {
             .await
             .map_err(|error| AppError::internal("verify current password", error))?;
         if !current_matches {
+            self.record_auth_action_failure("PASSWORD_CHANGE_FAILED", &request_ip_text).await?;
             return Err(AppError::bad_request(
                 "CURRENT_PASSWORD_INVALID",
                 "CURRENT_PASSWORD_INVALID",
@@ -344,7 +365,7 @@ impl AuthService {
             Some(session.user.id),
             "PASSWORD_CHANGED",
             &session.user.id.to_string(),
-            &request_ip.to_string(),
+            &request_ip_text,
             "success",
         )
         .await?;
@@ -365,6 +386,12 @@ impl AuthService {
         request_ip: IpAddr,
     ) -> Result<AuthUser, AppError> {
         let display_name = request.validate()?;
+        let request_ip_text = request_ip.to_string();
+        if self.recent_auth_action_count("PROFILE_UPDATED", &request_ip_text).await?
+            >= PROFILE_UPDATE_ATTEMPT_LIMIT
+        {
+            return Err(rate_limited());
+        }
         let mut transaction = self
             .database
             .begin()
@@ -386,7 +413,7 @@ impl AuthService {
             Some(session.user.id),
             "PROFILE_UPDATED",
             &session.user.id.to_string(),
-            &request_ip.to_string(),
+            &request_ip_text,
             "success",
         )
         .await?;
@@ -436,19 +463,17 @@ impl AuthService {
             .map_err(|error| AppError::internal("load user by ID", error))
     }
 
-    async fn failed_login_count(&self, username: &str, request_ip: &str) -> Result<i64, AppError> {
+    async fn failed_login_count(&self, request_ip: &str) -> Result<i64, AppError> {
         sqlx::query_scalar(
             r#"
             SELECT count(*)
             FROM audit_logs
             WHERE action = 'auth.login'
               AND result = 'failed'
-              AND target_id = $1
-              AND request_ip = $2
+              AND request_ip = $1
               AND created_at > now() - interval '5 minutes'
             "#,
         )
-        .bind(username.to_lowercase())
         .bind(request_ip)
         .fetch_one(&self.database)
         .await
@@ -459,23 +484,23 @@ impl AuthService {
         &self,
         username: &str,
         request_ip: &str,
+        limit: i64,
     ) -> Result<bool, AppError> {
         sqlx::query_scalar(
             r#"
             WITH locked AS (
-                SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))
+                SELECT pg_advisory_xact_lock(hashtext($1))
             ), attempts AS (
                 SELECT count(*) AS count
                 FROM audit_logs, locked
                 WHERE action = 'auth.login'
                   AND result = 'failed'
-                  AND target_id = $1
-                  AND request_ip = $2
+                  AND request_ip = $1
                   AND created_at > now() - interval '5 minutes'
             ), inserted AS (
             INSERT INTO audit_logs
                 (actor_user_id, action, target_type, target_id, request_ip, result)
-            SELECT NULL, 'auth.login', 'user', $1, $2, 'failed'
+            SELECT NULL, 'auth.login', 'user', $2, $1, 'failed'
             FROM attempts
             WHERE count < $3
             RETURNING id
@@ -483,12 +508,53 @@ impl AuthService {
             SELECT EXISTS(SELECT 1 FROM inserted)
             "#,
         )
-        .bind(username.to_lowercase())
         .bind(request_ip)
-        .bind(LOGIN_ATTEMPT_LIMIT)
+        .bind(username.to_lowercase())
+        .bind(limit)
         .fetch_one(&self.database)
         .await
         .map_err(|error| AppError::internal("record failed login", error))
+    }
+
+    async fn recent_auth_action_count(
+        &self,
+        action: &str,
+        request_ip: &str,
+    ) -> Result<i64, AppError> {
+        sqlx::query_scalar(
+            "SELECT count(*) FROM audit_logs WHERE action=$1 AND request_ip=$2 AND created_at > now()-interval '5 minutes'",
+        )
+        .bind(action)
+        .bind(request_ip)
+        .fetch_one(&self.database)
+        .await
+        .map_err(|error| AppError::internal("check authentication action rate limit", error))
+    }
+
+    async fn record_auth_action_failure(
+        &self,
+        action: &str,
+        request_ip: &str,
+    ) -> Result<(), AppError> {
+        self.record_auth_action(action, request_ip, "failed").await
+    }
+
+    async fn record_auth_action(
+        &self,
+        action: &str,
+        request_ip: &str,
+        result: &str,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            "INSERT INTO audit_logs(actor_user_id,action,target_type,target_id,request_ip,result) VALUES(NULL,$1,'user','',$2,$3)",
+        )
+        .bind(action)
+        .bind(request_ip)
+        .bind(result)
+        .execute(&self.database)
+        .await
+        .map(|_| ())
+        .map_err(|error| AppError::internal("record authentication action failure", error))
     }
 
     async fn delete_session(&self, token_hash: &str) -> Result<(), AppError> {

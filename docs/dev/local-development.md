@@ -138,7 +138,7 @@ Important API environment variables:
 
 | Variable | Development default | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `postgres://xcpc:xcpc@127.0.0.1:5432/xcpc` | PostgreSQL connection |
+| `DATABASE_URL` | unset | PostgreSQL connection; set an explicit URL with local credentials |
 | `PROJECT_BALLOON_API_BIND` | `127.0.0.1:8080` | API listening socket |
 | `PROJECT_BALLOON_DATABASE_MAX_CONNECTIONS` | `20` | PostgreSQL pool bound |
 | `PROJECT_BALLOON_DATABASE_ACQUIRE_TIMEOUT_SECONDS` | `5` | Pool backpressure timeout |
@@ -156,7 +156,7 @@ Important API environment variables:
 | `PROJECT_BALLOON_REALTIME_BATCH_SIZE` | `100` | Maximum rows claimed per poll |
 | `PROJECT_BALLOON_REALTIME_MAX_ATTEMPTS` | `8` | Delivery attempts before operator intervention |
 | `PROJECT_BALLOON_REALTIME_REDIS_ENABLED` | `false` | Publish and subscribe SSE fanout through Redis |
-| `REDIS_URL` | `redis://127.0.0.1:6379/` | Redis connection URL; may contain ACL credentials |
+| `REDIS_URL` | unset | Redis connection URL with ACL credentials when enabled |
 | `PROJECT_BALLOON_REALTIME_REDIS_CHANNEL` | `xcpc:realtime:events` | Version-1 realtime Pub/Sub channel |
 | `PROJECT_BALLOON_REALTIME_REDIS_RECONNECT_MILLISECONDS` | `1000` | Initial subscriber reconnect delay; exponentially capped at 30 seconds |
 | `PROJECT_BALLOON_SCOREBOARD_CACHE_ENABLED` | `false` | Cache rendered scoreboard variants in Redis while keeping PostgreSQL authoritative |

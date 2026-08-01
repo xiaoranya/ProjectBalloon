@@ -51,6 +51,19 @@ pub async fn subscribe_staff(
         return Err(AppError::forbidden("FORBIDDEN", "Insufficient permissions"));
     }
     state.contests().get(contest_id, Some(context.user())).await?;
+    if !context.user().has_role("SUPER_ADMIN") {
+        let assigned = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM contest_admin_assignments WHERE contest_id=$1 AND user_id=$2)",
+        )
+        .bind(contest_id)
+        .bind(context.user().id)
+        .fetch_one(state.database())
+        .await
+        .map_err(|error| AppError::internal("check staff contest scope", error))?;
+        if !assigned {
+            return Err(AppError::not_found("CONTEST_NOT_FOUND", "Contest not found"));
+        }
+    }
     Ok(stream_response(state.realtime().subscribe(), contest_id, RealtimeScope::Staff, None))
 }
 

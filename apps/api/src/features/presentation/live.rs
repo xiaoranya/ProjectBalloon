@@ -179,7 +179,7 @@ async fn require_access(
         let raw = token.filter(|value| !value.trim().is_empty()).ok_or_else(|| {
             AppError::unauthorized("BROADCAST_TOKEN_INVALID", "Broadcast token is invalid")
         })?;
-        let changed = sqlx::query("UPDATE broadcast_tokens SET last_used_at=CASE WHEN last_used_at IS NULL OR last_used_at<now()-interval '5 minutes' THEN now() ELSE last_used_at END WHERE contest_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>now()")
+        let changed = sqlx::query("UPDATE broadcast_tokens SET last_used_at=now() WHERE contest_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>now() AND (last_used_at IS NULL OR last_used_at<now()-interval '5 minutes')")
             .bind(contest).bind(hash(raw)).execute(database).await.map_err(|e| AppError::internal("validate broadcast token", e))?.rows_affected();
         if changed != 1 {
             return Err(AppError::unauthorized(

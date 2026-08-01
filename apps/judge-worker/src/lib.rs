@@ -55,8 +55,7 @@ impl WorkerConfig {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("/var/cache/judge"));
         let task_queue = lookup("JUDGE_TASK_QUEUE").unwrap_or_else(|| "judge.tasks".to_owned());
-        let amqp_url = lookup("PROJECT_BALLOON_RABBITMQ_URL")
-            .unwrap_or_else(|| "amqp://guest:guest@127.0.0.1:5672/%2f".to_owned());
+        let amqp_url = lookup("PROJECT_BALLOON_RABBITMQ_URL").unwrap_or_default();
         let task_prefetch = parse_positive(
             "JUDGE_TASK_PREFETCH",
             lookup("JUDGE_TASK_PREFETCH").unwrap_or_else(|| "1".to_owned()),
@@ -77,10 +76,10 @@ impl WorkerConfig {
             .unwrap_or_else(|| "http://127.0.0.1:9000".to_owned());
         let object_storage_region = lookup("PROJECT_BALLOON_OBJECT_STORAGE_REGION")
             .unwrap_or_else(|| "us-east-1".to_owned());
-        let object_storage_access_key = lookup("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY")
-            .unwrap_or_else(|| "minioadmin".to_owned());
-        let object_storage_secret_key = lookup("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY")
-            .unwrap_or_else(|| "minioadmin".to_owned());
+        let object_storage_access_key =
+            lookup("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY").unwrap_or_default();
+        let object_storage_secret_key =
+            lookup("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY").unwrap_or_default();
         let problem_bucket = lookup("PROJECT_BALLOON_OBJECT_STORAGE_PROBLEM_BUCKET")
             .unwrap_or_else(|| "xcpc-problems".to_owned());
         let source_bucket = lookup("PROJECT_BALLOON_OBJECT_STORAGE_SOURCE_BUCKET")
@@ -205,8 +204,14 @@ mod tests {
     use super::{ConfigError, WorkerConfig};
 
     #[test]
-    fn configuration_has_safe_local_defaults() {
-        let config = WorkerConfig::from_lookup(|_| None).expect("defaults must be valid");
+    fn configuration_accepts_explicit_infrastructure_credentials() {
+        let values = HashMap::from([
+            ("PROJECT_BALLOON_RABBITMQ_URL", "amqp://worker:secret@127.0.0.1:5672/%2f".to_owned()),
+            ("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY", "worker-access".to_owned()),
+            ("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY", "worker-secret".to_owned()),
+        ]);
+        let config = WorkerConfig::from_lookup(|name| values.get(name).cloned())
+            .expect("explicit infrastructure credentials must be valid");
 
         assert_eq!(config.worker_id, "worker-local");
         assert_eq!(config.cache_dir.to_string_lossy(), "/var/cache/judge");

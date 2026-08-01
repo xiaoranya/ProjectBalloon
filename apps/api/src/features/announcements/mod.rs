@@ -327,6 +327,7 @@ impl AnnouncementService {
             .map_err(|error| AppError::internal("begin announcement withdrawal", error))?;
         let (contest_id, status, _) = lock_context(&mut tx, id).await?;
         require_manage_tx(&mut tx, contest_id, actor).await?;
+        ensure_open_tx(&mut tx, contest_id).await?;
         if status != "PUBLISHED" {
             return Err(AppError::conflict(
                 "ANNOUNCEMENT_NOT_PUBLISHED",

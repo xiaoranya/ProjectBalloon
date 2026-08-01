@@ -272,7 +272,7 @@ impl CupsDeliveryRunner {
                     warn!(print_request_id = request.id, %error, "failed to persist CUPS cancellation");
                 }
             }
-            Err(error) => self.defer(request.id, &error).await,
+            Err(error) => self.defer(request.id, request.delivery_attempts, &error).await,
         }
     }
 
@@ -290,7 +290,8 @@ impl CupsDeliveryRunner {
                 return;
             }
             Err(error) => {
-                self.fail_delivery(request, &format!("download print PDF: {error}")).await;
+                warn!(print_request_id = request.id, %error, "failed to download print PDF");
+                self.fail_delivery(request, "Print PDF is temporarily unavailable").await;
                 return;
             }
         };
@@ -327,7 +328,9 @@ impl CupsDeliveryRunner {
             return;
         };
         match self.gateway.status(job_id).await {
-            Ok(CupsJobStatus::Pending) => self.defer(request.id, "").await,
+            Ok(CupsJobStatus::Pending) => {
+                self.defer(request.id, request.delivery_attempts, "").await
+            }
             Ok(CupsJobStatus::Completed) => {
                 if let Err(error) = self.mark_completed(request).await {
                     warn!(print_request_id = request.id, %error, "failed to complete print request");
@@ -341,10 +344,15 @@ impl CupsDeliveryRunner {
                 if expired {
                     self.fail_internal(request, "CUPS job disappeared before completion").await;
                 } else {
-                    self.defer(request.id, "CUPS job is temporarily unknown").await;
+                    self.defer(
+                        request.id,
+                        request.delivery_attempts,
+                        "CUPS job is temporarily unknown",
+                    )
+                    .await;
                 }
             }
-            Err(error) => self.defer(request.id, &error).await,
+            Err(error) => self.defer(request.id, request.delivery_attempts, &error).await,
         }
     }
 
@@ -361,6 +369,7 @@ impl CupsDeliveryRunner {
     async fn fail_delivery(&self, request: &ClaimedPrintRequest, message: &str) {
         let message = sanitize_error(message);
         let terminal = request.delivery_attempts >= MAX_DELIVERY_ATTEMPTS;
+        let delay_seconds = delivery_retry_delay(request.delivery_attempts);
         let mut tx = match self.database.begin().await {
             Ok(tx) => tx,
             Err(error) => {
@@ -368,8 +377,8 @@ impl CupsDeliveryRunner {
                 return;
             }
         };
-        let result = sqlx::query("UPDATE print_requests SET status = CASE WHEN $3 THEN 'FAILED' ELSE 'QUEUED' END, failed_reason = CASE WHEN $3 THEN $4 ELSE NULL END, last_delivery_error = $4, delivery_lease_owner = NULL, delivery_lease_until = NULL, updated_at = now(), version = version + 1 WHERE id = $1 AND delivery_lease_owner = $2")
-            .bind(request.id).bind(self.instance_id).bind(terminal).bind(&message)
+        let result = sqlx::query("UPDATE print_requests SET status = CASE WHEN $3 THEN 'FAILED' ELSE 'QUEUED' END, failed_reason = CASE WHEN $3 THEN $4 ELSE NULL END, last_delivery_error = $4, delivery_lease_owner = NULL, delivery_lease_until = CASE WHEN $3 THEN NULL ELSE now() + make_interval(secs => $5) END, updated_at = now(), version = version + 1 WHERE id = $1 AND delivery_lease_owner = $2")
+            .bind(request.id).bind(self.instance_id).bind(terminal).bind(&message).bind(delay_seconds)
             .execute(&mut *tx).await;
         match result {
             Ok(result) if result.rows_affected() == 1 => {
@@ -420,15 +429,23 @@ impl CupsDeliveryRunner {
         }
     }
 
-    async fn defer(&self, id: i64, message: &str) {
+    async fn defer(&self, id: i64, attempts: i32, message: &str) {
         let message = (!message.is_empty()).then(|| sanitize_error(message));
+        let delay_seconds = delivery_retry_delay(attempts);
         if let Err(error) = sqlx::query("UPDATE print_requests SET delivery_lease_until = now() + make_interval(secs => $3), last_delivery_error = COALESCE($4, last_delivery_error), updated_at = now() WHERE id = $1 AND delivery_lease_owner = $2")
-            .bind(id).bind(self.instance_id).bind(MONITOR_DELAY_SECONDS).bind(message)
+            .bind(id).bind(self.instance_id).bind(delay_seconds).bind(message)
             .execute(&self.database).await
         {
             warn!(print_request_id = id, %error, "failed to defer print delivery");
         }
     }
+}
+
+fn delivery_retry_delay(attempts: i32) -> i32 {
+    let exponent = u32::try_from(attempts.saturating_sub(1)).unwrap_or(0).min(6);
+    i32::try_from(u64::try_from(MONITOR_DELAY_SECONDS.max(1)).unwrap_or(1) * 2_u64.pow(exponent))
+        .unwrap_or(i32::MAX)
+        .min(300)
 }
 
 async fn insert_events(

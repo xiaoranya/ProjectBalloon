@@ -10,6 +10,7 @@ use utoipa::ToSchema;
 use crate::{
     error::AppError,
     features::auth::{AuthContext, SuperAdminContext},
+    features::problems::render_safe_statement,
     pagination::PageResponse,
     state::AppState,
 };
@@ -189,7 +190,10 @@ pub async fn list_bank(
     let (size, offset) = validate_page(&query)?;
     let tag = query.tag.as_deref().map(str::trim).filter(|v| !v.is_empty());
     let total = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM problem_bank_entries WHERE visibility='PUBLIC' AND ($1::text IS NULL OR tags::jsonb ? $1) AND ($2::smallint IS NULL OR difficulty=$2)").bind(tag).bind(query.difficulty).fetch_one(state.database()).await.map_err(|e| AppError::internal("count public problem bank", e))?;
-    let rows = sqlx::query_as::<_, BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.deleted_at IS NULL AND b.visibility='PUBLIC' AND ($1::text IS NULL OR b.tags::jsonb ? $1) AND ($2::smallint IS NULL OR b.difficulty=$2) ORDER BY b.published_at DESC,b.problem_id DESC LIMIT $3 OFFSET $4").bind(tag).bind(query.difficulty).bind(size).bind(offset).fetch_all(state.database()).await.map_err(|e| AppError::internal("list public problem bank", e))?;
+    let mut rows = sqlx::query_as::<_, BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.deleted_at IS NULL AND b.visibility='PUBLIC' AND ($1::text IS NULL OR b.tags::jsonb ? $1) AND ($2::smallint IS NULL OR b.difficulty=$2) ORDER BY b.published_at DESC,b.problem_id DESC LIMIT $3 OFFSET $4").bind(tag).bind(query.difficulty).bind(size).bind(offset).fetch_all(state.database()).await.map_err(|e| AppError::internal("list public problem bank", e))?;
+    for row in &mut rows {
+        row.statement = row.statement.take().map(|statement| render_safe_statement(&statement));
+    }
     Ok(Json(PageResponse::new(rows, query.page, query.size, total)))
 }
 
@@ -198,7 +202,8 @@ pub async fn get_bank(
     State(state): State<AppState>,
     Path(slug): Path<String>,
 ) -> Result<Json<BankProblem>, AppError> {
-    let row = sqlx::query_as::<_, BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.slug=$1 AND p.deleted_at IS NULL AND b.visibility='PUBLIC'").bind(slug).fetch_optional(state.database()).await.map_err(|e| AppError::internal("get public problem bank problem", e))?.ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem is not public"))?;
+    let mut row = sqlx::query_as::<_, BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.slug=$1 AND p.deleted_at IS NULL AND b.visibility='PUBLIC'").bind(slug).fetch_optional(state.database()).await.map_err(|e| AppError::internal("get public problem bank problem", e))?.ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem is not public"))?;
+    row.statement = row.statement.take().map(|statement| render_safe_statement(&statement));
     Ok(Json(row))
 }
 

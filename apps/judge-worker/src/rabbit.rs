@@ -165,7 +165,9 @@ impl RabbitJudgeWorker {
                 changed = shutdown.changed() => {
                     if changed.is_err() || *shutdown.borrow() {
                         info!(active_tasks = in_flight.len(), "stopped accepting Judge tasks; draining in-flight work");
-                        return drain_in_flight(&mut in_flight).await;
+                        return timeout(Duration::from_secs(60), drain_in_flight(&mut in_flight))
+                            .await
+                            .map_err(|_| "timed out draining in-flight Judge tasks".to_owned())?;
                     }
                 }
             }
@@ -254,9 +256,8 @@ async fn process_delivery(
         .await;
     }
 
-    let activity_guard = activity.begin_task();
+    let _activity_guard = activity.begin_task();
     let handled = handler.handle(task.clone(), retry_count(delivery)).await;
-    drop(activity_guard);
     match handled {
         Ok(result) => {
             if let Err(reason) = validate_handler_result(&task, &result) {

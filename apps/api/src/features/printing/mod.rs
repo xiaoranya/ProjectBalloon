@@ -165,8 +165,9 @@ impl PrintingService {
                 "Only a team can request printing",
             ));
         }
-        let pdf = render_pdf(&command.content).await?;
         let (team_id, _, _) = resolve_team(&self.database, contest_id, actor.id).await?;
+        check_print_quota(&self.database, contest_id, team_id).await?;
+        let pdf = render_pdf(&command.content).await?;
         let object_key = format!("prints/{contest_id}/{team_id}/{}.pdf", Uuid::new_v4());
         storage
             .backend()
@@ -451,6 +452,34 @@ async fn load(database: &PgPool, id: i64) -> Result<PrintRequestResponse, AppErr
         .await
         .map_err(|error| AppError::internal("load print request", error))?
         .ok_or_else(print_not_found)
+}
+
+async fn check_print_quota(
+    database: &PgPool,
+    contest_id: i64,
+    team_id: i64,
+) -> Result<(), AppError> {
+    let (recent, total) = sqlx::query_as::<_, (bool, i64)>(
+        "SELECT EXISTS (SELECT 1 FROM print_requests WHERE contest_id=$1 AND team_id=$2 AND created_at > now()-interval '10 minutes'), (SELECT count(*) FROM print_requests WHERE contest_id=$1 AND team_id=$2)",
+    )
+    .bind(contest_id)
+    .bind(team_id)
+    .fetch_one(database)
+    .await
+    .map_err(|error| AppError::internal("check print quota before rendering", error))?;
+    if recent {
+        return Err(AppError::too_many_requests(
+            "PRINTING_RATE_LIMITED",
+            "A team may print once every ten minutes",
+        ));
+    }
+    if total >= 20 {
+        return Err(AppError::conflict(
+            "PRINTING_QUOTA_EXCEEDED",
+            "A team may print at most 20 times per contest",
+        ));
+    }
+    Ok(())
 }
 
 fn estimate_pages(content: &str) -> usize {

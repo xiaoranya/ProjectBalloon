@@ -70,9 +70,16 @@ impl SubmissionOutboxDispatcher {
         let count = claimed.len();
         for row in claimed {
             match self.publisher.publish(row.judgement_id, row.payload.as_bytes()).await {
-                Ok(()) => self.mark_sent(row.id).await?,
+                Ok(()) => {
+                    if let Err(error) = self.mark_sent(row.id).await {
+                        error!(outbox_id = row.id, %error, "failed to mark judge task sent; continuing dispatch batch");
+                    }
+                }
                 Err(publish_error) => {
-                    self.mark_failed(row.id, row.attempts, &publish_error).await?;
+                    if let Err(error) = self.mark_failed(row.id, row.attempts, &publish_error).await
+                    {
+                        error!(outbox_id = row.id, %error, "failed to mark judge task failed; continuing dispatch batch");
+                    }
                 }
             }
         }

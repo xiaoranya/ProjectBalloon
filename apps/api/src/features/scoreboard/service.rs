@@ -237,7 +237,15 @@ impl ScoreboardService {
         {
             return Ok(board);
         }
-        let roster = self.load_roster(contest_id, &query).await?;
+        // Load the complete roster before applying the requested view filter.
+        // First-blood is a contest-wide fact and must not be recomputed from a
+        // filtered subset of teams.
+        let roster = self
+            .load_roster(
+                contest_id,
+                &ValidatedScoreboardQuery { group_name: None, participation_type: None },
+            )
+            .await?;
         let problems = sqlx::query_as::<_, ScoreboardProblem>(
             r#"
             SELECT problem_id, alias, display_order
@@ -264,7 +272,7 @@ impl ScoreboardService {
         } else {
             self.load_live_cells(contest_id).await?
         };
-        let board = assemble(
+        let mut board = assemble(
             contest_id,
             variant,
             frozen,
@@ -275,6 +283,7 @@ impl ScoreboardService {
             roster,
             cells,
         );
+        apply_scoreboard_filter(&mut board, &query);
         if let Some(cache) = &self.cache {
             cache.put(contest.scoreboard_revision, phase, &query, &board).await;
         }
@@ -364,6 +373,27 @@ impl ScoreboardService {
     }
 }
 
+fn apply_scoreboard_filter(board: &mut ScoreboardResponse, query: &ValidatedScoreboardQuery) {
+    board.rows.retain(|row| {
+        query.group_name.as_ref().is_none_or(|group| row.group_name.as_ref() == Some(group))
+            && query
+                .participation_type
+                .as_ref()
+                .is_none_or(|participation| &row.participation_type == participation)
+    });
+    board.rows.sort_by(|left, right| compare_rows(&board.scoring_mode, left, right));
+    let mut official_rank = 0_u32;
+    for (index, row) in board.rows.iter_mut().enumerate() {
+        row.rank = u32::try_from(index + 1).unwrap_or(u32::MAX);
+        row.official_rank = if row.participation_type == "OFFICIAL" {
+            official_rank = official_rank.saturating_add(1);
+            Some(official_rank)
+        } else {
+            None
+        };
+    }
+}
+
 fn score_submissions(
     start_at: OffsetDateTime,
     scoring_mode: &str,
@@ -400,7 +430,7 @@ fn score_submissions(
             cell.solved = true;
             cell.solved_at = Some(submission.submitted_at);
             cell.penalty_minutes = elapsed_minutes + 20 * i64::from(cell.wrong_attempts);
-            cell.score_milli = 100_000;
+            cell.score_milli = submission.max_score_milli;
         } else if is_penalized_rejection(&submission.verdict) {
             cell.wrong_attempts = cell.wrong_attempts.saturating_add(1);
         }
@@ -631,7 +661,10 @@ mod tests {
         scoreboard::{ScoreboardCache, projection::rebuild_cell},
     };
 
-    use super::{ScoreboardService, ValidatedScoreboardQuery, ValidatedSnapshotSelector, to_csv};
+    use super::{
+        ScoreboardService, SubmissionScoreRow, ValidatedScoreboardQuery, ValidatedSnapshotSelector,
+        score_submissions, to_csv,
+    };
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
@@ -950,6 +983,26 @@ mod tests {
                 "Renamed Official Team"
             );
         }
+    }
+
+    #[test]
+    fn icpc_frozen_score_uses_the_assigned_problem_maximum() {
+        let start = OffsetDateTime::UNIX_EPOCH;
+        let cells = score_submissions(
+            start,
+            "ICPC",
+            "BEST",
+            vec![SubmissionScoreRow {
+                submission_id: 1,
+                team_id: 7,
+                problem_id: 10,
+                submitted_at: start + Duration::minutes(5),
+                verdict: "ACCEPTED".to_owned(),
+                score_milli: 100_000,
+                max_score_milli: 250_000,
+            }],
+        );
+        assert_eq!(cells[0].score_milli, 250_000);
     }
 
     #[test]

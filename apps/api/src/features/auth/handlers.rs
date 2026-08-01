@@ -103,7 +103,7 @@ pub async fn logout(
     jar: CookieJar,
 ) -> Result<(CookieJar, StatusCode), AppError> {
     state.auth().logout(&context.session().token_hash).await?;
-    Ok((jar.remove(expired_session_cookie()), StatusCode::NO_CONTENT))
+    Ok((jar.remove(expired_session_cookie(state.auth().secure_cookies())), StatusCode::NO_CONTENT))
 }
 
 #[utoipa::path(
@@ -171,10 +171,11 @@ fn session_cookie(token: String, ttl: StdDuration, secure: bool) -> Cookie<'stat
         .build()
 }
 
-fn expired_session_cookie() -> Cookie<'static> {
+fn expired_session_cookie(secure: bool) -> Cookie<'static> {
     Cookie::build((SESSION_COOKIE_NAME, ""))
         .path("/")
         .http_only(true)
+        .secure(secure)
         .same_site(SameSite::Lax)
         .max_age(cookie_duration(0))
         .build()

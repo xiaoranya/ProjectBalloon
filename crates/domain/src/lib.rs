@@ -119,7 +119,7 @@ pub fn validate_contest_transition(
     Ok(())
 }
 
-pub fn extend_contest_end(
+pub fn validate_contest_end_extension(
     state: ContestState,
     current_end: Option<time::OffsetDateTime>,
     expected_end: time::OffsetDateTime,
@@ -204,7 +204,7 @@ pub enum ContestExtensionError {
 mod tests {
     use super::{
         ContestExtensionError, ContestId, ContestSchedule, ContestState, ContestTransitionError,
-        SubmissionState, extend_contest_end, validate_contest_transition,
+        SubmissionState, validate_contest_end_extension, validate_contest_transition,
     };
     use time::{Duration, OffsetDateTime};
 
@@ -258,7 +258,7 @@ mod tests {
     fn extension_uses_expected_end_as_concurrency_guard() {
         let end = OffsetDateTime::UNIX_EPOCH + Duration::HOUR;
         assert_eq!(
-            extend_contest_end(
+            validate_contest_end_extension(
                 ContestState::Running,
                 Some(end),
                 end - Duration::SECOND,
@@ -267,11 +267,21 @@ mod tests {
             Err(ContestExtensionError::Stale)
         );
         assert_eq!(
-            extend_contest_end(ContestState::Draft, Some(end), end, end + Duration::HOUR,),
+            validate_contest_end_extension(
+                ContestState::Draft,
+                Some(end),
+                end,
+                end + Duration::HOUR,
+            ),
             Err(ContestExtensionError::InvalidState(ContestState::Draft))
         );
         assert_eq!(
-            extend_contest_end(ContestState::Paused, Some(end), end, end + Duration::HOUR,),
+            validate_contest_end_extension(
+                ContestState::Paused,
+                Some(end),
+                end,
+                end + Duration::HOUR,
+            ),
             Ok(end)
         );
     }

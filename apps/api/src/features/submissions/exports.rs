@@ -25,6 +25,7 @@ const MAX_SYNC_SOURCE_BYTES: i64 = 128 * 1024 * 1024;
 // count the same way the synchronous source export is capped. Larger exports
 // should use the async export-task path, which streams to a temp file.
 const MAX_SYNC_METADATA_ROWS: i64 = 10_000;
+const MAX_ASYNC_SOURCE_BYTES: i64 = 2 * 1024 * 1024 * 1024;
 
 #[derive(sqlx::FromRow)]
 struct ExportRow {
@@ -178,6 +179,15 @@ async fn build_sources_archive_file(
     storage: &ObjectStorageHandle,
     path: PathBuf,
 ) -> Result<(), AppError> {
+    let expected_bytes = rows
+        .iter()
+        .try_fold(0_i64, |total, row| total.checked_add(i64::from(row.source_size_bytes)));
+    if expected_bytes.is_none_or(|bytes| bytes > MAX_ASYNC_SOURCE_BYTES) {
+        return Err(AppError::conflict(
+            "SOURCE_EXPORT_TOO_LARGE",
+            "Async source export is limited to 2 GiB",
+        ));
+    }
     let file = OpenOptions::new()
         .write(true)
         .create_new(true)

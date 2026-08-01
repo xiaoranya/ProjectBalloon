@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
 use sha2::Digest;
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::{
     error::AppError,
@@ -118,9 +121,8 @@ impl SimilarityPairQuery {
         {
             return Err(AppError::validation("language", "must be c, cpp, java, or python"));
         }
-        let max_distance =
-            64 - i32::try_from((self.min_similarity_percent * 64) / 100).unwrap_or(64);
-        Ok((self.problem_id, language.filter(|value| !value.is_empty()), max_distance))
+        let min_similarity_percent = i32::try_from(self.min_similarity_percent).unwrap_or(100);
+        Ok((self.problem_id, language.filter(|value| !value.is_empty()), min_similarity_percent))
     }
 }
 
@@ -214,7 +216,7 @@ impl SubmissionService {
         query: SimilarityPairQuery,
     ) -> Result<Vec<SimilarityPairResponse>, AppError> {
         require_admin_access(&self.database, contest_id, actor).await?;
-        let (problem_id, language, max_distance) = query.validate()?;
+        let (problem_id, language, min_similarity_percent) = query.validate()?;
         sqlx::query_as::<_, SimilarityPairResponse>(
             r#"
             WITH pairs AS (
@@ -238,7 +240,7 @@ impl SubmissionService {
                    other_submission_id, other_team_id, hamming_distance,
                    round((100.0 * (64 - hamming_distance) / 64.0))::int AS similarity_percent
             FROM pairs
-            WHERE hamming_distance <= $4
+            WHERE round((100.0 * (64 - hamming_distance) / 64.0)) >= $4
             ORDER BY hamming_distance, problem_id, language, submission_id, other_submission_id
             LIMIT 1000
             "#,
@@ -246,7 +248,7 @@ impl SubmissionService {
         .bind(contest_id)
         .bind(problem_id)
         .bind(language)
-        .bind(max_distance)
+        .bind(min_similarity_percent)
         .fetch_all(&self.database)
         .await
         .map_err(|error| AppError::internal("list submission similarity pairs", error))
@@ -561,37 +563,69 @@ async fn detail(
     .fetch_all(database)
     .await
     .map_err(|error| AppError::internal("load submission judgements", error))?;
-    for judgement in &mut judgements {
-        judgement.compile_log = safe_text(judgement.compile_log.take(), 65_536);
-        let mut runs = sqlx::query_as::<_, RunDetail>(
-            r#"
-            SELECT test_index, verdict, time_ms, memory_kb, exit_code, stderr_tail
-            FROM runs
-            WHERE judgement_id = $1
-            ORDER BY test_index
-            "#,
+    let judgement_ids: Vec<Uuid> = judgements.iter().map(|judgement| judgement.id).collect();
+    let mut runs_by_judgement = HashMap::<Uuid, Vec<RunDetail>>::new();
+    let mut scores_by_judgement = HashMap::<Uuid, Vec<JudgementSubtaskScore>>::new();
+    if !judgement_ids.is_empty() {
+        let runs = sqlx::query_as::<_, (Uuid, i32, Option<String>, Option<i32>, Option<i32>, Option<i32>, Option<String>)>(
+            "SELECT judgement_id, test_index, verdict, time_ms, memory_kb, exit_code, stderr_tail FROM runs WHERE judgement_id = ANY($1) ORDER BY judgement_id, test_index",
         )
-        .bind(judgement.id)
+        .bind(&judgement_ids)
         .fetch_all(database)
         .await
-        .map_err(|error| AppError::internal("load judgement runs", error))?;
+        .map_err(|error| AppError::internal("load submission runs", error))?;
+        for (judgement_id, test_index, verdict, time_ms, memory_kb, exit_code, stderr_tail) in runs
+        {
+            runs_by_judgement.entry(judgement_id).or_default().push(RunDetail {
+                test_index,
+                verdict,
+                time_ms,
+                memory_kb,
+                exit_code,
+                stderr_tail,
+            });
+        }
+        let scores = sqlx::query_as::<_, (Uuid, String, String, i32, i32, i32, i32)>(
+            r#"SELECT score.judgement_id, subtask.subtask_key, subtask.name,
+                      score.score_milli, subtask.score_milli AS max_score_milli,
+                      score.passed_tests, score.total_tests
+               FROM judgement_subtask_scores score
+               JOIN contest_problem_subtasks subtask ON subtask.id=score.subtask_id
+               WHERE score.judgement_id = ANY($1)
+               ORDER BY score.judgement_id, subtask.display_order"#,
+        )
+        .bind(&judgement_ids)
+        .fetch_all(database)
+        .await
+        .map_err(|error| AppError::internal("load submission subtask scores", error))?;
+        for (
+            judgement_id,
+            subtask_key,
+            name,
+            score_milli,
+            max_score_milli,
+            passed_tests,
+            total_tests,
+        ) in scores
+        {
+            scores_by_judgement.entry(judgement_id).or_default().push(JudgementSubtaskScore {
+                subtask_key,
+                name,
+                score_milli,
+                max_score_milli,
+                passed_tests,
+                total_tests,
+            });
+        }
+    }
+    for judgement in &mut judgements {
+        judgement.compile_log = safe_text(judgement.compile_log.take(), 65_536);
+        let mut runs = runs_by_judgement.remove(&judgement.id).unwrap_or_default();
         for run in &mut runs {
             run.stderr_tail = safe_text(run.stderr_tail.take(), 8_192);
         }
         judgement.runs = runs;
-        judgement.subtask_scores = sqlx::query_as::<_, JudgementSubtaskScore>(
-            r#"SELECT subtask.subtask_key,subtask.name,score.score_milli,
-                      subtask.score_milli max_score_milli,
-                      score.passed_tests,score.total_tests
-               FROM judgement_subtask_scores score
-               JOIN contest_problem_subtasks subtask ON subtask.id=score.subtask_id
-               WHERE score.judgement_id=$1
-               ORDER BY subtask.display_order"#,
-        )
-        .bind(judgement.id)
-        .fetch_all(database)
-        .await
-        .map_err(|error| AppError::internal("load judgement subtask scores", error))?;
+        judgement.subtask_scores = scores_by_judgement.remove(&judgement.id).unwrap_or_default();
     }
     let mut detail = SubmissionDetail { summary, source, source_sha256, judgements };
     if required_team_id.is_some() {
@@ -683,15 +717,15 @@ mod tests {
     }
 
     #[test]
-    fn similarity_pair_threshold_maps_to_hamming_distance() {
-        let (_, _, max_distance) = SimilarityPairQuery {
+    fn similarity_pair_threshold_matches_displayed_percentage() {
+        let (_, _, min_similarity_percent) = SimilarityPairQuery {
             problem_id: None,
             language: Some("CPP".to_owned()),
             min_similarity_percent: 85,
         }
         .validate()
         .expect("valid pair filters");
-        assert_eq!(max_distance, 10);
+        assert_eq!(min_similarity_percent, 85);
         assert!(
             SimilarityPairQuery { problem_id: None, language: None, min_similarity_percent: 49 }
                 .validate()

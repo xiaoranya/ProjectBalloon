@@ -293,7 +293,10 @@ impl OrchestrationService {
         let mut tx =
             self.database.begin().await.map_err(|e| AppError::internal("begin screen group", e))?;
         ensure_group_name(&mut tx, contest, &request.name, None).await?;
-        let id = sqlx::query_scalar::<_, i64>("INSERT INTO screen_groups(contest_id,name,created_by_user_id) VALUES($1,$2,$3) RETURNING id").bind(contest).bind(&request.name).bind(actor.id).fetch_one(&mut *tx).await.map_err(|e| AppError::internal("create screen group", e))?;
+        let id = sqlx::query_scalar::<_, i64>("INSERT INTO screen_groups(contest_id,name,created_by_user_id) VALUES($1,$2,$3) RETURNING id").bind(contest).bind(&request.name).bind(actor.id).fetch_one(&mut *tx).await.map_err(|e| match e {
+            sqlx::Error::Database(db) if db.constraint() == Some("screen_groups_contest_id_name_key") => conflict("SCREEN_GROUP_NAME_TAKEN", "Screen group name is already used"),
+            other => AppError::internal("create screen group", other),
+        })?;
         replace_members(&mut tx, id, contest, &request.instance_ids).await?;
         audit(&mut tx, actor.id, "SCREEN_GROUP_CREATED", "SCREEN_GROUP", id, ip).await?;
         tx.commit().await.map_err(|e| AppError::internal("commit screen group", e))?;

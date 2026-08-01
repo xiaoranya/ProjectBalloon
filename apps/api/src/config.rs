@@ -4,7 +4,7 @@ use ipnet::IpNet;
 use thiserror::Error;
 
 const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1:8080";
-const DEFAULT_DATABASE_URL: &str = "postgres://xcpc:xcpc@127.0.0.1:5432/xcpc";
+const DEFAULT_DATABASE_URL: &str = "postgres://127.0.0.1:5432/xcpc";
 const DEFAULT_DATABASE_MAX_CONNECTIONS: u32 = 20;
 const DEFAULT_DATABASE_ACQUIRE_TIMEOUT_SECONDS: u64 = 5;
 const DEFAULT_READINESS_TIMEOUT_MILLISECONDS: u64 = 1_000;
@@ -16,7 +16,6 @@ const DEFAULT_REALTIME_LEASE_SECONDS: u64 = 30;
 const DEFAULT_REALTIME_RETRY_BASE_MILLISECONDS: u64 = 1_000;
 const DEFAULT_REALTIME_BATCH_SIZE: i64 = 100;
 const DEFAULT_REALTIME_MAX_ATTEMPTS: i32 = 8;
-const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379/";
 const DEFAULT_REALTIME_REDIS_CHANNEL: &str = "xcpc:realtime:events";
 const DEFAULT_REALTIME_REDIS_RECONNECT_MILLISECONDS: u64 = 1_000;
 const DEFAULT_SCOREBOARD_CACHE_TTL_SECONDS: u64 = 30;
@@ -30,7 +29,6 @@ const DEFAULT_OBJECT_CLEANUP_POLL_MILLISECONDS: u64 = 5_000;
 const DEFAULT_OBJECT_CLEANUP_LEASE_SECONDS: u64 = 30;
 const DEFAULT_OBJECT_CLEANUP_RETRY_BASE_MILLISECONDS: u64 = 1_000;
 const DEFAULT_OBJECT_CLEANUP_BATCH_SIZE: i64 = 50;
-const DEFAULT_RABBITMQ_URL: &str = "amqp://guest:guest@127.0.0.1:5672/%2f";
 const DEFAULT_JUDGE_DISPATCH_POLL_MILLISECONDS: u64 = 500;
 const DEFAULT_JUDGE_DISPATCH_LEASE_SECONDS: u64 = 30;
 const DEFAULT_JUDGE_DISPATCH_RETRY_BASE_MILLISECONDS: u64 = 1_000;
@@ -275,7 +273,7 @@ impl AppConfig {
             lookup("PROJECT_BALLOON_SCOREBOARD_CACHE_TIMEOUT_MILLISECONDS")
                 .unwrap_or_else(|| DEFAULT_SCOREBOARD_CACHE_TIMEOUT_MILLISECONDS.to_string()),
         )?;
-        let redis_url = lookup("REDIS_URL").unwrap_or_else(|| DEFAULT_REDIS_URL.to_owned());
+        let redis_url = lookup("REDIS_URL").unwrap_or_default();
         if (realtime_redis_enabled || scoreboard_cache_enabled) && redis_url.trim().is_empty() {
             return Err(ConfigError::Invalid {
                 name: "REDIS_URL",
@@ -372,8 +370,7 @@ impl AppConfig {
             "PROJECT_BALLOON_RABBITMQ_ENABLED",
             lookup("PROJECT_BALLOON_RABBITMQ_ENABLED").unwrap_or_else(|| "false".to_owned()),
         )?;
-        let rabbitmq_url = lookup("PROJECT_BALLOON_RABBITMQ_URL")
-            .unwrap_or_else(|| DEFAULT_RABBITMQ_URL.to_owned());
+        let rabbitmq_url = lookup("PROJECT_BALLOON_RABBITMQ_URL").unwrap_or_default();
         if rabbitmq_enabled
             && (!rabbitmq_url.starts_with("amqp://") && !rabbitmq_url.starts_with("amqps://"))
         {

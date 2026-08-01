@@ -1,4 +1,5 @@
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use std::sync::OnceLock;
 use thiserror::Error;
 use tokio::sync::Semaphore;
 
@@ -33,6 +34,10 @@ pub async fn verify(password: String, encoded: String) -> Result<bool, PasswordE
     tokio::task::spawn_blocking(move || verify_blocking(&password, &encoded)).await?
 }
 
+pub async fn verify_dummy(password: String) -> Result<bool, PasswordError> {
+    verify(password, dummy_argon_hash().to_owned()).await
+}
+
 #[must_use]
 pub fn needs_upgrade(encoded: &str) -> bool {
     !encoded.starts_with("$argon2id$")
@@ -50,10 +55,27 @@ fn hash_blocking(password: &str) -> Result<String, PasswordError> {
 
 fn verify_blocking(password: &str, encoded: &str) -> Result<bool, PasswordError> {
     if encoded.starts_with("$2") {
-        return bcrypt::verify(password, encoded).map_err(|_| PasswordError::InvalidHash);
+        let matches = bcrypt::verify(password, encoded).map_err(|_| PasswordError::InvalidHash)?;
+        let dummy =
+            PasswordHash::new(dummy_argon_hash()).map_err(|_| PasswordError::InvalidHash)?;
+        let _ = Argon2::default().verify_password(password.as_bytes(), &dummy);
+        return Ok(matches);
     }
     let parsed = PasswordHash::new(encoded).map_err(|_| PasswordError::InvalidHash)?;
-    Ok(Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok())
+    let matches = Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok();
+    let _ = bcrypt::verify(password, dummy_bcrypt_hash());
+    Ok(matches)
+}
+
+fn dummy_argon_hash() -> &'static str {
+    static HASH: OnceLock<String> = OnceLock::new();
+    HASH.get_or_init(|| hash_blocking("project-balloon-dummy-password").expect("dummy hash"))
+        .as_str()
+}
+
+fn dummy_bcrypt_hash() -> &'static str {
+    static HASH: OnceLock<String> = OnceLock::new();
+    HASH.get_or_init(|| bcrypt::hash("project-balloon-dummy-password", 4).expect("dummy hash"))
 }
 
 #[cfg(test)]

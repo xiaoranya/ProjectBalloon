@@ -37,6 +37,11 @@ async fn main() -> Result<()> {
             "using development CSRF secret; set PROJECT_BALLOON_CSRF_SECRET before deployment"
         );
     }
+    if !config.secure_cookies {
+        tracing::warn!(
+            "session and CSRF cookies are not Secure; set PROJECT_BALLOON_SECURE_COOKIES=true for HTTPS deployments"
+        );
+    }
 
     let database = PgPoolOptions::new()
         .max_connections(config.database_max_connections)

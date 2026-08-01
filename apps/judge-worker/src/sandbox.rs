@@ -23,6 +23,7 @@ use thiserror::Error;
 use tokio::time::{Instant, timeout};
 
 const MAX_EXEC_LOG_BYTES: usize = 64 * 1024;
+const DOCKER_API_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_TESTDATA_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_TESTDATA_FILES: usize = 10_000;
 const MAX_TESTDATA_EXTRACTED_BYTES: u64 = 512 * 1024 * 1024;
@@ -173,17 +174,22 @@ impl DockerSandbox {
                 task.judge_mode == project_balloon_contracts::JudgeMode::Interactive,
             )
             .await;
-        let cleanup = self
-            .docker
-            .remove_container(
+        let cleanup = match timeout(
+            DOCKER_API_TIMEOUT,
+            self.docker.remove_container(
                 &container_id,
                 Some(RemoveContainerOptionsBuilder::default().force(true).build()),
-            )
-            .await;
+            ),
+        )
+        .await
+        {
+            Ok(result) => result.map_err(|error| SandboxError::Api(error.to_string())),
+            Err(_) => Err(SandboxError::Api("timed out removing sandbox container".to_owned())),
+        };
         match (result, cleanup) {
             (Ok(judgement), Ok(())) => Ok(judgement),
             (Err(error), _) => Err(error),
-            (Ok(_), Err(error)) => Err(SandboxError::Api(error.to_string())),
+            (Ok(_), Err(error)) => Err(error),
         }
     }
 
@@ -296,7 +302,7 @@ impl DockerSandbox {
             let program = language.run_command(task.memory_limit_mb);
             let shell = if interactive {
                 format!(
-                    "export LC_ALL=C; rm -f /work/to_program /work/to_interactor; mkfifo /work/to_program /work/to_interactor; exec 3<>/work/to_program; exec 4<>/work/to_interactor; /work/interactor /work/current.in <&4 >&3 2>/work/interactor.err & interactor_pid=$!; /usr/bin/time --quiet --format '__PROJECT_BALLOON_GNU_TIME__ %U %S %M' {program} <&3 >&4 & program_pid=$!; exec 3>&- 4>&-; wait $program_pid; program_status=$?; wait $interactor_pid; interactor_status=$?; cat /work/interactor.err >&2; [ $program_status -eq 0 ] || exit 10; [ $interactor_status -eq 0 ] || exit 20"
+                    "export LC_ALL=C; ulimit -f {output_blocks}; rm -f /work/to_program /work/to_interactor /work/actual.out /work/program.status /work/time.err; mkfifo /work/to_program /work/to_interactor; exec 3<>/work/to_program; exec 4<>/work/to_interactor; /work/interactor /work/current.in <&4 >&3 2>/work/interactor.err & interactor_pid=$!; /usr/bin/time --quiet --format '__PROJECT_BALLOON_GNU_TIME__ %U %S %M' 2>/work/time.err sh -c '{program} <&3 2>/work/program.err; printf \"%s\" \"$?\" >/work/program.status' | tee /work/actual.out >&4 & program_pid=$!; exec 3>&- 4>&-; wait $program_pid; program_status=$(cat /work/program.status 2>/dev/null || printf '1'); wait $interactor_pid; interactor_status=$?; cat /work/program.err /work/interactor.err /work/time.err >&2; [ $program_status -eq 0 ] || exit 10; [ $interactor_status -eq 0 ] || exit 20"
                 )
             } else {
                 format!(
@@ -324,16 +330,12 @@ impl DockerSandbox {
             // Keep the opened descriptor for the later comparison. A path check followed
             // by a separate read is racy: a surviving child can replace the path after the
             // check. O_NOFOLLOW also prevents a host-side symlink escape.
-            let output = if interactive {
-                Some(Vec::new())
-            } else {
-                tokio::task::spawn_blocking({
-                    let actual_path = actual_path.clone();
-                    move || read_regular_output_no_follow(&actual_path)
-                })
-                .await
-                .map_err(|error| SandboxError::Api(error.to_string()))??
-            };
+            let output = tokio::task::spawn_blocking({
+                let actual_path = actual_path.clone();
+                move || read_regular_output_no_follow(&actual_path)
+            })
+            .await
+            .map_err(|error| SandboxError::Api(error.to_string()))??;
             let output_bytes = output.as_ref().map_or(0, |output| output.len() as u64);
             let output_limit_bytes = u64::try_from(task.output_limit_kb).unwrap_or(0) * 1024;
             let verdict = if run.oom_killed || (run.exit_code == 137 && !run.timed_out) {
@@ -444,13 +446,14 @@ impl DockerSandbox {
         if let Err(error) =
             self.docker.start_container(&container.id, None::<StartContainerOptions>).await
         {
-            let _cleanup = self
-                .docker
-                .remove_container(
+            let _cleanup = timeout(
+                DOCKER_API_TIMEOUT,
+                self.docker.remove_container(
                     &container.id,
                     Some(RemoveContainerOptionsBuilder::default().force(true).build()),
-                )
-                .await;
+                ),
+            )
+            .await;
             return Err(SandboxError::Api(error.to_string()));
         }
         Ok(container.id)
@@ -513,16 +516,23 @@ impl DockerSandbox {
                 Ok(Some(Err(error))) => break Err(SandboxError::Api(error.to_string())),
                 Ok(None) => break Ok(false),
                 Err(_) => {
-                    let kill_result = self
-                        .docker
-                        .kill_container(
+                    let kill_result = match timeout(
+                        DOCKER_API_TIMEOUT,
+                        self.docker.kill_container(
                             container_id,
                             None::<bollard::query_parameters::KillContainerOptions>,
-                        )
-                        .await;
-                    break kill_result
-                        .map(|()| true)
-                        .map_err(|error| SandboxError::Api(error.to_string()));
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(result) => result
+                            .map(|()| true)
+                            .map_err(|error| SandboxError::Api(error.to_string())),
+                        Err(_) => {
+                            Err(SandboxError::Api("timed out killing sandbox container".to_owned()))
+                        }
+                    };
+                    break kill_result;
                 }
             }
         };
@@ -532,21 +542,23 @@ impl DockerSandbox {
         let exit_code = if timed_out {
             124
         } else {
-            self.docker
-                .inspect_exec(&exec.id)
+            timeout(DOCKER_API_TIMEOUT, self.docker.inspect_exec(&exec.id))
                 .await
+                .map_err(|_| SandboxError::Api("timed out inspecting sandbox exec".to_owned()))?
                 .map_err(|error| SandboxError::Api(error.to_string()))?
                 .exit_code
                 .ok_or_else(|| SandboxError::Api("sandbox exec has no exit code".to_owned()))?
         };
-        let oom_killed = self
-            .docker
-            .inspect_container(container_id, None::<InspectContainerOptions>)
-            .await
-            .map_err(|error| SandboxError::Api(error.to_string()))?
-            .state
-            .and_then(|state| state.oom_killed)
-            .unwrap_or(false);
+        let oom_killed = timeout(
+            DOCKER_API_TIMEOUT,
+            self.docker.inspect_container(container_id, None::<InspectContainerOptions>),
+        )
+        .await
+        .map_err(|_| SandboxError::Api("timed out inspecting sandbox container".to_owned()))?
+        .map_err(|error| SandboxError::Api(error.to_string()))?
+        .state
+        .and_then(|state| state.oom_killed)
+        .unwrap_or(false);
         Ok(ContainerRun {
             exit_code,
             timed_out,
@@ -562,6 +574,15 @@ impl DockerSandbox {
     }
 
     async fn kill_contestant_processes(&self, container_id: &str) -> Result<(), SandboxError> {
+        timeout(DOCKER_API_TIMEOUT, self.kill_contestant_processes_inner(container_id))
+            .await
+            .map_err(|_| SandboxError::Api("timed out cleaning sandbox processes".to_owned()))?
+    }
+
+    async fn kill_contestant_processes_inner(
+        &self,
+        container_id: &str,
+    ) -> Result<(), SandboxError> {
         let state = self
             .docker
             .inspect_container(container_id, None::<InspectContainerOptions>)
@@ -637,18 +658,10 @@ struct GnuTimeMetrics {
 
 fn extract_gnu_time_metrics(logs: &str) -> (String, Option<GnuTimeMetrics>) {
     const PREFIX: &str = "__PROJECT_BALLOON_GNU_TIME__ ";
-    let Some(last_line) = logs.lines().next_back() else {
+    let Some(marker_start) = logs.rfind(PREFIX) else {
         return (logs.to_owned(), None);
     };
-    let Some(fields_text) = last_line.strip_prefix(PREFIX) else {
-        return (logs.to_owned(), None);
-    };
-    let logs_without_trailing_newlines = logs.trim_end_matches(['\r', '\n']);
-    let sanitized = logs_without_trailing_newlines
-        .strip_suffix(last_line)
-        .unwrap_or(logs_without_trailing_newlines)
-        .trim_end_matches(['\r', '\n'])
-        .to_owned();
+    let fields_text = &logs[marker_start + PREFIX.len()..];
     let mut fields = fields_text.split_whitespace();
     let user_seconds = fields.next().and_then(|value| value.parse::<f64>().ok());
     let system_seconds = fields.next().and_then(|value| value.parse::<f64>().ok());
@@ -661,6 +674,7 @@ fn extract_gnu_time_metrics(logs: &str) -> (String, Option<GnuTimeMetrics>) {
     else {
         return (logs.to_owned(), None);
     };
+    let sanitized = logs[..marker_start].trim_end_matches(['\r', '\n']).to_owned();
     // GNU time 1.9 emits `%U` and `%S` with centisecond precision. Round each
     // field independently so floating-point addition cannot turn 120 + 30 ms
     // into a spurious 151 ms after applying a ceiling.
@@ -1045,6 +1059,15 @@ mod tests {
         let (logs, metrics) = extract_gnu_time_metrics(original);
         assert_eq!(logs, original);
         assert_eq!(metrics, None);
+    }
+
+    #[test]
+    fn extracts_gnu_time_when_program_stderr_has_no_trailing_newline() {
+        let (logs, metrics) = extract_gnu_time_metrics(
+            "contestant diagnostic__PROJECT_BALLOON_GNU_TIME__ 0.12 0.03 4096\n",
+        );
+        assert_eq!(logs, "contestant diagnostic");
+        assert_eq!(metrics, Some(GnuTimeMetrics { cpu_time_ms: 150, peak_memory_kb: 4096 }));
     }
 
     #[test]

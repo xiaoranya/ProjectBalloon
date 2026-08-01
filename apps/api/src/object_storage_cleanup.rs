@@ -378,34 +378,33 @@ pub async fn scan_object_integrity(
     grace: Duration,
 ) -> Result<ObjectStorageIntegrityReport, sqlx::Error> {
     let mut token = None;
-    let mut candidates = Vec::<ObjectStorageObject>::new();
+    let mut missing = referenced_keys.clone();
+    let mut queued_orphans = 0;
     loop {
         let page = storage
             .backend()
             .list_objects(bucket, token.as_deref())
             .await
             .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
-        candidates.extend(page.objects);
+        for object in page.objects {
+            missing.remove(&object.key);
+            if is_orphan_candidate(&object, prefixes, referenced_keys, grace) {
+                enqueue_cleanup(database, bucket, &object.key, "ORPHAN_SCAN").await?;
+                queued_orphans += 1;
+            }
+        }
         token = page.next_continuation_token;
         if token.is_none() {
             break;
         }
     }
-    let listed_keys: HashSet<&str> = candidates.iter().map(|object| object.key.as_str()).collect();
-    let missing = missing_object_keys(referenced_keys, &listed_keys);
+    let mut missing: Vec<String> = missing.into_iter().collect();
+    missing.sort_unstable();
     reconcile_missing_references(database, bucket, &missing).await?;
-
-    let mut queued_orphans = 0;
-    for object in &candidates {
-        if !is_orphan_candidate(object, prefixes, referenced_keys, grace) {
-            continue;
-        }
-        enqueue_cleanup(database, bucket, &object.key, "ORPHAN_SCAN").await?;
-        queued_orphans += 1;
-    }
     Ok(ObjectStorageIntegrityReport { queued_orphans, missing_references: missing.len() })
 }
 
+#[cfg(test)]
 fn missing_object_keys(
     referenced_keys: &HashSet<String>,
     listed_keys: &HashSet<&str>,

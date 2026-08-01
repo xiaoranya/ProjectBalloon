@@ -231,13 +231,6 @@ impl BatchRejudgeService {
                 "Idempotency key is already used by another batch rejudge request",
             ));
         }
-        let matched = count_matches(&self.database, contest_id, &request.filter).await?;
-        if matched != request.expected_count {
-            return Err(AppError::conflict(
-                "BATCH_REJUDGE_COUNT_CHANGED",
-                "Matched submission count changed; preview and confirm again",
-            ));
-        }
         let mut transaction = self
             .database
             .begin()
@@ -360,7 +353,7 @@ impl BatchRejudgeService {
         actor: &AuthUser,
     ) -> Result<BatchRejudgeTaskResponse, AppError> {
         require_access(&self.database, contest_id, actor).await?;
-        sqlx::query(
+        let changed = sqlx::query(
             r#"
             UPDATE batch_rejudge_tasks
             SET status = 'PAUSED', cancel_requested = true, updated_at = now(), version = version + 1
@@ -372,6 +365,13 @@ impl BatchRejudgeService {
         .execute(&self.database)
         .await
         .map_err(|error| AppError::internal("pause batch rejudge", error))?;
+        if changed.rows_affected() == 0 {
+            load_task(&self.database, contest_id, task_id).await?;
+            return Err(AppError::conflict(
+                "BATCH_REJUDGE_STATE_CHANGED",
+                "Batch rejudge task cannot be paused in its current state",
+            ));
+        }
         self.get(contest_id, task_id, actor).await
     }
 
@@ -382,7 +382,7 @@ impl BatchRejudgeService {
         actor: &AuthUser,
     ) -> Result<BatchRejudgeTaskResponse, AppError> {
         require_access(&self.database, contest_id, actor).await?;
-        sqlx::query(
+        let changed = sqlx::query(
             r#"
             UPDATE batch_rejudge_tasks
             SET status = 'RUNNING', cancel_requested = false, completed_at = NULL,
@@ -395,6 +395,13 @@ impl BatchRejudgeService {
         .execute(&self.database)
         .await
         .map_err(|error| AppError::internal("resume batch rejudge", error))?;
+        if changed.rows_affected() == 0 {
+            load_task(&self.database, contest_id, task_id).await?;
+            return Err(AppError::conflict(
+                "BATCH_REJUDGE_STATE_CHANGED",
+                "Batch rejudge task cannot be resumed in its current state",
+            ));
+        }
         self.get(contest_id, task_id, actor).await
     }
 }

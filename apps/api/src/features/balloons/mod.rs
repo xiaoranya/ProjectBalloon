@@ -226,7 +226,7 @@ impl BalloonService {
                     .map_err(|error| AppError::internal("cancel balloon task", error))?;
             }
             "REOPEN" if status == "CANCELLED" => {
-                sqlx::query("UPDATE balloon_tasks SET status = 'PENDING', claimed_by = NULL, claimed_at = NULL, delivered_at = NULL, cancelled_at = NULL, cancelled_reason = NULL, reopened_count = reopened_count + 1, updated_at = now(), version = version + 1 WHERE id = $1")
+                sqlx::query("UPDATE balloon_tasks SET status = 'PENDING', claimed_by = NULL, claimed_at = NULL, delivered_at = NULL, cancelled_at = NULL, cancelled_reason = NULL, dispatch_attempts = 0, last_dispatched_at = NULL, reopened_count = reopened_count + 1, updated_at = now(), version = version + 1 WHERE id = $1")
                     .bind(id).execute(&mut *tx).await
                     .map_err(|error| AppError::internal("reopen balloon task", error))?;
             }

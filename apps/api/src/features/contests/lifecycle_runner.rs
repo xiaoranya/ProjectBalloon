@@ -8,6 +8,11 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 
+// Keep an end timestamp typo recoverable during the normal administrative
+// extension window. Explicit transitions remain the only way to reopen a
+// contest after automatic finalization.
+const AUTOMATIC_END_GRACE_SECONDS: i32 = 60;
+
 pub struct ContestLifecycleRunner {
     database: PgPool,
     poll_interval: Duration,
@@ -93,8 +98,13 @@ async fn transition_due(
     timestamp_column: &'static str,
     audit_action: &'static str,
 ) -> Result<u64, AppError> {
+    let due_condition = if timestamp_column == "end_at" {
+        format!("{timestamp_column} <= now() - interval '{AUTOMATIC_END_GRACE_SECONDS} seconds'")
+    } else {
+        format!("{timestamp_column} <= now()")
+    };
     let sql = format!(
-        "SELECT id,{timestamp_column} FROM contests WHERE status=$1 AND deleted_at IS NULL AND {timestamp_column} IS NOT NULL AND {timestamp_column}<=now() ORDER BY {timestamp_column},id FOR UPDATE SKIP LOCKED LIMIT 100"
+        "SELECT id,{timestamp_column} FROM contests WHERE status=$1 AND deleted_at IS NULL AND {timestamp_column} IS NOT NULL AND {due_condition} ORDER BY {timestamp_column},id FOR UPDATE SKIP LOCKED LIMIT 100"
     );
     let due = sqlx::query_as::<_, (i64, time::OffsetDateTime)>(&sql)
         .bind(from)

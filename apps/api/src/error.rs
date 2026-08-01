@@ -81,11 +81,12 @@ impl AppError {
 
     pub fn internal(context: &'static str, source: impl std::fmt::Display) -> Self {
         let source = source.to_string();
-        if source.contains("CONTEST_ARCHIVED_READ_ONLY") {
+        if is_archived_read_only_database_error(&source) {
             return Self::conflict(
                 "CONTEST_ARCHIVED_READ_ONLY",
                 "Archived contest data is read-only",
-            );
+            )
+            .with_internal_detail(format!("{context}: {source}"));
         }
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -96,6 +97,11 @@ impl AppError {
             },
             internal_detail: Some(format!("{context}: {source}")),
         }
+    }
+
+    fn with_internal_detail(mut self, detail: String) -> Self {
+        self.internal_detail = Some(detail);
+        self
     }
 
     fn public(status: StatusCode, code: &'static str, message: &'static str) -> Self {
@@ -109,6 +115,17 @@ impl AppError {
             internal_detail: None,
         }
     }
+}
+
+fn is_archived_read_only_database_error(source: &str) -> bool {
+    let source = source.trim();
+    source == "CONTEST_ARCHIVED_READ_ONLY"
+        || source
+            .strip_prefix("database error: ")
+            .is_some_and(|message| message.trim() == "CONTEST_ARCHIVED_READ_ONLY")
+        || source
+            .strip_prefix("error returned from database: ")
+            .is_some_and(|message| message.trim() == "CONTEST_ARCHIVED_READ_ONLY")
 }
 
 impl IntoResponse for AppError {
@@ -131,6 +148,17 @@ mod tests {
 
         assert_eq!(error.status, StatusCode::CONFLICT);
         assert_eq!(error.code(), "CONTEST_ARCHIVED_READ_ONLY");
-        assert!(error.internal_detail.is_none());
+        assert_eq!(
+            error.internal_detail.as_deref(),
+            Some("update child row: database error: CONTEST_ARCHIVED_READ_ONLY")
+        );
+    }
+
+    #[test]
+    fn unrelated_error_containing_archived_marker_stays_internal() {
+        let error =
+            AppError::internal("query", "constraint mentions CONTEST_ARCHIVED_READ_ONLY_SUFFIX");
+        assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(error.code(), "INTERNAL_ERROR");
     }
 }

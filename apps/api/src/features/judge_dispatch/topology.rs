@@ -10,31 +10,23 @@ use project_balloon_contracts::{
 pub const TASKS_QUEUE: &str = "judge.tasks";
 pub const RETRY_QUEUE: &str = "judge.retry";
 pub const DEAD_QUEUE: &str = "judge.dead";
-pub const REJUDGE_QUEUE: &str = "judge.rejudge";
 pub const RESULTS_QUEUE: &str = "judge.results";
 pub const TASKS_EXCHANGE: &str = "judge.tasks.exchange";
 pub const RETRY_EXCHANGE: &str = "judge.retry.exchange";
 pub const DEAD_EXCHANGE: &str = "judge.dead.exchange";
-pub const REJUDGE_EXCHANGE: &str = "judge.rejudge.exchange";
 pub const RESULTS_EXCHANGE: &str = "judge.results.exchange";
 pub const TASK_ROUTING_KEY: &str = "task";
 pub const RETRY_ROUTING_KEY: &str = "retry";
 pub const DEAD_ROUTING_KEY: &str = "dead";
-pub const REJUDGE_ROUTING_KEY: &str = "rejudge";
 pub const RESULT_ROUTING_KEY: &str = "result";
 const RETRY_TTL_MILLISECONDS: i32 = 10_000;
 const HEARTBEAT_TTL_MILLISECONDS: i32 = 60_000;
 const HEARTBEAT_MAX_LENGTH: i32 = 10_000;
 
 pub async fn declare(channel: &Channel) -> Result<(), lapin::Error> {
-    for exchange in [
-        TASKS_EXCHANGE,
-        RETRY_EXCHANGE,
-        DEAD_EXCHANGE,
-        REJUDGE_EXCHANGE,
-        RESULTS_EXCHANGE,
-        JUDGE_HEARTBEATS_EXCHANGE,
-    ] {
+    for exchange in
+        [TASKS_EXCHANGE, RETRY_EXCHANGE, DEAD_EXCHANGE, RESULTS_EXCHANGE, JUDGE_HEARTBEATS_EXCHANGE]
+    {
         channel
             .exchange_declare(
                 exchange.into(),
@@ -100,7 +92,7 @@ pub async fn declare(channel: &Channel) -> Result<(), lapin::Error> {
             retry_arguments,
         )
         .await?;
-    for queue in [DEAD_QUEUE, REJUDGE_QUEUE] {
+    for queue in [DEAD_QUEUE] {
         channel
             .queue_declare(
                 queue.into(),
@@ -130,7 +122,6 @@ pub async fn declare(channel: &Channel) -> Result<(), lapin::Error> {
         (TASKS_QUEUE, TASKS_EXCHANGE, TASK_ROUTING_KEY),
         (RETRY_QUEUE, RETRY_EXCHANGE, RETRY_ROUTING_KEY),
         (DEAD_QUEUE, DEAD_EXCHANGE, DEAD_ROUTING_KEY),
-        (REJUDGE_QUEUE, REJUDGE_EXCHANGE, REJUDGE_ROUTING_KEY),
         (RESULTS_QUEUE, RESULTS_EXCHANGE, RESULT_ROUTING_KEY),
         (JUDGE_HEARTBEATS_QUEUE, JUDGE_HEARTBEATS_EXCHANGE, JUDGE_HEARTBEAT_ROUTING_KEY),
     ] {
