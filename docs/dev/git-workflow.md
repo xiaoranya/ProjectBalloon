@@ -108,6 +108,9 @@ v1.0.1
 v1.1.0
 ```
 
+Pre-release versions use SemVer suffixes and are published as GitHub
+pre-releases, for example `v0.1.0-alpha.1`.
+
 Optional contest package tags:
 
 ```text
