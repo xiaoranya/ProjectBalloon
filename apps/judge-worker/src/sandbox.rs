@@ -632,6 +632,7 @@ impl DockerSandbox {
     }
 }
 
+#[cfg(unix)]
 fn read_regular_output_no_follow(path: &Path) -> Result<Option<Vec<u8>>, std::io::Error> {
     use std::{fs::OpenOptions, io::Read, os::unix::fs::OpenOptionsExt};
 
@@ -640,6 +641,23 @@ fn read_regular_output_no_follow(path: &Path) -> Result<Option<Vec<u8>>, std::io
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         // Linux returns ELOOP for O_NOFOLLOW on a symbolic link. Treat it as invalid output.
         Err(error) if error.raw_os_error() == Some(libc::ELOOP) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if !file.metadata()?.file_type().is_file() {
+        return Ok(None);
+    }
+    let mut contents = Vec::new();
+    file.read_to_end(&mut contents)?;
+    Ok(Some(contents))
+}
+
+#[cfg(not(unix))]
+fn read_regular_output_no_follow(path: &Path) -> Result<Option<Vec<u8>>, std::io::Error> {
+    use std::{fs::OpenOptions, io::Read};
+
+    let mut file = match OpenOptions::new().read(true).open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
     };
     if !file.metadata()?.file_type().is_file() {

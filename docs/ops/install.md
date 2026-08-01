@@ -5,6 +5,27 @@ bootstrap CLI, Vue static files, and four Judge Runtime images. PostgreSQL,
 Redis, RabbitMQ, RustFS, Docker or Podman, and optional CUPS/Nginx services are
 host-managed prerequisites.
 
+## Release platform status
+
+GitHub Actions produces packages for Linux amd64, Linux arm64, macOS Intel,
+macOS arm64, and Windows x64. Linux packages are deployment packages and
+include the Judge Runtime image archives. macOS and Windows packages are
+portable build packages containing the binaries and frontend only; they do not
+include the Linux systemd, Nginx, or container-image installation flow.
+
+| Package | Rust target | GitHub runner |
+|---|---|---|
+| `linux-amd64` | `x86_64-unknown-linux-gnu` | `ubuntu-24.04` |
+| `linux-arm64` | `aarch64-unknown-linux-gnu` | `ubuntu-24.04-arm` |
+| `macos-x86_64` | `x86_64-apple-darwin` | `macos-15-intel` |
+| `macos-arm64` | `aarch64-apple-darwin` | `macos-15` |
+| `windows-x86_64` | `x86_64-pc-windows-msvc` | `windows-2022` |
+
+Only Linux x86_64 has been tested end to end. The other platform artifacts are
+currently limited to runner build and package-integrity checks. Do not treat
+them as runtime-compatible or installation-validated releases until testing on
+the target host has been completed.
+
 ## Host prerequisites
 
 Install these from trusted media or the host distribution before installation:

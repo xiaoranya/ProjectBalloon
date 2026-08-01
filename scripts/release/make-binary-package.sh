@@ -9,10 +9,15 @@ OUT_BASE="${2:-$ROOT/dist}"
 
 [ -d "$STAGING/bin" ] || { echo 'build binary staging before packaging' >&2; exit 1; }
 TARGET="${PROJECT_BALLOON_BINARY_TARGET:-$(sed -n 's/^PROJECT_BALLOON_TARGET=//p' "$STAGING/metadata/release.env")}"
+PACKAGE_TARGET="${PROJECT_BALLOON_PACKAGE_TARGET:-$(sed -n 's/^PROJECT_BALLOON_PACKAGE_TARGET=//p' "$STAGING/metadata/release.env")}"
+PACKAGE_TARGET="${PACKAGE_TARGET:-$TARGET}"
 [ -n "$TARGET" ] || { echo 'binary target is missing from staging metadata' >&2; exit 1; }
+[ -n "$PACKAGE_TARGET" ] || { echo 'package target is missing from staging metadata' >&2; exit 1; }
 [ -f "$JUDGE_IMAGES/SHA256SUMS" ] || { echo 'export judge images before packaging' >&2; exit 1; }
 (cd "$JUDGE_IMAGES" && sha256sum -c SHA256SUMS)
-FINAL="$OUT_BASE/project-balloon-$VERSION-$TARGET"
+PLATFORM_TEST_STATUS="${PROJECT_BALLOON_PLATFORM_TEST_STATUS:-$(sed -n 's/^PROJECT_BALLOON_PLATFORM_TEST_STATUS=//p' "$STAGING/metadata/release.env")}"
+PLATFORM_TEST_STATUS="${PLATFORM_TEST_STATUS:-linux-x86_64-only}"
+FINAL="$OUT_BASE/project-balloon-$VERSION-$PACKAGE_TARGET"
 TMP="$FINAL.tmp"
 [ ! -e "$FINAL" ] && [ ! -e "$TMP" ] || { echo "output already exists: $FINAL" >&2; exit 1; }
 
@@ -44,7 +49,10 @@ cp -a "$ROOT/scripts/backup/." "$TMP/scripts/backup/"
 cp "$ROOT/VERSION" "$TMP/"
 
 cat > "$TMP/README.txt" <<EOF
-ProjectBalloon binary release $VERSION ($TARGET)
+ProjectBalloon deployment release $VERSION ($PACKAGE_TARGET)
+
+Rust target: $TARGET
+Platform validation: $PLATFORM_TEST_STATUS
 
 This package installs the API and Judge Worker as systemd services, serves the
 Vue frontend through Nginx when available, and imports the four Judge Runtime
@@ -57,6 +65,10 @@ For separated hosts:
   ./install.sh --role api
   ./install.sh --role worker --skip-nginx --container-group docker
 Edit /etc/project-balloon/project-balloon.env, then run ./install.sh again.
+
+Only Linux x86_64 has been tested end to end. Other platform packages are
+build and package checks only until their runtime and installation workflows
+have been validated on the target host.
 EOF
 
 (cd "$TMP" && find . -type f ! -name PACKAGE-SHA256SUMS -print0 | sort -z \

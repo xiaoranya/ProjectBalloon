@@ -61,6 +61,14 @@ project-balloon-vX.Y.Z-linux-amd64/
   PACKAGE-SHA256SUMS
 ```
 
+The release workflow also builds `linux-arm64`, `macos-x86_64`,
+`macos-arm64`, and `windows-x86_64` archives. Linux arm64 receives the same
+deployment package shape with arm64 Judge Runtime images. macOS and Windows
+receive portable binary packages without the Linux installer or Judge Runtime
+archives. Only Linux x86_64 is currently tested end to end; the other targets
+are build/package outputs until their runtime and installation flows are
+validated.
+
 ## Compose Files
 
 The active Rust workspace currently has three Compose projects:
