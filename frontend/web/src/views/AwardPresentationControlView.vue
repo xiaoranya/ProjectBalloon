@@ -1,7 +1,7 @@
 <template>
   <el-container direction="vertical" class="awards-page">
     <el-header height="auto" class="awards-page-header">
-      <div><p class="eyebrow">Ceremony Control</p><h1>颁奖控制台</h1><p>切换奖项、控制轮播，并实时驱动公共展示页。</p></div>
+      <div><p class="eyebrow">Ceremony Control</p><h1>颁奖控制台</h1></div>
       <ElSpace wrap :size="10" class="awards-header-actions">
         <ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"><ElOption v-for="contest in contests" :key="contest.id" :label="contest.name" :value="contest.id" /></ElSelect>
         <ElButton :icon="Refresh" :loading="loading" @click="load">刷新</ElButton>

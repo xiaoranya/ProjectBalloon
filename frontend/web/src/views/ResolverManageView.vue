@@ -1,7 +1,7 @@
 <template>
   <el-container direction="vertical" class="resolver-page">
     <el-header height="auto" class="resolver-page-heading">
-      <div><p class="eyebrow">Official Resolver</p><h1>Resolver 运行控制台</h1><p>以不可变封榜快照和最终榜快照生成揭晓计划，并通过版本锁安全控制。</p></div>
+      <div><p class="eyebrow">Official Resolver</p><h1>Resolver 运行控制台</h1></div>
       <ElSpace wrap :size="10" class="resolver-heading-actions">
         <ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"><ElOption v-for="contest in contests" :key="contest.id" :label="`${contest.name} · #${contest.id}`" :value="contest.id" /></ElSelect>
         <ElButton :icon="Refresh" :loading="loading" @click="loadContext">刷新</ElButton>

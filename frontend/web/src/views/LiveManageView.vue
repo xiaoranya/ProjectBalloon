@@ -1,6 +1,6 @@
 <template>
   <el-container direction="vertical" class="live-manage">
-    <el-header height="auto" class="page-head"><div><p class="eyebrow">Live / OBS</p><h1>直播展示控制台</h1><p>发布直播数据并生成可撤销的 OBS 浏览器源链接。</p></div><ElSelect v-model="contestId" filterable><ElOption v-for="contest in contests" :key="contest.id" :label="contest.name" :value="contest.id" /></ElSelect></el-header>
+    <el-header height="auto" class="page-head"><div><p class="eyebrow">Live / OBS</p><h1>直播展示控制台</h1></div><ElSelect v-model="contestId" filterable><ElOption v-for="contest in contests" :key="contest.id" :label="contest.name" :value="contest.id" /></ElSelect></el-header>
     <el-main class="page-body">
       <ElAlert v-if="errorMessage" type="error" :closable="false" show-icon :title="errorMessage" />
       <ElCard v-if="contestId" shadow="never">

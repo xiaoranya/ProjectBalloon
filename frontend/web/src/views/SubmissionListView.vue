@@ -5,7 +5,6 @@
         <div>
           <p class="eyebrow">Submissions</p>
           <h1>提交记录</h1>
-          <p>未完成的提交会自动刷新判题状态。</p>
         </div>
         <ElButton :icon="Refresh" :loading="loading" @click="loadSubmissions()">刷新</ElButton>
       </div>

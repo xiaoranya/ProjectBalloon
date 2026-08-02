@@ -5,7 +5,6 @@
         <div>
           <p class="eyebrow">Problems</p>
           <h1>题目列表</h1>
-          <p>选择题目查看题面并提交代码。</p>
         </div>
         <ElButton :icon="Refresh" :loading="loading" @click="loadProblems">刷新</ElButton>
       </div>

@@ -3,7 +3,6 @@
     <el-header height="auto" class="page-head">
       <div>
         <h1>虚拟比赛</h1>
-        <p>使用公开题目创建独立计时练习</p>
       </div>
       <ElButton type="primary" @click="dialog = true">新建虚拟赛</ElButton>
     </el-header>

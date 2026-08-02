@@ -5,7 +5,6 @@
         <div>
           <p class="eyebrow">Printing</p>
           <h1>赛中打印</h1>
-          <p>提交纯文本打印内容，并查看本队最近 100 条打印记录。</p>
         </div>
         <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
           <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}

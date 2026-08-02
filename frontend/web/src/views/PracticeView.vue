@@ -1,6 +1,6 @@
 <template>
   <el-container direction="vertical" class="practice-page">
-    <el-header height="auto" class="page-head"><div><h1>日常练习</h1><p>选择公开题目，提交代码并持续积累进度</p></div><nav><RouterLink to="/problem-bank">题库</RouterLink><RouterLink to="/practice/virtual">虚拟比赛</RouterLink><RouterLink to="/profile">账户</RouterLink></nav></el-header>
+    <el-header height="auto" class="page-head"><div><h1>日常练习</h1></div><nav><RouterLink to="/problem-bank">题库</RouterLink><RouterLink to="/practice/virtual">虚拟比赛</RouterLink><RouterLink to="/profile">账户</RouterLink></nav></el-header>
     <el-main class="page-body">
       <div class="practice-stats"><div><span>已通过</span><strong>{{ solvedCount }}</strong><small>/ {{ problems.length }}</small></div><div><span>总尝试</span><strong>{{ attemptCount }}</strong></div><div><span>已提交</span><strong>{{ submissions.length }}</strong></div></div>
       <ElRow :gutter="24" class="practice-layout">

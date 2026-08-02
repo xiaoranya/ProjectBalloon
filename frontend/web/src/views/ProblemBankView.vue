@@ -1,6 +1,6 @@
 <template>
   <el-container direction="vertical" class="bank-page">
-    <el-header height="auto" class="page-head"><div><h1>公开题库</h1><p>按标签与难度筛选已发布题目</p></div><RouterLink to="/training">训练计划</RouterLink></el-header>
+    <el-header height="auto" class="page-head"><div><h1>公开题库</h1></div><RouterLink to="/training">训练计划</RouterLink></el-header>
     <el-main class="page-body">
       <div class="filters"><ElSpace wrap :size="10"><ElInput v-model="tag" clearable placeholder="标签" @change="applyFilters"/><ElSelect v-model="difficulty" clearable placeholder="难度" @change="applyFilters"><ElOption v-for="value in 11" :key="value-1" :label="value-1" :value="value-1"/></ElSelect><ElButton :loading="loading" @click="load">刷新</ElButton></ElSpace></div>
       <ElTable :data="page.content" v-loading="loading" row-key="id" @row-click="open">

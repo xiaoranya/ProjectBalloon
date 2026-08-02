@@ -5,7 +5,6 @@
         <div>
           <p class="eyebrow">Balloon Delivery Desk</p>
           <h1>气球配送工作台</h1>
-          <p>领取首次 AC 任务，记录配送备注并确认送达。</p>
         </div>
         <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
           <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}

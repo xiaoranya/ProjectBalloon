@@ -4,7 +4,6 @@
       <section class="login-copy">
         <p class="eyebrow">Account Security</p>
         <h1>{{ required ? '首次登录，请修改密码' : '修改登录密码' }}</h1>
-        <p>新密码设置成功后，初始密码将立即失效。</p>
       </section>
 
       <ElCard class="login-card" shadow="never">

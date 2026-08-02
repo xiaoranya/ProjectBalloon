@@ -5,7 +5,6 @@
         <div>
           <p class="eyebrow">Clarification Desk</p>
           <h1>答疑工作台</h1>
-          <p>筛选比赛问题，查看队伍信息并完成回复、关闭或转公告。</p>
         </div>
         <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
           <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}

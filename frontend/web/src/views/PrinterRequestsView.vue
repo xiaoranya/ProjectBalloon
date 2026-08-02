@@ -5,7 +5,6 @@
         <div>
           <p class="eyebrow">Print Request Desk</p>
           <h1>打印请求</h1>
-          <p>按比赛和状态处理最近 1000 条打印任务。</p>
         </div>
         <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
           <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}

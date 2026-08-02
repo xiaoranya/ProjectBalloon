@@ -1,6 +1,6 @@
 <template>
   <el-container direction="vertical" class="profile-page">
-    <el-header height="auto" class="page-head"><div><p class="eyebrow">Account</p><h1>账户设置</h1><p>维护个人显示信息并管理登录密码。</p></div><RouterLink to="/practice">返回练习</RouterLink></el-header>
+    <el-header height="auto" class="page-head"><div><p class="eyebrow">Account</p><h1>账户设置</h1></div><RouterLink to="/practice">返回练习</RouterLink></el-header>
     <el-main class="page-body">
       <ElCard shadow="never" class="profile-card">
         <ElForm label-position="top" @submit.prevent="saveProfile">

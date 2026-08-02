@@ -4,7 +4,6 @@
       <section class="login-copy">
         <p class="eyebrow">Project Balloon Admin</p>
         <h1>让比赛运行得更稳、更清晰。</h1>
-        <p>从配置赛程到处理答疑、打印和气球配送，在对应工作台完成赛事协作。</p>
         <div class="login-feature">
           <ElIcon><DataAnalysis /></ElIcon>
           <span>比赛生命周期 · 裁判答疑 · 打印与气球配送</span>

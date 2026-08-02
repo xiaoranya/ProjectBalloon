@@ -5,7 +5,6 @@
         <div>
           <p class="eyebrow">Clarifications</p>
           <h1>赛中答疑</h1>
-          <p>向裁判提问，并查看本队历史问题和回复。</p>
         </div>
         <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
           <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}

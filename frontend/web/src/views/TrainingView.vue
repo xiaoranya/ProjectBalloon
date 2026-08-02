@@ -3,7 +3,6 @@
     <el-header height="auto" class="page-head">
       <div>
         <h1>训练计划</h1>
-        <p>选择公开训练集，按顺序完成必做题目</p>
       </div>
       <RouterLink to="/problem-bank">
         <ElButton>公开题库</ElButton>
