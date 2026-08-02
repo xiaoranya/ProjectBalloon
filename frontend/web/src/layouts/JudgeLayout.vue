@@ -1,6 +1,6 @@
 <template>
-  <div class="judge-shell">
-    <header class="judge-header">
+  <el-container direction="vertical" class="judge-shell">
+    <el-header height="auto" class="judge-header">
       <RouterLink class="judge-brand" to="/judge">
         <span class="brand-mark">PB</span>
         <div><strong>裁判工作台</strong><small>Clarification Desk</small></div>
@@ -9,9 +9,9 @@
         <div><strong>{{ session.state.user?.displayName }}</strong><small>裁判</small></div>
         <ElButton plain :icon="SwitchButton" @click="logout">退出登录</ElButton>
       </div>
-    </header>
-    <main class="judge-main"><RouterView /></main>
-  </div>
+    </el-header>
+    <el-main class="judge-main"><RouterView /></el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">

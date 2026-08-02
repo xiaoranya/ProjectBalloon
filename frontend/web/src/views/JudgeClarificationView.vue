@@ -1,41 +1,43 @@
 <template>
-  <section class="judge-page clarification-judge-page">
-    <div class="page-title-row">
-      <div>
-        <p class="eyebrow">Clarification Desk</p>
-        <h1>答疑工作台</h1>
-        <p>筛选比赛问题，查看队伍信息并完成回复、关闭或转公告。</p>
+  <el-container direction="vertical" class="judge-page clarification-judge-page">
+    <el-header height="auto" class="page-head">
+      <div class="page-title-row">
+        <div>
+          <p class="eyebrow">Clarification Desk</p>
+          <h1>答疑工作台</h1>
+        </div>
+        <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
+          <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
+        </div>
       </div>
-      <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
-        <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
-      </div>
-    </div>
+    </el-header>
 
-    <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+    <el-main class="page-body">
+      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
 
-    <ElCard shadow="never" class="clarification-filter-card">
-      <div class="clarification-toolbar">
-        <ElSelect v-model="selectedContestId" filterable placeholder="选择比赛" @change="changeContest">
-          <ElOption
-            v-for="contest in contests"
-            :key="contest.id"
-            :label="contest.name"
-            :value="contest.id"
-          />
-        </ElSelect>
-        <ElRadioGroup v-model="statusFilter" @change="loadClarifications(false)">
-          <ElRadioButton value="ALL">全部</ElRadioButton>
-          <ElRadioButton value="PENDING">待回复</ElRadioButton>
-          <ElRadioButton value="ANSWERED">已回复</ElRadioButton>
-          <ElRadioButton value="CLOSED">已关闭</ElRadioButton>
-        </ElRadioGroup>
-        <ElButton :icon="Refresh" :loading="loading" :disabled="!selectedContestId" @click="loadClarifications(false)">
-          刷新
-        </ElButton>
-      </div>
-    </ElCard>
+      <ElCard shadow="never" class="clarification-filter-card">
+        <ElSpace wrap :size="16" class="judge-toolbar">
+          <ElSelect v-model="selectedContestId" filterable placeholder="选择比赛" @change="changeContest">
+            <ElOption
+              v-for="contest in contests"
+              :key="contest.id"
+              :label="contest.name"
+              :value="contest.id"
+            />
+          </ElSelect>
+          <ElRadioGroup v-model="statusFilter" @change="loadClarifications(false)">
+            <ElRadioButton value="ALL">全部</ElRadioButton>
+            <ElRadioButton value="PENDING">待回复</ElRadioButton>
+            <ElRadioButton value="ANSWERED">已回复</ElRadioButton>
+            <ElRadioButton value="CLOSED">已关闭</ElRadioButton>
+          </ElRadioGroup>
+          <ElButton :icon="Refresh" :loading="loading" :disabled="!selectedContestId" @click="loadClarifications(false)">
+            刷新
+          </ElButton>
+        </ElSpace>
+      </ElCard>
 
-    <ElCard shadow="never" class="clarification-list-card">
+      <ElCard shadow="never" class="clarification-list-card">
       <ElTable
         v-loading="loading"
         :data="clarifications"
@@ -66,7 +68,7 @@
       </ElTable>
     </ElCard>
 
-    <ElDrawer v-model="detailVisible" title="答疑详情" size="min(620px, 94vw)" @closed="selected = null">
+      <ElDrawer v-model="detailVisible" title="答疑详情" size="min(620px, 94vw)" @closed="selected = null">
       <ElSkeleton v-if="detailLoading" :rows="8" animated />
       <div v-else-if="selected" class="clarification-detail">
         <div class="clarification-card-meta">
@@ -137,7 +139,8 @@
         <ElButton type="success" :loading="converting" @click="convert">发布公告</ElButton>
       </template>
     </ElDialog>
-  </section>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -334,3 +337,198 @@ onMounted(async () => {
 
 onUnmounted(() => realtime?.stop());
 </script>
+
+<style scoped>
+.judge-page {
+  width: min(1440px, 100%);
+  margin: 0 auto;
+}
+
+.page-head {
+  height: auto;
+  padding: clamp(28px, 5vw, 58px) clamp(28px, 5vw, 58px) 0;
+}
+
+.page-body {
+  padding: 0 clamp(28px, 5vw, 58px) clamp(28px, 5vw, 58px);
+}
+
+.page-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 32px;
+}
+
+.page-title-row h1 {
+  margin-bottom: 8px;
+  font-size: clamp(32px, 4vw, 48px);
+  letter-spacing: -0.035em;
+}
+
+.page-title-row p {
+  display: none;
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.eyebrow {
+  display: none;
+  margin: 0 0 8px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.page-alert,
+.form-alert {
+  margin-bottom: 20px;
+}
+
+.clarification-filter-card {
+  margin-bottom: 22px;
+}
+
+.clarification-list-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.clarification-live-state {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  border-radius: 0;
+  padding: 8px 12px;
+  color: var(--muted);
+  background: #e9eef5;
+  font-size: 12px;
+}
+
+.clarification-live-state span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.clarification-live-state.connected {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.clarification-live-state.connected span {
+  background: #22c55e;
+}
+
+.judge-toolbar {
+  display: flex;
+  width: 100%;
+}
+
+.judge-toolbar :deep(.el-space__item) {
+  display: flex;
+  align-items: center;
+}
+
+.judge-toolbar :deep(.el-space__item:first-child) {
+  flex: 0 0 min(440px, 42%);
+}
+
+.judge-toolbar :deep(.el-space__item:first-child .el-select) {
+  width: 100%;
+}
+
+.clarification-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.clarification-card-meta > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.clarification-card-meta > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.clarification-detail h3 {
+  margin: 26px 0 10px;
+  color: #263650;
+}
+
+.clarification-detail-meta {
+  color: var(--muted);
+}
+
+.clarification-bubble {
+  padding: 18px 20px;
+  border-radius: 0;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.clarification-bubble.question {
+  border: 1px solid #dbe4f0;
+  background: #f8fafc;
+}
+
+.clarification-bubble.reply {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+}
+
+.clarification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 30px;
+  padding-top: 22px;
+  border-top: 1px solid #e5eaf2;
+}
+
+.clarification-reply-form {
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+}
+
+.admin-primary-cell strong,
+.admin-primary-cell small {
+  display: block;
+}
+
+.admin-primary-cell small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .judge-toolbar :deep(.el-space__item:first-child) {
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-title-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .judge-toolbar :deep(.el-radio-group) {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+</style>

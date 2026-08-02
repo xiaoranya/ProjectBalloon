@@ -1,14 +1,16 @@
 <template>
-  <section class="host-script-page">
-    <header class="host-script-page-header"><div><p class="eyebrow">Host Cue Sheet</p><h1>颁奖主持人脚本</h1><p>口播顺序来自已锁定名单，并与颁奖大屏同步。</p></div><div class="host-script-toolbar"><ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"><ElOption v-for="contest in contests" :key="contest.id" :label="contest.name" :value="contest.id" /></ElSelect><ElButton :icon="Refresh" :loading="loading" @click="load(true)">刷新</ElButton><ElButton :icon="Printer" :disabled="!script" @click="printScript">打印</ElButton><ElButton type="primary" :icon="Check" :disabled="!script || !dirty" :loading="saving" @click="save">保存脚本</ElButton></div></header>
-    <ElAlert v-if="errorMessage" :title="errorMessage" type="warning" show-icon :closable="false" />
-    <template v-if="script">
-      <ElCard shadow="never" class="host-live-card"><template #header><div class="card-header"><div><strong>主持人当前提示</strong><small>{{ statusLabel }}</small></div><ElTag>{{ script.presentationStatus }}</ElTag></div></template><div v-if="currentSection" class="host-live-grid"><div class="host-current-cue"><small>{{ currentSection.code }}</small><h2>{{ currentSection.name }}</h2><p>{{ currentSection.cueText }}</p><span>{{ nextSection ? `下一项：${nextSection.name}` : '这是最后一个奖项' }}</span></div><div class="host-current-recipients"><strong>请宣读</strong><ol><li v-for="recipient in currentSection.recipients" :key="recipient.id"><span>{{ recipient.teamName }}</span><small>{{ recipient.school || '未填写学校' }}</small></li></ol></div></div></ElCard>
-      <ElCard shadow="never" class="host-script-editor"><template #header><div class="card-header"><div><strong>口播内容</strong><small>乐观锁版本 v{{ script.version ?? '草稿' }}</small></div></div></template><ElForm label-position="top"><ElFormItem label="开场语"><ElInput v-model="form.openingText" type="textarea" :rows="3" maxlength="4000" show-word-limit @input="dirty = true" /></ElFormItem><div class="host-section-editor-list"><article v-for="section in form.sections" :key="section.categoryId"><header><div><small>{{ section.code }}</small><strong>{{ section.name }}</strong></div><ElTag v-if="section.firstBlood" type="danger">First Blood</ElTag></header><ElInput v-model="section.cueText" type="textarea" :rows="3" maxlength="2000" show-word-limit @input="dirty = true" /></article></div><ElFormItem label="结束语"><ElInput v-model="form.closingText" type="textarea" :rows="3" maxlength="4000" show-word-limit @input="dirty = true" /></ElFormItem></ElForm></ElCard>
-      <article class="host-script-print"><header><p>PROJECT BALLOON · HOST CUE SHEET</p><h1>{{ script.contestName }}颁奖主持人提词稿</h1></header><section><h2>开场</h2><p>{{ form.openingText }}</p></section><section v-for="(section, index) in form.sections" :key="section.categoryId"><h2>{{ index + 1 }}. {{ section.name }}（{{ section.code }}）</h2><p>{{ section.cueText }}</p><ol><li v-for="recipient in section.recipients" :key="recipient.id"><strong>{{ recipient.teamName }}</strong><span v-if="recipient.school"> · {{ recipient.school }}</span></li></ol></section><section><h2>结束</h2><p>{{ form.closingText }}</p></section></article>
-    </template>
-    <ElEmpty v-else-if="!loading && !errorMessage" description="请选择比赛" />
-  </section>
+  <el-container direction="vertical" class="host-script-page">
+    <el-header height="auto" class="host-script-page-header"><div><p class="eyebrow">Host Cue Sheet</p><h1>颁奖主持人脚本</h1></div><ElSpace wrap :size="16" class="host-script-toolbar"><ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"><ElOption v-for="contest in contests" :key="contest.id" :label="contest.name" :value="contest.id" /></ElSelect><ElButton :icon="Refresh" :loading="loading" @click="load(true)">刷新</ElButton><ElButton :icon="Printer" :disabled="!script" @click="printScript">打印</ElButton><ElButton type="primary" :icon="Check" :disabled="!script || !dirty" :loading="saving" @click="save">保存脚本</ElButton></ElSpace></el-header>
+    <el-main class="page-body">
+      <ElAlert v-if="errorMessage" :title="errorMessage" type="warning" show-icon :closable="false" />
+      <template v-if="script">
+        <ElCard shadow="never" class="host-live-card"><template #header><div class="card-header"><div><strong>主持人当前提示</strong><small>{{ statusLabel }}</small></div><ElTag>{{ script.presentationStatus }}</ElTag></div></template><ElRow v-if="currentSection" :gutter="24" class="host-live-grid"><ElCol :xs="24" :md="13"><div class="host-current-cue"><small>{{ currentSection.code }}</small><h2>{{ currentSection.name }}</h2><p>{{ currentSection.cueText }}</p><span>{{ nextSection ? `下一项：${nextSection.name}` : '这是最后一个奖项' }}</span></div></ElCol><ElCol :xs="24" :md="11"><div class="host-current-recipients"><strong>请宣读</strong><ol><li v-for="recipient in currentSection.recipients" :key="recipient.id"><span>{{ recipient.teamName }}</span><small>{{ recipient.school || '未填写学校' }}</small></li></ol></div></ElCol></ElRow></ElCard>
+        <ElCard shadow="never" class="host-script-editor"><template #header><div class="card-header"><div><strong>口播内容</strong><small>乐观锁版本 v{{ script.version ?? '草稿' }}</small></div></div></template><ElForm label-position="top"><ElFormItem label="开场语"><ElInput v-model="form.openingText" type="textarea" :rows="3" maxlength="4000" show-word-limit @input="dirty = true" /></ElFormItem><ElRow :gutter="16" class="host-section-editor-list"><ElCol v-for="section in form.sections" :key="section.categoryId" :xs="24" :md="12"><article><header><div><small>{{ section.code }}</small><strong>{{ section.name }}</strong></div><ElTag v-if="section.firstBlood" type="danger">First Blood</ElTag></header><ElInput v-model="section.cueText" type="textarea" :rows="3" maxlength="2000" show-word-limit @input="dirty = true" /></article></ElCol></ElRow><ElFormItem label="结束语"><ElInput v-model="form.closingText" type="textarea" :rows="3" maxlength="4000" show-word-limit @input="dirty = true" /></ElFormItem></ElForm></ElCard>
+        <article class="host-script-print"><header><p>PROJECT BALLOON · HOST CUE SHEET</p><h1>{{ script.contestName }}颁奖主持人提词稿</h1></header><section><h2>开场</h2><p>{{ form.openingText }}</p></section><section v-for="(section, index) in form.sections" :key="section.categoryId"><h2>{{ index + 1 }}. {{ section.name }}（{{ section.code }}）</h2><p>{{ section.cueText }}</p><ol><li v-for="recipient in section.recipients" :key="recipient.id"><strong>{{ recipient.teamName }}</strong><span v-if="recipient.school"> · {{ recipient.school }}</span></li></ol></section><section><h2>结束</h2><p>{{ form.closingText }}</p></section></article>
+      </template>
+      <ElEmpty v-else-if="!loading && !errorMessage" description="请选择比赛" />
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -33,3 +35,221 @@ async function save() { if (!contestId.value || !script.value) return; saving.va
 function printScript() { window.print(); }
 onMounted(async () => { try { contests.value = (await contestApi.listContests()).content; contestId.value = contests.value[0]?.id ?? null; connect(); await load(true); clockTimer = window.setInterval(() => { now.value += 1000; }, 1000); } catch (error) { errorMessage.value = getErrorMessage(error); } }); onBeforeUnmount(() => { realtime?.stop(); if (clockTimer) window.clearInterval(clockTimer); });
 </script>
+
+<style scoped>
+.host-script-page {
+  width: min(1500px, 100%);
+  margin: 0 auto;
+}
+
+.host-script-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 38px 38px 0;
+  margin-bottom: 24px;
+  height: auto;
+}
+
+.host-script-page-header h1 {
+  margin: 4px 0 8px;
+  color: #172033;
+  font-size: clamp(30px, 4vw, 44px);
+  letter-spacing: -0.035em;
+}
+
+.host-script-page-header p:last-child {
+  margin: 0;
+  color: var(--muted);
+}
+
+.page-body {
+  padding: 0 38px 38px;
+}
+
+.host-live-card,
+.host-script-editor {
+  margin-top: 18px;
+  border-radius: 0;
+}
+
+.host-live-card .card-header,
+.host-script-editor .card-header,
+.host-section-editor-list article > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.host-live-grid > .el-col {
+  align-self: flex-start;
+}
+
+.host-current-cue {
+  padding: 28px;
+  border-radius: 0;
+  color: #fff8e8;
+  background: #18233d;
+}
+
+.host-current-cue small {
+  color: #f5c451;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.host-current-cue h2 {
+  margin: 8px 0 18px;
+  font-size: 34px;
+}
+
+.host-current-cue p {
+  min-height: 90px;
+  margin: 0 0 20px;
+  font-size: 21px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.host-current-cue > span {
+  color: #d7deea;
+}
+
+.host-current-recipients {
+  max-height: 360px;
+  overflow: auto;
+  padding: 20px 24px;
+  border: 1px solid #e5e7eb;
+  border-radius: 0;
+  background: #fafbfc;
+}
+
+.host-current-recipients ol {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding-left: 24px;
+}
+
+.host-current-recipients li span,
+.host-current-recipients li small {
+  display: block;
+}
+
+.host-current-recipients li span {
+  font-weight: 800;
+}
+
+.host-current-recipients li small {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.host-section-editor-list {
+  margin-bottom: 20px;
+}
+
+.host-section-editor-list article {
+  padding: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 0;
+  background: #fafbfc;
+}
+
+.host-section-editor-list article > header {
+  margin-bottom: 12px;
+}
+
+.host-section-editor-list article > header small,
+.host-section-editor-list article > header strong {
+  display: block;
+}
+
+.host-section-editor-list article > header small {
+  color: #b7791f;
+  font-weight: 800;
+}
+
+.host-script-print {
+  display: none;
+}
+
+@media (max-width: 1000px) {
+  .host-script-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 24px 16px 0;
+  }
+
+  .page-body {
+    padding: 0 16px 24px;
+  }
+}
+
+@media print {
+  .host-script-page-header,
+  .host-live-card,
+  .host-script-editor,
+  .page-alert {
+    display: none !important;
+  }
+
+  .host-script-page {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  .page-body {
+    padding: 0;
+  }
+
+  .host-script-print {
+    display: block;
+    color: #111827;
+    font-family: "Noto Serif SC", "Songti SC", serif;
+  }
+
+  .host-script-print > header {
+    margin-bottom: 28px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid #111827;
+  }
+
+  .host-script-print > header p {
+    margin: 0 0 6px;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+  }
+
+  .host-script-print > header h1 {
+    margin: 0;
+    font-size: 26px;
+  }
+
+  .host-script-print section {
+    break-inside: avoid;
+    margin-bottom: 24px;
+  }
+
+  .host-script-print section h2 {
+    margin: 0 0 8px;
+    font-size: 18px;
+  }
+
+  .host-script-print section p {
+    margin: 0 0 10px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+  }
+
+  .host-script-print section ol {
+    margin: 0;
+    padding-left: 24px;
+    line-height: 1.7;
+  }
+}
+</style>

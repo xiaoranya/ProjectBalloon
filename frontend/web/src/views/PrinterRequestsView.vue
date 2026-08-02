@@ -1,38 +1,40 @@
 <template>
-  <section class="judge-page printer-page">
-    <div class="page-title-row">
-      <div>
-        <p class="eyebrow">Print Request Desk</p>
-        <h1>打印请求</h1>
-        <p>按比赛和状态处理最近 1000 条打印任务。</p>
+  <el-container direction="vertical" class="judge-page printer-page">
+    <el-header height="auto" class="page-head">
+      <div class="page-title-row">
+        <div>
+          <p class="eyebrow">Print Request Desk</p>
+          <h1>打印请求</h1>
+        </div>
+        <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
+          <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
+        </div>
       </div>
-      <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
-        <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
-      </div>
-    </div>
+    </el-header>
 
-    <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
-    <ElAlert
-      v-if="healthLoaded"
-      :title="cupsHealthText"
-      :type="cupsHealthType"
-      show-icon
-      :closable="false"
-      class="page-alert"
-    />
+    <el-main class="page-body">
+      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+      <ElAlert
+        v-if="healthLoaded"
+        :title="cupsHealthText"
+        :type="cupsHealthType"
+        show-icon
+        :closable="false"
+        class="page-alert"
+      />
 
-    <ElCard shadow="never" class="clarification-filter-card">
-      <div class="clarification-toolbar printer-toolbar">
-        <ElSelect v-model="selectedContestId" filterable placeholder="选择比赛" @change="changeContest">
-          <ElOption v-for="contest in contests" :key="contest.id" :label="contest.name" :value="contest.id" />
-        </ElSelect>
-        <ElSelect v-model="statusFilter" placeholder="状态" @change="loadRequests(false)">
-          <ElOption label="全部状态" value="ALL" />
-          <ElOption v-for="status in printRequestStatuses" :key="status" :label="printStatusLabel(status)" :value="status" />
-        </ElSelect>
-        <ElButton :icon="Refresh" :loading="loading" :disabled="!selectedContestId" @click="refreshRequests">刷新</ElButton>
-      </div>
-    </ElCard>
+      <ElCard shadow="never" class="clarification-filter-card">
+        <ElSpace wrap :size="16" class="printer-toolbar">
+          <ElSelect v-model="selectedContestId" filterable placeholder="选择比赛" @change="changeContest">
+            <ElOption v-for="contest in contests" :key="contest.id" :label="contest.name" :value="contest.id" />
+          </ElSelect>
+          <ElSelect v-model="statusFilter" placeholder="状态" @change="loadRequests(false)">
+            <ElOption label="全部状态" value="ALL" />
+            <ElOption v-for="status in printRequestStatuses" :key="status" :label="printStatusLabel(status)" :value="status" />
+          </ElSelect>
+          <ElButton :icon="Refresh" :loading="loading" :disabled="!selectedContestId" @click="refreshRequests">刷新</ElButton>
+        </ElSpace>
+      </ElCard>
 
     <ElCard shadow="never" class="clarification-list-card">
       <ElTable v-loading="loading" :data="requests" row-key="id" :empty-text="queueEmptyText" @row-click="openDetail">
@@ -93,7 +95,8 @@
         <ElButton type="danger" :loading="mutating" :disabled="!!rejectError" @click="rejectRequest">确认拒绝</ElButton>
       </template>
     </ElDialog>
-  </section>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -299,3 +302,178 @@ onMounted(async () => {
 
 onUnmounted(() => realtime?.stop());
 </script>
+
+<style scoped>
+.judge-page {
+  width: min(1440px, 100%);
+  margin: 0 auto;
+}
+
+.page-head {
+  height: auto;
+  padding: clamp(28px, 5vw, 58px) clamp(28px, 5vw, 58px) 0;
+}
+
+.page-body {
+  padding: 0 clamp(28px, 5vw, 58px) clamp(28px, 5vw, 58px);
+}
+
+.page-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 32px;
+}
+
+.page-title-row h1 {
+  margin-bottom: 8px;
+  font-size: clamp(32px, 4vw, 48px);
+  letter-spacing: -0.035em;
+}
+
+.page-title-row p {
+  display: none;
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.eyebrow {
+  display: none;
+  margin: 0 0 8px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.page-alert {
+  margin-bottom: 20px;
+}
+
+.clarification-filter-card {
+  margin-bottom: 22px;
+}
+
+.clarification-list-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.clarification-live-state {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  border-radius: 0;
+  padding: 8px 12px;
+  color: var(--muted);
+  background: #e9eef5;
+  font-size: 12px;
+}
+
+.clarification-live-state span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.clarification-live-state.connected {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.clarification-live-state.connected span {
+  background: #22c55e;
+}
+
+.printer-toolbar {
+  display: flex;
+  width: 100%;
+}
+
+.printer-toolbar :deep(.el-space__item) {
+  display: flex;
+  align-items: center;
+}
+
+.printer-toolbar :deep(.el-space__item:first-child) {
+  flex: 0 0 min(420px, 100%);
+}
+
+.printer-toolbar :deep(.el-space__item:nth-child(2)) {
+  flex: 0 0 170px;
+}
+
+.printer-toolbar :deep(.el-space__item .el-select) {
+  width: 100%;
+}
+
+.clarification-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.clarification-card-meta > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.clarification-card-meta > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.print-detail {
+  display: grid;
+  gap: 22px;
+}
+
+.print-actions {
+  flex-wrap: wrap;
+}
+
+.clarification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 30px;
+  padding-top: 22px;
+  border-top: 1px solid #e5eaf2;
+}
+
+.admin-primary-cell strong,
+.admin-primary-cell small {
+  display: block;
+}
+
+.admin-primary-cell small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.muted-text {
+  color: var(--muted);
+}
+
+.danger-text {
+  color: #dc2626;
+}
+
+@media (max-width: 640px) {
+  .page-title-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .printer-toolbar :deep(.el-space__item) {
+    flex: 1 1 100% !important;
+  }
+}
+</style>

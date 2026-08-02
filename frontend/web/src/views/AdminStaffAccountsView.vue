@@ -1,17 +1,15 @@
 <template>
-  <section class="admin-page staff-accounts-page">
-    <header class="admin-page-header">
-      <div>
-        <p class="eyebrow">Identity Management</p>
+  <el-container direction="vertical" class="admin-page staff-accounts-page">
+    <el-header height="auto" class="page-head">
+      <div class="admin-page-header compact">
         <h1>工作人员账号</h1>
-        <p>创建现场工作人员账号，维护角色、启用状态和初始密码。</p>
+        <div class="admin-page-actions">
+          <ElButton :icon="Refresh" :loading="loading" @click="load">刷新</ElButton>
+          <ElButton type="primary" :icon="Plus" @click="openCreate">新建账号</ElButton>
+        </div>
       </div>
-      <div class="admin-page-actions">
-        <ElButton :icon="Refresh" :loading="loading" @click="load">刷新</ElButton>
-        <ElButton type="primary" :icon="Plus" @click="openCreate">新建账号</ElButton>
-      </div>
-    </header>
-
+    </el-header>
+    <el-main class="page-body">
     <ElAlert
       v-if="errorMessage"
       :title="errorMessage"
@@ -21,7 +19,7 @@
       class="page-alert"
     />
 
-    <ElCard shadow="never" class="admin-card">
+    <ElCard shadow="never">
       <ElTable v-loading="loading" :data="accounts" row-key="id">
         <ElTableColumn label="账号" min-width="190">
           <template #default="{ row }">
@@ -142,7 +140,8 @@
         </ElButton>
       </template>
     </ElDialog>
-  </section>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -309,3 +308,77 @@ async function saveResetPassword() {
 
 onMounted(load);
 </script>
+
+<style scoped>
+.admin-page {
+  width: min(1320px, 100%);
+  margin: 0 auto;
+}
+.page-head {
+  height: auto;
+  padding: 42px 42px 0;
+}
+.page-body {
+  padding: 0 42px 42px;
+}
+.admin-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+.admin-page-header.compact {
+  align-items: center;
+}
+.admin-page-header h1 {
+  margin: 5px 0 6px;
+  font-size: clamp(28px, 4vw, 40px);
+  color: #13213b;
+}
+.admin-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.page-alert {
+  margin-bottom: 20px;
+}
+.staff-account-identity {
+  display: grid;
+  gap: 0.2rem;
+}
+.staff-account-identity span {
+  color: var(--el-text-color-secondary);
+  font-size: 0.8rem;
+}
+.form-help {
+  color: var(--el-text-color-secondary);
+  font-size: 0.8rem;
+}
+.reset-password-form {
+  margin-top: 1rem;
+}
+.wide-control {
+  width: 100%;
+}
+@media (max-width: 680px) {
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+@media (max-width: 640px) {
+  .page-head {
+    padding: 24px 16px 0;
+  }
+  .page-body {
+    padding: 0 16px 24px;
+  }
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+</style>

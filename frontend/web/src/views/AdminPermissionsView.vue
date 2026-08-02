@@ -1,14 +1,12 @@
 <template>
-  <section class="admin-page permissions-page">
-    <header class="admin-page-header">
-      <div>
-        <p class="eyebrow">Access Control</p>
+  <el-container direction="vertical" class="admin-page permissions-page">
+    <el-header height="auto" class="page-head">
+      <div class="admin-page-header compact">
         <h1>比赛管理员授权</h1>
-        <p>比赛管理员只能查看和管理这里明确分配的比赛。</p>
+        <ElButton :icon="Refresh" :loading="loading" @click="load">刷新</ElButton>
       </div>
-      <ElButton :icon="Refresh" :loading="loading" @click="load">刷新</ElButton>
-    </header>
-
+    </el-header>
+    <el-main class="page-body">
     <ElAlert
       v-if="errorMessage"
       :title="errorMessage"
@@ -23,7 +21,6 @@
         v-for="admin in admins"
         :key="admin.userId"
         shadow="never"
-        class="admin-card permission-admin-card"
       >
         <template #header>
           <div class="permission-admin-heading">
@@ -38,15 +35,24 @@
         </template>
 
         <ElCheckboxGroup v-model="draftScopes[admin.userId]" class="permission-contest-grid">
-          <ElCheckbox
-            v-for="contest in contests"
-            :key="contest.id"
-            :value="contest.id"
-            border
-          >
-            <span>{{ contest.name }}</span>
-            <small>#{{ contest.id }} · {{ contestStatusLabel(contest.status) }}</small>
-          </ElCheckbox>
+          <ElRow :gutter="12">
+            <ElCol
+              v-for="contest in contests"
+              :key="contest.id"
+              :xs="24"
+              :sm="12"
+              :md="8"
+              :lg="6"
+            >
+              <ElCheckbox
+                :value="contest.id"
+                border
+              >
+                <span>{{ contest.name }}</span>
+                <small>#{{ contest.id }} · {{ contestStatusLabel(contest.status) }}</small>
+              </ElCheckbox>
+            </ElCol>
+          </ElRow>
         </ElCheckboxGroup>
 
         <ElEmpty v-if="!contests.length" description="尚无可分配比赛" />
@@ -66,7 +72,8 @@
 
       <ElEmpty v-if="!loading && !admins.length" description="当前没有比赛管理员账号" />
     </div>
-  </section>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -133,3 +140,91 @@ async function save(admin: ContestAdminScope) {
 
 onMounted(load);
 </script>
+
+<style scoped>
+.admin-page {
+  width: min(1320px, 100%);
+  margin: 0 auto;
+}
+.page-head {
+  height: auto;
+  padding: 42px 42px 0;
+}
+.page-body {
+  padding: 0 42px 42px;
+}
+.admin-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+.admin-page-header.compact {
+  align-items: center;
+}
+.admin-page-header h1 {
+  margin: 5px 0 6px;
+  font-size: clamp(28px, 4vw, 40px);
+  color: #13213b;
+}
+.page-alert {
+  margin-bottom: 20px;
+}
+.permission-admin-heading,
+.permission-admin-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.permission-admin-heading strong,
+.permission-admin-heading span {
+  display: block;
+}
+.permission-admin-heading span,
+.permission-admin-actions span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.permission-contest-grid :deep(.el-checkbox) {
+  width: 100%;
+  height: auto;
+  min-height: 58px;
+  margin: 0;
+  padding: 10px 14px;
+}
+.permission-contest-grid :deep(.el-checkbox__label span),
+.permission-contest-grid :deep(.el-checkbox__label small) {
+  display: block;
+}
+.permission-contest-grid :deep(.el-checkbox__label small) {
+  margin-top: 3px;
+  color: var(--muted);
+}
+.permission-admin-actions {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #edf0f5;
+}
+@media (max-width: 680px) {
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+@media (max-width: 640px) {
+  .page-head {
+    padding: 24px 16px 0;
+  }
+  .page-body {
+    padding: 0 16px 24px;
+  }
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+</style>

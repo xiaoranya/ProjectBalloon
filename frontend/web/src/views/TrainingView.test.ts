@@ -46,7 +46,7 @@ describe('TrainingView', () => {
     expect(wrapper.text()).toContain('BFS');
     expect(wrapper.text()).toContain('必做');
 
-    await wrapper.findAll('aside button')[1].trigger('click');
+    await wrapper.findAll('.el-menu-item')[1].trigger('click');
     await flushPromises();
     expect(mocks.set).toHaveBeenLastCalledWith(8);
     expect(wrapper.text()).toContain('Knapsack');

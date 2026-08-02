@@ -1,99 +1,117 @@
 <template>
-  <section class="admin-page">
-    <header class="admin-page-header compact">
-      <div>
-        <ElButton link :icon="ArrowLeft" @click="router.push('/admin/contests')">返回比赛列表</ElButton>
-        <h1>{{ contest?.name ?? '比赛管理' }}</h1>
-        <p v-if="contest">#{{ contest.id }} · {{ contestStatusLabel(contest.status) }}</p>
+  <el-container direction="vertical" class="admin-page">
+    <el-header height="auto" class="page-head">
+      <div class="admin-page-header compact">
+        <div>
+          <ElButton link :icon="ArrowLeft" @click="router.push('/admin/contests')">返回比赛列表</ElButton>
+          <h1>{{ contest?.name ?? '比赛管理' }}</h1>
+        </div>
+        <div v-if="contest" class="admin-page-actions">
+          <ElButton v-if="session.isSuperAdmin.value" plain @click="openClone">克隆比赛</ElButton>
+          <ElButton plain @click="openAnnouncements">公告管理</ElButton>
+          <ElButton type="primary" plain :icon="Refresh" @click="openBulkRejudge">
+            批量重判工作台
+          </ElButton>
+          <ElTag size="large" :type="contest.status === 'RUNNING' ? 'success' : 'info'">
+            {{ contestStatusLabel(contest.status) }}
+          </ElTag>
+        </div>
       </div>
-      <div v-if="contest" class="admin-page-actions">
-        <ElButton v-if="session.isSuperAdmin.value" plain @click="openClone">克隆比赛</ElButton>
-        <ElButton plain @click="openAnnouncements">公告管理</ElButton>
-        <ElButton type="primary" plain :icon="Refresh" @click="openBulkRejudge">
-          批量重判工作台
-        </ElButton>
-        <ElTag size="large" :type="contest.status === 'RUNNING' ? 'success' : 'info'">
-          {{ contestStatusLabel(contest.status) }}
-        </ElTag>
-      </div>
-    </header>
+    </el-header>
 
-    <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+    <el-main class="page-body">
+      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
 
     <ElTabs v-model="activeTab" class="admin-tabs">
       <ElTabPane label="概览与生命周期" name="overview">
-        <div v-if="contest" class="admin-two-column">
-          <ElCard shadow="never" class="admin-card">
-            <template #header><strong>比赛信息</strong></template>
-            <ElDescriptions :column="1" border>
-              <ElDescriptionsItem label="可见性">{{ contest.visibility === 'PUBLIC' ? '公开' : '私有' }}</ElDescriptionsItem>
-              <ElDescriptionsItem label="开始">{{ formatDateTime(contest.startAt) }}</ElDescriptionsItem>
-              <ElDescriptionsItem label="封榜">{{ formatDateTime(contest.freezeAt) }}</ElDescriptionsItem>
-              <ElDescriptionsItem label="结束">{{ formatDateTime(contest.endAt) }}</ElDescriptionsItem>
-            </ElDescriptions>
-            <div class="card-action">
-              <ElButton plain @click="editVisible = true">编辑比赛信息</ElButton>
-              <ElButton v-if="canExtend" type="warning" plain @click="extensionVisible = true">
-                延长比赛
-              </ElButton>
-            </div>
-          </ElCard>
-
-          <ElCard shadow="never" class="admin-card">
-            <template #header><strong>生命周期</strong></template>
-            <ElSteps direction="vertical" :active="lifecycleIndex" finish-status="success">
-              <ElStep v-for="status in lifecycle" :key="status" :title="contestStatusLabel(status)" />
-            </ElSteps>
-            <div class="lifecycle-actions">
-              <ElButton
-                v-for="status in nextStatuses"
-                :key="status"
-                type="primary"
-                :loading="transitioning"
-                @click="transition(status)"
-              >
-                {{ transitionLabel(status) }}
-              </ElButton>
-              <p v-if="nextStatuses.length === 0">当前状态没有后续操作。</p>
-            </div>
-          </ElCard>
-
-          <ElCard shadow="never" class="admin-card">
-            <template #header><strong>OI / IOI 计分策略</strong></template>
-            <ElForm label-position="top">
-              <div class="admin-form-grid">
-                <ElFormItem label="赛制">
-                  <ElSelect v-model="scoringForm.scoringMode" :disabled="!canEditProblemConfiguration">
-                    <ElOption label="ICPC（解题数 / 罚时）" value="ICPC" />
-                    <ElOption label="OI（积分）" value="OI" />
-                    <ElOption label="IOI（积分）" value="IOI" />
-                  </ElSelect>
-                </ElFormItem>
-                <ElFormItem label="有效提交">
-                  <ElSelect v-model="scoringForm.scoreAggregation" :disabled="!canEditProblemConfiguration || scoringForm.scoringMode === 'ICPC'">
-                    <ElOption label="最高分" value="BEST" />
-                    <ElOption label="最后一次" value="LAST" />
-                  </ElSelect>
-                </ElFormItem>
-                <ElFormItem label="比赛中反馈">
-                  <ElSelect v-model="scoringForm.feedbackPolicy" :disabled="!canEditProblemConfiguration">
-                    <ElOption label="完整测试点" value="FULL" />
-                    <ElOption label="仅总分" value="SCORE_ONLY" />
-                    <ElOption label="不反馈" value="NONE" />
-                  </ElSelect>
-                </ElFormItem>
+        <ElRow v-if="contest" :gutter="16" class="admin-two-column">
+          <ElCol :xs="24" :md="12">
+            <ElCard shadow="never" >
+              <template #header><strong>比赛信息</strong></template>
+              <ElDescriptions :column="1" border>
+                <ElDescriptionsItem label="可见性">{{ contest.visibility === 'PUBLIC' ? '公开' : '私有' }}</ElDescriptionsItem>
+                <ElDescriptionsItem label="开始">{{ formatDateTime(contest.startAt) }}</ElDescriptionsItem>
+                <ElDescriptionsItem label="封榜">{{ formatDateTime(contest.freezeAt) }}</ElDescriptionsItem>
+                <ElDescriptionsItem label="结束">{{ formatDateTime(contest.endAt) }}</ElDescriptionsItem>
+              </ElDescriptions>
+              <div class="card-action">
+                <ElSpace wrap :size="10">
+                  <ElButton plain @click="editVisible = true">编辑比赛信息</ElButton>
+                  <ElButton v-if="canExtend" type="warning" plain @click="extensionVisible = true">
+                    延长比赛
+                  </ElButton>
+                </ElSpace>
               </div>
-            </ElForm>
-            <div class="card-action">
-              <ElButton type="primary" :loading="savingScoring" :disabled="!canEditProblemConfiguration" @click="saveScoringPolicy">保存计分策略</ElButton>
-            </div>
-          </ElCard>
-        </div>
+            </ElCard>
+          </ElCol>
+
+          <ElCol :xs="24" :md="12">
+            <ElCard shadow="never" >
+              <template #header><strong>生命周期</strong></template>
+              <ElSteps direction="vertical" :active="lifecycleIndex" finish-status="success">
+                <ElStep v-for="status in lifecycle" :key="status" :title="contestStatusLabel(status)" />
+              </ElSteps>
+              <div class="lifecycle-actions">
+                <ElButton
+                  v-for="status in nextStatuses"
+                  :key="status"
+                  type="primary"
+                  :loading="transitioning"
+                  @click="transition(status)"
+                >
+                  {{ transitionLabel(status) }}
+                </ElButton>
+                <p v-if="nextStatuses.length === 0">当前状态没有后续操作。</p>
+              </div>
+            </ElCard>
+          </ElCol>
+
+          <ElCol :xs="24">
+            <ElCard shadow="never" >
+              <template #header><strong>OI / IOI 计分策略</strong></template>
+              <ElForm label-position="top">
+                <ElRow :gutter="12" class="admin-form-grid">
+                  <ElCol :xs="24" :sm="8">
+                    <ElFormItem label="赛制">
+                      <ElSelect v-model="scoringForm.scoringMode" :disabled="!canEditProblemConfiguration">
+                        <ElOption label="ICPC（解题数 / 罚时）" value="ICPC" />
+                        <ElOption label="OI（积分）" value="OI" />
+                        <ElOption label="IOI（积分）" value="IOI" />
+                      </ElSelect>
+                    </ElFormItem>
+                  </ElCol>
+                  <ElCol :xs="24" :sm="8">
+                    <ElFormItem label="有效提交">
+                      <ElSelect v-model="scoringForm.scoreAggregation" :disabled="!canEditProblemConfiguration || scoringForm.scoringMode === 'ICPC'">
+                        <ElOption label="最高分" value="BEST" />
+                        <ElOption label="最后一次" value="LAST" />
+                      </ElSelect>
+                    </ElFormItem>
+                  </ElCol>
+                  <ElCol :xs="24" :sm="8">
+                    <ElFormItem label="比赛中反馈">
+                      <ElSelect v-model="scoringForm.feedbackPolicy" :disabled="!canEditProblemConfiguration">
+                        <ElOption label="完整测试点" value="FULL" />
+                        <ElOption label="仅总分" value="SCORE_ONLY" />
+                        <ElOption label="不反馈" value="NONE" />
+                      </ElSelect>
+                    </ElFormItem>
+                  </ElCol>
+                </ElRow>
+              </ElForm>
+              <div class="card-action">
+                <ElSpace wrap :size="10">
+                  <ElButton type="primary" :loading="savingScoring" :disabled="!canEditProblemConfiguration" @click="saveScoringPolicy">保存计分策略</ElButton>
+                </ElSpace>
+              </div>
+            </ElCard>
+          </ElCol>
+        </ElRow>
       </ElTabPane>
 
       <ElTabPane label="队伍分配" name="teams">
-        <ElCard shadow="never" class="admin-card">
-          <div class="assignment-toolbar">
+        <ElCard shadow="never" >
+          <ElSpace wrap :size="12" class="assignment-toolbar">
             <ElSelect v-model="teamForm.teamId" filterable placeholder="选择未分配队伍" style="width: 260px">
               <ElOption v-for="team in availableTeams" :key="team.id" :label="team.name" :value="team.id" />
             </ElSelect>
@@ -104,7 +122,7 @@
             </ElSelect>
             <ElInput v-model="teamForm.groupName" placeholder="分组（可选）" style="width: 180px" />
             <ElButton type="primary" :disabled="!teamForm.teamId" :loading="assigning" @click="assignTeam">分配队伍</ElButton>
-          </div>
+          </ElSpace>
           <ElTable :data="contestTeams" row-key="teamId">
             <ElTableColumn prop="teamName" label="队伍" min-width="220" />
             <ElTableColumn prop="participationType" label="参赛类型" width="140">
@@ -124,8 +142,8 @@
       </ElTabPane>
 
       <ElTabPane label="题目分配" name="problems">
-        <ElCard shadow="never" class="admin-card">
-          <div class="assignment-toolbar">
+        <ElCard shadow="never" >
+          <ElSpace wrap :size="12" class="assignment-toolbar">
             <ElSelect v-model="problemForm.problemId" filterable placeholder="选择未分配题目" style="width: 260px">
               <ElOption
                 v-for="problem in availableProblems"
@@ -145,7 +163,7 @@
             >
               分配题目
             </ElButton>
-          </div>
+          </ElSpace>
           <ElTable :data="sortedContestProblems" row-key="problemId">
             <ElTableColumn prop="alias" label="题号" width="90" />
             <ElTableColumn label="题目" min-width="260">
@@ -176,8 +194,8 @@
       </ElTabPane>
 
       <ElTabPane label="提交与重判" name="submissions">
-        <ElCard shadow="never" class="admin-card">
-          <div class="assignment-toolbar">
+        <ElCard shadow="never" >
+          <ElSpace wrap :size="12" class="assignment-toolbar">
             <strong>判题队列</strong>
             <ElTag v-if="judgeQueueStatus" :type="judgeQueueStatus.drained ? 'success' : 'warning'">
               {{ judgeQueueStatus.drained ? '已排空' : '处理中' }}
@@ -189,11 +207,11 @@
               {{ judgeQueueStatus.outboxFailed }}
             </span>
             <ElButton link :loading="queueLoading" @click="loadJudgeQueueStatus">刷新状态</ElButton>
-          </div>
+          </ElSpace>
         </ElCard>
-        <ElCard shadow="never" class="admin-card">
+        <ElCard shadow="never" >
           <template #header>
-            <div class="assignment-toolbar">
+            <ElSpace wrap :size="12" class="assignment-toolbar">
               <strong>数据导出</strong>
               <ElButton
                 :icon="Download"
@@ -216,7 +234,7 @@
               >
                 源码 ZIP
               </ElButton>
-            </div>
+            </ElSpace>
           </template>
           <ElTable :data="submissions" row-key="id">
             <ElTableColumn prop="id" label="提交 ID" width="110" />
@@ -249,7 +267,7 @@
             </ElTableColumn>
             <template #empty><ElEmpty description="暂无提交" /></template>
           </ElTable>
-          <div class="pagination-row">
+          <ElRow justify="end" class="pagination-row">
             <ElPagination
               v-model:current-page="submissionCurrentPage"
               :page-size="submissionPage.size"
@@ -257,11 +275,11 @@
               layout="prev, pager, next, total"
               @current-change="loadSubmissions"
             />
-          </div>
+          </ElRow>
         </ElCard>
-        <ElCard shadow="never" class="admin-card">
+        <ElCard shadow="never" >
           <template #header>
-            <div class="assignment-toolbar">
+            <ElSpace wrap :size="12" class="assignment-toolbar">
               <strong>P2 源码相似度审核</strong>
               <ElSelect v-model="similarityProblemId" clearable placeholder="全部题目" style="width: 180px">
                 <ElOption v-for="problem in sortedContestProblems" :key="problem.problemId" :label="problem.alias" :value="problem.problemId" />
@@ -270,7 +288,7 @@
               <ElInputNumber v-model="similarityThreshold" :min="50" :max="100" :step="1" />
               <ElButton type="primary" plain :loading="similarityLoading" @click="loadSimilarityPairs">扫描候选</ElButton>
               <ElButton plain :loading="similarityBackfillLoading" @click="backfillSimilarity">历史回填</ElButton>
-            </div>
+            </ElSpace>
           </template>
           <ElAlert title="相似度结果仅用于人工复核，不会自动处罚或改变判题结果。" type="info" :closable="false" show-icon />
           <ElTable :data="similarityPairs" row-key="submissionId" style="margin-top: 12px">
@@ -307,12 +325,12 @@
     <ElDialog v-model="subtasksVisible" title="子任务与测试点计分" width="900">
       <ElSkeleton v-if="subtasksLoading" :rows="5" animated />
       <template v-else>
-        <div class="assignment-toolbar">
+        <ElSpace wrap :size="12" class="assignment-toolbar">
           <ElFormItem label="题目满分（千分之一分）">
             <ElInputNumber v-model="subtaskMaxScoreMilli" :min="1" :max="100000000" />
           </ElFormItem>
           <ElButton plain @click="addSubtask">添加子任务</ElButton>
-        </div>
+        </ElSpace>
         <ElTable :data="editableSubtasks" row-key="localId">
           <ElTableColumn label="标识" width="130"><template #default="{ row }"><ElInput v-model="row.subtaskKey" maxlength="32" /></template></ElTableColumn>
           <ElTableColumn label="名称" min-width="150"><template #default="{ row }"><ElInput v-model="row.name" maxlength="120" /></template></ElTableColumn>
@@ -338,11 +356,17 @@
             <ElRadioButton value="PUBLIC">公开比赛</ElRadioButton>
           </ElRadioGroup>
         </ElFormItem>
-        <div class="admin-form-grid">
-          <ElFormItem label="开始时间"><ElDatePicker v-model="editForm.startAt" type="datetime" :disabled="!canEditSchedule" /></ElFormItem>
-          <ElFormItem label="封榜时间"><ElDatePicker v-model="editForm.freezeAt" type="datetime" :disabled="!canEditSchedule" /></ElFormItem>
-          <ElFormItem label="结束时间"><ElDatePicker v-model="editForm.endAt" type="datetime" :disabled="!canEditSchedule" /></ElFormItem>
-        </div>
+        <ElRow :gutter="12" class="admin-form-grid">
+          <ElCol :xs="24" :sm="8">
+            <ElFormItem label="开始时间"><ElDatePicker v-model="editForm.startAt" type="datetime" :disabled="!canEditSchedule" /></ElFormItem>
+          </ElCol>
+          <ElCol :xs="24" :sm="8">
+            <ElFormItem label="封榜时间"><ElDatePicker v-model="editForm.freezeAt" type="datetime" :disabled="!canEditSchedule" /></ElFormItem>
+          </ElCol>
+          <ElCol :xs="24" :sm="8">
+            <ElFormItem label="结束时间"><ElDatePicker v-model="editForm.endAt" type="datetime" :disabled="!canEditSchedule" /></ElFormItem>
+          </ElCol>
+        </ElRow>
         <ElAlert
           v-if="!canEditSchedule"
           title="比赛开始后，赛程字段已锁定；如需延后结束，请使用“延长比赛”。"
@@ -372,11 +396,17 @@
             <ElRadioButton value="PUBLIC">公开比赛</ElRadioButton>
           </ElRadioGroup>
         </ElFormItem>
-        <div class="admin-form-grid">
-          <ElFormItem label="开始时间"><ElDatePicker v-model="cloneForm.startAt" type="datetime" /></ElFormItem>
-          <ElFormItem label="封榜时间"><ElDatePicker v-model="cloneForm.freezeAt" type="datetime" /></ElFormItem>
-          <ElFormItem label="结束时间"><ElDatePicker v-model="cloneForm.endAt" type="datetime" /></ElFormItem>
-        </div>
+        <ElRow :gutter="12" class="admin-form-grid">
+          <ElCol :xs="24" :sm="8">
+            <ElFormItem label="开始时间"><ElDatePicker v-model="cloneForm.startAt" type="datetime" /></ElFormItem>
+          </ElCol>
+          <ElCol :xs="24" :sm="8">
+            <ElFormItem label="封榜时间"><ElDatePicker v-model="cloneForm.freezeAt" type="datetime" /></ElFormItem>
+          </ElCol>
+          <ElCol :xs="24" :sm="8">
+            <ElFormItem label="结束时间"><ElDatePicker v-model="cloneForm.endAt" type="datetime" /></ElFormItem>
+          </ElCol>
+        </ElRow>
         <ElFormItem><ElCheckbox v-model="cloneForm.copyTeams">复制当前有效队伍及参赛类型</ElCheckbox></ElFormItem>
         <ElAlert
           v-if="!cloneScheduleComplete"
@@ -449,7 +479,8 @@
         </ElCard>
       </template>
     </ElDialog>
-  </section>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -1157,3 +1188,100 @@ function transitionLabel(status: ContestStatus) {
 
 onMounted(loadAll);
 </script>
+
+<style scoped>
+.admin-page {
+  width: min(1320px, 100%);
+  margin: 0 auto;
+}
+.page-head {
+  height: auto;
+  padding: 42px 42px 0;
+}
+.page-body {
+  padding: 0 42px 42px;
+}
+.admin-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+.admin-page-header.compact {
+  align-items: center;
+}
+.admin-page-header h1 {
+  margin: 5px 0 6px;
+  font-size: clamp(28px, 4vw, 40px);
+  color: #13213b;
+}
+.admin-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.page-alert {
+  margin-bottom: 20px;
+}
+.admin-tabs :deep(.el-tabs__header) {
+  margin-bottom: 22px;
+}
+.admin-tabs :deep(.el-tabs__header .el-tabs__item) {
+  height: 48px;
+  font-size: 15px;
+}
+.admin-two-column .el-col {
+  margin-bottom: 16px;
+}
+.card-action {
+  margin-top: 20px;
+}
+.assignment-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+  padding: 18px;
+  border-radius: 0;
+  background: #f7f9fc;
+}
+.admin-form-grid :deep(.el-date-editor) {
+  width: 100%;
+}
+.pagination-row {
+  margin-top: 24px;
+}
+.problem-color {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+}
+.problem-color i {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+.source-card {
+  border-radius: 0;
+}
+.source-card pre {
+  overflow-x: auto;
+  border-radius: 0;
+  padding: 18px;
+  color: #dbeafe;
+  background: #101827;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  max-height: 540px;
+  margin: 0;
+  white-space: pre;
+}
+@media (max-width: 680px) {
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+</style>

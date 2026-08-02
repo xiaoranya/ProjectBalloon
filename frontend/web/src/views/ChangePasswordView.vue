@@ -1,42 +1,43 @@
 <template>
-  <main class="login-page password-change-page">
-    <section class="login-copy">
-      <p class="eyebrow">Account Security</p>
-      <h1>{{ required ? '首次登录，请修改密码' : '修改登录密码' }}</h1>
-      <p>新密码设置成功后，初始密码将立即失效。</p>
-    </section>
+  <el-container direction="vertical" class="login-page password-change-page">
+    <el-main class="login-page-main">
+      <section class="login-copy">
+        <p class="eyebrow">Account Security</p>
+        <h1>{{ required ? '首次登录，请修改密码' : '修改登录密码' }}</h1>
+      </section>
 
-    <ElCard class="login-card" shadow="never">
-      <ElAlert
-        v-if="required"
-        title="完成密码修改前，其他系统功能暂不可用。"
-        type="warning"
-        show-icon
-        :closable="false"
-      />
-      <ElAlert
-        v-if="errorMessage"
-        :title="errorMessage"
-        type="error"
-        show-icon
-        :closable="false"
-      />
-      <ElForm ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
-        <ElFormItem label="当前密码" prop="currentPassword">
-          <ElInput v-model="form.currentPassword" type="password" show-password autocomplete="current-password" />
-        </ElFormItem>
-        <ElFormItem label="新密码" prop="newPassword">
-          <ElInput v-model="form.newPassword" type="password" show-password autocomplete="new-password" />
-        </ElFormItem>
-        <ElFormItem label="确认新密码" prop="confirmation">
-          <ElInput v-model="form.confirmation" type="password" show-password autocomplete="new-password" />
-        </ElFormItem>
-        <ElButton type="primary" native-type="submit" :loading="session.state.loading">
-          保存新密码
-        </ElButton>
-      </ElForm>
-    </ElCard>
-  </main>
+      <ElCard class="login-card" shadow="never">
+        <ElAlert
+          v-if="required"
+          title="完成密码修改前，其他系统功能暂不可用。"
+          type="warning"
+          show-icon
+          :closable="false"
+        />
+        <ElAlert
+          v-if="errorMessage"
+          :title="errorMessage"
+          type="error"
+          show-icon
+          :closable="false"
+        />
+        <ElForm ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
+          <ElFormItem label="当前密码" prop="currentPassword">
+            <ElInput v-model="form.currentPassword" type="password" show-password autocomplete="current-password" />
+          </ElFormItem>
+          <ElFormItem label="新密码" prop="newPassword">
+            <ElInput v-model="form.newPassword" type="password" show-password autocomplete="new-password" />
+          </ElFormItem>
+          <ElFormItem label="确认新密码" prop="confirmation">
+            <ElInput v-model="form.confirmation" type="password" show-password autocomplete="new-password" />
+          </ElFormItem>
+          <ElButton type="primary" native-type="submit" :loading="session.state.loading">
+            保存新密码
+          </ElButton>
+        </ElForm>
+      </ElCard>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -79,3 +80,22 @@ async function submit() {
   }
 }
 </script>
+
+<style scoped>
+.login-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+  background: #eff5ff;
+}
+
+.login-page-main {
+  padding: 0;
+}
+
+.password-change-page .login-card {
+  display: grid;
+  gap: 1rem;
+}
+</style>

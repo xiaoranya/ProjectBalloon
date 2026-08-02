@@ -1,74 +1,80 @@
 <template>
-  <section class="admin-page">
-    <header class="admin-page-header">
-      <div>
-        <p class="eyebrow">Contest Operations</p>
+  <el-container direction="vertical" class="admin-page">
+    <el-header height="auto" class="page-head">
+      <div class="admin-page-header compact">
         <h1>比赛管理</h1>
-        <p>创建比赛并进入配置、运行和赛后管理流程。</p>
+        <ElButton v-if="session.isSuperAdmin.value" type="primary" :icon="Plus" @click="openCreate">
+          创建比赛
+        </ElButton>
       </div>
-      <ElButton v-if="session.isSuperAdmin.value" type="primary" :icon="Plus" @click="openCreate">
-        创建比赛
-      </ElButton>
-    </header>
+    </el-header>
 
-    <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+    <el-main class="page-body">
+      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
 
-    <ElCard shadow="never" class="admin-card">
-      <ElTable v-loading="loading" :data="page.content" row-key="id" @row-click="openContest">
-        <ElTableColumn label="比赛" min-width="240">
-          <template #default="{ row }">
-            <div class="admin-primary-cell">
-              <strong>{{ row.name }}</strong>
-              <small>#{{ row.id }} · {{ row.visibility === 'PUBLIC' ? '公开' : '私有' }}</small>
-            </div>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="状态" width="130">
-          <template #default="{ row }"><ElTag :type="contestTagType(row.status)">{{ contestStatusLabel(row.status) }}</ElTag></template>
-        </ElTableColumn>
-        <ElTableColumn label="开始时间" min-width="180"><template #default="{ row }">{{ formatDateTime(row.startAt) }}</template></ElTableColumn>
-        <ElTableColumn label="结束时间" min-width="180"><template #default="{ row }">{{ formatDateTime(row.endAt) }}</template></ElTableColumn>
-        <ElTableColumn label="操作" width="150" fixed="right">
-          <template #default="{ row }">
-            <ElButton link type="primary" @click.stop="openContest(row)">管理</ElButton>
-            <ElButton link @click.stop="openEdit(row)">编辑</ElButton>
-          </template>
-        </ElTableColumn>
-        <template #empty><ElEmpty description="暂无比赛" /></template>
-      </ElTable>
-      <div class="pagination-row">
-        <ElPagination
-          v-model:current-page="currentPage"
-          :page-size="page.size"
-          :total="page.totalElements"
-          layout="prev, pager, next, total"
-          @current-change="loadContests"
-        />
-      </div>
-    </ElCard>
+      <ElCard shadow="never">
+        <ElTable v-loading="loading" :data="page.content" row-key="id" @row-click="openContest">
+          <ElTableColumn label="比赛" min-width="240">
+            <template #default="{ row }">
+              <div class="admin-primary-cell">
+                <strong>{{ row.name }}</strong>
+                <small>#{{ row.id }} · {{ row.visibility === 'PUBLIC' ? '公开' : '私有' }}</small>
+              </div>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="状态" width="130">
+            <template #default="{ row }"><ElTag :type="contestTagType(row.status)">{{ contestStatusLabel(row.status) }}</ElTag></template>
+          </ElTableColumn>
+          <ElTableColumn label="开始时间" min-width="180"><template #default="{ row }">{{ formatDateTime(row.startAt) }}</template></ElTableColumn>
+          <ElTableColumn label="结束时间" min-width="180"><template #default="{ row }">{{ formatDateTime(row.endAt) }}</template></ElTableColumn>
+          <ElTableColumn label="操作" width="150" fixed="right">
+            <template #default="{ row }">
+              <ElButton link type="primary" @click.stop="openContest(row)">管理</ElButton>
+              <ElButton link @click.stop="openEdit(row)">编辑</ElButton>
+            </template>
+          </ElTableColumn>
+          <template #empty><ElEmpty description="暂无比赛" /></template>
+        </ElTable>
+        <ElRow justify="end" class="pagination-row">
+          <ElPagination
+            v-model:current-page="currentPage"
+            :page-size="page.size"
+            :total="page.totalElements"
+            layout="prev, pager, next, total"
+            @current-change="loadContests"
+          />
+        </ElRow>
+      </ElCard>
 
-    <ElDialog v-model="dialogVisible" :title="editing ? '编辑比赛' : '创建比赛'" width="660">
-      <ElForm ref="formRef" :model="form" :rules="rules" label-position="top">
-        <ElFormItem label="比赛名称" prop="name"><ElInput v-model="form.name" maxlength="120" show-word-limit /></ElFormItem>
-        <ElFormItem label="可见性" prop="visibility">
-          <ElRadioGroup v-model="form.visibility">
-            <ElRadioButton value="PRIVATE">私有比赛</ElRadioButton>
-            <ElRadioButton value="PUBLIC">公开比赛</ElRadioButton>
-          </ElRadioGroup>
-        </ElFormItem>
-        <div class="admin-form-grid">
-          <ElFormItem label="开始时间"><ElDatePicker v-model="form.startAt" type="datetime" /></ElFormItem>
-          <ElFormItem label="封榜时间"><ElDatePicker v-model="form.freezeAt" type="datetime" /></ElFormItem>
-          <ElFormItem label="结束时间"><ElDatePicker v-model="form.endAt" type="datetime" /></ElFormItem>
-        </div>
-        <ElAlert v-if="dialogError" :title="dialogError" type="error" show-icon :closable="false" />
-      </ElForm>
-      <template #footer>
-        <ElButton @click="dialogVisible = false">取消</ElButton>
-        <ElButton type="primary" :loading="saving" @click="save">{{ editing ? '保存修改' : '创建比赛' }}</ElButton>
-      </template>
-    </ElDialog>
-  </section>
+      <ElDialog v-model="dialogVisible" :title="editing ? '编辑比赛' : '创建比赛'" width="660">
+        <ElForm ref="formRef" :model="form" :rules="rules" label-position="top">
+          <ElFormItem label="比赛名称" prop="name"><ElInput v-model="form.name" maxlength="120" show-word-limit /></ElFormItem>
+          <ElFormItem label="可见性" prop="visibility">
+            <ElRadioGroup v-model="form.visibility">
+              <ElRadioButton value="PRIVATE">私有比赛</ElRadioButton>
+              <ElRadioButton value="PUBLIC">公开比赛</ElRadioButton>
+            </ElRadioGroup>
+          </ElFormItem>
+          <ElRow :gutter="12" class="admin-form-grid">
+            <ElCol :xs="24" :sm="8">
+              <ElFormItem label="开始时间"><ElDatePicker v-model="form.startAt" type="datetime" /></ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="8">
+              <ElFormItem label="封榜时间"><ElDatePicker v-model="form.freezeAt" type="datetime" /></ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="8">
+              <ElFormItem label="结束时间"><ElDatePicker v-model="form.endAt" type="datetime" /></ElFormItem>
+            </ElCol>
+          </ElRow>
+          <ElAlert v-if="dialogError" :title="dialogError" type="error" show-icon :closable="false" />
+        </ElForm>
+        <template #footer>
+          <ElButton @click="dialogVisible = false">取消</ElButton>
+          <ElButton type="primary" :loading="saving" @click="save">{{ editing ? '保存修改' : '创建比赛' }}</ElButton>
+        </template>
+      </ElDialog>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -156,3 +162,55 @@ async function save() {
 function contestTagType(status: string) { return status === 'RUNNING' ? 'success' : status === 'PAUSED' ? 'warning' : status === 'ENDED' || status === 'ARCHIVED' ? 'info' : 'primary'; }
 onMounted(loadContests);
 </script>
+
+<style scoped>
+.admin-page {
+  width: min(1320px, 100%);
+  margin: 0 auto;
+}
+.page-head {
+  height: auto;
+  padding: 42px 42px 0;
+}
+.page-body {
+  padding: 0 42px 42px;
+}
+.admin-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+.admin-page-header.compact {
+  align-items: center;
+}
+.admin-page-header h1 {
+  margin: 5px 0 6px;
+  font-size: clamp(28px, 4vw, 40px);
+  color: #13213b;
+}
+.page-alert {
+  margin-bottom: 20px;
+}
+.pagination-row {
+  margin-top: 24px;
+}
+.admin-primary-cell strong,
+.admin-primary-cell small {
+  display: block;
+}
+.admin-primary-cell small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+.admin-form-grid :deep(.el-date-editor) {
+  width: 100%;
+}
+@media (max-width: 680px) {
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+</style>

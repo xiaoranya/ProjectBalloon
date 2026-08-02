@@ -1,17 +1,23 @@
 <template>
-  <section class="awards-page">
-    <header class="awards-page-header"><div><p class="eyebrow">Awards Operations</p><h1>奖项名单管理</h1><p>基于已完成的正式 Resolver 生成名单，复核冲突后锁定并导出。</p></div><div class="awards-header-actions"><ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"><ElOption v-for="contest in contests" :key="contest.id" :value="contest.id" :label="contest.name" /></ElSelect><ElButton :icon="Refresh" :loading="loading" @click="loadWorkspace">刷新</ElButton></div></header>
-    <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
-    <div class="award-metrics"><div><span>奖项类别</span><strong>{{ categories.length }}</strong></div><div><span>获奖记录</span><strong>{{ awardSet?.recipients.length ?? 0 }}</strong></div><div><span>获奖队伍</span><strong>{{ uniqueTeams }}</strong></div><div><span>名单状态</span><strong :class="{ locked: awardSet?.status === 'FROZEN' }">{{ awardSet ? (awardSet.status === 'FROZEN' ? '已锁定' : '草稿') : '未生成' }}</strong></div></div>
-    <ElCard shadow="never" class="award-command-card"><div class="award-command-bar"><div><strong>名单操作</strong><small>只有已完成的正式 Resolver 可以生成奖项名单。</small></div><div><ElSelect v-model="resolverRunId" placeholder="选择正式 Resolver"><ElOption v-for="item in completedRuns" :key="item.id" :value="item.id" :label="`运行 #${item.id} · ${formatDateTime(item.completedAt)}`" /></ElSelect><ElButton type="primary" :icon="MagicStick" :disabled="!resolverRunId || !categories.length || awardSet?.status === 'FROZEN'" :loading="mutating" @click="generateAwards">生成名单</ElButton><ElButton v-if="awardSet?.status === 'DRAFT'" type="warning" :icon="Lock" :loading="mutating" @click="freezeAwards">锁定名单</ElButton><ElButton v-if="awardSet?.status === 'FROZEN'" :icon="Unlock" :loading="mutating" @click="unfreezeAwards">解除锁定</ElButton><ElButton :icon="Download" :disabled="!awardSet" :loading="exporting" @click="downloadCsv">导出名单</ElButton><ElButton :icon="Download" :disabled="awardSet?.status !== 'FROZEN'" :loading="exporting" @click="downloadCertificates">导出证书数据</ElButton></div></div></ElCard>
-    <div v-if="awardSet?.conflicts.length" class="award-warning-stack"><ElAlert v-for="conflict in awardSet.conflicts" :key="conflict.teamId" type="warning" show-icon :closable="false" :title="`${conflict.teamName} 同时出现在 ${conflict.categoryCodes.join('、')}`" /></div>
-    <div class="awards-workspace">
-      <ElCard shadow="never" class="award-categories-card"><template #header><div class="card-header"><div><strong>奖项类别</strong><small>显示顺序必须唯一</small></div><ElButton type="primary" :icon="Plus" :disabled="awardSet?.status === 'FROZEN'" @click="openCreate">新增类别</ElButton></div></template><ElEmpty v-if="!categories.length" description="尚未配置奖项类别" /><div v-else class="award-category-list"><article v-for="category in categories" :key="category.id" class="award-category-item"><div class="award-order-controls">{{ category.displayOrder }}</div><div class="award-category-content"><div class="award-category-title"><div><code>{{ category.code }}</code><strong>{{ category.name }}</strong></div></div><p>{{ ruleLabel(category) }}</p><div class="award-category-tags"><ElTag v-if="category.firstBlood" type="danger">First Blood</ElTag><ElTag v-if="category.includeStar" type="warning">含打星队</ElTag><span>{{ recipientCount(category.id) }} 支队伍</span></div></div><div class="award-category-actions"><ElButton link type="primary" :disabled="awardSet?.status === 'FROZEN'" @click="openEdit(category)">编辑</ElButton><ElButton link type="danger" :disabled="awardSet?.status === 'FROZEN'" @click="deleteCategory(category)">删除</ElButton></div></article></div></ElCard>
-      <ElCard shadow="never" class="award-recipients-card"><template #header><div class="card-header"><div><strong>获奖名单</strong><small>{{ awardSet?.recipients.length ?? 0 }} 条记录</small></div><ElButton :icon="Plus" :disabled="!awardSet || awardSet.status === 'FROZEN'" @click="openManual">手工添加</ElButton></div></template><ElTable :data="awardSet?.recipients ?? []" row-key="id"><ElTableColumn label="奖项" min-width="150"><template #default="{ row }"><ElTag effect="plain">{{ row.categoryCode }}</ElTag><span> {{ row.categoryName }}</span></template></ElTableColumn><ElTableColumn label="队伍" min-width="220"><template #default="{ row }"><div class="award-team-cell"><strong>{{ row.teamName }}<ElTag v-if="row.isManual" size="small" type="warning">手工</ElTag></strong><span>{{ row.school ?? '—' }} · Team #{{ row.teamId }}</span></div></template></ElTableColumn><ElTableColumn prop="rank" label="排名" width="80" /><ElTableColumn prop="solved" label="解题" width="80" /><ElTableColumn prop="penaltyMinutes" label="罚时" width="90" /><ElTableColumn label="操作" width="90"><template #default="{ row }"><ElButton v-if="row.isManual" link type="danger" :disabled="awardSet?.status === 'FROZEN'" @click="removeRecipient(row)">移除</ElButton></template></ElTableColumn><template #empty><ElEmpty description="尚未生成奖项名单" /></template></ElTable></ElCard>
-    </div>
-    <ElDialog v-model="categoryVisible" :title="editing ? '编辑奖项类别' : '新增奖项类别'" width="min(720px, 94vw)"><ElForm label-position="top"><div class="award-form-grid"><ElFormItem label="代码"><ElInput v-model="categoryForm.code" maxlength="64" /></ElFormItem><ElFormItem label="名称"><ElInput v-model="categoryForm.name" maxlength="128" /></ElFormItem><ElFormItem label="显示顺序"><ElInputNumber v-model="categoryForm.displayOrder" :min="1" :max="1000" /></ElFormItem><ElFormItem label="参赛类型"><ElSelect v-model="categoryForm.participationType" clearable><ElOption label="正式" value="OFFICIAL" /><ElOption label="打星" value="STAR" /><ElOption label="练习" value="PRACTICE" /></ElSelect></ElFormItem><ElFormItem label="组别"><ElInput v-model="categoryForm.groupName" clearable /></ElFormItem><ElFormItem label="选项"><ElCheckbox v-model="categoryForm.includeStar">允许打星队</ElCheckbox><ElCheckbox v-model="categoryForm.firstBlood">First Blood 类别</ElCheckbox></ElFormItem></div><div class="award-rules-heading"><div><strong>获奖规则</strong><small>First Blood 类别会选择最终快照中的 First Blood 队伍。</small></div></div><div class="award-rule-row"><ElSelect v-model="categoryForm.ruleType"><ElOption label="固定数量" value="FIXED_COUNT" /><ElOption label="排名比例" value="RATIO" /><ElOption label="名次范围" value="RANK_RANGE" /></ElSelect><ElInputNumber v-if="categoryForm.ruleType === 'FIXED_COUNT'" v-model="categoryForm.fixedCount" :min="1" /><ElInputNumber v-if="categoryForm.ruleType === 'RATIO'" v-model="categoryForm.ratio" :min="0.01" :max="1" :step="0.05" /><template v-if="categoryForm.ruleType === 'RANK_RANGE'"><ElInputNumber v-model="categoryForm.rankFrom" :min="1" /><span>至</span><ElInputNumber v-model="categoryForm.rankTo" :min="categoryForm.rankFrom" /></template></div></ElForm><template #footer><ElButton @click="categoryVisible = false">取消</ElButton><ElButton type="primary" :loading="mutating" @click="saveCategory">保存</ElButton></template></ElDialog>
-    <ElDialog v-model="manualVisible" title="手工添加获奖队伍" width="min(580px, 92vw)"><ElForm label-position="top"><ElFormItem label="奖项类别"><ElSelect v-model="manualCategoryId" filterable><ElOption v-for="category in categories" :key="category.id" :value="category.id" :label="category.name" /></ElSelect></ElFormItem><ElFormItem label="队伍"><ElSelect v-model="manualTeamId" filterable><ElOption v-for="candidate in availableCandidates" :key="candidate.teamId" :value="candidate.teamId" :label="`#${candidate.rank} · ${candidate.teamName}`" /></ElSelect></ElFormItem></ElForm><template #footer><ElButton @click="manualVisible = false">取消</ElButton><ElButton type="primary" :disabled="!manualCategoryId || !manualTeamId" :loading="mutating" @click="addRecipient">确认添加</ElButton></template></ElDialog>
-  </section>
+  <el-container direction="vertical" class="awards-page">
+    <el-header height="auto" class="awards-page-header"><div><p class="eyebrow">Awards Operations</p><h1>奖项名单管理</h1></div><ElSpace wrap :size="10" class="awards-header-actions"><ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"><ElOption v-for="contest in contests" :key="contest.id" :value="contest.id" :label="contest.name" /></ElSelect><ElButton :icon="Refresh" :loading="loading" @click="loadWorkspace">刷新</ElButton></ElSpace></el-header>
+    <el-main class="page-body">
+      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+      <ElRow :gutter="14" class="award-metrics"><ElCol :xs="12" :md="6"><div class="award-metric"><span>奖项类别</span><strong>{{ categories.length }}</strong></div></ElCol><ElCol :xs="12" :md="6"><div class="award-metric"><span>获奖记录</span><strong>{{ awardSet?.recipients.length ?? 0 }}</strong></div></ElCol><ElCol :xs="12" :md="6"><div class="award-metric"><span>获奖队伍</span><strong>{{ uniqueTeams }}</strong></div></ElCol><ElCol :xs="12" :md="6"><div class="award-metric"><span>名单状态</span><strong :class="{ locked: awardSet?.status === 'FROZEN' }">{{ awardSet ? (awardSet.status === 'FROZEN' ? '已锁定' : '草稿') : '未生成' }}</strong></div></ElCol></ElRow>
+      <ElCard shadow="never" class="award-command-card"><div class="award-command-bar"><div><strong>名单操作</strong><small>只有已完成的正式 Resolver 可以生成奖项名单。</small></div><ElSpace wrap :size="10"><ElSelect v-model="resolverRunId" placeholder="选择正式 Resolver"><ElOption v-for="item in completedRuns" :key="item.id" :value="item.id" :label="`运行 #${item.id} · ${formatDateTime(item.completedAt)}`" /></ElSelect><ElButton type="primary" :icon="MagicStick" :disabled="!resolverRunId || !categories.length || awardSet?.status === 'FROZEN'" :loading="mutating" @click="generateAwards">生成名单</ElButton><ElButton v-if="awardSet?.status === 'DRAFT'" type="warning" :icon="Lock" :loading="mutating" @click="freezeAwards">锁定名单</ElButton><ElButton v-if="awardSet?.status === 'FROZEN'" :icon="Unlock" :loading="mutating" @click="unfreezeAwards">解除锁定</ElButton><ElButton :icon="Download" :disabled="!awardSet" :loading="exporting" @click="downloadCsv">导出名单</ElButton><ElButton :icon="Download" :disabled="awardSet?.status !== 'FROZEN'" :loading="exporting" @click="downloadCertificates">导出证书数据</ElButton></ElSpace></div></ElCard>
+      <div v-if="awardSet?.conflicts.length" class="award-warning-stack"><ElAlert v-for="conflict in awardSet.conflicts" :key="conflict.teamId" type="warning" show-icon :closable="false" :title="`${conflict.teamName} 同时出现在 ${conflict.categoryCodes.join('、')}`" /></div>
+      <ElRow :gutter="18" class="awards-workspace">
+        <ElCol :xs="24" :md="8">
+          <ElCard shadow="never" class="award-categories-card"><template #header><div class="card-header"><div><strong>奖项类别</strong><small>显示顺序必须唯一</small></div><ElButton type="primary" :icon="Plus" :disabled="awardSet?.status === 'FROZEN'" @click="openCreate">新增类别</ElButton></div></template><ElEmpty v-if="!categories.length" description="尚未配置奖项类别" /><div v-else class="award-category-list"><article v-for="category in categories" :key="category.id" class="award-category-item"><div class="award-order-controls">{{ category.displayOrder }}</div><div class="award-category-content"><div class="award-category-title"><div><code>{{ category.code }}</code><strong>{{ category.name }}</strong></div></div><p>{{ ruleLabel(category) }}</p><div class="award-category-tags"><ElTag v-if="category.firstBlood" type="danger">First Blood</ElTag><ElTag v-if="category.includeStar" type="warning">含打星队</ElTag><span>{{ recipientCount(category.id) }} 支队伍</span></div></div><div class="award-category-actions"><ElButton link type="primary" :disabled="awardSet?.status === 'FROZEN'" @click="openEdit(category)">编辑</ElButton><ElButton link type="danger" :disabled="awardSet?.status === 'FROZEN'" @click="deleteCategory(category)">删除</ElButton></div></article></div></ElCard>
+        </ElCol>
+        <ElCol :xs="24" :md="16">
+          <ElCard shadow="never" class="award-recipients-card"><template #header><div class="card-header"><div><strong>获奖名单</strong><small>{{ awardSet?.recipients.length ?? 0 }} 条记录</small></div><ElButton :icon="Plus" :disabled="!awardSet || awardSet.status === 'FROZEN'" @click="openManual">手工添加</ElButton></div></template><ElTable :data="awardSet?.recipients ?? []" row-key="id"><ElTableColumn label="奖项" min-width="150"><template #default="{ row }"><ElTag effect="plain">{{ row.categoryCode }}</ElTag><span> {{ row.categoryName }}</span></template></ElTableColumn><ElTableColumn label="队伍" min-width="220"><template #default="{ row }"><div class="award-team-cell"><strong>{{ row.teamName }}<ElTag v-if="row.isManual" size="small" type="warning">手工</ElTag></strong><span>{{ row.school ?? '—' }} · Team #{{ row.teamId }}</span></div></template></ElTableColumn><ElTableColumn prop="rank" label="排名" width="80" /><ElTableColumn prop="solved" label="解题" width="80" /><ElTableColumn prop="penaltyMinutes" label="罚时" width="90" /><ElTableColumn label="操作" width="90"><template #default="{ row }"><ElButton v-if="row.isManual" link type="danger" :disabled="awardSet?.status === 'FROZEN'" @click="removeRecipient(row)">移除</ElButton></template></ElTableColumn><template #empty><ElEmpty description="尚未生成奖项名单" /></template></ElTable></ElCard>
+        </ElCol>
+      </ElRow>
+      <ElDialog v-model="categoryVisible" :title="editing ? '编辑奖项类别' : '新增奖项类别'" width="min(720px, 94vw)"><ElForm label-position="top"><ElRow :gutter="16" class="award-form-grid"><ElCol :xs="12" :sm="12"><ElFormItem label="代码"><ElInput v-model="categoryForm.code" maxlength="64" /></ElFormItem></ElCol><ElCol :xs="12" :sm="12"><ElFormItem label="名称"><ElInput v-model="categoryForm.name" maxlength="128" /></ElFormItem></ElCol><ElCol :xs="12" :sm="12"><ElFormItem label="显示顺序"><ElInputNumber v-model="categoryForm.displayOrder" :min="1" :max="1000" /></ElFormItem></ElCol><ElCol :xs="12" :sm="12"><ElFormItem label="参赛类型"><ElSelect v-model="categoryForm.participationType" clearable><ElOption label="正式" value="OFFICIAL" /><ElOption label="打星" value="STAR" /><ElOption label="练习" value="PRACTICE" /></ElSelect></ElFormItem></ElCol><ElCol :xs="12" :sm="12"><ElFormItem label="组别"><ElInput v-model="categoryForm.groupName" clearable /></ElFormItem></ElCol><ElCol :xs="12" :sm="12"><ElFormItem label="选项"><ElCheckbox v-model="categoryForm.includeStar">允许打星队</ElCheckbox><ElCheckbox v-model="categoryForm.firstBlood">First Blood 类别</ElCheckbox></ElFormItem></ElCol></ElRow><div class="award-rules-heading"><div><strong>获奖规则</strong><small>First Blood 类别会选择最终快照中的 First Blood 队伍。</small></div></div><div class="award-rule-row"><ElSelect v-model="categoryForm.ruleType"><ElOption label="固定数量" value="FIXED_COUNT" /><ElOption label="排名比例" value="RATIO" /><ElOption label="名次范围" value="RANK_RANGE" /></ElSelect><ElInputNumber v-if="categoryForm.ruleType === 'FIXED_COUNT'" v-model="categoryForm.fixedCount" :min="1" /><ElInputNumber v-if="categoryForm.ruleType === 'RATIO'" v-model="categoryForm.ratio" :min="0.01" :max="1" :step="0.05" /><template v-if="categoryForm.ruleType === 'RANK_RANGE'"><ElInputNumber v-model="categoryForm.rankFrom" :min="1" /><span>至</span><ElInputNumber v-model="categoryForm.rankTo" :min="categoryForm.rankFrom" /></template></div></ElForm><template #footer><ElButton @click="categoryVisible = false">取消</ElButton><ElButton type="primary" :loading="mutating" @click="saveCategory">保存</ElButton></template></ElDialog>
+      <ElDialog v-model="manualVisible" title="手工添加获奖队伍" width="min(580px, 92vw)"><ElForm label-position="top"><ElFormItem label="奖项类别"><ElSelect v-model="manualCategoryId" filterable><ElOption v-for="category in categories" :key="category.id" :value="category.id" :label="category.name" /></ElSelect></ElFormItem><ElFormItem label="队伍"><ElSelect v-model="manualTeamId" filterable><ElOption v-for="candidate in availableCandidates" :key="candidate.teamId" :value="candidate.teamId" :label="`#${candidate.rank} · ${candidate.teamName}`" /></ElSelect></ElFormItem></ElForm><template #footer><ElButton @click="manualVisible = false">取消</ElButton><ElButton type="primary" :disabled="!manualCategoryId || !manualTeamId" :loading="mutating" @click="addRecipient">确认添加</ElButton></template></ElDialog>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -35,3 +41,253 @@ async function downloadCsv() { if (!contestId.value) return; exporting.value = t
 async function downloadCertificates() { if (!contestId.value || awardSet.value?.status !== 'FROZEN') return; exporting.value = true; let url: string | null = null; let anchor: HTMLAnchorElement | null = null; try { url = URL.createObjectURL(await awardsApi.certificates(contestId.value)); anchor = document.createElement('a'); anchor.href = url; anchor.download = `contest-${contestId.value}-certificates.csv`; document.body.append(anchor); anchor.click(); } catch (error) { ElMessage.error(getErrorMessage(error)); } finally { anchor?.remove(); if (url) window.setTimeout(() => URL.revokeObjectURL(url!), 0); exporting.value = false; } }
 onMounted(async () => { try { contests.value = (await contestApi.listContests()).content; const requested = Number(route.query.contestId); contestId.value = contests.value.some((item) => item.id === requested) ? requested : (contests.value[0]?.id ?? null); await loadWorkspace(); } catch (error) { errorMessage.value = getErrorMessage(error); } });
 </script>
+
+<style scoped>
+.awards-page {
+  width: min(1540px, 100%);
+  margin: 0 auto;
+}
+
+.awards-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 38px 38px 0;
+  margin-bottom: 26px;
+  height: auto;
+}
+
+.awards-page-header h1 {
+  margin: 4px 0 8px;
+  color: #172033;
+  font-size: clamp(30px, 4vw, 44px);
+  letter-spacing: -0.035em;
+}
+
+.awards-page-header > div > p:last-child,
+.award-command-bar small {
+  display: none;
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.page-body {
+  padding: 0 38px 38px;
+}
+
+.award-command-bar,
+.award-category-title,
+.award-category-tags,
+.award-rules-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.award-metrics {
+  margin-bottom: 18px;
+}
+
+.award-metric {
+  padding: 20px 22px;
+  border: 1px solid #e6eaf0;
+  border-radius: 0;
+  background: white;
+}
+
+.award-metric span,
+.award-metric strong {
+  display: block;
+}
+
+.award-metric span {
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.award-metric strong {
+  color: #172033;
+  font-size: 24px;
+}
+
+.award-metric strong.locked {
+  color: #b45309;
+}
+
+.award-command-card {
+  margin-bottom: 18px;
+  border-color: #eadfca;
+  background: #fffbeb;
+}
+
+.award-command-bar {
+  justify-content: space-between;
+}
+
+.award-warning-stack {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.awards-workspace > .el-col {
+  align-self: flex-start;
+}
+
+.award-categories-card,
+.award-recipients-card {
+  border: 1px solid #e5eaf2;
+  border-radius: 0;
+}
+
+.award-categories-card {
+  position: sticky;
+  top: 20px;
+}
+
+.card-header > div {
+  min-width: 0;
+}
+
+.award-category-list {
+  display: grid;
+  gap: 10px;
+}
+
+.award-category-item {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e7ebf1;
+  border-radius: 0;
+  background: #fbfcfe;
+}
+
+.award-order-controls {
+  display: grid;
+  justify-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.award-order-controls .el-button {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+}
+
+.award-category-content {
+  min-width: 0;
+}
+
+.award-category-title {
+  justify-content: space-between;
+}
+
+.award-category-title > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.award-category-title code {
+  border-radius: 0;
+  padding: 2px 6px;
+  color: #92400e;
+  background: #fef3c7;
+  font-size: 11px;
+}
+
+.award-category-content p {
+  margin: 7px 0;
+  color: #475569;
+  font-size: 13px;
+}
+
+.award-category-tags {
+  flex-wrap: wrap;
+}
+
+.award-category-tags > span:last-child {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.award-category-actions {
+  display: grid;
+}
+
+.award-team-cell strong,
+.award-team-cell > span {
+  display: block;
+}
+
+.award-team-cell > span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.award-team-cell .el-tag {
+  margin-left: 5px;
+}
+
+.award-form-grid .el-select {
+  width: 100%;
+}
+
+.award-rules-heading {
+  justify-content: space-between;
+  margin: 8px 0 12px;
+}
+
+.award-rules-heading small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.award-rule-row {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: 0;
+  background: #f6f8fb;
+}
+
+@media (max-width: 1180px) {
+  .awards-workspace > .el-col {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+
+  .award-categories-card {
+    position: static;
+  }
+}
+
+@media (max-width: 760px) {
+  .awards-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 24px 16px 0;
+  }
+
+  .page-body {
+    padding: 0 16px 24px;
+  }
+
+  .award-command-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+</style>

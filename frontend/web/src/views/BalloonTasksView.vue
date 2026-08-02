@@ -1,43 +1,45 @@
 <template>
-  <section class="judge-page">
-    <div class="page-title-row">
-      <div>
-        <p class="eyebrow">Balloon Delivery Desk</p>
-        <h1>气球配送工作台</h1>
-        <p>领取首次 AC 任务，记录配送备注并确认送达。</p>
+  <el-container direction="vertical" class="judge-page">
+    <el-header height="auto" class="page-head">
+      <div class="page-title-row">
+        <div>
+          <p class="eyebrow">Balloon Delivery Desk</p>
+          <h1>气球配送工作台</h1>
+        </div>
+        <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
+          <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
+        </div>
       </div>
-      <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
-        <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
-      </div>
-    </div>
+    </el-header>
 
-    <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+    <el-main class="page-body">
+      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
 
-    <div class="balloon-stats-grid">
-      <div class="balloon-stat"><span>全部任务</span><strong>{{ stats?.total ?? 0 }}</strong></div>
-      <div class="balloon-stat pending"><span>待领取</span><strong>{{ stats?.pending ?? 0 }}</strong></div>
-      <div class="balloon-stat active"><span>配送中</span><strong>{{ stats?.claimed ?? 0 }}</strong></div>
-      <div class="balloon-stat delivered"><span>已送达</span><strong>{{ stats?.delivered ?? 0 }}</strong></div>
-      <div class="balloon-stat first-blood"><span>First Blood</span><strong>{{ stats?.firstBlood ?? 0 }}</strong></div>
-    </div>
+      <ElRow :gutter="14" class="balloon-stats-grid">
+        <ElCol><div class="balloon-stat"><span>全部任务</span><strong>{{ stats?.total ?? 0 }}</strong></div></ElCol>
+        <ElCol><div class="balloon-stat pending"><span>待领取</span><strong>{{ stats?.pending ?? 0 }}</strong></div></ElCol>
+        <ElCol><div class="balloon-stat active"><span>配送中</span><strong>{{ stats?.claimed ?? 0 }}</strong></div></ElCol>
+        <ElCol><div class="balloon-stat delivered"><span>已送达</span><strong>{{ stats?.delivered ?? 0 }}</strong></div></ElCol>
+        <ElCol><div class="balloon-stat first-blood"><span>First Blood</span><strong>{{ stats?.firstBlood ?? 0 }}</strong></div></ElCol>
+      </ElRow>
 
-    <ElCard shadow="never" class="clarification-filter-card">
-      <div class="balloon-toolbar">
-        <ElSelect v-model="selectedContestId" filterable placeholder="选择比赛" @change="changeContest">
-          <ElOption v-for="contest in contests" :key="contest.id" :label="contest.name" :value="contest.id" />
-        </ElSelect>
-        <ElSelect v-model="statusFilter" placeholder="状态" @change="changeFilter">
-          <ElOption label="全部状态" value="ALL" />
-          <ElOption v-for="status in balloonTaskStatuses" :key="status" :label="statusLabel(status)" :value="status" />
-        </ElSelect>
-        <ElSelect v-model="problemFilter" clearable placeholder="全部题目">
-          <ElOption v-for="problem in problemOptions" :key="problem" :label="`题目 ${problem}`" :value="problem" />
-        </ElSelect>
-        <ElInput v-model="keyword" clearable placeholder="搜索队伍或座位号" :prefix-icon="Search" />
-        <ElButton type="primary" :loading="action === 'dispatch'" :disabled="!selectedContestId" @click="dispatchTasks">智能领取</ElButton>
-        <ElButton :icon="Refresh" :loading="loading" :disabled="!selectedContestId" @click="loadData(false)">刷新</ElButton>
-      </div>
-    </ElCard>
+      <ElCard shadow="never" class="clarification-filter-card">
+        <ElSpace wrap :size="12" class="balloon-toolbar">
+          <ElSelect v-model="selectedContestId" filterable placeholder="选择比赛" @change="changeContest">
+            <ElOption v-for="contest in contests" :key="contest.id" :label="contest.name" :value="contest.id" />
+          </ElSelect>
+          <ElSelect v-model="statusFilter" placeholder="状态" @change="changeFilter">
+            <ElOption label="全部状态" value="ALL" />
+            <ElOption v-for="status in balloonTaskStatuses" :key="status" :label="statusLabel(status)" :value="status" />
+          </ElSelect>
+          <ElSelect v-model="problemFilter" clearable placeholder="全部题目">
+            <ElOption v-for="problem in problemOptions" :key="problem" :label="`题目 ${problem}`" :value="problem" />
+          </ElSelect>
+          <ElInput v-model="keyword" clearable placeholder="搜索队伍或座位号" :prefix-icon="Search" />
+          <ElButton type="primary" :loading="action === 'dispatch'" :disabled="!selectedContestId" @click="dispatchTasks">智能领取</ElButton>
+          <ElButton :icon="Refresh" :loading="loading" :disabled="!selectedContestId" @click="loadData(false)">刷新</ElButton>
+        </ElSpace>
+      </ElCard>
 
     <ElCard shadow="never">
       <ElTable v-loading="loading" :data="filteredTasks" row-key="id" :empty-text="loaded ? '当前筛选下暂无气球任务' : '气球任务加载失败，请重试'" @row-click="openDetail">
@@ -90,11 +92,12 @@
       </div>
     </ElDrawer>
 
-    <ElDialog v-model="cancelVisible" title="取消气球任务" width="min(540px, 92vw)">
-      <ElForm label-position="top"><ElFormItem label="取消原因" :error="cancelError || undefined"><ElInput v-model="cancelReason" type="textarea" :rows="4" maxlength="255" show-word-limit /></ElFormItem></ElForm>
-      <template #footer><ElButton @click="cancelVisible = false">返回</ElButton><ElButton type="danger" :loading="action === 'cancel'" :disabled="!!cancelError" @click="cancelTask">确认取消</ElButton></template>
-    </ElDialog>
-  </section>
+        <ElDialog v-model="cancelVisible" title="取消气球任务" width="min(540px, 92vw)">
+          <ElForm label-position="top"><ElFormItem label="取消原因" :error="cancelError || undefined"><ElInput v-model="cancelReason" type="textarea" :rows="4" maxlength="255" show-word-limit /></ElFormItem></ElForm>
+          <template #footer><ElButton @click="cancelVisible = false">返回</ElButton><ElButton type="danger" :loading="action === 'cancel'" :disabled="!!cancelError" @click="cancelTask">确认取消</ElButton></template>
+        </ElDialog>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -236,3 +239,278 @@ onMounted(async () => {
 
 onUnmounted(() => realtime?.stop());
 </script>
+
+<style scoped>
+.judge-page {
+  width: min(1440px, 100%);
+  margin: 0 auto;
+}
+
+.page-head {
+  height: auto;
+  padding: clamp(28px, 5vw, 58px) clamp(28px, 5vw, 58px) 0;
+}
+
+.page-body {
+  padding: 0 clamp(28px, 5vw, 58px) clamp(28px, 5vw, 58px);
+}
+
+.page-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 32px;
+}
+
+.page-title-row h1 {
+  margin-bottom: 8px;
+  font-size: clamp(32px, 4vw, 48px);
+  letter-spacing: -0.035em;
+}
+
+.page-title-row p {
+  display: none;
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.eyebrow {
+  display: none;
+  margin: 0 0 8px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.page-alert {
+  margin-bottom: 20px;
+}
+
+.clarification-filter-card {
+  margin-bottom: 22px;
+}
+
+.clarification-live-state {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  border-radius: 0;
+  padding: 8px 12px;
+  color: var(--muted);
+  background: #e9eef5;
+  font-size: 12px;
+}
+
+.clarification-live-state span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.clarification-live-state.connected {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.clarification-live-state.connected span {
+  background: #22c55e;
+}
+
+.balloon-stats-grid :deep(.el-col) {
+  flex: 0 0 20%;
+  max-width: 20%;
+}
+
+.balloon-stat {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 0;
+  padding: 18px;
+  color: #64748b;
+  background: white;
+}
+
+.balloon-stat strong {
+  color: #0f172a;
+  font-size: 28px;
+}
+
+.balloon-stat.pending {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.balloon-stat.active {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.balloon-stat.delivered {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.balloon-stat.first-blood {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.balloon-toolbar {
+  display: flex;
+  width: 100%;
+}
+
+.balloon-toolbar :deep(.el-space__item) {
+  display: flex;
+  align-items: center;
+}
+
+.balloon-toolbar :deep(.el-space__item .el-select),
+.balloon-toolbar :deep(.el-space__item .el-input) {
+  width: 100%;
+}
+
+.balloon-toolbar :deep(.el-space__item:nth-child(1)) {
+  flex: 1.4 1 260px;
+}
+
+.balloon-toolbar :deep(.el-space__item:nth-child(2)),
+.balloon-toolbar :deep(.el-space__item:nth-child(3)) {
+  flex: 0 0 150px;
+}
+
+.balloon-toolbar :deep(.el-space__item:nth-child(4)) {
+  flex: 1 1 210px;
+}
+
+.balloon-problem-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.balloon-problem-cell > div {
+  display: grid;
+  gap: 2px;
+}
+
+.balloon-problem-cell small {
+  color: #64748b;
+}
+
+.balloon-color {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border: 2px solid rgb(255 255 255 / 85%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 18%);
+  vertical-align: middle;
+}
+
+.balloon-color.small {
+  width: 14px;
+  height: 14px;
+  margin-right: 5px;
+}
+
+.balloon-detail {
+  display: grid;
+  gap: 22px;
+}
+
+.balloon-note-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 0;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.balloon-note-panel > div {
+  display: grid;
+  gap: 3px;
+}
+
+.balloon-note-panel small {
+  color: #64748b;
+}
+
+.balloon-note-panel > :deep(.el-button) {
+  justify-self: end;
+}
+
+.balloon-actions {
+  flex-wrap: wrap;
+}
+
+.announcement-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.clarification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 30px;
+  padding-top: 22px;
+  border-top: 1px solid #e5eaf2;
+}
+
+.admin-primary-cell strong,
+.admin-primary-cell small {
+  display: block;
+}
+
+.admin-primary-cell small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.muted-text {
+  color: var(--muted);
+}
+
+.danger-text {
+  color: #dc2626;
+}
+
+@media (max-width: 900px) {
+  .balloon-stats-grid :deep(.el-col) {
+    flex: 0 0 50%;
+    max-width: 50%;
+  }
+
+  .balloon-toolbar :deep(.el-space__item:nth-child(1)),
+  .balloon-toolbar :deep(.el-space__item:nth-child(4)) {
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-title-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .balloon-stats-grid :deep(.el-col) {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+
+  .balloon-toolbar :deep(.el-space__item) {
+    flex: 1 1 100% !important;
+  }
+}
+</style>

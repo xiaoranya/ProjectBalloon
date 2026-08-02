@@ -1,14 +1,12 @@
 <template>
-  <section class="admin-page team-import-page">
-    <header class="admin-page-header">
-      <div>
-        <p class="eyebrow">Team batch import</p>
+  <el-container direction="vertical" class="admin-page team-import-page">
+    <el-header height="auto" class="page-head">
+      <div class="admin-page-header compact">
         <h1>队伍批量导入</h1>
-        <p>按 Rust 原子批次创建队伍与账号；每个后台批次最多 100 支队伍。</p>
+        <ElButton @click="fillExample">填入示例</ElButton>
       </div>
-      <ElButton @click="fillExample">填入示例</ElButton>
-    </header>
-
+    </el-header>
+    <el-main class="page-body">
     <ElAlert
       v-if="session.isContestAdmin.value"
       type="warning"
@@ -19,44 +17,54 @@
     />
     <ElAlert v-if="errorMessage" type="error" show-icon :closable="false" class="page-alert" :title="errorMessage" />
 
-    <ElCard shadow="never" class="admin-card">
+    <ElCard shadow="never" >
       <template #header><strong>批次设置</strong></template>
-      <div class="team-import-options">
-        <ElFormItem label="比赛">
-          <ElSelect v-model="contestId" :clearable="!session.isContestAdmin.value" filterable placeholder="超级管理员可不分配比赛">
-            <ElOption v-for="contest in contests" :key="contest.id" :label="`${contest.name} (#${contest.id})`" :value="contest.id" />
-          </ElSelect>
-        </ElFormItem>
-        <ElFormItem label="参赛类型">
-          <ElSelect v-model="participationType" :disabled="contestId === null">
-            <ElOption label="正式队" value="OFFICIAL" />
-            <ElOption label="打星队" value="STAR" />
-            <ElOption label="练习队" value="PRACTICE" />
-          </ElSelect>
-        </ElFormItem>
-        <ElFormItem label="幂等键前缀">
-          <ElInput v-model="idempotencyKey" maxlength="96" show-word-limit placeholder="留空时生成 UUID" />
-        </ElFormItem>
-        <ElFormItem label="账号策略">
-          <ElCheckbox v-model="requirePasswordReset">账号须在首次登录时修改密码</ElCheckbox>
-        </ElFormItem>
-      </div>
+      <ElRow :gutter="16" align="bottom" class="team-import-options-grid">
+        <ElCol :xs="24" :md="11">
+          <ElFormItem label="比赛">
+            <ElSelect v-model="contestId" :clearable="!session.isContestAdmin.value" filterable placeholder="超级管理员可不分配比赛">
+              <ElOption v-for="contest in contests" :key="contest.id" :label="`${contest.name} (#${contest.id})`" :value="contest.id" />
+            </ElSelect>
+          </ElFormItem>
+        </ElCol>
+        <ElCol :xs="24" :md="5">
+          <ElFormItem label="参赛类型">
+            <ElSelect v-model="participationType" :disabled="contestId === null">
+              <ElOption label="正式队" value="OFFICIAL" />
+              <ElOption label="打星队" value="STAR" />
+              <ElOption label="练习队" value="PRACTICE" />
+            </ElSelect>
+          </ElFormItem>
+        </ElCol>
+        <ElCol :xs="24" :md="8">
+          <ElFormItem label="幂等键前缀">
+            <ElInput v-model="idempotencyKey" maxlength="96" show-word-limit placeholder="留空时生成 UUID" />
+          </ElFormItem>
+        </ElCol>
+        <ElCol :xs="24" :md="11">
+          <ElFormItem label="账号策略">
+            <ElCheckbox v-model="requirePasswordReset">账号须在首次登录时修改密码</ElCheckbox>
+          </ElFormItem>
+        </ElCol>
+      </ElRow>
       <p class="form-hint">超过 100 行会拆成独立原子批次；批间不具备原子性。每批使用“前缀-part-N-UUID”唯一键。成员不属于 Rust 批次契约，将在队伍创建成功后逐个添加，成员失败不会伪装成队伍行失败。取消勾选“账号须在首次登录时修改密码”仅应在初始密码由线下渠道交付时使用。</p>
     </ElCard>
 
-    <ElCard shadow="never" class="admin-card">
+    <ElCard shadow="never" >
       <template #header>
         <div class="card-header"><strong>粘贴 / 编辑 JSON</strong><small>{{ drafts.length }} 支队伍，预计 {{ plannedBatchCount }} 个后台批次</small></div>
       </template>
       <ElInput v-model="source" type="textarea" :rows="14" :disabled="importing" placeholder="粘贴 JSON 数组" />
-      <div class="team-import-source-actions">
-        <ElButton :disabled="importing || !source.trim()" @click="parseSource">解析并编辑</ElButton>
-        <ElButton :disabled="importing || !drafts.length" @click="syncSource">同步编辑到 JSON</ElButton>
-        <ElButton type="primary" :loading="importing" :disabled="invalidCount > 0 || drafts.length === 0" @click="submitImport">开始导入</ElButton>
-      </div>
+      <ElRow justify="end" class="team-import-source-actions-row">
+        <ElSpace wrap>
+          <ElButton :disabled="importing || !source.trim()" @click="parseSource">解析并编辑</ElButton>
+          <ElButton :disabled="importing || !drafts.length" @click="syncSource">同步编辑到 JSON</ElButton>
+          <ElButton type="primary" :loading="importing" :disabled="invalidCount > 0 || drafts.length === 0" @click="submitImport">开始导入</ElButton>
+        </ElSpace>
+      </ElRow>
     </ElCard>
 
-    <ElCard v-if="drafts.length" shadow="never" class="admin-card">
+    <ElCard v-if="drafts.length" shadow="never" >
       <template #header>
         <div class="card-header"><strong>队伍与成员</strong><small>{{ invalidCount ? `${invalidCount} 项待修正` : '字段校验通过' }}</small></div>
       </template>
@@ -89,7 +97,7 @@
       <ElButton @click="addTeam">添加队伍</ElButton>
     </ElCard>
 
-    <ElCard v-if="batchResults.length" shadow="never" class="admin-card">
+    <ElCard v-if="batchResults.length" shadow="never" >
       <template #header>
         <div class="card-header">
           <div><strong>后台批次结果</strong><small>成功 {{ successfulBatchCount }} / {{ batchResults.length }}</small></div>
@@ -116,7 +124,8 @@
         <ElTableColumn prop="initialPassword" label="初始密码" />
       </ElTable>
     </ElCard>
-  </section>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -307,3 +316,82 @@ function makeBatchKey(prefix: string, batchNumber: number) {
 }
 function resultStatusLabel(status: BatchResult['status']) { return { PENDING: '等待', SUCCESS: '成功', FAILED: '失败', SKIPPED: '未提交' }[status]; }
 </script>
+
+<style scoped>
+.admin-page {
+  width: min(1320px, 100%);
+  margin: 0 auto;
+}
+.team-import-page {
+  max-width: 1500px;
+}
+.page-head {
+  height: auto;
+  padding: 42px 42px 0;
+}
+.page-body {
+  padding: 0 42px 42px;
+}
+.admin-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+.admin-page-header.compact {
+  align-items: center;
+}
+.admin-page-header h1 {
+  margin: 5px 0 6px;
+  font-size: clamp(28px, 4vw, 40px);
+  color: #13213b;
+}
+.page-alert {
+  margin-bottom: 20px;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.card-header > div {
+  min-width: 0;
+}
+.card-header small {
+  display: block;
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+.team-import-options-grid {
+  margin-bottom: 14px;
+}
+.team-import-options-grid :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+.team-import-options-grid :deep(.el-select) {
+  width: 100%;
+}
+.team-import-source-actions-row {
+  margin-top: 14px;
+}
+@media (max-width: 680px) {
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+@media (max-width: 640px) {
+  .page-head {
+    padding: 24px 16px 0;
+  }
+  .page-body {
+    padding: 0 16px 24px;
+  }
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+</style>

@@ -9,7 +9,7 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 edition = "2024"
 rust-version = "1.94"
 license = "Apache-2.0"
@@ -69,9 +69,9 @@ utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"] }
 uuid = { version = "1.24.0", features = ["serde", "v4"] }
 zip = { version = "3.0.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
-project-balloon-contracts = { path = "crates/contracts", version = "0.1.0-alpha.1" }
-project-balloon-domain = { path = "crates/domain", version = "0.1.0-alpha.1" }
-project-balloon-test-support = { path = "crates/test-support", version = "0.1.0-alpha.1" }
+project-balloon-contracts = { path = "crates/contracts" }
+project-balloon-domain = { path = "crates/domain" }
+project-balloon-test-support = { path = "crates/test-support" }
 redis = { version = "1.4.1", default-features = false, features = [
     "connection-manager",
     "tokio-comp",

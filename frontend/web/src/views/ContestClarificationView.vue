@@ -1,91 +1,97 @@
 <template>
-  <section class="page-section clarification-page">
-    <div class="page-title-row">
-      <div>
-        <p class="eyebrow">Clarifications</p>
-        <h1>赛中答疑</h1>
-        <p>向裁判提问，并查看本队历史问题和回复。</p>
-      </div>
-      <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
-        <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
-      </div>
-    </div>
-
-    <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
-
-    <div class="clarification-team-grid">
-      <ElCard shadow="never" class="clarification-compose-card">
-        <template #header>
-          <div class="card-header">
-            <div><strong>提交新问题</strong><small>每队每 5 分钟最多提问一次。</small></div>
-          </div>
-        </template>
-        <ElForm label-position="top" @submit.prevent="submitQuestion">
-          <ElFormItem label="问题范围">
-            <ElRadioGroup v-model="form.scope">
-              <ElRadioButton value="GENERAL">通用问题</ElRadioButton>
-              <ElRadioButton value="PROBLEM">题目相关</ElRadioButton>
-            </ElRadioGroup>
-          </ElFormItem>
-          <ElFormItem v-if="form.scope === 'PROBLEM'" label="题目">
-            <ElSelect v-model="form.problemId" filterable placeholder="请选择题目" class="wide-control">
-              <ElOption
-                v-for="problem in problems"
-                :key="problem.problemId"
-                :label="`${problem.alias} · ${problem.title}`"
-                :value="problem.problemId"
-              />
-            </ElSelect>
-          </ElFormItem>
-          <ElFormItem label="问题内容">
-            <ElInput
-              v-model="form.question"
-              type="textarea"
-              :rows="7"
-              maxlength="4000"
-              show-word-limit
-              placeholder="请清晰描述需要裁判确认的内容"
-            />
-          </ElFormItem>
-          <ElButton type="primary" native-type="submit" class="wide-button" :loading="submitting" :disabled="!canSubmit">
-            提交问题
-          </ElButton>
-        </ElForm>
-      </ElCard>
-
-      <div class="clarification-list-column">
-        <div class="clarification-list-heading">
-          <div><h2>我的问题</h2><p>仅显示本队问题和裁判回复。</p></div>
-          <ElButton :icon="Refresh" :loading="loading" @click="loadClarifications(false)">刷新</ElButton>
+  <el-container direction="vertical" class="page-section clarification-page">
+    <el-header height="auto" class="page-head">
+      <div class="page-title-row">
+        <div>
+          <p class="eyebrow">Clarifications</p>
+          <h1>赛中答疑</h1>
         </div>
-        <ElSkeleton v-if="loading && clarifications.length === 0" :rows="5" animated />
-        <ElEmpty v-else-if="clarifications.length === 0" description="本队尚未提交问题" />
-        <div v-else class="clarification-cards">
-          <article v-for="item in clarifications" :key="item.id" class="clarification-card">
-            <div class="clarification-card-meta">
-              <div>
-                <ElTag :type="statusType(item.status)">{{ statusLabel(item.status) }}</ElTag>
-                <ElTag v-if="item.problemAlias" type="info" effect="plain">题目 {{ item.problemAlias }}</ElTag>
-                <ElTag v-else type="info" effect="plain">通用</ElTag>
+        <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
+          <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
+        </div>
+      </div>
+    </el-header>
+
+    <el-main class="page-body">
+      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+
+      <ElRow :gutter="24" align="top" class="clarification-team-grid">
+        <ElCol :xs="24" :md="9">
+          <ElCard shadow="never" class="clarification-compose-card">
+            <template #header>
+              <div class="card-header">
+                <div><strong>提交新问题</strong><small>每队每 5 分钟最多提问一次。</small></div>
               </div>
-              <time>{{ formatDateTime(item.createdAt) }}</time>
+            </template>
+            <ElForm label-position="top" @submit.prevent="submitQuestion">
+              <ElFormItem label="问题范围">
+                <ElRadioGroup v-model="form.scope">
+                  <ElRadioButton value="GENERAL">通用问题</ElRadioButton>
+                  <ElRadioButton value="PROBLEM">题目相关</ElRadioButton>
+                </ElRadioGroup>
+              </ElFormItem>
+              <ElFormItem v-if="form.scope === 'PROBLEM'" label="题目">
+                <ElSelect v-model="form.problemId" filterable placeholder="请选择题目" class="wide-control">
+                  <ElOption
+                    v-for="problem in problems"
+                    :key="problem.problemId"
+                    :label="`${problem.alias} · ${problem.title}`"
+                    :value="problem.problemId"
+                  />
+                </ElSelect>
+              </ElFormItem>
+              <ElFormItem label="问题内容">
+                <ElInput
+                  v-model="form.question"
+                  type="textarea"
+                  :rows="7"
+                  maxlength="4000"
+                  show-word-limit
+                  placeholder="请清晰描述需要裁判确认的内容"
+                />
+              </ElFormItem>
+              <ElButton type="primary" native-type="submit" class="wide-button" :loading="submitting" :disabled="!canSubmit">
+                提交问题
+              </ElButton>
+            </ElForm>
+          </ElCard>
+        </ElCol>
+        <ElCol :xs="24" :md="15">
+          <div class="clarification-list-column">
+            <div class="clarification-list-heading">
+              <div><h2>我的问题</h2><p>仅显示本队问题和裁判回复。</p></div>
+              <ElButton :icon="Refresh" :loading="loading" @click="loadClarifications(false)">刷新</ElButton>
             </div>
-            <h3>{{ item.question }}</h3>
-            <div v-if="item.reply" class="clarification-reply">
-              <strong>裁判回复</strong>
-              <p>{{ item.reply }}</p>
-              <small>
-                {{ item.replyVisibility === 'PUBLIC' ? '公开回复' : '仅本队可见' }} · {{ formatDateTime(item.repliedAt) }}
-              </small>
+            <ElSkeleton v-if="loading && clarifications.length === 0" :rows="5" animated />
+            <ElEmpty v-else-if="clarifications.length === 0" description="本队尚未提交问题" />
+            <div v-else class="clarification-cards">
+              <article v-for="item in clarifications" :key="item.id" class="clarification-card">
+                <div class="clarification-card-meta">
+                  <div>
+                    <ElTag :type="statusType(item.status)">{{ statusLabel(item.status) }}</ElTag>
+                    <ElTag v-if="item.problemAlias" type="info" effect="plain">题目 {{ item.problemAlias }}</ElTag>
+                    <ElTag v-else type="info" effect="plain">通用</ElTag>
+                  </div>
+                  <time>{{ formatDateTime(item.createdAt) }}</time>
+                </div>
+                <h3>{{ item.question }}</h3>
+                <div v-if="item.reply" class="clarification-reply">
+                  <strong>裁判回复</strong>
+                  <p>{{ item.reply }}</p>
+                  <small>
+                    {{ item.replyVisibility === 'PUBLIC' ? '公开回复' : '仅本队可见' }} · {{ formatDateTime(item.repliedAt) }}
+                  </small>
+                </div>
+                <p v-else class="clarification-pending-copy">
+                  {{ item.status === 'CLOSED' ? '该问题已关闭，未提供回复。' : '裁判尚未回复。' }}
+                </p>
+              </article>
             </div>
-            <p v-else class="clarification-pending-copy">
-              {{ item.status === 'CLOSED' ? '该问题已关闭，未提供回复。' : '裁判尚未回复。' }}
-            </p>
-          </article>
-        </div>
-      </div>
-    </div>
-  </section>
+          </div>
+        </ElCol>
+      </ElRow>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -180,3 +186,204 @@ onMounted(async () => {
 
 onUnmounted(() => realtime?.stop());
 </script>
+
+<style scoped>
+.page-section {
+  min-height: 50vh;
+}
+
+.page-head {
+  height: auto;
+  padding: 0;
+}
+
+.page-body {
+  padding: 0;
+}
+
+.page-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 32px;
+}
+
+.page-title-row h1 {
+  margin-bottom: 8px;
+  font-size: clamp(32px, 4vw, 48px);
+  letter-spacing: -0.035em;
+}
+
+.page-title-row p {
+  display: none;
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.eyebrow {
+  display: none;
+  margin: 0 0 8px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.page-alert {
+  margin-bottom: 20px;
+}
+
+.clarification-live-state {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  border-radius: 0;
+  padding: 8px 12px;
+  color: var(--muted);
+  background: #e9eef5;
+  font-size: 12px;
+}
+
+.clarification-live-state span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.clarification-live-state.connected {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.clarification-live-state.connected span {
+  background: #22c55e;
+}
+
+.wide-button,
+.wide-control {
+  width: 100%;
+}
+
+.clarification-compose-card {
+  position: sticky;
+  top: 98px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.clarification-list-column,
+.clarification-cards {
+  display: grid;
+  gap: 16px;
+}
+
+.clarification-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.clarification-list-heading h2,
+.clarification-list-heading p {
+  margin-bottom: 4px;
+}
+
+.clarification-list-heading p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.clarification-card {
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: white;
+}
+
+.clarification-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.clarification-card-meta > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.clarification-card-meta time {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.clarification-card h3 {
+  margin: 18px 0;
+  color: #1f2c42;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.clarification-reply {
+  padding: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 0;
+  background: #eff6ff;
+}
+
+.clarification-reply strong,
+.clarification-reply p,
+.clarification-reply small {
+  display: block;
+}
+
+.clarification-reply p {
+  margin: 8px 0;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.clarification-reply small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.clarification-pending-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-header > div {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .clarification-compose-card {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-title-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+</style>

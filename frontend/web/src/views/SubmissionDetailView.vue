@@ -1,6 +1,7 @@
 <template>
-  <section class="page-section narrow-section">
-    <ElButton link :icon="ArrowLeft" @click="router.push(`/contests/${contestId}/submissions`)">返回提交记录</ElButton>
+  <el-container direction="vertical" class="page-section narrow-section">
+    <el-main class="page-body">
+      <ElButton link :icon="ArrowLeft" @click="router.push(`/contests/${contestId}/submissions`)">返回提交记录</ElButton>
     <ElSkeleton v-if="loading && !submission" :rows="6" animated />
     <ElAlert v-else-if="errorMessage && !submission" :title="errorMessage" type="error" show-icon :closable="false" />
     <template v-else-if="submission">
@@ -102,8 +103,9 @@
         </template>
         <pre><code>{{ submission.source }}</code></pre>
       </ElCard>
-    </template>
-  </section>
+      </template>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -182,3 +184,168 @@ onUnmounted(() => {
   document.removeEventListener('visibilitychange', handleVisibility);
 });
 </script>
+
+<style scoped>
+.page-section {
+  min-height: 50vh;
+}
+
+.narrow-section {
+  max-width: 940px;
+  margin: 0 auto;
+}
+
+.page-body {
+  padding: 0;
+}
+
+.eyebrow {
+  display: none;
+  margin: 0 0 8px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.page-alert {
+  margin-bottom: 20px;
+}
+
+.result-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 24px 0;
+  border: 1px solid #f5d58d;
+  border-radius: 0;
+  padding: 30px;
+  background: #fffbeb;
+}
+
+.result-hero.accepted {
+  border-color: #a7e3c0;
+  background: #ecfdf5;
+}
+
+.result-hero h1 {
+  margin-bottom: 8px;
+  font-size: 38px;
+}
+
+.polling-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 0 0 rgb(245 158 11 / 55%);
+  animation: pulse 1.6s infinite;
+}
+
+@keyframes pulse {
+  70% {
+    box-shadow: 0 0 0 8px rgb(245 158 11 / 0%);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(245 158 11 / 0%);
+  }
+}
+
+.result-details {
+  margin-bottom: 24px;
+}
+
+.source-card {
+  border-radius: 0;
+}
+
+.judgement-card,
+.history-card {
+  margin-bottom: 24px;
+  border-radius: 0;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.metric-grid div {
+  border-radius: 0;
+  padding: 15px;
+  background: #f8fafc;
+}
+
+.metric-grid small,
+.metric-grid strong {
+  display: block;
+}
+
+.metric-grid small {
+  margin-bottom: 7px;
+  color: var(--muted);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-header > div {
+  min-width: 0;
+}
+
+.muted-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.markdown-body pre,
+.source-card pre {
+  overflow-x: auto;
+  border-radius: 0;
+  padding: 18px;
+  color: #dbeafe;
+  background: #101827;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.source-card pre {
+  max-height: 540px;
+  margin: 0;
+  color: #dbeafe;
+  white-space: pre;
+}
+
+@media (max-width: 640px) {
+  .result-hero {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 24px;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .result-details :deep(.el-descriptions__body .el-descriptions__table) {
+    display: block;
+  }
+}
+</style>

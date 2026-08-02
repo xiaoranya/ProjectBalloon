@@ -1,0 +1,202 @@
+/* 参赛队布局壳（ContestantLayout） */
+.contest-shell {
+  min-height: 100vh;
+}
+
+.contest-header {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 10px clamp(24px, 5vw, 72px);
+  border-bottom: 1px solid var(--border);
+  background: rgb(255 255 255 / 92%);
+  backdrop-filter: blur(16px);
+}
+
+.brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.brand-mark {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 0;
+  color: white;
+  background: #2563eb;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.brand div {
+  min-width: 0;
+}
+
+.brand strong,
+.brand small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.contest-nav {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 0;
+  background: #f1f5f9;
+}
+
+.contest-nav a {
+  border-radius: 0;
+  padding: 9px 16px;
+  color: #526176;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.contest-nav a.router-link-active {
+  color: var(--primary);
+  background: white;
+  box-shadow: 0 3px 12px rgb(15 23 42 / 8%);
+}
+
+.user-menu {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  justify-self: end;
+  border: 0;
+  color: #334155;
+  background: transparent;
+  cursor: pointer;
+}
+
+.contest-content {
+  width: min(1280px, 100%);
+  margin: 0 auto;
+  padding: clamp(28px, 5vw, 64px);
+}
+
+/* 工作人员布局壳（Judge/Balloon/Printer/Awards/Resolver） */
+.judge-shell {
+  min-height: 100vh;
+  background: #f6f8fb;
+}
+
+.judge-header {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 14px 32px;
+  color: #dbeafe;
+  background: #0f1f3d;
+  box-shadow: 0 8px 30px rgb(15 31 61 / 16%);
+}
+
+.judge-header nav {
+  display: flex;
+  gap: 8px;
+}
+
+.judge-header nav a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 0;
+  padding: 10px 14px;
+  color: #bdc9dc;
+  text-decoration: none;
+}
+
+.judge-header nav a:hover,
+.judge-header nav a.router-link-active {
+  color: white;
+  background: rgb(59 130 246 / 22%);
+}
+
+.judge-brand,
+.judge-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.judge-brand {
+  color: white;
+  text-decoration: none;
+}
+
+.judge-brand strong,
+.judge-brand small,
+.judge-user strong,
+.judge-user small {
+  display: block;
+}
+
+.judge-brand small,
+.judge-user small {
+  margin-top: 2px;
+  color: #9fb0cb;
+  font-size: 11px;
+}
+
+.judge-user {
+  justify-self: end;
+}
+
+.judge-user > div {
+  text-align: right;
+}
+
+.judge-main {
+  min-width: 0;
+  padding: 0;
+}
+
+/* 各工作台主题色 */
+.awards-shell {
+  min-height: 100vh;
+  background: #f6f8fb;
+}
+
+.awards-header {
+  border-bottom-color: #eadfca;
+  background: #17233d;
+}
+
+.resolver-header {
+  background: #10182b;
+}
+
+.printer-header {
+  background: #172554;
+}
+
+.balloon-header {
+  background: #3f1d57;
+}
