@@ -4,6 +4,7 @@ version = 2
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+allow-wildcard-paths = true
 
 [licenses]
 version = 2
