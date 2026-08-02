@@ -376,7 +376,17 @@ pub async fn reset_password(
 ) -> Result<StatusCode, AppError> {
     let Json(request) =
         payload.map_err(|_| AppError::validation("request", "must contain a new password"))?;
-    state.teams().reset_password(team_id, request.validate()?, context.user(), peer.ip()).await?;
+    let validated = request.validate()?;
+    state
+        .teams()
+        .reset_password(
+            team_id,
+            validated.new_password,
+            validated.require_password_reset,
+            context.user(),
+            peer.ip(),
+        )
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -37,8 +37,11 @@
         <ElFormItem label="幂等键前缀">
           <ElInput v-model="idempotencyKey" maxlength="96" show-word-limit placeholder="留空时生成 UUID" />
         </ElFormItem>
+        <ElFormItem label="账号策略">
+          <ElCheckbox v-model="requirePasswordReset">账号须在首次登录时修改密码</ElCheckbox>
+        </ElFormItem>
       </div>
-      <p class="form-hint">超过 100 行会拆成独立原子批次；批间不具备原子性。每批使用“前缀-part-N-UUID”唯一键。成员不属于 Rust 批次契约，将在队伍创建成功后逐个添加，成员失败不会伪装成队伍行失败。</p>
+      <p class="form-hint">超过 100 行会拆成独立原子批次；批间不具备原子性。每批使用“前缀-part-N-UUID”唯一键。成员不属于 Rust 批次契约，将在队伍创建成功后逐个添加，成员失败不会伪装成队伍行失败。取消勾选“账号须在首次登录时修改密码”仅应在初始密码由线下渠道交付时使用。</p>
     </ElCard>
 
     <ElCard shadow="never" class="admin-card">
@@ -159,6 +162,7 @@ const session = useSession();
 const contests = ref<Contest[]>([]);
 const contestId = ref<number | null>(null);
 const participationType = ref<ParticipationType>('OFFICIAL');
+const requirePasswordReset = ref(true);
 const idempotencyKey = ref('');
 const source = ref('');
 const drafts = ref<TeamDraft[]>([]);
@@ -262,7 +266,7 @@ async function submitImport() {
     const resultRow = batchResults.value[index];
     let response;
     try {
-      response = await teamImportApi.importTeams({ teams: requestRows(chunk), contestId: contestId.value, participationType: contestId.value === null ? null : participationType.value, idempotencyKey: resultRow.idempotencyKey });
+      response = await teamImportApi.importTeams({ teams: requestRows(chunk), contestId: contestId.value, participationType: contestId.value === null ? null : participationType.value, requirePasswordReset: requirePasswordReset.value, idempotencyKey: resultRow.idempotencyKey });
     } catch (error) {
       resultRow.status = 'FAILED'; resultRow.message = getErrorMessage(error);
       for (let later = index + 1; later < batchResults.value.length; later++) { batchResults.value[later].status = 'SKIPPED'; batchResults.value[later].message = '前序批次失败，未提交'; }

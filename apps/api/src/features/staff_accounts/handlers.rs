@@ -62,11 +62,17 @@ pub async fn reset_password(
 ) -> Result<Json<StaffAccountResponse>, AppError> {
     let Json(request) = payload
         .map_err(|_| AppError::validation("request", "must be a valid password reset object"))?;
-    let new_password = request.validate()?;
+    let validated = request.validate()?;
     Ok(Json(
         state
             .staff_accounts()
-            .reset_password(user_id, new_password, context.user().id, peer.ip())
+            .reset_password(
+                user_id,
+                validated.new_password,
+                validated.require_password_reset,
+                context.user().id,
+                peer.ip(),
+            )
             .await?,
     ))
 }

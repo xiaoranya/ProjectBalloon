@@ -80,7 +80,10 @@
         </ElFormItem>
         <ElFormItem label="初始密码" prop="initialPassword">
           <ElInput v-model="createForm.initialPassword" type="password" show-password />
-          <small class="form-help">首次登录后必须修改，长度 8 至 128 位。</small>
+          <small class="form-help">长度 8 至 128 位。</small>
+        </ElFormItem>
+        <ElFormItem label="账号策略">
+          <ElCheckbox v-model="createForm.requirePasswordReset">须在首次登录时修改密码</ElCheckbox>
         </ElFormItem>
       </ElForm>
       <template #footer>
@@ -119,15 +122,12 @@
 
     <ElDialog v-model="resetVisible" title="重置工作人员密码" width="460px">
       <p>正在重置 <strong>{{ selected?.displayName }}</strong>（@{{ selected?.username }}）的密码。</p>
-      <ElAlert
-        title="保存后该账号必须使用新密码登录，并在进入工作台前再次修改密码。"
-        type="warning"
-        show-icon
-        :closable="false"
-      />
       <ElForm label-position="top" class="reset-password-form">
         <ElFormItem label="新初始密码">
           <ElInput v-model="resetPassword" type="password" show-password />
+        </ElFormItem>
+        <ElFormItem label="账号策略">
+          <ElCheckbox v-model="resetRequirePasswordReset">须在下次登录时修改密码</ElCheckbox>
         </ElFormItem>
       </ElForm>
       <template #footer>
@@ -183,7 +183,9 @@ const createForm = reactive({
   displayName: '',
   userType: 'CONTEST_ADMIN' as StaffType,
   initialPassword: '',
+  requirePasswordReset: true,
 });
+const resetRequirePasswordReset = ref(true);
 const editForm = reactive({
   displayName: '',
   userType: 'CONTEST_ADMIN' as StaffType,
@@ -224,6 +226,7 @@ function openCreate() {
     displayName: '',
     userType: 'CONTEST_ADMIN',
     initialPassword: '',
+    requirePasswordReset: true,
   });
   createVisible.value = true;
 }
@@ -281,6 +284,7 @@ function openReset(row: unknown) {
   const account = row as StaffAccount;
   selected.value = account;
   resetPassword.value = '';
+  resetRequirePasswordReset.value = true;
   resetVisible.value = true;
 }
 
@@ -289,7 +293,11 @@ async function saveResetPassword() {
   saving.value = true;
   errorMessage.value = '';
   try {
-    const updated = await adminApi.resetStaffPassword(selected.value.id, resetPassword.value);
+    const updated = await adminApi.resetStaffPassword(
+      selected.value.id,
+      resetPassword.value,
+      resetRequirePasswordReset.value,
+    );
     accounts.value = accounts.value.map((account) => account.id === updated.id ? updated : account);
     resetVisible.value = false;
   } catch (error) {

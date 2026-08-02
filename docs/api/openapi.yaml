@@ -3983,6 +3983,13 @@ components:
           - OFFICIAL
           - STAR
           - PRACTICE
+        requirePasswordReset:
+          type: boolean
+          default: true
+          description: >-
+            Require every generated account in this batch to change its password
+            at first login. Set false only when initial passwords are delivered
+            out of band.
         idempotencyKey:
           type: string
     RowResult:

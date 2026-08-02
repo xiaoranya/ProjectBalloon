@@ -45,6 +45,10 @@ pub struct CreateStaffAccountRequest {
     pub display_name: String,
     pub user_type: UserType,
     pub initial_password: String,
+    /// Require the staff account to change its password at first login.
+    /// Defaults to `true`.
+    #[serde(default = "default_require_password_reset")]
+    pub require_password_reset: bool,
 }
 
 pub struct ValidatedCreate {
@@ -52,6 +56,7 @@ pub struct ValidatedCreate {
     pub display_name: String,
     pub user_type: UserType,
     pub initial_password: String,
+    pub require_password_reset: bool,
 }
 
 impl CreateStaffAccountRequest {
@@ -75,6 +80,7 @@ impl CreateStaffAccountRequest {
             display_name,
             user_type: self.user_type,
             initial_password: self.initial_password,
+            require_password_reset: self.require_password_reset,
         })
     }
 }
@@ -110,13 +116,29 @@ impl UpdateStaffAccountRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ResetStaffPasswordRequest {
     pub new_password: String,
+    /// Require the staff account to change its password at next login.
+    /// Defaults to `true`.
+    #[serde(default = "default_require_password_reset")]
+    pub require_password_reset: bool,
+}
+
+pub struct ValidatedResetStaffPassword {
+    pub new_password: String,
+    pub require_password_reset: bool,
 }
 
 impl ResetStaffPasswordRequest {
-    pub fn validate(self) -> Result<String, AppError> {
+    pub fn validate(self) -> Result<ValidatedResetStaffPassword, AppError> {
         validate_password("newPassword", &self.new_password)?;
-        Ok(self.new_password)
+        Ok(ValidatedResetStaffPassword {
+            new_password: self.new_password,
+            require_password_reset: self.require_password_reset,
+        })
     }
+}
+
+fn default_require_password_reset() -> bool {
+    true
 }
 
 #[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
@@ -206,11 +228,26 @@ mod tests {
             display_name: " Operator ".to_owned(),
             user_type: UserType::Judge,
             initial_password: "temporary-password".to_owned(),
+            require_password_reset: true,
         }
         .validate()
         .expect("valid account");
         assert_eq!(validated.username, "staff.one");
         assert_eq!(validated.display_name, "Operator");
+    }
+
+    #[test]
+    fn create_require_password_reset_is_forwarded() {
+        let validated = CreateStaffAccountRequest {
+            username: "staff.two".to_owned(),
+            display_name: "Operator Two".to_owned(),
+            user_type: UserType::Judge,
+            initial_password: "temporary-password".to_owned(),
+            require_password_reset: false,
+        }
+        .validate()
+        .expect("valid account");
+        assert!(!validated.require_password_reset);
     }
 
     #[test]
@@ -220,6 +257,7 @@ mod tests {
             display_name: "Team".to_owned(),
             user_type: UserType::Team,
             initial_password: "temporary-password".to_owned(),
+            require_password_reset: true,
         };
         assert!(request.validate().is_err());
     }
@@ -234,6 +272,25 @@ mod tests {
     #[test]
     fn page_size_and_password_are_bounded() {
         assert!(PageQuery { page: 0, size: 101, sort: None }.validate().is_err());
-        assert!(ResetStaffPasswordRequest { new_password: "short".to_owned() }.validate().is_err());
+        assert!(
+            ResetStaffPasswordRequest {
+                new_password: "short".to_owned(),
+                require_password_reset: true,
+            }
+            .validate()
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn reset_require_password_reset_is_forwarded() {
+        let validated = ResetStaffPasswordRequest {
+            new_password: "brand-new-password".to_owned(),
+            require_password_reset: false,
+        }
+        .validate()
+        .expect("valid reset request");
+        assert!(!validated.require_password_reset);
+        assert_eq!(validated.new_password, "brand-new-password");
     }
 }
