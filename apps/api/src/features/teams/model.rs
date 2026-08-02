@@ -100,6 +100,11 @@ pub struct CreateTeamRequest {
     pub username: Option<String>,
     #[schema(min_length = 8, max_length = 128, write_only)]
     pub initial_password: Option<String>,
+    /// Require the generated account to change its password at first login.
+    /// Batch import ignores this row-level value and applies the batch-level
+    /// `requirePasswordReset` field instead.
+    #[serde(default = "default_require_password_reset")]
+    pub require_password_reset: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -110,6 +115,7 @@ pub struct ValidatedCreateTeam {
     pub group_name: Option<String>,
     pub star: bool,
     pub account: Option<ValidatedTeamAccount>,
+    pub require_password_reset: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -138,7 +144,15 @@ impl CreateTeamRequest {
                 ));
             }
         };
-        Ok(ValidatedCreateTeam { name, school, seat_no, group_name, star: self.star, account })
+        Ok(ValidatedCreateTeam {
+            name,
+            school,
+            seat_no,
+            group_name,
+            star: self.star,
+            account,
+            require_password_reset: self.require_password_reset,
+        })
     }
 }
 
@@ -382,6 +396,11 @@ pub struct BatchImportRequest {
     pub teams: Vec<CreateTeamRequest>,
     pub contest_id: Option<i64>,
     pub participation_type: Option<ParticipationType>,
+    /// Require every generated account in this batch to change its password at
+    /// first login. Defaults to `true`; set to `false` only when the operator
+    /// distributes the initial passwords out of band and accepts their reuse.
+    #[serde(default = "default_require_password_reset")]
+    pub require_password_reset: bool,
     pub idempotency_key: String,
 }
 
@@ -389,6 +408,7 @@ pub struct ValidatedBatchImport {
     pub teams: Vec<ValidatedCreateTeam>,
     pub contest_id: Option<i64>,
     pub participation_type: ParticipationType,
+    pub require_password_reset: bool,
     pub idempotency_key: String,
     pub request_hash: String,
 }
@@ -405,15 +425,19 @@ impl BatchImportRequest {
         if self.contest_id.is_some_and(|id| id <= 0) {
             return Err(AppError::validation("contestId", "must be positive"));
         }
-        let teams = self
+        let mut teams = self
             .teams
             .into_iter()
             .map(CreateTeamRequest::validate)
             .collect::<Result<Vec<_>, _>>()?;
+        for team in &mut teams {
+            team.require_password_reset = self.require_password_reset;
+        }
         Ok(ValidatedBatchImport {
             teams,
             contest_id: self.contest_id,
             participation_type: self.participation_type.unwrap_or(ParticipationType::Official),
+            require_password_reset: self.require_password_reset,
             idempotency_key,
             request_hash,
         })
@@ -442,13 +466,30 @@ pub struct BatchImportResponse {
 pub struct ResetTeamPasswordRequest {
     #[schema(min_length = 8, max_length = 128, write_only)]
     pub new_password: String,
+    /// Require the team to change the password at next login. Defaults to
+    /// `true`; set to `false` when the operator delivers the new password out
+    /// of band.
+    #[serde(default = "default_require_password_reset")]
+    pub require_password_reset: bool,
+}
+
+pub struct ValidatedResetTeamPassword {
+    pub new_password: String,
+    pub require_password_reset: bool,
 }
 
 impl ResetTeamPasswordRequest {
-    pub fn validate(self) -> Result<String, AppError> {
+    pub fn validate(self) -> Result<ValidatedResetTeamPassword, AppError> {
         validate_password("newPassword", &self.new_password)?;
-        Ok(self.new_password)
+        Ok(ValidatedResetTeamPassword {
+            new_password: self.new_password,
+            require_password_reset: self.require_password_reset,
+        })
     }
+}
+
+fn default_require_password_reset() -> bool {
+    true
 }
 
 fn required_text(field: &'static str, value: String, max_chars: usize) -> Result<String, AppError> {
@@ -513,6 +554,7 @@ mod tests {
             star: false,
             username: Some("team-1".to_owned()),
             initial_password: None,
+            require_password_reset: true,
         };
         assert!(request.validate().is_err());
     }
@@ -541,11 +583,47 @@ mod tests {
                 star: false,
                 username: None,
                 initial_password: None,
+                require_password_reset: true,
             }],
             contest_id: None,
             participation_type: Some(ParticipationType::Official),
+            require_password_reset: true,
             idempotency_key: " ".to_owned(),
         };
         assert!(request.validate().is_err());
+    }
+
+    #[test]
+    fn batch_require_password_reset_defaults_to_true_and_overrides_rows() {
+        let request = BatchImportRequest {
+            teams: vec![CreateTeamRequest {
+                name: "Team".to_owned(),
+                school: None,
+                seat_no: None,
+                group_name: None,
+                star: false,
+                username: Some("team-1".to_owned()),
+                initial_password: Some("initial-password".to_owned()),
+                require_password_reset: true,
+            }],
+            contest_id: None,
+            participation_type: None,
+            require_password_reset: false,
+            idempotency_key: "batch-1".to_owned(),
+        };
+        let validated = request.validate().expect("valid batch import");
+        assert!(!validated.require_password_reset);
+        assert!(!validated.teams[0].require_password_reset);
+    }
+
+    #[test]
+    fn reset_team_password_request_defaults_to_required() {
+        let request = super::ResetTeamPasswordRequest {
+            new_password: "brand-new-password".to_owned(),
+            require_password_reset: false,
+        };
+        let validated = request.validate().expect("valid reset request");
+        assert!(!validated.require_password_reset);
+        assert_eq!(validated.new_password, "brand-new-password");
     }
 }

@@ -16,6 +16,7 @@ export interface TeamBatchImportRequest {
   teams: TeamBatchRowRequest[];
   contestId: number | null;
   participationType: ParticipationType | null;
+  requirePasswordReset: boolean;
   idempotencyKey: string;
 }
 

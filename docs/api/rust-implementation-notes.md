@@ -123,9 +123,9 @@ change:
 | Method | Path | Behavior |
 |---|---|---|
 | `GET` | `/api/admin/staff-accounts` | Lists non-team accounts ordered by username |
-| `POST` | `/api/admin/staff-accounts` | Creates an enabled staff account with mandatory password change |
+| `POST` | `/api/admin/staff-accounts` | Creates an enabled staff account; `requirePasswordReset` controls the first-login change (default true) |
 | `PATCH` | `/api/admin/staff-accounts/{userId}` | Updates display name, staff type, or enabled state |
-| `POST` | `/api/admin/staff-accounts/{userId}/reset-password` | Replaces the password and revokes all target sessions |
+| `POST` | `/api/admin/staff-accounts/{userId}/reset-password` | Replaces the password, revokes all target sessions; `requirePasswordReset` controls the next-login change (default true) |
 
 Pagination accepts `page` from zero and `size` from 1 through 100. The only
 accepted sort expression is `username,asc`; ordering is fixed rather than
@@ -296,6 +296,13 @@ Batch imports accept 1–100 rows and require an `idempotencyKey`. PostgreSQL
 transaction advisory locking serializes retries of the same key, and the whole
 batch either commits or rolls back. Supplied passwords are hashed with Argon2
 and are never returned by the API.
+
+Generated accounts (batch import, single team creation, staff account
+creation, and every password reset) require a first-login password change by
+default. Each of those requests accepts an optional `requirePasswordReset`
+boolean (default `true`); set it to `false` only when the initial password is
+delivered out of band and its reuse is accepted. Batch import applies its
+batch-level `requirePasswordReset` to every row and ignores row-level values.
 
 Roster changes are rejected after a contest reaches `ENDED` or `ARCHIVED`.
 Every mutation records an audit entry in the business transaction. Roster

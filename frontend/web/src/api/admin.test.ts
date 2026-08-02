@@ -79,9 +79,10 @@ describe('Rust admin API contract', () => {
       displayName: 'Judge 01',
       userType: 'JUDGE',
       initialPassword: 'temporary123',
+      requirePasswordReset: true,
     });
     await adminApi.updateStaffAccount(9, { displayName: 'Chief Judge', enabled: false });
-    await adminApi.resetStaffPassword(9, 'reset-password');
+    await adminApi.resetStaffPassword(9, 'reset-password', false);
     await adminApi.updateContestAdminScope(9, [2, 4]);
 
     expect(fetchMock.mock.calls.slice(1).map(([url]) => url)).toEqual([
@@ -97,6 +98,7 @@ describe('Rust admin API contract', () => {
         displayName: 'Judge 01',
         userType: 'JUDGE',
         initialPassword: 'temporary123',
+        requirePasswordReset: true,
       }),
     }));
     expect(fetchMock.mock.calls[2][1]).toEqual(expect.objectContaining({
@@ -104,7 +106,7 @@ describe('Rust admin API contract', () => {
       body: JSON.stringify({ displayName: 'Chief Judge', enabled: false }),
     }));
     expect(fetchMock.mock.calls[3][1]).toEqual(expect.objectContaining({
-      body: JSON.stringify({ newPassword: 'reset-password' }),
+      body: JSON.stringify({ newPassword: 'reset-password', requirePasswordReset: false }),
     }));
     expect(fetchMock.mock.calls[4][1]).toEqual(expect.objectContaining({
       method: 'PUT',

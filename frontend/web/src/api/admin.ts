@@ -13,6 +13,7 @@ export interface StaffAccountPayload {
   displayName: string;
   userType: StaffAccount['userType'];
   initialPassword: string;
+  requirePasswordReset: boolean;
 }
 
 export interface AuditLogFilters {
@@ -67,10 +68,10 @@ export const adminApi = {
     });
   },
 
-  resetStaffPassword(userId: number, newPassword: string) {
+  resetStaffPassword(userId: number, newPassword: string, requirePasswordReset = true) {
     return apiRequest<StaffAccount>(`/api/admin/staff-accounts/${userId}/reset-password`, {
       method: 'POST',
-      body: { newPassword },
+      body: { newPassword, requirePasswordReset },
     });
   },
 

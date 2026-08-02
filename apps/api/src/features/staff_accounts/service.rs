@@ -87,7 +87,7 @@ impl StaffAccountService {
             INSERT INTO users
                 (username, password_hash, display_name, user_type, enabled,
                  password_reset_required)
-            VALUES ($1, $2, $3, $4, true, true)
+            VALUES ($1, $2, $3, $4, true, $5)
             RETURNING {ACCOUNT_COLUMNS}
             "#
         );
@@ -96,6 +96,7 @@ impl StaffAccountService {
             .bind(password_hash)
             .bind(request.display_name)
             .bind(request.user_type.as_str())
+            .bind(request.require_password_reset)
             .fetch_one(&mut *transaction)
             .await
             .map_err(map_create_error)?;
@@ -225,6 +226,7 @@ impl StaffAccountService {
         &self,
         user_id: i64,
         new_password: String,
+        require_password_reset: bool,
         actor_user_id: i64,
         request_ip: IpAddr,
     ) -> Result<StaffAccountResponse, AppError> {
@@ -242,14 +244,15 @@ impl StaffAccountService {
             r#"
             UPDATE users
             SET password_hash = $1,
-                password_reset_required = true,
+                password_reset_required = $2,
                 updated_at = now()
-            WHERE id = $2
+            WHERE id = $3
             RETURNING {ACCOUNT_COLUMNS}
             "#
         );
         let updated = sqlx::query_as::<_, StaffAccountRow>(&sql)
             .bind(password_hash)
+            .bind(require_password_reset)
             .bind(user_id)
             .fetch_one(&mut *transaction)
             .await

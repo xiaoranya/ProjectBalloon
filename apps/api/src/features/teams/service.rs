@@ -670,11 +670,12 @@ impl TeamService {
     pub async fn reset_password(
         &self,
         team_id: i64,
-        password: String,
+        new_password: String,
+        require_password_reset: bool,
         actor: &AuthUser,
         request_ip: IpAddr,
     ) -> Result<(), AppError> {
-        let hash = hash_password(password)
+        let hash = hash_password(new_password)
             .await
             .map_err(|error| AppError::internal("hash team password", error))?;
         let mut transaction = self
@@ -694,9 +695,10 @@ impl TeamService {
             AppError::not_found("TEAM_ACCOUNT_NOT_FOUND", "Team account was not found")
         })?;
         sqlx::query(
-            "UPDATE users SET password_hash = $1, password_reset_required = true, updated_at = now() WHERE id = $2",
+            "UPDATE users SET password_hash = $1, password_reset_required = $2, updated_at = now() WHERE id = $3",
         )
         .bind(hash)
+        .bind(require_password_reset)
         .bind(user_id)
         .execute(&mut *transaction)
         .await
@@ -935,13 +937,14 @@ async fn create_team_in_transaction(
                 INSERT INTO users
                     (username, password_hash, display_name, user_type, enabled,
                      password_reset_required)
-                VALUES ($1, $2, $3, 'TEAM', true, true)
+                VALUES ($1, $2, $3, 'TEAM', true, $4)
                 RETURNING id
                 "#,
             )
             .bind(&account.username)
             .bind(password_hash)
             .bind(&prepared.request.name)
+            .bind(prepared.request.require_password_reset)
             .fetch_one(&mut **transaction)
             .await
             .map_err(map_team_write_error)?;
