@@ -1,11 +1,11 @@
 <template>
-  <div class="judge-shell resolver-shell">
-    <header class="judge-header resolver-header">
+  <el-container direction="vertical" class="judge-shell resolver-shell">
+    <el-header height="auto" class="judge-header resolver-header">
       <RouterLink class="judge-brand" to="/resolver"><span class="brand-mark">PB</span><div><strong>Resolver 控制台</strong><small>Official Reveal Control</small></div></RouterLink>
       <div class="judge-user"><div><strong>{{ session.state.user?.displayName }}</strong><small>Resolver 操作员</small></div><ElButton plain :icon="SwitchButton" @click="logout">退出登录</ElButton></div>
-    </header>
-    <main class="judge-main"><RouterView /></main>
-  </div>
+    </el-header>
+    <el-main class="judge-main"><RouterView /></el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">

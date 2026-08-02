@@ -1,61 +1,61 @@
 <template>
-  <section class="admin-page">
-    <header class="admin-page-header">
-      <div>
-        <p class="eyebrow">Problem Bank</p>
+  <el-container direction="vertical" class="admin-page">
+    <el-header height="auto" class="page-head">
+      <div class="admin-page-header compact">
         <h1>题库管理</h1>
-        <p>维护题目配置、题面、附件与当前测试数据版本。</p>
+        <ElButton type="primary" :icon="Plus" @click="createProblem">创建题目</ElButton>
       </div>
-      <ElButton type="primary" :icon="Plus" @click="createProblem">创建题目</ElButton>
-    </header>
+    </el-header>
 
-    <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+    <el-main class="page-body">
+      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
 
-    <ElCard shadow="never" class="admin-card">
-      <ElTable v-loading="loading" :data="page.content" row-key="id" @row-click="editProblem">
-        <ElTableColumn label="题目" min-width="280">
-          <template #default="{ row }">
-            <div class="admin-primary-cell">
-              <strong>{{ row.title }}</strong>
-              <small>{{ row.slug }} · #{{ row.id }}</small>
-            </div>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="语言" min-width="190">
-          <template #default="{ row }">
-            <ElTag v-for="language in row.languages" :key="language" class="problem-language-tag" effect="plain">
-              {{ languageLabel(language) }}
-            </ElTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="资源限制" min-width="220">
-          <template #default="{ row }">{{ row.timeLimitMs }} ms · {{ row.memoryLimitMb }} MiB · {{ row.outputLimitKb }} KiB</template>
-        </ElTableColumn>
-        <ElTableColumn label="测试数据" width="130">
-          <template #default="{ row }">
-            <ElTag :type="row.testdataVersion > 0 ? 'success' : 'info'">v{{ row.testdataVersion }}</ElTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="版本" width="90"><template #default="{ row }">{{ row.version }}</template></ElTableColumn>
-        <ElTableColumn label="操作" width="150" fixed="right">
-          <template #default="{ row }">
-            <ElButton link type="primary" @click.stop="editProblem(row as Problem)">编辑</ElButton>
-            <ElButton link type="danger" @click.stop="removeProblem(row as Problem)">删除</ElButton>
-          </template>
-        </ElTableColumn>
-        <template #empty><ElEmpty description="暂无题目" /></template>
-      </ElTable>
-      <div class="pagination-row">
-        <ElPagination
-          v-model:current-page="currentPage"
-          :page-size="page.size"
-          :total="page.totalElements"
-          layout="prev, pager, next, total"
-          @current-change="loadProblems"
-        />
-      </div>
-    </ElCard>
-  </section>
+      <ElCard shadow="never">
+        <ElTable v-loading="loading" :data="page.content" row-key="id" @row-click="editProblem">
+          <ElTableColumn label="题目" min-width="280">
+            <template #default="{ row }">
+              <div class="admin-primary-cell">
+                <strong>{{ row.title }}</strong>
+                <small>{{ row.slug }} · #{{ row.id }}</small>
+              </div>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="语言" min-width="190">
+            <template #default="{ row }">
+              <ElTag v-for="language in row.languages" :key="language" class="problem-language-tag" effect="plain">
+                {{ languageLabel(language) }}
+              </ElTag>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="资源限制" min-width="220">
+            <template #default="{ row }">{{ row.timeLimitMs }} ms · {{ row.memoryLimitMb }} MiB · {{ row.outputLimitKb }} KiB</template>
+          </ElTableColumn>
+          <ElTableColumn label="测试数据" width="130">
+            <template #default="{ row }">
+              <ElTag :type="row.testdataVersion > 0 ? 'success' : 'info'">v{{ row.testdataVersion }}</ElTag>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="版本" width="90"><template #default="{ row }">{{ row.version }}</template></ElTableColumn>
+          <ElTableColumn label="操作" width="150" fixed="right">
+            <template #default="{ row }">
+              <ElButton link type="primary" @click.stop="editProblem(row as Problem)">编辑</ElButton>
+              <ElButton link type="danger" @click.stop="removeProblem(row as Problem)">删除</ElButton>
+            </template>
+          </ElTableColumn>
+          <template #empty><ElEmpty description="暂无题目" /></template>
+        </ElTable>
+        <ElRow justify="end" class="pagination-row">
+          <ElPagination
+            v-model:current-page="currentPage"
+            :page-size="page.size"
+            :total="page.totalElements"
+            layout="prev, pager, next, total"
+            @current-change="loadProblems"
+          />
+        </ElRow>
+      </ElCard>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -115,3 +115,55 @@ async function removeProblem(problem: Problem) {
 
 onMounted(loadProblems);
 </script>
+
+<style scoped>
+.admin-page {
+  width: min(1320px, 100%);
+  margin: 0 auto;
+}
+.page-head {
+  height: auto;
+  padding: 42px 42px 0;
+}
+.page-body {
+  padding: 0 42px 42px;
+}
+.admin-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+.admin-page-header.compact {
+  align-items: center;
+}
+.admin-page-header h1 {
+  margin: 5px 0 6px;
+  font-size: clamp(28px, 4vw, 40px);
+  color: #13213b;
+}
+.page-alert {
+  margin-bottom: 20px;
+}
+.pagination-row {
+  margin-top: 24px;
+}
+.admin-primary-cell strong,
+.admin-primary-cell small {
+  display: block;
+}
+.admin-primary-cell small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+.problem-language-tag {
+  margin: 2px 4px 2px 0;
+}
+@media (max-width: 680px) {
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+</style>

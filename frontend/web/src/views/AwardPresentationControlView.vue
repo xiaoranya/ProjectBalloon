@@ -1,24 +1,26 @@
 <template>
-  <section class="awards-page">
-    <header class="awards-page-header">
+  <el-container direction="vertical" class="awards-page">
+    <el-header height="auto" class="awards-page-header">
       <div><p class="eyebrow">Ceremony Control</p><h1>颁奖控制台</h1><p>切换奖项、控制轮播，并实时驱动公共展示页。</p></div>
-      <div class="awards-header-actions">
+      <ElSpace wrap :size="10" class="awards-header-actions">
         <ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"><ElOption v-for="contest in contests" :key="contest.id" :label="contest.name" :value="contest.id" /></ElSelect>
         <ElButton :icon="Refresh" :loading="loading" @click="load">刷新</ElButton>
         <ElButton :disabled="!contestId" @click="openDisplay">打开展示页</ElButton>
-      </div>
-    </header>
-    <ElAlert v-if="errorMessage" type="warning" show-icon :closable="false" :title="errorMessage" />
-    <ElCard v-if="presentation" shadow="never" class="award-presentation-control">
-      <div class="award-presentation-control-grid">
-        <div class="award-presentation-status"><span>典礼状态</span><ElTag>{{ statusLabel }}</ElTag><div><ElButton @click="setStatus('WAITING')">等待</ElButton><ElButton type="success" @click="setStatus('PRESENTING')">开始/继续</ElButton><ElButton type="danger" @click="setStatus('COMPLETED')">结束</ElButton></div></div>
-        <div class="award-presentation-category-control"><span>当前奖项</span><ElSelect v-model="draft.currentCategoryId"><ElOption v-for="category in presentation.categories" :key="category.id" :label="`${category.code} · ${category.name}`" :value="category.id" /></ElSelect><div><ElButton :disabled="currentIndex <= 0" @click="move(-1)">上一项</ElButton><ElButton type="primary" :disabled="currentIndex >= presentation.categories.length - 1" @click="move(1)">下一项</ElButton></div></div>
-        <div class="award-presentation-rotation"><span>自动轮播</span><ElSwitch v-model="draft.autoRotate" /><ElInputNumber v-model="draft.intervalSeconds" :min="5" :max="120" /><small>秒/页</small></div>
-      </div>
-      <ElButton type="primary" :loading="saving" @click="save">应用到大屏</ElButton>
-    </ElCard>
-    <ElEmpty v-else-if="!loading && !errorMessage" description="锁定获奖名单后即可控制颁奖展示" />
-  </section>
+      </ElSpace>
+    </el-header>
+    <el-main class="page-body">
+      <ElAlert v-if="errorMessage" type="warning" show-icon :closable="false" :title="errorMessage" />
+      <ElCard v-if="presentation" shadow="never" class="award-presentation-control">
+        <ElRow :gutter="20" class="award-presentation-control-grid">
+          <ElCol :xs="24" :md="6"><div class="award-presentation-status"><span>典礼状态</span><ElTag>{{ statusLabel }}</ElTag><div><ElButton @click="setStatus('WAITING')">等待</ElButton><ElButton type="success" @click="setStatus('PRESENTING')">开始/继续</ElButton><ElButton type="danger" @click="setStatus('COMPLETED')">结束</ElButton></div></div></ElCol>
+          <ElCol :xs="24" :md="12"><div class="award-presentation-category-control"><span>当前奖项</span><ElSelect v-model="draft.currentCategoryId"><ElOption v-for="category in presentation.categories" :key="category.id" :label="`${category.code} · ${category.name}`" :value="category.id" /></ElSelect><div><ElButton :disabled="currentIndex <= 0" @click="move(-1)">上一项</ElButton><ElButton type="primary" :disabled="currentIndex >= presentation.categories.length - 1" @click="move(1)">下一项</ElButton></div></div></ElCol>
+          <ElCol :xs="24" :md="6"><div class="award-presentation-rotation"><span>自动轮播</span><ElSwitch v-model="draft.autoRotate" /><ElInputNumber v-model="draft.intervalSeconds" :min="5" :max="120" /><small>秒/页</small></div></ElCol>
+        </ElRow>
+        <ElButton type="primary" :loading="saving" @click="save">应用到大屏</ElButton>
+      </ElCard>
+      <ElEmpty v-else-if="!loading && !errorMessage" description="锁定获奖名单后即可控制颁奖展示" />
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -50,3 +52,85 @@ function openDisplay() { if (contestId.value) window.open(`/awards/display?conte
 onMounted(async () => { try { contests.value = (await contestApi.listContests()).content; const requested = Number(route.query.contestId); contestId.value = contests.value.some((item) => item.id === requested) ? requested : (contests.value[0]?.id ?? null); connect(); await load(); } catch (error) { errorMessage.value = getErrorMessage(error); } });
 onBeforeUnmount(() => realtime?.stop());
 </script>
+
+<style scoped>
+.awards-page {
+  width: min(1540px, 100%);
+  margin: 0 auto;
+}
+
+.awards-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 38px 38px 0;
+  margin-bottom: 26px;
+  height: auto;
+}
+
+.awards-page-header h1 {
+  margin: 4px 0 8px;
+  color: #172033;
+  font-size: clamp(30px, 4vw, 44px);
+  letter-spacing: -0.035em;
+}
+
+.awards-page-header > div > p:last-child {
+  display: none;
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.page-body {
+  padding: 0 38px 38px;
+}
+
+.award-presentation-control {
+  margin-top: 18px;
+  border-radius: 0;
+}
+
+.award-presentation-control-grid > .el-col {
+  align-self: flex-end;
+}
+
+.award-presentation-status,
+.award-presentation-rotation {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.award-presentation-status {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.award-presentation-status > span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.award-presentation-category-control {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) auto;
+  gap: 8px;
+}
+
+.award-presentation-rotation .el-input-number {
+  width: 100px;
+}
+
+@media (max-width: 760px) {
+  .awards-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 24px 16px 0;
+  }
+
+  .page-body {
+    padding: 0 16px 24px;
+  }
+}
+</style>

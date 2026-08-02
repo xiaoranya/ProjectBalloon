@@ -1,0 +1,114 @@
+:root {
+  color: #172033;
+  background: #f4f7fb;
+  font-family:
+    Inter, "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --ink: #172033;
+  --muted: #64748b;
+  --border: #dce4ef;
+  --surface: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+.eyebrow {
+  display: none;
+  margin: 0 0 8px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.page-alert {
+  margin-bottom: 20px;
+}
+
+.wide-button,
+.wide-control,
+.el-upload,
+.el-upload-dragger {
+  width: 100%;
+}
+
+/* 登录页（LoginView / AdminLoginView / ChangePasswordView 共用） */
+.login-copy h1 {
+  max-width: 620px;
+  margin-bottom: 24px;
+  color: #102044;
+  font-size: clamp(44px, 6vw, 82px);
+  line-height: 1.04;
+  letter-spacing: -0.045em;
+}
+
+.login-copy > p:not(.eyebrow) {
+  max-width: 560px;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1.75;
+}
+
+.login-feature {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 36px;
+  color: #315078;
+  font-size: 14px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 480px;
+  justify-self: center;
+  border: 1px solid rgb(255 255 255 / 80%);
+  border-radius: 0;
+  box-shadow: 0 30px 90px rgb(29 78 216 / 14%);
+}
+
+.login-card .el-card__header,
+.login-card .el-card__body {
+  padding: 30px;
+}
+
+.login-card h2 {
+  margin-bottom: 6px;
+  font-size: 26px;
+}
+
+.login-card .el-card__header p {
+  margin: 0;
+  color: var(--muted);
+}

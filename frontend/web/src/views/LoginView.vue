@@ -1,59 +1,51 @@
 <template>
-  <main class="login-page">
-    <section class="login-copy">
-      <p class="eyebrow">Project Balloon</p>
-      <h1>专注比赛，剩下的交给系统。</h1>
-      <p>登录参赛端，查看题目、提交代码并跟踪实时判题结果。</p>
-      <div class="login-feature">
-        <ElIcon><CircleCheck /></ElIcon>
-        <span>局域网离线运行 · 会话安全保护 · 完整判题链路</span>
-      </div>
-    </section>
-
-    <ElCard class="login-card" shadow="never">
-      <template #header>
-        <div>
-          <h2>参赛队登录</h2>
-          <p>请输入比赛账号和密码</p>
-        </div>
-      </template>
-      <ElForm ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
-        <ElFormItem label="用户名" prop="username">
-          <ElInput
-            v-model="form.username"
-            size="large"
-            autocomplete="username"
-            placeholder="请输入用户名"
-            :prefix-icon="User"
+  <el-container direction="vertical" class="login-page">
+    <el-main class="login-page-main">
+      <ElCard class="login-card" shadow="never">
+        <template #header>
+          <div>
+            <h2>参赛队登录</h2>
+            <p>请输入比赛账号和密码</p>
+          </div>
+        </template>
+        <ElForm ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
+          <ElFormItem label="用户名" prop="username">
+            <ElInput
+              v-model="form.username"
+              size="large"
+              autocomplete="username"
+              placeholder="请输入用户名"
+              :prefix-icon="User"
+            />
+          </ElFormItem>
+          <ElFormItem label="密码" prop="password">
+            <ElInput
+              v-model="form.password"
+              size="large"
+              type="password"
+              autocomplete="current-password"
+              show-password
+              placeholder="请输入密码"
+              :prefix-icon="Lock"
+              @keyup.enter="submit"
+            />
+          </ElFormItem>
+          <ElAlert
+            v-if="errorMessage"
+            :title="errorMessage"
+            type="error"
+            show-icon
+            :closable="false"
+            class="form-alert"
           />
-        </ElFormItem>
-        <ElFormItem label="密码" prop="password">
-          <ElInput
-            v-model="form.password"
-            size="large"
-            type="password"
-            autocomplete="current-password"
-            show-password
-            placeholder="请输入密码"
-            :prefix-icon="Lock"
-            @keyup.enter="submit"
-          />
-        </ElFormItem>
-        <ElAlert
-          v-if="errorMessage"
-          :title="errorMessage"
-          type="error"
-          show-icon
-          :closable="false"
-          class="form-alert"
-        />
-        <ElButton type="primary" size="large" native-type="submit" :loading="session.state.loading" class="wide-button">
-          登录
-        </ElButton>
-        <RouterLink class="register-link" to="/register">注册个人练习账号</RouterLink>
-      </ElForm>
-    </ElCard>
-  </main>
+          <ElButton type="primary" size="large" native-type="submit" :loading="session.state.loading" class="wide-button">
+            登录
+          </ElButton>
+          <RouterLink class="register-link" to="/register">注册个人练习账号</RouterLink>
+        </ElForm>
+      </ElCard>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -63,7 +55,6 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { Lock, User } from '@element-plus/icons-vue';
 import { getErrorMessage } from '../api/client';
 import { useSession } from '../auth/session';
-
 const route = useRoute();
 const router = useRouter();
 const session = useSession();
@@ -96,3 +87,17 @@ async function submit() {
   }
 }
 </script>
+
+<style scoped>
+.login-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+  background: #eff5ff;
+}
+
+.login-page-main {
+  padding: 0;
+}
+</style>

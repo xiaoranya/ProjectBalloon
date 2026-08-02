@@ -1,20 +1,23 @@
 <template>
-  <section class="page-section scoreboard-section">
-    <div class="page-title-row">
-      <div>
-        <p class="eyebrow">Scoreboard</p>
-        <h1>比赛榜单</h1>
-        <p>
-          {{ scoreboard?.frozen ? '榜单已封榜，显示公开数据。' : '榜单自动刷新。' }}
-          <span v-if="scoreboard">更新于 {{ formatDateTime(scoreboard.generatedAt) }}</span>
-        </p>
+  <el-container direction="vertical" class="page-section scoreboard-section">
+    <el-header height="auto" class="page-head">
+      <div class="page-title-row">
+        <div>
+          <p class="eyebrow">Scoreboard</p>
+          <h1>比赛榜单</h1>
+          <p>
+            {{ scoreboard?.frozen ? '榜单已封榜，显示公开数据。' : '榜单自动刷新。' }}
+            <span v-if="scoreboard">更新于 {{ formatDateTime(scoreboard.generatedAt) }}</span>
+          </p>
+        </div>
+        <ElButton :icon="Refresh" :loading="loading" @click="loadScoreboard()">刷新</ElButton>
       </div>
-      <ElButton :icon="Refresh" :loading="loading" @click="loadScoreboard()">刷新</ElButton>
-    </div>
+    </el-header>
 
-    <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+    <el-main class="page-body">
+      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
 
-    <div v-loading="loading" class="scoreboard-wrap">
+      <div v-loading="loading" class="scoreboard-wrap">
       <table v-if="scoreboard" class="scoreboard-table">
         <thead>
           <tr>
@@ -54,8 +57,9 @@
         </tbody>
       </table>
       <ElEmpty v-else-if="!loading" description="暂无榜单数据" />
-    </div>
-  </section>
+      </div>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -123,3 +127,143 @@ onUnmounted(() => {
   if (timer) window.clearInterval(timer);
 });
 </script>
+
+<style scoped>
+.page-section {
+  min-height: 50vh;
+}
+
+.page-head {
+  height: auto;
+  padding: 0;
+}
+
+.page-body {
+  padding: 0;
+}
+
+.page-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 32px;
+}
+
+.page-title-row h1 {
+  margin-bottom: 8px;
+  font-size: clamp(32px, 4vw, 48px);
+  letter-spacing: -0.035em;
+}
+
+.page-title-row p {
+  display: none;
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.eyebrow {
+  display: none;
+  margin: 0 0 8px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.page-alert {
+  margin-bottom: 20px;
+}
+
+.scoreboard-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: white;
+}
+
+.scoreboard-table {
+  width: 100%;
+  min-width: 900px;
+  border-spacing: 0;
+  border-collapse: separate;
+}
+
+.scoreboard-table th,
+.scoreboard-table td {
+  min-width: 74px;
+  padding: 12px 10px;
+  border-right: 1px solid #edf1f6;
+  border-bottom: 1px solid #edf1f6;
+  text-align: center;
+}
+
+.scoreboard-table thead th {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  color: #526176;
+  background: #f8fafc;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.scoreboard-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.scoreboard-table .team-column {
+  min-width: 220px;
+  text-align: left;
+}
+
+.team-column strong,
+.team-column small {
+  display: block;
+}
+
+.team-column small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.rank-cell {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.score-cell {
+  display: grid;
+  min-height: 46px;
+  place-content: center;
+  border-radius: 0;
+  color: #94a3b8;
+}
+
+.score-cell.solved {
+  color: #08783f;
+  background: #dcfce7;
+}
+
+.score-cell.attempted {
+  color: #b42318;
+  background: #fee2e2;
+}
+
+.score-cell.first {
+  outline: 2px solid #f59e0b;
+}
+
+.score-cell small {
+  margin-top: 2px;
+  font-size: 10px;
+}
+
+@media (max-width: 640px) {
+  .page-title-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+</style>

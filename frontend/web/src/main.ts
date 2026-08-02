@@ -6,7 +6,11 @@ import { routes } from './routes';
 import { homeForUserType } from './auth/access';
 import { useSession } from './auth/session';
 import { setUnauthorizedHandler } from './api/client';
-import './styles.css';
+import 'element-plus/theme-chalk/index.css';
+import './styles/base.css';
+import './styles/shells.css';
+import './styles/display.css';
+import './styles/media.css';
 
 const router = createRouter({
   history: createWebHistory(),

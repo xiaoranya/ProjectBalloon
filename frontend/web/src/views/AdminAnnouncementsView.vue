@@ -1,19 +1,20 @@
 <template>
-  <section class="admin-page">
-    <header class="admin-page-header compact">
-      <div>
-        <ElButton link :icon="ArrowLeft" @click="router.push(`/admin/contests/${contestId}`)">
-          返回比赛管理
-        </ElButton>
-        <h1>公告管理</h1>
-        <p>比赛 #{{ contestId }} · 发布、定时发布与历史记录</p>
+  <el-container direction="vertical" class="admin-page">
+    <el-header height="auto" class="page-head">
+      <div class="admin-page-header compact">
+        <div>
+          <ElButton link :icon="ArrowLeft" @click="router.push(`/admin/contests/${contestId}`)">
+            返回比赛管理
+          </ElButton>
+          <h1>公告管理</h1>
+        </div>
+        <div class="admin-page-actions">
+          <ElButton :icon="Refresh" :loading="loading" @click="load">刷新</ElButton>
+          <ElButton type="primary" @click="openCreate">新建公告</ElButton>
+        </div>
       </div>
-      <div class="admin-page-actions">
-        <ElButton :icon="Refresh" :loading="loading" @click="load">刷新</ElButton>
-        <ElButton type="primary" @click="openCreate">新建公告</ElButton>
-      </div>
-    </header>
-
+    </el-header>
+    <el-main class="page-body">
     <ElAlert
       v-if="errorMessage"
       class="page-alert"
@@ -23,7 +24,7 @@
       :title="errorMessage"
     />
 
-    <ElCard shadow="never" class="admin-card">
+    <ElCard shadow="never">
       <ElTable v-loading="loading" :data="announcements" row-key="id">
         <ElTableColumn label="状态" width="120">
           <template #default="{ row }">
@@ -94,7 +95,8 @@
         </ElButton>
       </template>
     </ElDialog>
-  </section>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -254,7 +256,60 @@ onMounted(load);
 </script>
 
 <style scoped>
+.admin-page {
+  width: min(1320px, 100%);
+  margin: 0 auto;
+}
+.page-head {
+  height: auto;
+  padding: 42px 42px 0;
+}
+.page-body {
+  padding: 0 42px 42px;
+}
+.admin-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+.admin-page-header.compact {
+  align-items: center;
+}
+.admin-page-header h1 {
+  margin: 5px 0 6px;
+  font-size: clamp(28px, 4vw, 40px);
+  color: #13213b;
+}
+.admin-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.page-alert {
+  margin-bottom: 20px;
+}
 .announcement-title { display: flex; align-items: center; gap: 8px; }
 .announcement-body { margin: 6px 0 0; color: #64748b; white-space: pre-wrap; }
 .muted { color: #94a3b8; }
+@media (max-width: 680px) {
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+@media (max-width: 640px) {
+  .page-head {
+    padding: 24px 16px 0;
+  }
+  .page-body {
+    padding: 0 16px 24px;
+  }
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+  }
+}
 </style>

@@ -1,6 +1,6 @@
 <template>
-  <div class="contest-shell">
-    <header class="contest-header">
+  <el-container direction="vertical" class="contest-shell">
+    <el-header height="auto" class="contest-header">
       <div class="brand" @click="router.push('/contests')">
         <span class="brand-mark">PB</span>
         <div>
@@ -30,9 +30,9 @@
           </ElDropdownMenu>
         </template>
       </ElDropdown>
-    </header>
+    </el-header>
 
-    <main class="contest-content">
+    <el-main class="contest-content">
       <ElAlert
         v-if="loadError"
         :title="loadError"
@@ -42,8 +42,8 @@
         class="page-alert"
       />
       <RouterView v-else :contest="contest" />
-    </main>
-  </div>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">

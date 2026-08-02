@@ -1,89 +1,91 @@
 <template>
-  <section class="admin-page operations-page">
-    <header class="admin-page-header">
-      <div>
-        <p class="eyebrow">System Operations</p>
+  <el-container direction="vertical" class="admin-page">
+    <el-header height="auto" class="page-head">
+      <div class="admin-page-header compact">
         <h1>健康状态与审计日志</h1>
-        <p>检查 Rust API 的依赖、任务积压、工作节点与管理操作记录。</p>
+        <ElButton :icon="Refresh" :loading="refreshing" @click="refreshAll">刷新状态</ElButton>
       </div>
-      <ElButton :icon="Refresh" :loading="refreshing" @click="refreshAll">刷新状态</ElButton>
-    </header>
+    </el-header>
 
-    <ElAlert
-      v-if="errorMessage"
-      :title="errorMessage"
-      type="error"
-      show-icon
-      :closable="false"
-      class="page-alert"
-    />
+    <el-main class="page-body">
+      <ElAlert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+        class="page-alert"
+      />
 
-    <section class="operations-health">
-      <div class="operations-section-heading">
-        <div>
+      <section class="operations-health">
+        <div class="operations-section-heading">
           <h2>系统健康</h2>
-          <p>{{ health ? `最近检查：${formatDateTime(health.time)}` : '正在读取就绪状态' }}</p>
+          <ElTag v-if="health" :type="health.status === 'up' ? 'success' : 'danger'" size="large">
+            {{ health.status === 'up' ? '运行正常' : '存在异常' }}
+          </ElTag>
         </div>
-        <ElTag v-if="health" :type="health.status === 'up' ? 'success' : 'danger'" size="large">
-          {{ health.status === 'up' ? '运行正常' : '存在异常' }}
-        </ElTag>
-      </div>
 
-      <div v-loading="healthLoading" class="health-component-grid">
-        <ElCard
-          v-for="component in healthComponents"
-          :key="component.name"
-          shadow="never"
-          class="health-component-card"
-          :class="{ down: component.status === 'down', neutral: component.status === 'neutral' }"
-        >
-          <div class="health-component-title">
-            <span>{{ component.name }}</span>
-            <ElTag :type="healthTagType(component.status)" effect="light">
-              {{ healthStatusLabel(component.status) }}
-            </ElTag>
-          </div>
-          <dl class="health-component-details">
-            <template v-for="detail in component.details" :key="detail.label">
-              <dt>{{ detail.label }}</dt>
-              <dd>{{ detail.value }}</dd>
-            </template>
-          </dl>
-        </ElCard>
-      </div>
-    </section>
+        <ElRow v-loading="healthLoading" :gutter="14" class="health-component-grid">
+          <ElCol
+            v-for="component in healthComponents"
+            :key="component.name"
+            :xs="24"
+            :sm="12"
+            :md="8"
+            :lg="6"
+            :xl="6"
+          >
+            <ElCard
+              shadow="never"
+              class="health-component-card"
+              :class="{ down: component.status === 'down', neutral: component.status === 'neutral' }"
+            >
+              <div class="health-component-title">
+                <span>{{ component.name }}</span>
+                <ElTag :type="healthTagType(component.status)" effect="light">
+                  {{ healthStatusLabel(component.status) }}
+                </ElTag>
+              </div>
+              <el-descriptions :column="1" size="small">
+                <el-descriptions-item v-for="detail in component.details" :key="detail.label" :label="detail.label">
+                  {{ detail.value }}
+                </el-descriptions-item>
+              </el-descriptions>
+            </ElCard>
+          </ElCol>
+        </ElRow>
+      </section>
 
-    <section v-if="session.isSuperAdmin.value" class="operations-audit">
+      <section v-if="session.isSuperAdmin.value" class="operations-audit">
       <div class="operations-section-heading">
-        <div>
-          <h2>审计日志</h2>
-          <p>共 {{ auditPage.totalElements }} 条记录，按时间倒序排列。</p>
-        </div>
+        <h2>审计日志</h2>
       </div>
 
-      <ElCard shadow="never" class="admin-card">
-        <div class="audit-filters">
-          <ElInput v-model="filters.action" clearable placeholder="操作名称" @keyup.enter="applyFilters" />
-          <ElInputNumber
-            v-model="filters.actorUserId"
-            :min="1"
-            :controls="false"
-            placeholder="操作人 ID"
-          />
-          <ElSelect v-model="filters.result" clearable placeholder="全部结果">
-            <ElOption label="成功" value="success" />
-            <ElOption label="失败" value="failed" />
-          </ElSelect>
-          <ElDatePicker
-            v-model="filters.timeRange"
-            type="datetimerange"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
-            range-separator="至"
-          />
-          <ElButton type="primary" @click="applyFilters">查询</ElButton>
-          <ElButton @click="resetFilters">重置</ElButton>
-        </div>
+      <ElCard shadow="never">
+        <el-form inline class="audit-filters" @submit.prevent="applyFilters">
+          <ElSpace wrap :size="10">
+            <ElInput v-model="filters.action" clearable placeholder="操作名称" @keyup.enter="applyFilters" />
+            <ElInputNumber
+              v-model="filters.actorUserId"
+              :min="1"
+              :controls="false"
+              placeholder="操作人 ID"
+            />
+            <ElSelect v-model="filters.result" clearable placeholder="全部结果">
+              <ElOption label="成功" value="success" />
+              <ElOption label="失败" value="failed" />
+            </ElSelect>
+            <ElDatePicker
+              v-model="filters.timeRange"
+              type="datetimerange"
+              start-placeholder="开始时间"
+              end-placeholder="结束时间"
+              range-separator="至"
+            />
+            <ElButton type="primary" @click="applyFilters">查询</ElButton>
+            <ElButton @click="resetFilters">重置</ElButton>
+          </ElSpace>
+        </el-form>
 
         <ElTable v-loading="auditLoading" :data="auditPage.content" row-key="id">
           <ElTableColumn label="时间" min-width="175">
@@ -111,20 +113,21 @@
           </template>
         </ElTable>
 
-        <ElPagination
-          v-if="auditPage.totalElements > pageSize"
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :total="auditPage.totalElements"
-          layout="prev, pager, next, total"
-          class="audit-pagination"
-          @current-change="loadAuditLogs"
-        />
+        <ElRow justify="end" class="audit-pagination">
+          <ElPagination
+            v-if="auditPage.totalElements > pageSize"
+            v-model:current-page="currentPage"
+            :page-size="pageSize"
+            :total="auditPage.totalElements"
+            layout="prev, pager, next, total"
+            @current-change="loadAuditLogs"
+          />
+        </ElRow>
       </ElCard>
-    </section>
-  </section>
+      </section>
+    </el-main>
+  </el-container>
 </template>
-
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
@@ -311,3 +314,104 @@ function resultTagType(result: string) {
 
 onMounted(refreshAll);
 </script>
+
+<style scoped>
+.admin-page {
+  width: min(1320px, 100%);
+  margin: 0 auto;
+}
+.page-head {
+  height: auto;
+  padding: 42px 42px 0;
+}
+.page-body {
+  padding: 0 42px 42px;
+}
+.admin-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+.admin-page-header.compact {
+  align-items: center;
+}
+.admin-page-header h1 {
+  margin: 5px 0 6px;
+  font-size: clamp(28px, 4vw, 40px);
+  color: #13213b;
+}
+.page-alert {
+  margin-bottom: 20px;
+}
+.operations-health,
+.operations-audit {
+  margin-bottom: 34px;
+}
+.operations-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.operations-section-heading h2,
+.operations-section-heading p {
+  margin: 0;
+}
+.operations-section-heading h2 {
+  color: #13213b;
+}
+.health-component-grid {
+  min-height: 150px;
+}
+.health-component-grid .el-col {
+  margin-bottom: 14px;
+}
+.health-component-card {
+  border: 1px solid #dbe8df;
+  border-left: 4px solid #16a34a;
+  border-radius: 0;
+}
+.health-component-card.down {
+  border-color: #fecaca;
+  border-left-color: #dc2626;
+}
+.health-component-card.neutral {
+  border-color: #e2e8f0;
+  border-left-color: #94a3b8;
+}
+.health-component-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  font-weight: 700;
+  color: #13213b;
+}
+.audit-filters {
+  margin-bottom: 20px;
+}
+.audit-filters :deep(.el-input) {
+  width: 240px;
+}
+.audit-filters :deep(.el-input-number) {
+  width: 130px;
+}
+.audit-filters :deep(.el-select) {
+  width: 130px;
+}
+.audit-filters :deep(.el-date-editor) {
+  width: 360px;
+}
+.audit-pagination {
+  margin-top: 20px;
+}
+@media (max-width: 680px) {
+  .admin-page-header,
+  .operations-section-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+</style>

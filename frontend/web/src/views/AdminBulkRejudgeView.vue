@@ -1,19 +1,19 @@
 <template>
-  <section class="admin-page rejudge-page">
-    <header class="admin-page-header compact">
-      <div>
-        <ElButton link :icon="ArrowLeft" @click="router.push(`/admin/contests/${contestId}`)">
-          返回比赛详情
-        </ElButton>
-        <p class="eyebrow">Bulk rejudge</p>
-        <h1>批量重判工作台</h1>
-        <p>{{ contest?.name ?? `比赛 #${contestId}` }} · 仅处理已有最终判定的提交</p>
+  <el-container direction="vertical" class="admin-page rejudge-page">
+    <el-header height="auto" class="page-head">
+      <div class="admin-page-header compact">
+        <div>
+          <ElButton link :icon="ArrowLeft" @click="router.push(`/admin/contests/${contestId}`)">
+            返回比赛详情
+          </ElButton>
+          <h1>批量重判工作台</h1>
+        </div>
+        <div class="admin-page-actions">
+          <ElButton :icon="Refresh" :loading="tasksLoading" @click="loadTasks(false)">刷新任务</ElButton>
+        </div>
       </div>
-      <div class="admin-page-actions">
-        <ElButton :icon="Refresh" :loading="tasksLoading" @click="loadTasks(false)">刷新任务</ElButton>
-      </div>
-    </header>
-
+    </el-header>
+    <el-main class="page-body">
     <ElAlert
       v-if="errorMessage"
       class="page-alert"
@@ -23,8 +23,9 @@
       :title="errorMessage"
     />
 
-    <div class="rejudge-workbench">
-      <ElCard shadow="never" class="admin-card rejudge-filter-card">
+    <ElRow :gutter="20" class="rejudge-workbench-row">
+      <ElCol :xs="24" :md="16">
+      <ElCard shadow="never" class="rejudge-filter-card">
         <template #header>
           <div class="card-header">
             <div>
@@ -35,63 +36,73 @@
         </template>
 
         <ElForm label-position="top">
-          <div class="rejudge-filter-grid">
-            <ElFormItem label="题目">
-              <ElSelect v-model="filter.problemId" clearable filterable placeholder="全部题目">
-                <ElOption
-                  v-for="problem in contestProblems"
-                  :key="problem.problemId"
-                  :label="`${problem.alias} · ${problem.title}`"
-                  :value="problem.problemId"
+          <ElRow :gutter="14" class="rejudge-filter-grid-row">
+            <ElCol :xs="24" :sm="12" :md="6">
+              <ElFormItem label="题目">
+                <ElSelect v-model="filter.problemId" clearable filterable placeholder="全部题目">
+                  <ElOption
+                    v-for="problem in contestProblems"
+                    :key="problem.problemId"
+                    :label="`${problem.alias} · ${problem.title}`"
+                    :value="problem.problemId"
+                  />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12" :md="6">
+              <ElFormItem label="队伍">
+                <ElSelect v-model="filter.teamId" clearable filterable placeholder="全部队伍">
+                  <ElOption
+                    v-for="team in contestTeams"
+                    :key="team.teamId"
+                    :label="`${team.teamName} (#${team.teamId})`"
+                    :value="team.teamId"
+                  />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12" :md="6">
+              <ElFormItem label="语言">
+                <ElSelect v-model="filter.language" clearable placeholder="全部语言">
+                  <ElOption label="C" value="c" />
+                  <ElOption label="C++" value="cpp" />
+                  <ElOption label="Java" value="java" />
+                  <ElOption label="Python" value="python" />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12" :md="6">
+              <ElFormItem label="当前判罚">
+                <ElSelect v-model="filter.verdict" clearable placeholder="全部最终判罚">
+                  <ElOption
+                    v-for="option in verdictOptions"
+                    :key="option.value"
+                    :label="option.label"
+                    :value="option.value"
+                  />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+            <ElCol :xs="24" :sm="12" :md="12">
+              <ElFormItem label="提交时间">
+                <ElDatePicker
+                  v-model="filter.submittedRange"
+                  type="datetimerange"
+                  start-placeholder="起始时间"
+                  end-placeholder="结束时间"
+                  range-separator="至"
                 />
-              </ElSelect>
-            </ElFormItem>
-            <ElFormItem label="队伍">
-              <ElSelect v-model="filter.teamId" clearable filterable placeholder="全部队伍">
-                <ElOption
-                  v-for="team in contestTeams"
-                  :key="team.teamId"
-                  :label="`${team.teamName} (#${team.teamId})`"
-                  :value="team.teamId"
-                />
-              </ElSelect>
-            </ElFormItem>
-            <ElFormItem label="语言">
-              <ElSelect v-model="filter.language" clearable placeholder="全部语言">
-                <ElOption label="C" value="c" />
-                <ElOption label="C++" value="cpp" />
-                <ElOption label="Java" value="java" />
-                <ElOption label="Python" value="python" />
-              </ElSelect>
-            </ElFormItem>
-            <ElFormItem label="当前判罚">
-              <ElSelect v-model="filter.verdict" clearable placeholder="全部最终判罚">
-                <ElOption
-                  v-for="option in verdictOptions"
-                  :key="option.value"
-                  :label="option.label"
-                  :value="option.value"
-                />
-              </ElSelect>
-            </ElFormItem>
-            <ElFormItem label="提交时间" class="rejudge-time-filter">
-              <ElDatePicker
-                v-model="filter.submittedRange"
-                type="datetimerange"
-                start-placeholder="起始时间"
-                end-placeholder="结束时间"
-                range-separator="至"
-              />
-            </ElFormItem>
-          </div>
+              </ElFormItem>
+            </ElCol>
+          </ElRow>
         </ElForm>
 
-        <div class="rejudge-preview-actions">
+        <ElSpace wrap :size="14" class="rejudge-preview-actions-row">
           <ElButton type="primary" plain :loading="previewing" @click="preview">
             预览影响范围
           </ElButton>
           <span class="muted-text">预览只统计，不创建判题任务。</span>
-        </div>
+        </ElSpace>
 
         <ElAlert
           v-if="previewResult && previewStale"
@@ -102,8 +113,10 @@
           title="筛选条件已变化，当前预览已失效，请重新预览。"
         />
       </ElCard>
+      </ElCol>
 
-      <ElCard shadow="never" class="admin-card rejudge-confirm-card">
+      <ElCol :xs="24" :md="8">
+      <ElCard shadow="never" class="rejudge-confirm-card">
         <template #header>
           <div class="card-header">
             <div>
@@ -174,9 +187,10 @@
           </ElButton>
         </template>
       </ElCard>
-    </div>
+      </ElCol>
+    </ElRow>
 
-    <ElCard shadow="never" class="admin-card rejudge-tasks-card">
+    <ElCard shadow="never" class="rejudge-tasks-card">
       <template #header>
         <div class="card-header">
           <div>
@@ -296,7 +310,8 @@
         </ElTable>
       </template>
     </ElDialog>
-  </section>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
@@ -601,3 +616,146 @@ onUnmounted(() => {
   document.removeEventListener('visibilitychange', handleVisibility);
 });
 </script>
+
+<style scoped>
+.admin-page {
+  width: min(1320px, 100%);
+  margin: 0 auto;
+}
+.page-head {
+  height: auto;
+  padding: 42px 42px 0;
+}
+.page-body {
+  padding: 0 42px 42px;
+}
+.admin-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+.admin-page-header.compact {
+  align-items: center;
+}
+.admin-page-header h1 {
+  margin: 5px 0 6px;
+  font-size: clamp(28px, 4vw, 40px);
+  color: #13213b;
+}
+.admin-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.page-alert {
+  margin-bottom: 20px;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.card-header > div {
+  min-width: 0;
+}
+.card-header small {
+  display: block;
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+.rejudge-workbench-row {
+  margin-bottom: 20px;
+}
+.rejudge-filter-grid-row :deep(.el-select),
+.rejudge-filter-grid-row :deep(.el-date-editor) {
+  width: 100%;
+}
+.rejudge-preview-actions-row {
+  margin-top: 2px;
+}
+.rejudge-preview-count {
+  display: grid;
+  place-items: center;
+  margin: 2px 0 18px;
+  padding: 22px;
+  border: 1px solid #dbeafe;
+  border-radius: 0;
+  background: #f7faff;
+  text-align: center;
+}
+.rejudge-preview-count span,
+.rejudge-preview-count small,
+.rejudge-progress-copy {
+  color: var(--muted);
+  font-size: 12px;
+}
+.rejudge-preview-count strong {
+  margin: 4px 0;
+  color: #172033;
+  font-size: 42px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.rejudge-confirm-form {
+  display: grid;
+  gap: 14px;
+}
+.rejudge-confirm-form :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
+}
+.rejudge-tasks-card {
+  margin-bottom: 20px;
+}
+.rejudge-poll-state {
+  color: var(--muted);
+  font-size: 12px;
+}
+.rejudge-progress-copy {
+  display: block;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.rejudge-detail-heading {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.rejudge-page code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.muted-text {
+  color: var(--muted);
+}
+.error-text {
+  color: #dc2626 !important;
+}
+.form-help {
+  color: var(--el-text-color-secondary);
+  font-size: 0.8rem;
+}
+.wide-button {
+  width: 100%;
+}
+@media (max-width: 680px) {
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+@media (max-width: 640px) {
+  .page-head {
+    padding: 24px 16px 0;
+  }
+  .page-body {
+    padding: 0 16px 24px;
+  }
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+</style>

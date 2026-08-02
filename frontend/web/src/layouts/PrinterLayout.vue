@@ -1,6 +1,6 @@
 <template>
-  <div class="judge-shell">
-    <header class="judge-header printer-header">
+  <el-container direction="vertical" class="judge-shell">
+    <el-header height="auto" class="judge-header printer-header">
       <RouterLink class="judge-brand" to="/printer">
         <span class="brand-mark">PB</span>
         <div><strong>打印工作台</strong><small>Print Request Desk</small></div>
@@ -9,9 +9,9 @@
         <div><strong>{{ session.state.user?.displayName }}</strong><small>打印员</small></div>
         <ElButton plain :icon="SwitchButton" @click="logout">退出登录</ElButton>
       </div>
-    </header>
-    <main class="judge-main"><RouterView /></main>
-  </div>
+    </el-header>
+    <el-main class="judge-main"><RouterView /></el-main>
+  </el-container>
 </template>
 
 <script setup lang="ts">
