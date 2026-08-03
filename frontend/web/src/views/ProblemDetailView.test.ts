@@ -12,7 +12,8 @@ vi.mock('../components/CodeEditor.vue', () => ({
     name: 'CodeEditor',
     props: ['modelValue', 'language', 'readonly', 'height'],
     emits: ['update:modelValue'],
-    template: '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    template:
+      '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
 }));
 
@@ -36,7 +37,12 @@ describe('ProblemDetailView', () => {
     vi.clearAllMocks();
     push.mockReset();
     vi.mocked(contestApi.listProblems).mockResolvedValue([problem]);
-    vi.mocked(contestApi.submit).mockResolvedValue({ submissionId: 9, judgementId: 'j-9', status: 'PENDING', submittedAt: '' });
+    vi.mocked(contestApi.submit).mockResolvedValue({
+      submissionId: 9,
+      judgementId: 'j-9',
+      status: 'PENDING',
+      submittedAt: '',
+    });
   });
 
   function mountView() {
@@ -82,7 +88,9 @@ describe('ProblemDetailView', () => {
 
     await wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', 'output');
     await flushPromises();
-    const onChange = wrapper.findComponent({ name: 'ElUpload' }).props('onChange') as (file: unknown) => void;
+    const onChange = wrapper.findComponent({ name: 'ElUpload' }).props('onChange') as (
+      file: unknown,
+    ) => void;
     const file = { name: 'out.zip', size: 12 } as File;
     onChange({ raw: file });
     await wrapper.find('form').trigger('submit');
@@ -98,7 +106,9 @@ describe('ProblemDetailView', () => {
 
     await wrapper.findComponent({ name: 'ElSegmented' }).vm.$emit('update:modelValue', 'file');
     await flushPromises();
-    const onChange = wrapper.findComponent({ name: 'ElUpload' }).props('onChange') as (file: unknown) => void;
+    const onChange = wrapper.findComponent({ name: 'ElUpload' }).props('onChange') as (
+      file: unknown,
+    ) => void;
     const file = { name: 'solution.cc', size: 23 } as File;
     onChange({ raw: file });
     await wrapper.find('form').trigger('submit');
@@ -114,7 +124,9 @@ describe('ProblemDetailView', () => {
 
     await wrapper.findComponent({ name: 'ElSegmented' }).vm.$emit('update:modelValue', 'file');
     await flushPromises();
-    const onChange = wrapper.findComponent({ name: 'ElUpload' }).props('onChange') as (file: unknown) => void;
+    const onChange = wrapper.findComponent({ name: 'ElUpload' }).props('onChange') as (
+      file: unknown,
+    ) => void;
     onChange({ raw: { name: 'Main.py', size: 12 } as File });
     await wrapper.find('form').trigger('submit');
     await flushPromises();

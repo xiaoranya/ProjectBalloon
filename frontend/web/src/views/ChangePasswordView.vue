@@ -21,15 +21,36 @@
           show-icon
           :closable="false"
         />
-        <ElForm ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
+        <ElForm
+          ref="formRef"
+          :model="form"
+          :rules="rules"
+          label-position="top"
+          @submit.prevent="submit"
+        >
           <ElFormItem label="当前密码" prop="currentPassword">
-            <ElInput v-model="form.currentPassword" type="password" show-password autocomplete="current-password" />
+            <ElInput
+              v-model="form.currentPassword"
+              type="password"
+              show-password
+              autocomplete="current-password"
+            />
           </ElFormItem>
           <ElFormItem label="新密码" prop="newPassword">
-            <ElInput v-model="form.newPassword" type="password" show-password autocomplete="new-password" />
+            <ElInput
+              v-model="form.newPassword"
+              type="password"
+              show-password
+              autocomplete="new-password"
+            />
           </ElFormItem>
           <ElFormItem label="确认新密码" prop="confirmation">
-            <ElInput v-model="form.confirmation" type="password" show-password autocomplete="new-password" />
+            <ElInput
+              v-model="form.confirmation"
+              type="password"
+              show-password
+              autocomplete="new-password"
+            />
           </ElFormItem>
           <ElButton type="primary" native-type="submit" :loading="session.state.loading">
             保存新密码
@@ -60,13 +81,15 @@ const rules: FormRules = {
     { required: true, message: '请输入新密码', trigger: 'blur' },
     { min: 8, max: 128, message: '密码长度需为 8 至 128 位', trigger: 'blur' },
   ],
-  confirmation: [{
-    validator: (_rule, value, callback) => {
-      if (value !== form.newPassword) callback(new Error('两次输入的新密码不一致'));
-      else callback();
+  confirmation: [
+    {
+      validator: (_rule, value, callback) => {
+        if (value !== form.newPassword) callback(new Error('两次输入的新密码不一致'));
+        else callback();
+      },
+      trigger: 'blur',
     },
-    trigger: 'blur',
-  }],
+  ],
 };
 
 async function submit() {

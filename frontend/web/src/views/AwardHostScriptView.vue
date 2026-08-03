@@ -1,12 +1,134 @@
 <template>
   <el-container direction="vertical" class="host-script-page">
-    <el-header height="auto" class="host-script-page-header"><div><p class="eyebrow">Host Cue Sheet</p><h1>颁奖主持人脚本</h1></div><ElSpace wrap :size="16" class="host-script-toolbar"><ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"><ElOption v-for="contest in contests" :key="contest.id" :label="contest.name" :value="contest.id" /></ElSelect><ElButton :icon="Refresh" :loading="loading" @click="load(true)">刷新</ElButton><ElButton :icon="Printer" :disabled="!script" @click="printScript">打印</ElButton><ElButton type="primary" :icon="Check" :disabled="!script || !dirty" :loading="saving" @click="save">保存脚本</ElButton></ElSpace></el-header>
+    <el-header height="auto" class="host-script-page-header"
+      ><div>
+        <p class="eyebrow">Host Cue Sheet</p>
+        <h1>颁奖主持人脚本</h1>
+      </div>
+      <ElSpace wrap :size="16" class="host-script-toolbar"
+        ><ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"
+          ><ElOption
+            v-for="contest in contests"
+            :key="contest.id"
+            :label="contest.name"
+            :value="contest.id" /></ElSelect
+        ><ElButton :icon="Refresh" :loading="loading" @click="load(true)">刷新</ElButton
+        ><ElButton :icon="Printer" :disabled="!script" @click="printScript">打印</ElButton
+        ><ElButton
+          type="primary"
+          :icon="Check"
+          :disabled="!script || !dirty"
+          :loading="saving"
+          @click="save"
+          >保存脚本</ElButton
+        ></ElSpace
+      ></el-header
+    >
     <el-main class="page-body">
-      <ElAlert v-if="errorMessage" :title="errorMessage" type="warning" show-icon :closable="false" />
+      <ElAlert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="warning"
+        show-icon
+        :closable="false"
+      />
       <template v-if="script">
-        <ElCard shadow="never" class="host-live-card"><template #header><div class="card-header"><div><strong>主持人当前提示</strong><small>{{ statusLabel }}</small></div><ElTag>{{ script.presentationStatus }}</ElTag></div></template><ElRow v-if="currentSection" :gutter="24" class="host-live-grid"><ElCol :xs="24" :md="13"><div class="host-current-cue"><small>{{ currentSection.code }}</small><h2>{{ currentSection.name }}</h2><p>{{ currentSection.cueText }}</p><span>{{ nextSection ? `下一项：${nextSection.name}` : '这是最后一个奖项' }}</span></div></ElCol><ElCol :xs="24" :md="11"><div class="host-current-recipients"><strong>请宣读</strong><ol><li v-for="recipient in currentSection.recipients" :key="recipient.id"><span>{{ recipient.teamName }}</span><small>{{ recipient.school || '未填写学校' }}</small></li></ol></div></ElCol></ElRow></ElCard>
-        <ElCard shadow="never" class="host-script-editor"><template #header><div class="card-header"><div><strong>口播内容</strong><small>乐观锁版本 v{{ script.version ?? '草稿' }}</small></div></div></template><ElForm label-position="top"><ElFormItem label="开场语"><ElInput v-model="form.openingText" type="textarea" :rows="3" maxlength="4000" show-word-limit @input="dirty = true" /></ElFormItem><ElRow :gutter="16" class="host-section-editor-list"><ElCol v-for="section in form.sections" :key="section.categoryId" :xs="24" :md="12"><article><header><div><small>{{ section.code }}</small><strong>{{ section.name }}</strong></div><ElTag v-if="section.firstBlood" type="danger">First Blood</ElTag></header><ElInput v-model="section.cueText" type="textarea" :rows="3" maxlength="2000" show-word-limit @input="dirty = true" /></article></ElCol></ElRow><ElFormItem label="结束语"><ElInput v-model="form.closingText" type="textarea" :rows="3" maxlength="4000" show-word-limit @input="dirty = true" /></ElFormItem></ElForm></ElCard>
-        <article class="host-script-print"><header><p>PROJECT BALLOON · HOST CUE SHEET</p><h1>{{ script.contestName }}颁奖主持人提词稿</h1></header><section><h2>开场</h2><p>{{ form.openingText }}</p></section><section v-for="(section, index) in form.sections" :key="section.categoryId"><h2>{{ index + 1 }}. {{ section.name }}（{{ section.code }}）</h2><p>{{ section.cueText }}</p><ol><li v-for="recipient in section.recipients" :key="recipient.id"><strong>{{ recipient.teamName }}</strong><span v-if="recipient.school"> · {{ recipient.school }}</span></li></ol></section><section><h2>结束</h2><p>{{ form.closingText }}</p></section></article>
+        <ElCard shadow="never" class="host-live-card"
+          ><template #header
+            ><div class="card-header">
+              <div>
+                <strong>主持人当前提示</strong><small>{{ statusLabel }}</small>
+              </div>
+              <ElTag>{{ script.presentationStatus }}</ElTag>
+            </div></template
+          ><ElRow v-if="currentSection" :gutter="24" class="host-live-grid"
+            ><ElCol :xs="24" :md="13"
+              ><div class="host-current-cue">
+                <small>{{ currentSection.code }}</small>
+                <h2>{{ currentSection.name }}</h2>
+                <p>{{ currentSection.cueText }}</p>
+                <span>{{ nextSection ? `下一项：${nextSection.name}` : '这是最后一个奖项' }}</span>
+              </div></ElCol
+            ><ElCol :xs="24" :md="11"
+              ><div class="host-current-recipients">
+                <strong>请宣读</strong>
+                <ol>
+                  <li v-for="recipient in currentSection.recipients" :key="recipient.id">
+                    <span>{{ recipient.teamName }}</span
+                    ><small>{{ recipient.school || '未填写学校' }}</small>
+                  </li>
+                </ol>
+              </div></ElCol
+            ></ElRow
+          ></ElCard
+        >
+        <ElCard shadow="never" class="host-script-editor"
+          ><template #header
+            ><div class="card-header">
+              <div>
+                <strong>口播内容</strong><small>乐观锁版本 v{{ script.version ?? '草稿' }}</small>
+              </div>
+            </div></template
+          ><ElForm label-position="top"
+            ><ElFormItem label="开场语"
+              ><ElInput
+                v-model="form.openingText"
+                type="textarea"
+                :rows="3"
+                maxlength="4000"
+                show-word-limit
+                @input="dirty = true" /></ElFormItem
+            ><ElRow :gutter="16" class="host-section-editor-list"
+              ><ElCol v-for="section in form.sections" :key="section.categoryId" :xs="24" :md="12"
+                ><article>
+                  <header>
+                    <div>
+                      <small>{{ section.code }}</small
+                      ><strong>{{ section.name }}</strong>
+                    </div>
+                    <ElTag v-if="section.firstBlood" type="danger">First Blood</ElTag>
+                  </header>
+                  <ElInput
+                    v-model="section.cueText"
+                    type="textarea"
+                    :rows="3"
+                    maxlength="2000"
+                    show-word-limit
+                    @input="dirty = true"
+                  /></article></ElCol></ElRow
+            ><ElFormItem label="结束语"
+              ><ElInput
+                v-model="form.closingText"
+                type="textarea"
+                :rows="3"
+                maxlength="4000"
+                show-word-limit
+                @input="dirty = true" /></ElFormItem></ElForm
+        ></ElCard>
+        <article class="host-script-print">
+          <header>
+            <p>PROJECT BALLOON · HOST CUE SHEET</p>
+            <h1>{{ script.contestName }}颁奖主持人提词稿</h1>
+          </header>
+          <section>
+            <h2>开场</h2>
+            <p>{{ form.openingText }}</p>
+          </section>
+          <section v-for="(section, index) in form.sections" :key="section.categoryId">
+            <h2>{{ index + 1 }}. {{ section.name }}（{{ section.code }}）</h2>
+            <p>{{ section.cueText }}</p>
+            <ol>
+              <li v-for="recipient in section.recipients" :key="recipient.id">
+                <strong>{{ recipient.teamName }}</strong
+                ><span v-if="recipient.school"> · {{ recipient.school }}</span>
+              </li>
+            </ol>
+          </section>
+          <section>
+            <h2>结束</h2>
+            <p>{{ form.closingText }}</p>
+          </section>
+        </article>
       </template>
       <ElEmpty v-else-if="!loading && !errorMessage" description="请选择比赛" />
     </el-main>
@@ -21,19 +143,142 @@ import { contestApi } from '../api/contest';
 import { awardsApi, type AwardHostScript } from '../api/awards';
 import { getErrorMessage } from '../api/client';
 import type { Contest } from '../api/types';
-import { subscribeContestEvents, type ContestRealtimeSubscription } from '../realtime/contest-events';
-const contests = ref<Contest[]>([]); const contestId = ref<number | null>(null); const script = ref<AwardHostScript | null>(null); const loading = ref(false); const saving = ref(false); const dirty = ref(false); const errorMessage = ref(''); const now = ref(Date.now()); let generation = 0; let realtime: ContestRealtimeSubscription | undefined; let clockTimer: number | undefined;
-const form = reactive({ openingText: '', closingText: '', sections: [] as AwardHostScript['sections'] });
-const effectiveCategoryId = computed(() => { const value = script.value; if (!value?.sections.length || !value.autoRotate || value.presentationStatus !== 'PRESENTING') return value?.currentCategoryId ?? null; const base = Math.max(0, value.sections.findIndex((item) => item.categoryId === value.currentCategoryId)); const elapsed = Math.max(0, now.value - new Date(value.stateUpdatedAt).getTime()); return value.sections[(base + Math.floor(elapsed / (value.intervalSeconds * 1000))) % value.sections.length]?.categoryId ?? value.currentCategoryId; });
-const currentSection = computed(() => script.value?.sections.find((item) => item.categoryId === effectiveCategoryId.value) ?? null); const nextSection = computed(() => { const index = script.value?.sections.findIndex((item) => item.categoryId === effectiveCategoryId.value) ?? -1; return index >= 0 ? script.value?.sections[index + 1] ?? null : null; });
-const statusLabel = computed(() => ({ WAITING: '等待开始', PRESENTING: '颁奖进行中', COMPLETED: '典礼结束' })[script.value?.presentationStatus ?? 'WAITING']);
-function apply(value: AwardHostScript) { script.value = value; now.value = new Date(value.serverTime).getTime(); form.openingText = value.openingText; form.closingText = value.closingText; form.sections = value.sections.map((item) => ({ ...item })); dirty.value = false; }
-async function load(reset: boolean) { if (!contestId.value) return; const id = contestId.value; const token = ++generation; loading.value = true; try { const value = await awardsApi.hostScript(id); if (token === generation && id === contestId.value) { script.value = value; if (reset || !dirty.value) apply(value); errorMessage.value = ''; } } catch (error) { if (token === generation) { script.value = null; errorMessage.value = getErrorMessage(error); } } finally { if (token === generation) loading.value = false; } }
-function connect() { realtime?.stop(); if (!contestId.value) return; realtime = subscribeContestEvents({ contestId: contestId.value, scope: 'PUBLIC', eventTypes: ['AWARDS_UPDATED'], onEvent: () => void load(false), poll: () => load(false) }); }
-async function changeContest() { generation += 1; script.value = null; dirty.value = false; connect(); await load(true); }
-async function save() { if (!contestId.value || !script.value) return; saving.value = true; try { const value = await awardsApi.saveHostScript(contestId.value, { openingText: form.openingText, closingText: form.closingText, sections: form.sections.map(({ categoryId, cueText }) => ({ categoryId, cueText })), expectedVersion: script.value.version }); apply(value); ElMessage.success('主持人脚本已保存'); } catch (error) { ElMessage.error(getErrorMessage(error)); await load(false); } finally { saving.value = false; } }
-function printScript() { window.print(); }
-onMounted(async () => { try { contests.value = (await contestApi.listContests()).content; contestId.value = contests.value[0]?.id ?? null; connect(); await load(true); clockTimer = window.setInterval(() => { now.value += 1000; }, 1000); } catch (error) { errorMessage.value = getErrorMessage(error); } }); onBeforeUnmount(() => { realtime?.stop(); if (clockTimer) window.clearInterval(clockTimer); });
+import {
+  subscribeContestEvents,
+  type ContestRealtimeSubscription,
+} from '../realtime/contest-events';
+const contests = ref<Contest[]>([]);
+const contestId = ref<number | null>(null);
+const script = ref<AwardHostScript | null>(null);
+const loading = ref(false);
+const saving = ref(false);
+const dirty = ref(false);
+const errorMessage = ref('');
+const now = ref(Date.now());
+let generation = 0;
+let realtime: ContestRealtimeSubscription | undefined;
+let clockTimer: number | undefined;
+const form = reactive({
+  openingText: '',
+  closingText: '',
+  sections: [] as AwardHostScript['sections'],
+});
+const effectiveCategoryId = computed(() => {
+  const value = script.value;
+  if (!value?.sections.length || !value.autoRotate || value.presentationStatus !== 'PRESENTING')
+    return value?.currentCategoryId ?? null;
+  const base = Math.max(
+    0,
+    value.sections.findIndex((item) => item.categoryId === value.currentCategoryId),
+  );
+  const elapsed = Math.max(0, now.value - new Date(value.stateUpdatedAt).getTime());
+  return (
+    value.sections[
+      (base + Math.floor(elapsed / (value.intervalSeconds * 1000))) % value.sections.length
+    ]?.categoryId ?? value.currentCategoryId
+  );
+});
+const currentSection = computed(
+  () =>
+    script.value?.sections.find((item) => item.categoryId === effectiveCategoryId.value) ?? null,
+);
+const nextSection = computed(() => {
+  const index =
+    script.value?.sections.findIndex((item) => item.categoryId === effectiveCategoryId.value) ?? -1;
+  return index >= 0 ? (script.value?.sections[index + 1] ?? null) : null;
+});
+const statusLabel = computed(
+  () =>
+    ({ WAITING: '等待开始', PRESENTING: '颁奖进行中', COMPLETED: '典礼结束' })[
+      script.value?.presentationStatus ?? 'WAITING'
+    ],
+);
+function apply(value: AwardHostScript) {
+  script.value = value;
+  now.value = new Date(value.serverTime).getTime();
+  form.openingText = value.openingText;
+  form.closingText = value.closingText;
+  form.sections = value.sections.map((item) => ({ ...item }));
+  dirty.value = false;
+}
+async function load(reset: boolean) {
+  if (!contestId.value) return;
+  const id = contestId.value;
+  const token = ++generation;
+  loading.value = true;
+  try {
+    const value = await awardsApi.hostScript(id);
+    if (token === generation && id === contestId.value) {
+      script.value = value;
+      if (reset || !dirty.value) apply(value);
+      errorMessage.value = '';
+    }
+  } catch (error) {
+    if (token === generation) {
+      script.value = null;
+      errorMessage.value = getErrorMessage(error);
+    }
+  } finally {
+    if (token === generation) loading.value = false;
+  }
+}
+function connect() {
+  realtime?.stop();
+  if (!contestId.value) return;
+  realtime = subscribeContestEvents({
+    contestId: contestId.value,
+    scope: 'PUBLIC',
+    eventTypes: ['AWARDS_UPDATED'],
+    onEvent: () => void load(false),
+    poll: () => load(false),
+  });
+}
+async function changeContest() {
+  generation += 1;
+  script.value = null;
+  dirty.value = false;
+  connect();
+  await load(true);
+}
+async function save() {
+  if (!contestId.value || !script.value) return;
+  saving.value = true;
+  try {
+    const value = await awardsApi.saveHostScript(contestId.value, {
+      openingText: form.openingText,
+      closingText: form.closingText,
+      sections: form.sections.map(({ categoryId, cueText }) => ({ categoryId, cueText })),
+      expectedVersion: script.value.version,
+    });
+    apply(value);
+    ElMessage.success('主持人脚本已保存');
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+    await load(false);
+  } finally {
+    saving.value = false;
+  }
+}
+function printScript() {
+  window.print();
+}
+onMounted(async () => {
+  try {
+    contests.value = (await contestApi.listContests()).content;
+    contestId.value = contests.value[0]?.id ?? null;
+    connect();
+    await load(true);
+    clockTimer = window.setInterval(() => {
+      now.value += 1000;
+    }, 1000);
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error);
+  }
+});
+onBeforeUnmount(() => {
+  realtime?.stop();
+  if (clockTimer) window.clearInterval(clockTimer);
+});
 </script>
 
 <style scoped>
@@ -210,7 +455,7 @@ onMounted(async () => { try { contests.value = (await contestApi.listContests())
   .host-script-print {
     display: block;
     color: #111827;
-    font-family: "Noto Serif SC", "Songti SC", serif;
+    font-family: 'Noto Serif SC', 'Songti SC', serif;
   }
 
   .host-script-print > header {

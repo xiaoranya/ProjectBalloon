@@ -8,7 +8,13 @@
             <p>请输入比赛账号和密码</p>
           </div>
         </template>
-        <ElForm ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
+        <ElForm
+          ref="formRef"
+          :model="form"
+          :rules="rules"
+          label-position="top"
+          @submit.prevent="submit"
+        >
           <ElFormItem label="用户名" prop="username">
             <ElInput
               v-model="form.username"
@@ -38,7 +44,13 @@
             :closable="false"
             class="form-alert"
           />
-          <ElButton type="primary" size="large" native-type="submit" :loading="session.state.loading" class="wide-button">
+          <ElButton
+            type="primary"
+            size="large"
+            native-type="submit"
+            :loading="session.state.loading"
+            class="wide-button"
+          >
             登录
           </ElButton>
           <RouterLink class="register-link" to="/register">注册个人练习账号</RouterLink>
@@ -80,7 +92,12 @@ async function submit() {
       await router.replace('/change-password');
       return;
     }
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : (user.userType === 'INDIVIDUAL' ? '/practice' : '/contests');
+    const redirect =
+      typeof route.query.redirect === 'string'
+        ? route.query.redirect
+        : user.userType === 'INDIVIDUAL'
+          ? '/practice'
+          : '/contests';
     await router.replace(redirect);
   } catch (error) {
     errorMessage.value = getErrorMessage(error);

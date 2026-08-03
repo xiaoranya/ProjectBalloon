@@ -18,40 +18,46 @@ export function formatBytes(bytes: number): string {
 }
 
 export function contestStatusLabel(status: string): string {
-  return {
-    DRAFT: '草稿',
-    FROZEN_CONFIG: '配置已锁定',
-    RUNNING: '进行中',
-    PAUSED: '已暂停',
-    ENDED: '已结束',
-    ARCHIVED: '已归档',
-  }[status] ?? status;
+  return (
+    {
+      DRAFT: '草稿',
+      FROZEN_CONFIG: '配置已锁定',
+      RUNNING: '进行中',
+      PAUSED: '已暂停',
+      ENDED: '已结束',
+      ARCHIVED: '已归档',
+    }[status] ?? status
+  );
 }
 
 export function languageLabel(language: string): string {
-  return {
-    c: 'C',
-    cpp: 'C++',
-    java: 'Java',
-    python: 'Python',
-    output: 'Output-only',
-  }[language] ?? language;
+  return (
+    {
+      c: 'C',
+      cpp: 'C++',
+      java: 'Java',
+      python: 'Python',
+      output: 'Output-only',
+    }[language] ?? language
+  );
 }
 
 export function submissionStatusLabel(status: string): string {
-  return {
-    PENDING: '等待判题',
-    JUDGING: '判题中',
-    ACCEPTED: '答案正确',
-    WRONG_ANSWER: '答案错误',
-    COMPILE_ERROR: '编译错误',
-    RUNTIME_ERROR: '运行时错误',
-    TIME_LIMIT_EXCEEDED: '超出时间限制',
-    MEMORY_LIMIT_EXCEEDED: '超出内存限制',
-    OUTPUT_LIMIT_EXCEEDED: '输出超限',
-    SYSTEM_ERROR: '系统错误',
-    CANCELLED: '已取消',
-  }[status] ?? status;
+  return (
+    {
+      PENDING: '等待判题',
+      JUDGING: '判题中',
+      ACCEPTED: '答案正确',
+      WRONG_ANSWER: '答案错误',
+      COMPILE_ERROR: '编译错误',
+      RUNTIME_ERROR: '运行时错误',
+      TIME_LIMIT_EXCEEDED: '超出时间限制',
+      MEMORY_LIMIT_EXCEEDED: '超出内存限制',
+      OUTPUT_LIMIT_EXCEEDED: '输出超限',
+      SYSTEM_ERROR: '系统错误',
+      CANCELLED: '已取消',
+    }[status] ?? status
+  );
 }
 
 export function isFinalSubmissionStatus(status: string): boolean {
@@ -73,6 +79,7 @@ export function statusTagType(
       'OUTPUT_LIMIT_EXCEEDED',
       'SYSTEM_ERROR',
     ].includes(status)
-  ) return 'danger';
+  )
+    return 'danger';
   return 'info';
 }

@@ -4,23 +4,37 @@ import AdminBulkRejudgeView from './AdminBulkRejudgeView.vue';
 import { ApiError } from '../api/client';
 
 const mocks = vi.hoisted(() => ({
-  getContest: vi.fn(), listContestProblems: vi.fn(), listContestTeams: vi.fn(),
-  preview: vi.fn(), create: vi.fn(), list: vi.fn(), get: vi.fn(), pause: vi.fn(), resume: vi.fn(),
-  push: vi.fn(), confirm: vi.fn(), success: vi.fn(), error: vi.fn(),
+  getContest: vi.fn(),
+  listContestProblems: vi.fn(),
+  listContestTeams: vi.fn(),
+  preview: vi.fn(),
+  create: vi.fn(),
+  list: vi.fn(),
+  get: vi.fn(),
+  pause: vi.fn(),
+  resume: vi.fn(),
+  push: vi.fn(),
+  confirm: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
 }));
-vi.mock('../api/admin-contests', () => ({ adminContestApi: {
-  getContest: mocks.getContest,
-  listContestProblems: mocks.listContestProblems,
-  listContestTeams: mocks.listContestTeams,
-} }));
-vi.mock('../api/bulk-rejudge', () => ({ bulkRejudgeApi: {
-  preview: mocks.preview,
-  create: mocks.create,
-  list: mocks.list,
-  get: mocks.get,
-  pause: mocks.pause,
-  resume: mocks.resume,
-} }));
+vi.mock('../api/admin-contests', () => ({
+  adminContestApi: {
+    getContest: mocks.getContest,
+    listContestProblems: mocks.listContestProblems,
+    listContestTeams: mocks.listContestTeams,
+  },
+}));
+vi.mock('../api/bulk-rejudge', () => ({
+  bulkRejudgeApi: {
+    preview: mocks.preview,
+    create: mocks.create,
+    list: mocks.list,
+    get: mocks.get,
+    pause: mocks.pause,
+    resume: mocks.resume,
+  },
+}));
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { contestId: '42' } }),
   useRouter: () => ({ push: mocks.push }),
@@ -35,11 +49,21 @@ vi.mock('element-plus', async (importOriginal) => {
 });
 
 const baseTask = {
-  id: 5, contestId: 42, status: 'PAUSED', totalItems: 2, processedItems: 1,
-  succeededItems: 1, failedItems: 0, cancelRequested: true, createdByUserId: 7,
-  startedAt: '2026-07-20T08:00:00Z', completedAt: null,
-  createdAt: '2026-07-20T08:00:00Z', updatedAt: '2026-07-20T08:00:01Z',
-  items: [], itemsTruncated: false,
+  id: 5,
+  contestId: 42,
+  status: 'PAUSED',
+  totalItems: 2,
+  processedItems: 1,
+  succeededItems: 1,
+  failedItems: 0,
+  cancelRequested: true,
+  createdByUserId: 7,
+  startedAt: '2026-07-20T08:00:00Z',
+  completedAt: null,
+  createdAt: '2026-07-20T08:00:00Z',
+  updatedAt: '2026-07-20T08:00:01Z',
+  items: [],
+  itemsTruncated: false,
 };
 
 function button(wrapper: ReturnType<typeof mount>, text: string) {
@@ -55,7 +79,9 @@ async function previewTwo(wrapper: ReturnType<typeof mount>) {
 describe('AdminBulkRejudgeView', () => {
   beforeEach(() => {
     mocks.getContest.mockResolvedValue({ id: 42, name: 'Rust Regional' });
-    mocks.listContestProblems.mockResolvedValue([{ problemId: 3, alias: 'A', title: 'Balloon', displayOrder: 1 }]);
+    mocks.listContestProblems.mockResolvedValue([
+      { problemId: 3, alias: 'A', title: 'Balloon', displayOrder: 1 },
+    ]);
     mocks.listContestTeams.mockResolvedValue([{ teamId: 8, teamName: 'Team Eight' }]);
     mocks.list.mockResolvedValue([]);
     mocks.confirm.mockResolvedValue(undefined);
@@ -74,7 +100,12 @@ describe('AdminBulkRejudgeView', () => {
     expect(mocks.listContestProblems).toHaveBeenCalledWith(42);
     expect(mocks.listContestTeams).toHaveBeenCalledWith(42);
     expect(mocks.preview).toHaveBeenCalledWith(42, {
-      problemId: null, teamId: null, language: null, verdict: null, submittedFrom: null, submittedTo: null,
+      problemId: null,
+      teamId: null,
+      language: null,
+      verdict: null,
+      submittedFrom: null,
+      submittedTo: null,
     });
     expect(wrapper.text()).toContain('2');
     expect(wrapper.text()).toContain('REJUDGE 2');
@@ -104,12 +135,22 @@ describe('AdminBulkRejudgeView', () => {
     await button(wrapper, '创建批量重判任务').trigger('click');
     await flushPromises();
 
-    expect(mocks.create).toHaveBeenCalledWith(42, expect.objectContaining({
-      expectedCount: 2,
-      confirmationText: 'REJUDGE 2',
-      idempotencyKey: 'batch-rejudge-42-00000000-0000-4000-8000-000000000001',
-    }));
-    expect(wrapper.findAll('input').some((input) => input.element.value === 'batch-rejudge-42-00000000-0000-4000-8000-000000000001')).toBe(true);
+    expect(mocks.create).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        expectedCount: 2,
+        confirmationText: 'REJUDGE 2',
+        idempotencyKey: 'batch-rejudge-42-00000000-0000-4000-8000-000000000001',
+      }),
+    );
+    expect(
+      wrapper
+        .findAll('input')
+        .some(
+          (input) =>
+            input.element.value === 'batch-rejudge-42-00000000-0000-4000-8000-000000000001',
+        ),
+    ).toBe(true);
   });
 
   it('clears a stale preview when Rust returns BATCH_REJUDGE_COUNT_CHANGED', async () => {
@@ -135,7 +176,14 @@ describe('AdminBulkRejudgeView', () => {
     await flushPromises();
 
     expect(mocks.error).toHaveBeenCalledWith('该幂等键已用于其他批量重判，请生成新键后重试');
-    expect(wrapper.findAll('input').some((input) => input.element.value === 'batch-rejudge-42-00000000-0000-4000-8000-000000000001')).toBe(true);
+    expect(
+      wrapper
+        .findAll('input')
+        .some(
+          (input) =>
+            input.element.value === 'batch-rejudge-42-00000000-0000-4000-8000-000000000001',
+        ),
+    ).toBe(true);
   });
 
   it('resumes a paused task without passing an expectedVersion', async () => {
@@ -156,10 +204,18 @@ describe('AdminBulkRejudgeView', () => {
       ...baseTask,
       totalItems: 1001,
       itemsTruncated: true,
-      items: [{
-        id: 11, submissionId: 9, status: 'FAILED', oldJudgementId: 'old', newJudgementId: null,
-        errorMessage: 'worker failed', attempts: 3, processedAt: '2026-07-20T08:00:10Z',
-      }],
+      items: [
+        {
+          id: 11,
+          submissionId: 9,
+          status: 'FAILED',
+          oldJudgementId: 'old',
+          newJudgementId: null,
+          errorMessage: 'worker failed',
+          attempts: 3,
+          processedAt: '2026-07-20T08:00:10Z',
+        },
+      ],
     });
     const wrapper = mount(AdminBulkRejudgeView);
     await flushPromises();

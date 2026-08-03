@@ -26,7 +26,12 @@ export interface ContestPayload {
   freezeAt: string | null;
   endAt: string | null;
 }
-export interface ContestCloneResult { sourceContestId: number; contest: Contest; problemsCopied: number; teamsCopied: number; }
+export interface ContestCloneResult {
+  sourceContestId: number;
+  contest: Contest;
+  problemsCopied: number;
+  teamsCopied: number;
+}
 export interface JudgeQueueStatus {
   contestId: number;
   drained: boolean;
@@ -105,25 +110,39 @@ export const adminContestApi = {
   },
   updateScoringPolicy(contestId: number, payload: Omit<ScoringPolicy, 'contestId'>) {
     return apiRequest<ScoringPolicy>(`/api/admin/contests/${contestId}/scoring-policy`, {
-      method: 'PUT', body: payload,
+      method: 'PUT',
+      body: payload,
     });
   },
   getProblemSubtasks(contestId: number, problemId: number) {
-    return apiRequest<ContestProblemSubtasks>(`/api/admin/contests/${contestId}/problems/${problemId}/subtasks`);
+    return apiRequest<ContestProblemSubtasks>(
+      `/api/admin/contests/${contestId}/problems/${problemId}/subtasks`,
+    );
   },
-  replaceProblemSubtasks(contestId: number, problemId: number, payload: {
-    maxScoreMilli: number;
-    subtasks: Array<Omit<ContestProblemSubtask, 'id'>>;
-  }) {
-    return apiRequest<ContestProblemSubtasks>(`/api/admin/contests/${contestId}/problems/${problemId}/subtasks`, {
-      method: 'PUT', body: payload,
-    });
+  replaceProblemSubtasks(
+    contestId: number,
+    problemId: number,
+    payload: {
+      maxScoreMilli: number;
+      subtasks: Array<Omit<ContestProblemSubtask, 'id'>>;
+    },
+  ) {
+    return apiRequest<ContestProblemSubtasks>(
+      `/api/admin/contests/${contestId}/problems/${problemId}/subtasks`,
+      {
+        method: 'PUT',
+        body: payload,
+      },
+    );
   },
   createContest(payload: ContestPayload) {
     return apiRequest<Contest>('/api/contests', { method: 'POST', body: payload });
   },
   cloneContest(sourceContestId: number, payload: ContestPayload & { copyTeams: boolean }) {
-    return apiRequest<ContestCloneResult>(`/api/contests/${sourceContestId}/clones`, { method: 'POST', body: payload });
+    return apiRequest<ContestCloneResult>(`/api/contests/${sourceContestId}/clones`, {
+      method: 'POST',
+      body: payload,
+    });
   },
   updateContest(contestId: number, payload: Partial<ContestPayload>) {
     return apiRequest<Contest>(`/api/contests/${contestId}`, { method: 'PATCH', body: payload });
@@ -167,9 +186,8 @@ export const adminContestApi = {
   async listAllProblems(contestId: number) {
     const firstPage = await this.listProblems(0, 100, contestId);
     const remainingPages = await Promise.all(
-      Array.from(
-        { length: Math.max(0, firstPage.totalPages - 1) },
-        (_, index) => this.listProblems(index + 1, 100, contestId),
+      Array.from({ length: Math.max(0, firstPage.totalPages - 1) }, (_, index) =>
+        this.listProblems(index + 1, 100, contestId),
       ),
     );
     return [firstPage, ...remainingPages].flatMap((page) => page.content);
@@ -203,7 +221,9 @@ export const adminContestApi = {
     });
   },
   unassignProblem(contestId: number, problemId: number) {
-    return apiRequest<void>(`/api/contests/${contestId}/problems/${problemId}`, { method: 'DELETE' });
+    return apiRequest<void>(`/api/contests/${contestId}/problems/${problemId}`, {
+      method: 'DELETE',
+    });
   },
   listSubmissions(contestId: number, filters: SubmissionFilters = {}) {
     return apiRequest<PageResponse<SubmissionSummary>>(
@@ -214,7 +234,8 @@ export const adminContestApi = {
     const params = new URLSearchParams();
     if (filters.problemId !== undefined) params.set('problemId', String(filters.problemId));
     if (filters.language) params.set('language', filters.language);
-    if (filters.minGroupSize !== undefined) params.set('minGroupSize', String(filters.minGroupSize));
+    if (filters.minGroupSize !== undefined)
+      params.set('minGroupSize', String(filters.minGroupSize));
     const query = params.toString();
     return apiRequest<SubmissionSimilarityGroup[]>(
       '/api/admin/contests/' + contestId + '/submission-similarity' + (query ? '?' + query : ''),
@@ -224,10 +245,14 @@ export const adminContestApi = {
     const params = new URLSearchParams();
     if (filters.problemId !== undefined) params.set('problemId', String(filters.problemId));
     if (filters.language) params.set('language', filters.language);
-    if (filters.minSimilarityPercent !== undefined) params.set('minSimilarityPercent', String(filters.minSimilarityPercent));
+    if (filters.minSimilarityPercent !== undefined)
+      params.set('minSimilarityPercent', String(filters.minSimilarityPercent));
     const query = params.toString();
     return apiRequest<SubmissionSimilarityPair[]>(
-      '/api/admin/contests/' + contestId + '/submission-similarity/pairs' + (query ? '?' + query : ''),
+      '/api/admin/contests/' +
+        contestId +
+        '/submission-similarity/pairs' +
+        (query ? '?' + query : ''),
     );
   },
   backfillSubmissionSimilarity(contestId: number) {
@@ -242,9 +267,7 @@ export const adminContestApi = {
     );
   },
   getJudgeQueueStatus(contestId: number) {
-    return apiRequest<JudgeQueueStatus>(
-      `/api/admin/contests/${contestId}/judge-queue/status`,
-    );
+    return apiRequest<JudgeQueueStatus>(`/api/admin/contests/${contestId}/judge-queue/status`);
   },
   rejudgeSubmission(contestId: number, submissionId: number, expectedJudgementId: string) {
     return apiRequest<RejudgeResult>(

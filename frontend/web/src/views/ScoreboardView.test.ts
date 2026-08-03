@@ -18,21 +18,33 @@ const scoreboard = {
     { problemId: 1, alias: 'A', displayOrder: 1, firstBloodTeamId: 2, firstBloodAt: null },
     { problemId: 2, alias: 'B', displayOrder: 2, firstBloodTeamId: null, firstBloodAt: null },
   ],
-  rows: [{
-    rank: 1,
-    officialRank: 1,
-    teamId: 2,
-    teamName: 'Blue Team',
-    school: 'University',
-    participationType: 'OFFICIAL',
-    groupName: null,
-    isStar: false,
-    solvedCount: 1,
-    penaltyMinutes: 42,
-    totalScoreMilli: 100_000,
-    lastSolvedAt: null,
-    problems: [{ problemId: 1, wrongAttempts: 1, solved: true, solvedAt: null, penaltyMinutes: 42, scoreMilli: 100_000, firstBlood: true }],
-  }],
+  rows: [
+    {
+      rank: 1,
+      officialRank: 1,
+      teamId: 2,
+      teamName: 'Blue Team',
+      school: 'University',
+      participationType: 'OFFICIAL',
+      groupName: null,
+      isStar: false,
+      solvedCount: 1,
+      penaltyMinutes: 42,
+      totalScoreMilli: 100_000,
+      lastSolvedAt: null,
+      problems: [
+        {
+          problemId: 1,
+          wrongAttempts: 1,
+          solved: true,
+          solvedAt: null,
+          penaltyMinutes: 42,
+          scoreMilli: 100_000,
+          firstBlood: true,
+        },
+      ],
+    },
+  ],
 };
 
 describe('ScoreboardView', () => {

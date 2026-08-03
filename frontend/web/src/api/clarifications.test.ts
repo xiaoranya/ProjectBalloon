@@ -11,10 +11,24 @@ function jsonResponse(body: unknown, status = 200) {
 
 const csrf = { headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' };
 const clarification = {
-  id: 9, contestId: 7, teamId: 3, teamName: 'Team Three', scope: 'GENERAL', problemId: null,
-  problemAlias: null, question: 'Question', status: 'PENDING', reply: null, replyVisibility: null,
-  askedByUserId: 4, repliedByUserId: null, repliedAt: null, convertedAnnouncementId: null,
-  createdAt: '2026-07-20T08:00:00Z', updatedAt: '2026-07-20T08:00:00Z', version: 0,
+  id: 9,
+  contestId: 7,
+  teamId: 3,
+  teamName: 'Team Three',
+  scope: 'GENERAL',
+  problemId: null,
+  problemAlias: null,
+  question: 'Question',
+  status: 'PENDING',
+  reply: null,
+  replyVisibility: null,
+  askedByUserId: 4,
+  repliedByUserId: null,
+  repliedAt: null,
+  convertedAnnouncementId: null,
+  createdAt: '2026-07-20T08:00:00Z',
+  updatedAt: '2026-07-20T08:00:00Z',
+  version: 0,
 };
 
 describe('Rust clarification API contract', () => {
@@ -87,7 +101,10 @@ describe('Rust clarification API contract', () => {
     ]);
     expect(vi.mocked(fetch).mock.calls[2]).toEqual([
       '/api/clarifications/9/convert',
-      expect.objectContaining({ method: 'POST', body: JSON.stringify({ title: null, body: null }) }),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ title: null, body: null }),
+      }),
     ]);
   });
 });

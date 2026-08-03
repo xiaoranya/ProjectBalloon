@@ -15,48 +15,66 @@
     </el-header>
 
     <el-main class="page-body">
-      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+      <ElAlert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+        class="page-alert"
+      />
 
       <div v-loading="loading" class="scoreboard-wrap">
-      <table v-if="scoreboard" class="scoreboard-table">
-        <thead>
-          <tr>
-            <th>排名</th>
-            <th class="team-column">队伍</th>
-            <th>{{ scoreboard.scoringMode === 'ICPC' ? '解题' : '总分' }}</th>
-            <th v-if="scoreboard.scoringMode === 'ICPC'">罚时</th>
-            <th v-for="problem in scoreboard.problems" :key="problem.problemId">
-              {{ problem.alias }}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in scoreboard.rows" :key="row.teamId">
-            <td class="rank-cell">{{ row.rank || '—' }}</td>
-            <td class="team-column">
-              <strong>{{ row.teamName }} <ElTag v-if="row.isStar" size="small" type="warning">打星</ElTag></strong>
-              <small v-if="row.school">{{ row.school }}</small>
-            </td>
-            <td><strong>{{ scoreboard.scoringMode === 'ICPC' ? row.solvedCount : points(row.totalScoreMilli) }}</strong></td>
-            <td v-if="scoreboard.scoringMode === 'ICPC'">{{ row.penaltyMinutes }}</td>
-            <td v-for="cell in orderedCells(row.problems)" :key="cell.problemId">
-              <div
-                class="score-cell"
-                :class="{ solved: cell.solved, attempted: !cell.solved && cell.wrongAttempts > 0, first: cell.firstBlood }"
-              >
-                <template v-if="scoreboard.scoringMode === 'ICPC'">
-                  <strong v-if="cell.solved">+{{ cell.wrongAttempts || '' }}</strong>
-                  <strong v-else-if="cell.wrongAttempts">-{{ cell.wrongAttempts }}</strong>
-                  <span v-else>·</span>
-                  <small v-if="cell.solved">{{ cell.penaltyMinutes }}</small>
-                </template>
-                <strong v-else>{{ points(cell.scoreMilli) }}</strong>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <ElEmpty v-else-if="!loading" description="暂无榜单数据" />
+        <table v-if="scoreboard" class="scoreboard-table">
+          <thead>
+            <tr>
+              <th>排名</th>
+              <th class="team-column">队伍</th>
+              <th>{{ scoreboard.scoringMode === 'ICPC' ? '解题' : '总分' }}</th>
+              <th v-if="scoreboard.scoringMode === 'ICPC'">罚时</th>
+              <th v-for="problem in scoreboard.problems" :key="problem.problemId">
+                {{ problem.alias }}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in scoreboard.rows" :key="row.teamId">
+              <td class="rank-cell">{{ row.rank || '—' }}</td>
+              <td class="team-column">
+                <strong
+                  >{{ row.teamName }}
+                  <ElTag v-if="row.isStar" size="small" type="warning">打星</ElTag></strong
+                >
+                <small v-if="row.school">{{ row.school }}</small>
+              </td>
+              <td>
+                <strong>{{
+                  scoreboard.scoringMode === 'ICPC' ? row.solvedCount : points(row.totalScoreMilli)
+                }}</strong>
+              </td>
+              <td v-if="scoreboard.scoringMode === 'ICPC'">{{ row.penaltyMinutes }}</td>
+              <td v-for="cell in orderedCells(row.problems)" :key="cell.problemId">
+                <div
+                  class="score-cell"
+                  :class="{
+                    solved: cell.solved,
+                    attempted: !cell.solved && cell.wrongAttempts > 0,
+                    first: cell.firstBlood,
+                  }"
+                >
+                  <template v-if="scoreboard.scoringMode === 'ICPC'">
+                    <strong v-if="cell.solved">+{{ cell.wrongAttempts || '' }}</strong>
+                    <strong v-else-if="cell.wrongAttempts">-{{ cell.wrongAttempts }}</strong>
+                    <span v-else>·</span>
+                    <small v-if="cell.solved">{{ cell.penaltyMinutes }}</small>
+                  </template>
+                  <strong v-else>{{ points(cell.scoreMilli) }}</strong>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <ElEmpty v-else-if="!loading" description="暂无榜单数据" />
       </div>
     </el-main>
   </el-container>
@@ -97,15 +115,18 @@ async function loadScoreboard(silent = false) {
 function orderedCells(cells: ScoreboardCell[]): ScoreboardCell[] {
   if (!scoreboard.value) return cells;
   const byProblem = new Map(cells.map((cell) => [cell.problemId, cell]));
-  return scoreboard.value.problems.map((problem) => byProblem.get(problem.problemId) ?? {
-    problemId: problem.problemId,
-    wrongAttempts: 0,
-    solved: false,
-    solvedAt: null,
-    penaltyMinutes: 0,
-    scoreMilli: 0,
-    firstBlood: false,
-  });
+  return scoreboard.value.problems.map(
+    (problem) =>
+      byProblem.get(problem.problemId) ?? {
+        problemId: problem.problemId,
+        wrongAttempts: 0,
+        solved: false,
+        solvedAt: null,
+        penaltyMinutes: 0,
+        scoreMilli: 0,
+        firstBlood: false,
+      },
+  );
 }
 
 function points(scoreMilli: number): string {
@@ -118,10 +139,14 @@ onMounted(() => {
   }, 15_000);
 });
 
-watch(contestId, () => {
-  scoreboard.value = null;
-  void loadScoreboard();
-}, { immediate: true });
+watch(
+  contestId,
+  () => {
+    scoreboard.value = null;
+    void loadScoreboard();
+  },
+  { immediate: true },
+);
 
 onUnmounted(() => {
   if (timer) window.clearInterval(timer);

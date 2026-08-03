@@ -7,71 +7,64 @@
       </div>
     </el-header>
     <el-main class="page-body">
-    <ElAlert
-      v-if="errorMessage"
-      :title="errorMessage"
-      type="error"
-      show-icon
-      :closable="false"
-      class="page-alert"
-    />
+      <ElAlert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+        class="page-alert"
+      />
 
-    <div v-loading="loading" class="permission-admin-list">
-      <ElCard
-        v-for="admin in admins"
-        :key="admin.userId"
-        shadow="never"
-      >
-        <template #header>
-          <div class="permission-admin-heading">
-            <div>
-              <strong>{{ admin.displayName }}</strong>
-              <span>@{{ admin.username }} · #{{ admin.userId }}</span>
+      <div v-loading="loading" class="permission-admin-list">
+        <ElCard v-for="admin in admins" :key="admin.userId" shadow="never">
+          <template #header>
+            <div class="permission-admin-heading">
+              <div>
+                <strong>{{ admin.displayName }}</strong>
+                <span>@{{ admin.username }} · #{{ admin.userId }}</span>
+              </div>
+              <ElTag :type="admin.enabled ? 'success' : 'info'">
+                {{ admin.enabled ? '已启用' : '已停用' }}
+              </ElTag>
             </div>
-            <ElTag :type="admin.enabled ? 'success' : 'info'">
-              {{ admin.enabled ? '已启用' : '已停用' }}
-            </ElTag>
-          </div>
-        </template>
+          </template>
 
-        <ElCheckboxGroup v-model="draftScopes[admin.userId]" class="permission-contest-grid">
-          <ElRow :gutter="12">
-            <ElCol
-              v-for="contest in contests"
-              :key="contest.id"
-              :xs="24"
-              :sm="12"
-              :md="8"
-              :lg="6"
-            >
-              <ElCheckbox
-                :value="contest.id"
-                border
+          <ElCheckboxGroup v-model="draftScopes[admin.userId]" class="permission-contest-grid">
+            <ElRow :gutter="12">
+              <ElCol
+                v-for="contest in contests"
+                :key="contest.id"
+                :xs="24"
+                :sm="12"
+                :md="8"
+                :lg="6"
               >
-                <span>{{ contest.name }}</span>
-                <small>#{{ contest.id }} · {{ contestStatusLabel(contest.status) }}</small>
-              </ElCheckbox>
-            </ElCol>
-          </ElRow>
-        </ElCheckboxGroup>
+                <ElCheckbox :value="contest.id" border>
+                  <span>{{ contest.name }}</span>
+                  <small>#{{ contest.id }} · {{ contestStatusLabel(contest.status) }}</small>
+                </ElCheckbox>
+              </ElCol>
+            </ElRow>
+          </ElCheckboxGroup>
 
-        <ElEmpty v-if="!contests.length" description="尚无可分配比赛" />
+          <ElEmpty v-if="!contests.length" description="尚无可分配比赛" />
 
-        <div class="permission-admin-actions">
-          <span>已选择 {{ draftScopes[admin.userId]?.length ?? 0 }} 场比赛</span>
-          <ElButton
-            type="primary"
-            :loading="savingUserId === admin.userId"
-            :disabled="!changed(admin)"
-            @click="save(admin)"
-          >
-            保存授权
-          </ElButton>
-        </div>
-      </ElCard>
+          <div class="permission-admin-actions">
+            <span>已选择 {{ draftScopes[admin.userId]?.length ?? 0 }} 场比赛</span>
+            <ElButton
+              type="primary"
+              :loading="savingUserId === admin.userId"
+              :disabled="!changed(admin)"
+              @click="save(admin)"
+            >
+              保存授权
+            </ElButton>
+          </div>
+        </ElCard>
 
-      <ElEmpty v-if="!loading && !admins.length" description="当前没有比赛管理员账号" />
-    </div>
+        <ElEmpty v-if="!loading && !admins.length" description="当前没有比赛管理员账号" />
+      </div>
     </el-main>
   </el-container>
 </template>
@@ -116,8 +109,10 @@ function normalized(values: number[]) {
 }
 
 function changed(admin: ContestAdminScope) {
-  return JSON.stringify(normalized(draftScopes[admin.userId] ?? []))
-    !== JSON.stringify(normalized(admin.contestIds));
+  return (
+    JSON.stringify(normalized(draftScopes[admin.userId] ?? [])) !==
+    JSON.stringify(normalized(admin.contestIds))
+  );
 }
 
 async function save(admin: ContestAdminScope) {

@@ -53,7 +53,20 @@ describe('role landing routes', () => {
     expect(staffHomeByUserType.LIVE_OPERATOR).toBe('/live/manage');
   });
 
-  it.each(staffTypes.filter((userType) => !['JUDGE', 'PRINTER', 'BALLOON_STAFF', 'RESOLVER_OPERATOR', 'AWARD_OPERATOR', 'SCREEN_OPERATOR', 'LIVE_OPERATOR'].includes(userType)))('keeps %s on the implemented admin page', (userType) => {
+  it.each(
+    staffTypes.filter(
+      (userType) =>
+        ![
+          'JUDGE',
+          'PRINTER',
+          'BALLOON_STAFF',
+          'RESOLVER_OPERATOR',
+          'AWARD_OPERATOR',
+          'SCREEN_OPERATOR',
+          'LIVE_OPERATOR',
+        ].includes(userType),
+    ),
+  )('keeps %s on the implemented admin page', (userType) => {
     expect(homeForUserType(userType)).toBe('/admin');
     expect(staffHomeByUserType[userType]).toBe('/admin');
   });

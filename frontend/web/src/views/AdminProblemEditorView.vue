@@ -4,201 +4,321 @@
       <div class="admin-page-header compact">
         <div>
           <ElButton link :icon="ArrowLeft" @click="backToList">返回题库</ElButton>
-          <h1>{{ isNew ? '创建题目' : problem?.title ?? '题目编辑' }}</h1>
+          <h1>{{ isNew ? '创建题目' : (problem?.title ?? '题目编辑') }}</h1>
         </div>
-        <ElButton type="primary" :loading="saving" @click="saveProblem">{{ isNew ? '创建题目' : '保存基本信息' }}</ElButton>
+        <ElButton type="primary" :loading="saving" @click="saveProblem">{{
+          isNew ? '创建题目' : '保存基本信息'
+        }}</ElButton>
       </div>
     </el-header>
 
     <el-main class="page-body">
-      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+      <ElAlert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+        class="page-alert"
+      />
 
-    <ElSkeleton v-if="loading" :rows="8" animated />
-    <ElTabs v-else v-model="activeTab" class="admin-tabs">
-      <ElTabPane label="基本信息" name="basic">
-        <ElCard shadow="never" class="problem-editor-card">
-          <ElForm ref="formRef" :model="form" :rules="rules" label-position="top">
-            <ElRow :gutter="12" class="admin-two-column">
-              <ElCol :xs="24" :md="12">
-                <ElFormItem label="题目标识" prop="slug">
-                  <ElInput v-model="form.slug" maxlength="64" placeholder="例如 two-sum" />
-                </ElFormItem>
-              </ElCol>
-              <ElCol :xs="24" :md="12">
-                <ElFormItem label="题目标题" prop="title">
-                  <ElInput v-model="form.title" maxlength="255" />
-                </ElFormItem>
-              </ElCol>
-            </ElRow>
-            <ElFormItem label="允许的提交语言" prop="languages">
-              <ElCheckboxGroup v-model="form.languages" :disabled="form.judgeMode === 'OUTPUT_ONLY'">
-                <ElCheckboxButton v-for="option in languageOptions" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </ElCheckboxButton>
-              </ElCheckboxGroup>
-            </ElFormItem>
-            <ElRow :gutter="12" class="admin-form-grid">
-              <ElCol :xs="24" :sm="8">
-                <ElFormItem label="判题模式">
-                  <ElSelect v-model="form.judgeMode" @change="changeJudgeMode">
-                    <ElOption label="标准输入输出" value="STANDARD" />
-                    <ElOption label="交互题" value="INTERACTIVE" />
-                    <ElOption label="Output-only" value="OUTPUT_ONLY" />
-                  </ElSelect>
-                </ElFormItem>
-              </ElCol>
-              <ElCol v-if="form.judgeMode === 'INTERACTIVE'" :xs="24" :sm="8">
-                <ElFormItem label="Interactor 对象键">
-                  <ElInput v-model="form.interactorObjectKey" maxlength="512" />
-                </ElFormItem>
-              </ElCol>
-              <ElCol v-if="form.judgeMode === 'INTERACTIVE'" :xs="24" :sm="8">
-                <ElFormItem label="Interactor SHA-256">
-                  <ElInput v-model="form.interactorSha256" maxlength="64" />
-                </ElFormItem>
-              </ElCol>
-            </ElRow>
-            <ElAlert v-if="form.judgeMode === 'OUTPUT_ONLY'" title="参赛者需上传包含 1.out、2.out 等根目录输出文件的 ZIP。" type="info" :closable="false" show-icon />
-            <ElSpace v-if="problem && form.judgeMode === 'INTERACTIVE'" wrap :size="14" class="file-upload-row">
-              <input type="file" @change="selectInteractor" />
-              <ElButton type="primary" :disabled="!interactorFile" :loading="uploadingInteractor" @click="uploadInteractor">上传 Interactor ELF</ElButton>
-              <code v-if="problem.interactorSha256">{{ problem.interactorSha256 }}</code>
-            </ElSpace>
-            <ElRow :gutter="12" class="admin-form-grid problem-limit-grid">
-              <ElCol :xs="24" :sm="8">
-                <ElFormItem label="时间限制（ms）" prop="timeLimitMs">
-                  <ElInputNumber v-model="form.timeLimitMs" :min="1" :max="60000" controls-position="right" />
-                </ElFormItem>
-              </ElCol>
-              <ElCol :xs="24" :sm="8">
-                <ElFormItem label="内存限制（MiB）" prop="memoryLimitMb">
-                  <ElInputNumber v-model="form.memoryLimitMb" :min="16" :max="8192" controls-position="right" />
-                </ElFormItem>
-              </ElCol>
-              <ElCol :xs="24" :sm="8">
-                <ElFormItem label="输出限制（KiB）" prop="outputLimitKb">
-                  <ElInputNumber v-model="form.outputLimitKb" :min="1" :max="262144" controls-position="right" />
-                </ElFormItem>
-              </ElCol>
-            </ElRow>
-            <ElFormItem label="默认题面语言" prop="defaultLangCode">
-              <ElInput v-model="form.defaultLangCode" maxlength="5" placeholder="en 或 zh-CN" class="problem-lang-code" />
-            </ElFormItem>
-            <ElAlert v-if="problem" type="info" :closable="false" show-icon>
-              当前并发版本为 {{ problem.version }}；保存时会通过 expectedVersion 防止覆盖其他管理员的修改。
-            </ElAlert>
-          </ElForm>
-        </ElCard>
-      </ElTabPane>
-
-      <ElTabPane label="多语言题面" name="statements" :disabled="isNew">
-        <ElCard shadow="never" class="problem-editor-card">
-          <template #header>
-            <ElSpace wrap :size="14" class="problem-card-heading">
-              <div><strong>题面编辑</strong><small>Rust 后端按语言代码 upsert Markdown 题面。</small></div>
-              <ElButton :icon="Plus" @click="addStatementDraft">添加语言</ElButton>
-            </ElSpace>
-          </template>
-          <ElEmpty v-if="statementDrafts.length === 0" description="尚未添加题面语言" />
-          <div v-for="(statement, index) in statementDrafts" :key="statement.key" class="statement-editor">
-            <ElSpace wrap :size="14" class="statement-editor-heading">
-              <ElInput v-model="statement.langCode" maxlength="5" placeholder="en 或 zh-CN" :disabled="statement.savedBody !== null" />
-              <ElTag v-if="statement.savedBody === statement.body" type="success">已保存</ElTag>
-              <ElButton v-if="statement.savedBody !== null" link type="danger" @click="deleteStatement(statement)">删除题面</ElButton>
-              <ElButton v-if="statement.savedBody === null" link type="danger" @click="statementDrafts.splice(index, 1)">移除草稿</ElButton>
-            </ElSpace>
-            <ElInput v-model="statement.body" type="textarea" :rows="14" placeholder="Markdown 题面正文" />
-            <ElRow justify="end" class="problem-editor-actions">
-              <ElButton type="primary" :loading="statement.saving" @click="saveStatement(statement)">保存此语言题面</ElButton>
-            </ElRow>
-          </div>
-        </ElCard>
-      </ElTabPane>
-
-      <ElTabPane label="附件" name="attachments" :disabled="isNew">
-        <ElCard shadow="never" class="problem-editor-card">
-          <template #header><strong>题目附件</strong></template>
-          <ElSpace wrap :size="14" class="file-upload-row">
-            <ElSelect v-model="attachmentKind" aria-label="附件类型">
-              <ElOption label="样例附件" value="SAMPLE" />
-              <ElOption label="补充材料" value="SUPPLEMENT" />
-            </ElSelect>
-            <input ref="attachmentInput" type="file" @change="selectAttachment" />
-            <ElButton type="primary" :disabled="!attachmentFile" :loading="uploadingAttachment" @click="uploadAttachment">上传附件</ElButton>
-          </ElSpace>
-          <ElTable :data="attachments" row-key="id">
-            <ElTableColumn prop="originalFilename" label="文件名" min-width="240" />
-            <ElTableColumn prop="kind" label="类型" width="130" />
-            <ElTableColumn label="大小" width="130"><template #default="{ row }">{{ formatBytes(row.bytes) }}</template></ElTableColumn>
-            <ElTableColumn label="操作" width="170">
-              <template #default="{ row }">
-                <ElButton link type="primary" @click="downloadAttachment(row as ProblemAttachment)">下载</ElButton>
-                <ElButton link type="danger" @click="removeAttachment(row as ProblemAttachment)">删除</ElButton>
-              </template>
-            </ElTableColumn>
-            <template #empty><ElEmpty description="尚未上传附件" /></template>
-          </ElTable>
-        </ElCard>
-      </ElTabPane>
-
-      <ElTabPane label="测试数据" name="testdata" :disabled="isNew">
-        <ElCard shadow="never" class="problem-editor-card">
-          <template #header><strong>当前测试数据版本</strong></template>
-          <ElAlert
-            title="每次上传都会生成不可变版本。可下载任意历史版本，或在题目尚未用于已冻结比赛时重新激活旧版本。"
-            type="info"
-            show-icon
-            :closable="false"
-            class="form-alert"
-          />
-          <ElRow :gutter="14" justify="space-between" class="testdata-summary">
-            <ElCol :xs="24" :sm="7">
-              <div class="testdata-stat">
-                <span>当前版本</span>
-                <strong>v{{ problem?.testdataVersion ?? 0 }}</strong>
-              </div>
-            </ElCol>
-            <ElCol :xs="24" :sm="9">
-              <div class="testdata-stat">
-                <span>SHA-256</span>
-                <code>{{ problem?.testdataSha256 ?? '尚未上传' }}</code>
-              </div>
-            </ElCol>
-            <ElCol :xs="24" :sm="8">
-              <ElButton :disabled="!problem?.testdataVersion" @click="downloadTestdata">下载当前 ZIP</ElButton>
-            </ElCol>
-          </ElRow>
-          <ElSpace wrap :size="14" class="file-upload-row">
-            <input ref="testdataInput" type="file" accept=".zip,application/zip" @change="selectTestdata" />
-            <ElButton type="primary" :disabled="!testdataFile" :loading="uploadingTestdata" @click="uploadTestdata">上传新版本</ElButton>
-          </ElSpace>
-          <ElTable :data="testdataVersions" row-key="version">
-            <ElTableColumn label="版本" width="130">
-              <template #default="{ row }">
-                <strong>v{{ row.version }}</strong>
-                <ElTag v-if="row.active" size="small" type="success">当前</ElTag>
-              </template>
-            </ElTableColumn>
-            <ElTableColumn prop="caseCount" label="用例数" width="120" />
-            <ElTableColumn label="压缩包大小" width="150"><template #default="{ row }">{{ row.bytes == null ? '—' : formatBytes(row.bytes) }}</template></ElTableColumn>
-            <ElTableColumn prop="sha256" label="SHA-256" min-width="300" show-overflow-tooltip />
-            <ElTableColumn label="操作" width="180">
-              <template #default="{ row }">
-                <ElButton link @click="downloadTestdataVersion(row.version)">下载</ElButton>
+      <ElSkeleton v-if="loading" :rows="8" animated />
+      <ElTabs v-else v-model="activeTab" class="admin-tabs">
+        <ElTabPane label="基本信息" name="basic">
+          <ElCard shadow="never" class="problem-editor-card">
+            <ElForm ref="formRef" :model="form" :rules="rules" label-position="top">
+              <ElRow :gutter="12" class="admin-two-column">
+                <ElCol :xs="24" :md="12">
+                  <ElFormItem label="题目标识" prop="slug">
+                    <ElInput v-model="form.slug" maxlength="64" placeholder="例如 two-sum" />
+                  </ElFormItem>
+                </ElCol>
+                <ElCol :xs="24" :md="12">
+                  <ElFormItem label="题目标题" prop="title">
+                    <ElInput v-model="form.title" maxlength="255" />
+                  </ElFormItem>
+                </ElCol>
+              </ElRow>
+              <ElFormItem label="允许的提交语言" prop="languages">
+                <ElCheckboxGroup
+                  v-model="form.languages"
+                  :disabled="form.judgeMode === 'OUTPUT_ONLY'"
+                >
+                  <ElCheckboxButton
+                    v-for="option in languageOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </ElCheckboxButton>
+                </ElCheckboxGroup>
+              </ElFormItem>
+              <ElRow :gutter="12" class="admin-form-grid">
+                <ElCol :xs="24" :sm="8">
+                  <ElFormItem label="判题模式">
+                    <ElSelect v-model="form.judgeMode" @change="changeJudgeMode">
+                      <ElOption label="标准输入输出" value="STANDARD" />
+                      <ElOption label="交互题" value="INTERACTIVE" />
+                      <ElOption label="Output-only" value="OUTPUT_ONLY" />
+                    </ElSelect>
+                  </ElFormItem>
+                </ElCol>
+                <ElCol v-if="form.judgeMode === 'INTERACTIVE'" :xs="24" :sm="8">
+                  <ElFormItem label="Interactor 对象键">
+                    <ElInput v-model="form.interactorObjectKey" maxlength="512" />
+                  </ElFormItem>
+                </ElCol>
+                <ElCol v-if="form.judgeMode === 'INTERACTIVE'" :xs="24" :sm="8">
+                  <ElFormItem label="Interactor SHA-256">
+                    <ElInput v-model="form.interactorSha256" maxlength="64" />
+                  </ElFormItem>
+                </ElCol>
+              </ElRow>
+              <ElAlert
+                v-if="form.judgeMode === 'OUTPUT_ONLY'"
+                title="参赛者需上传包含 1.out、2.out 等根目录输出文件的 ZIP。"
+                type="info"
+                :closable="false"
+                show-icon
+              />
+              <ElSpace
+                v-if="problem && form.judgeMode === 'INTERACTIVE'"
+                wrap
+                :size="14"
+                class="file-upload-row"
+              >
+                <input type="file" @change="selectInteractor" />
                 <ElButton
-                  link
                   type="primary"
-                  :disabled="row.active"
-                  :loading="activatingVersion === row.version"
-                  @click="activateTestdataVersion(row.version)"
-                >激活</ElButton>
-              </template>
-            </ElTableColumn>
-            <template #empty><ElEmpty description="尚未上传测试数据" /></template>
-          </ElTable>
-        </ElCard>
-      </ElTabPane>
-    </ElTabs>
+                  :disabled="!interactorFile"
+                  :loading="uploadingInteractor"
+                  @click="uploadInteractor"
+                  >上传 Interactor ELF</ElButton
+                >
+                <code v-if="problem.interactorSha256">{{ problem.interactorSha256 }}</code>
+              </ElSpace>
+              <ElRow :gutter="12" class="admin-form-grid problem-limit-grid">
+                <ElCol :xs="24" :sm="8">
+                  <ElFormItem label="时间限制（ms）" prop="timeLimitMs">
+                    <ElInputNumber
+                      v-model="form.timeLimitMs"
+                      :min="1"
+                      :max="60000"
+                      controls-position="right"
+                    />
+                  </ElFormItem>
+                </ElCol>
+                <ElCol :xs="24" :sm="8">
+                  <ElFormItem label="内存限制（MiB）" prop="memoryLimitMb">
+                    <ElInputNumber
+                      v-model="form.memoryLimitMb"
+                      :min="16"
+                      :max="8192"
+                      controls-position="right"
+                    />
+                  </ElFormItem>
+                </ElCol>
+                <ElCol :xs="24" :sm="8">
+                  <ElFormItem label="输出限制（KiB）" prop="outputLimitKb">
+                    <ElInputNumber
+                      v-model="form.outputLimitKb"
+                      :min="1"
+                      :max="262144"
+                      controls-position="right"
+                    />
+                  </ElFormItem>
+                </ElCol>
+              </ElRow>
+              <ElFormItem label="默认题面语言" prop="defaultLangCode">
+                <ElInput
+                  v-model="form.defaultLangCode"
+                  maxlength="5"
+                  placeholder="en 或 zh-CN"
+                  class="problem-lang-code"
+                />
+              </ElFormItem>
+              <ElAlert v-if="problem" type="info" :closable="false" show-icon>
+                当前并发版本为 {{ problem.version }}；保存时会通过 expectedVersion
+                防止覆盖其他管理员的修改。
+              </ElAlert>
+            </ElForm>
+          </ElCard>
+        </ElTabPane>
+
+        <ElTabPane label="多语言题面" name="statements" :disabled="isNew">
+          <ElCard shadow="never" class="problem-editor-card">
+            <template #header>
+              <ElSpace wrap :size="14" class="problem-card-heading">
+                <div>
+                  <strong>题面编辑</strong><small>Rust 后端按语言代码 upsert Markdown 题面。</small>
+                </div>
+                <ElButton :icon="Plus" @click="addStatementDraft">添加语言</ElButton>
+              </ElSpace>
+            </template>
+            <ElEmpty v-if="statementDrafts.length === 0" description="尚未添加题面语言" />
+            <div
+              v-for="(statement, index) in statementDrafts"
+              :key="statement.key"
+              class="statement-editor"
+            >
+              <ElSpace wrap :size="14" class="statement-editor-heading">
+                <ElInput
+                  v-model="statement.langCode"
+                  maxlength="5"
+                  placeholder="en 或 zh-CN"
+                  :disabled="statement.savedBody !== null"
+                />
+                <ElTag v-if="statement.savedBody === statement.body" type="success">已保存</ElTag>
+                <ElButton
+                  v-if="statement.savedBody !== null"
+                  link
+                  type="danger"
+                  @click="deleteStatement(statement)"
+                  >删除题面</ElButton
+                >
+                <ElButton
+                  v-if="statement.savedBody === null"
+                  link
+                  type="danger"
+                  @click="statementDrafts.splice(index, 1)"
+                  >移除草稿</ElButton
+                >
+              </ElSpace>
+              <ElInput
+                v-model="statement.body"
+                type="textarea"
+                :rows="14"
+                placeholder="Markdown 题面正文"
+              />
+              <ElRow justify="end" class="problem-editor-actions">
+                <ElButton
+                  type="primary"
+                  :loading="statement.saving"
+                  @click="saveStatement(statement)"
+                  >保存此语言题面</ElButton
+                >
+              </ElRow>
+            </div>
+          </ElCard>
+        </ElTabPane>
+
+        <ElTabPane label="附件" name="attachments" :disabled="isNew">
+          <ElCard shadow="never" class="problem-editor-card">
+            <template #header><strong>题目附件</strong></template>
+            <ElSpace wrap :size="14" class="file-upload-row">
+              <ElSelect v-model="attachmentKind" aria-label="附件类型">
+                <ElOption label="样例附件" value="SAMPLE" />
+                <ElOption label="补充材料" value="SUPPLEMENT" />
+              </ElSelect>
+              <input ref="attachmentInput" type="file" @change="selectAttachment" />
+              <ElButton
+                type="primary"
+                :disabled="!attachmentFile"
+                :loading="uploadingAttachment"
+                @click="uploadAttachment"
+                >上传附件</ElButton
+              >
+            </ElSpace>
+            <ElTable :data="attachments" row-key="id">
+              <ElTableColumn prop="originalFilename" label="文件名" min-width="240" />
+              <ElTableColumn prop="kind" label="类型" width="130" />
+              <ElTableColumn label="大小" width="130"
+                ><template #default="{ row }">{{ formatBytes(row.bytes) }}</template></ElTableColumn
+              >
+              <ElTableColumn label="操作" width="170">
+                <template #default="{ row }">
+                  <ElButton
+                    link
+                    type="primary"
+                    @click="downloadAttachment(row as ProblemAttachment)"
+                    >下载</ElButton
+                  >
+                  <ElButton link type="danger" @click="removeAttachment(row as ProblemAttachment)"
+                    >删除</ElButton
+                  >
+                </template>
+              </ElTableColumn>
+              <template #empty><ElEmpty description="尚未上传附件" /></template>
+            </ElTable>
+          </ElCard>
+        </ElTabPane>
+
+        <ElTabPane label="测试数据" name="testdata" :disabled="isNew">
+          <ElCard shadow="never" class="problem-editor-card">
+            <template #header><strong>当前测试数据版本</strong></template>
+            <ElAlert
+              title="每次上传都会生成不可变版本。可下载任意历史版本，或在题目尚未用于已冻结比赛时重新激活旧版本。"
+              type="info"
+              show-icon
+              :closable="false"
+              class="form-alert"
+            />
+            <ElRow :gutter="14" justify="space-between" class="testdata-summary">
+              <ElCol :xs="24" :sm="7">
+                <div class="testdata-stat">
+                  <span>当前版本</span>
+                  <strong>v{{ problem?.testdataVersion ?? 0 }}</strong>
+                </div>
+              </ElCol>
+              <ElCol :xs="24" :sm="9">
+                <div class="testdata-stat">
+                  <span>SHA-256</span>
+                  <code>{{ problem?.testdataSha256 ?? '尚未上传' }}</code>
+                </div>
+              </ElCol>
+              <ElCol :xs="24" :sm="8">
+                <ElButton :disabled="!problem?.testdataVersion" @click="downloadTestdata"
+                  >下载当前 ZIP</ElButton
+                >
+              </ElCol>
+            </ElRow>
+            <ElSpace wrap :size="14" class="file-upload-row">
+              <input
+                ref="testdataInput"
+                type="file"
+                accept=".zip,application/zip"
+                @change="selectTestdata"
+              />
+              <ElButton
+                type="primary"
+                :disabled="!testdataFile"
+                :loading="uploadingTestdata"
+                @click="uploadTestdata"
+                >上传新版本</ElButton
+              >
+            </ElSpace>
+            <ElTable :data="testdataVersions" row-key="version">
+              <ElTableColumn label="版本" width="130">
+                <template #default="{ row }">
+                  <strong>v{{ row.version }}</strong>
+                  <ElTag v-if="row.active" size="small" type="success">当前</ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="caseCount" label="用例数" width="120" />
+              <ElTableColumn label="压缩包大小" width="150"
+                ><template #default="{ row }">{{
+                  row.bytes == null ? '—' : formatBytes(row.bytes)
+                }}</template></ElTableColumn
+              >
+              <ElTableColumn prop="sha256" label="SHA-256" min-width="300" show-overflow-tooltip />
+              <ElTableColumn label="操作" width="180">
+                <template #default="{ row }">
+                  <ElButton link @click="downloadTestdataVersion(row.version)">下载</ElButton>
+                  <ElButton
+                    link
+                    type="primary"
+                    :disabled="row.active"
+                    :loading="activatingVersion === row.version"
+                    @click="activateTestdataVersion(row.version)"
+                    >激活</ElButton
+                  >
+                </template>
+              </ElTableColumn>
+              <template #empty><ElEmpty description="尚未上传测试数据" /></template>
+            </ElTable>
+          </ElCard>
+        </ElTabPane>
+      </ElTabs>
     </el-main>
   </el-container>
 </template>
@@ -243,7 +363,9 @@ interface StatementDraft {
 
 const route = useRoute();
 const router = useRouter();
-const isNew = computed(() => route.params.problemId === undefined || route.params.problemId === 'new');
+const isNew = computed(
+  () => route.params.problemId === undefined || route.params.problemId === 'new',
+);
 const problemId = computed(() => Number(route.params.problemId));
 const problem = ref<Problem | null>(null);
 const activeTab = ref('basic');
@@ -252,20 +374,41 @@ const saving = ref(false);
 const errorMessage = ref('');
 const formRef = ref<FormInstance>();
 const form = reactive<ProblemForm>({
-  slug: '', title: '', timeLimitMs: 1000, memoryLimitMb: 256, outputLimitKb: 65536,
-  languages: ['c', 'cpp', 'java', 'python'], defaultLangCode: 'en',
-  judgeMode: 'STANDARD', interactorObjectKey: '', interactorSha256: '',
+  slug: '',
+  title: '',
+  timeLimitMs: 1000,
+  memoryLimitMb: 256,
+  outputLimitKb: 65536,
+  languages: ['c', 'cpp', 'java', 'python'],
+  defaultLangCode: 'en',
+  judgeMode: 'STANDARD',
+  interactorObjectKey: '',
+  interactorSha256: '',
 });
 const languageOptions: Array<{ value: JudgeLanguage; label: string }> = [
-  { value: 'c', label: 'C' }, { value: 'cpp', label: 'C++' },
-  { value: 'java', label: 'Java' }, { value: 'python', label: 'Python' },
+  { value: 'c', label: 'C' },
+  { value: 'cpp', label: 'C++' },
+  { value: 'java', label: 'Java' },
+  { value: 'python', label: 'Python' },
 ];
 const langCodePattern = /^[a-z]{2}(?:-[A-Z]{2})?$/;
 const rules: FormRules = {
-  slug: [{ required: true, message: '请输入题目标识', trigger: 'blur' }, { pattern: /^[a-z0-9]+(?:-[a-z0-9]+)*$/, message: '仅允许小写字母、数字和单连字符', trigger: 'blur' }],
+  slug: [
+    { required: true, message: '请输入题目标识', trigger: 'blur' },
+    {
+      pattern: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+      message: '仅允许小写字母、数字和单连字符',
+      trigger: 'blur',
+    },
+  ],
   title: [{ required: true, message: '请输入题目标题', trigger: 'blur' }],
-  languages: [{ type: 'array', required: true, min: 1, message: '至少选择一种提交语言', trigger: 'change' }],
-  defaultLangCode: [{ required: true, message: '请输入默认题面语言', trigger: 'blur' }, { pattern: langCodePattern, message: '请输入 en 或 zh-CN 格式', trigger: 'blur' }],
+  languages: [
+    { type: 'array', required: true, min: 1, message: '至少选择一种提交语言', trigger: 'change' },
+  ],
+  defaultLangCode: [
+    { required: true, message: '请输入默认题面语言', trigger: 'blur' },
+    { pattern: langCodePattern, message: '请输入 en 或 zh-CN 格式', trigger: 'blur' },
+  ],
 };
 
 let statementKey = 0;
@@ -342,9 +485,12 @@ async function loadProblem() {
 
 function payload() {
   return {
-    slug: form.slug.trim().toLowerCase(), title: form.title.trim(),
-    timeLimitMs: form.timeLimitMs, memoryLimitMb: form.memoryLimitMb,
-    outputLimitKb: form.outputLimitKb, languages: [...form.languages],
+    slug: form.slug.trim().toLowerCase(),
+    title: form.title.trim(),
+    timeLimitMs: form.timeLimitMs,
+    memoryLimitMb: form.memoryLimitMb,
+    outputLimitKb: form.outputLimitKb,
+    languages: [...form.languages],
     defaultLangCode: form.defaultLangCode.trim(),
     judgeMode: form.judgeMode,
     interactorObjectKey: form.judgeMode === 'INTERACTIVE' ? form.interactorObjectKey.trim() : null,
@@ -388,7 +534,8 @@ async function saveProblem() {
       applyProblem(created);
     } else if (problem.value) {
       const updated = await adminProblemApi.updateProblem(problem.value.id, {
-        ...payload(), expectedVersion: problem.value.version,
+        ...payload(),
+        expectedVersion: problem.value.version,
       });
       applyProblem(updated);
       ElMessage.success('基本信息已保存');
@@ -397,7 +544,8 @@ async function saveProblem() {
     errorMessage.value = getErrorMessage(error);
     if (error instanceof ApiError && error.code === 'PROBLEM_VERSION_STALE' && problem.value) {
       problem.value = await adminProblemApi.getProblem(problem.value.id);
-      errorMessage.value = '题目已被其他管理员修改。已刷新并发版本，但保留了你的表单内容，请核对后重新保存。';
+      errorMessage.value =
+        '题目已被其他管理员修改。已刷新并发版本，但保留了你的表单内容，请核对后重新保存。';
     }
   } finally {
     saving.value = false;
@@ -408,7 +556,13 @@ function addStatementDraft() {
   const preferred = problem.value?.defaultLangCode ?? 'en';
   const existingCodes = new Set(statementDrafts.value.map((statement) => statement.langCode));
   const langCode = existingCodes.has(preferred) ? '' : preferred;
-  statementDrafts.value.push({ key: ++statementKey, langCode, body: '', savedBody: null, saving: false });
+  statementDrafts.value.push({
+    key: ++statementKey,
+    langCode,
+    body: '',
+    savedBody: null,
+    saving: false,
+  });
 }
 
 async function saveStatement(statement: StatementDraft) {
@@ -420,13 +574,21 @@ async function saveStatement(statement: StatementDraft) {
     ElMessage.error('请输入题面正文');
     return;
   }
-  if (statementDrafts.value.some((item) => item.key !== statement.key && item.langCode === statement.langCode)) {
+  if (
+    statementDrafts.value.some(
+      (item) => item.key !== statement.key && item.langCode === statement.langCode,
+    )
+  ) {
     ElMessage.error('同一语言只能保留一个题面编辑器');
     return;
   }
   statement.saving = true;
   try {
-    const refreshed = await adminProblemApi.upsertStatement(problem.value.id, statement.langCode, statement.body);
+    const refreshed = await adminProblemApi.upsertStatement(
+      problem.value.id,
+      statement.langCode,
+      statement.body,
+    );
     applyRefreshedProblem(refreshed.problem);
     statement.savedBody = statement.body;
     ElMessage.success(`${statement.langCode} 题面已保存`);
@@ -440,7 +602,9 @@ async function saveStatement(statement: StatementDraft) {
 async function deleteStatement(statement: StatementDraft) {
   if (!problem.value || statement.savedBody === null) return;
   try {
-    await ElMessageBox.confirm(`确认删除 ${statement.langCode} 题面？`, '删除题面', { type: 'warning' });
+    await ElMessageBox.confirm(`确认删除 ${statement.langCode} 题面？`, '删除题面', {
+      type: 'warning',
+    });
     await adminProblemApi.deleteStatement(problem.value.id, statement.langCode);
     statementDrafts.value = statementDrafts.value.filter((item) => item.key !== statement.key);
     ElMessage.success(`${statement.langCode} 题面已删除`);
@@ -464,7 +628,11 @@ async function uploadAttachment() {
   if (!problem.value || !attachmentFile.value) return;
   uploadingAttachment.value = true;
   try {
-    const refreshed = await adminProblemApi.uploadAttachment(problem.value.id, attachmentKind.value, attachmentFile.value);
+    const refreshed = await adminProblemApi.uploadAttachment(
+      problem.value.id,
+      attachmentKind.value,
+      attachmentFile.value,
+    );
     attachments.value.push(refreshed.result);
     applyRefreshedProblem(refreshed.problem);
     attachmentFile.value = null;
@@ -480,7 +648,9 @@ async function uploadAttachment() {
 async function removeAttachment(attachment: ProblemAttachment) {
   if (!problem.value) return;
   try {
-    await ElMessageBox.confirm(`确认删除附件“${attachment.originalFilename}”？`, '删除附件', { type: 'warning' });
+    await ElMessageBox.confirm(`确认删除附件“${attachment.originalFilename}”？`, '删除附件', {
+      type: 'warning',
+    });
     const refreshed = await adminProblemApi.deleteAttachment(problem.value.id, attachment.id);
     applyRefreshedProblem(refreshed.problem);
     attachments.value = attachments.value.filter((item) => item.id !== attachment.id);
@@ -493,7 +663,10 @@ async function removeAttachment(attachment: ProblemAttachment) {
 async function downloadAttachment(attachment: ProblemAttachment) {
   if (!problem.value) return;
   try {
-    downloadBlob(await adminProblemApi.downloadAttachment(problem.value.id, attachment.id), attachment.originalFilename);
+    downloadBlob(
+      await adminProblemApi.downloadAttachment(problem.value.id, attachment.id),
+      attachment.originalFilename,
+    );
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   }
@@ -501,7 +674,10 @@ async function downloadAttachment(attachment: ProblemAttachment) {
 
 function selectTestdata(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0] ?? null;
-  if (file && (!file.name.toLowerCase().endsWith('.zip') || file.size === 0 || file.size > 256 * 1024 * 1024)) {
+  if (
+    file &&
+    (!file.name.toLowerCase().endsWith('.zip') || file.size === 0 || file.size > 256 * 1024 * 1024)
+  ) {
     ElMessage.error('测试数据必须是大于 0 字节且不超过 256 MiB 的 ZIP 文件');
     testdataFile.value = null;
     (event.target as HTMLInputElement).value = '';
@@ -541,7 +717,10 @@ async function downloadTestdata() {
   if (!problem.value || problem.value.testdataVersion === 0) return;
   try {
     const blob = await adminProblemApi.downloadTestdata(problem.value.id);
-    downloadBlob(blob, `problem-${problem.value.id}-testdata-v${problem.value.testdataVersion}.zip`);
+    downloadBlob(
+      blob,
+      `problem-${problem.value.id}-testdata-v${problem.value.testdataVersion}.zip`,
+    );
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   }
@@ -598,9 +777,11 @@ function downloadBlob(blob: Blob, filename: string) {
 
 function backToList() {
   const contestId = Number(route.query.contestId);
-  void router.push(Number.isInteger(contestId) && contestId > 0
-    ? `/admin/contests/${contestId}`
-    : '/admin/problems');
+  void router.push(
+    Number.isInteger(contestId) && contestId > 0
+      ? `/admin/contests/${contestId}`
+      : '/admin/problems',
+  );
 }
 onMounted(loadProblem);
 </script>

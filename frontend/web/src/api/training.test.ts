@@ -19,15 +19,17 @@ describe('training API contract', () => {
 
   it('builds public problem-bank filters and preserves nullable publication data', async () => {
     const page = {
-      content: [{
-        id: 4,
-        slug: 'private-draft',
-        title: 'Draft',
-        statement: null,
-        difficulty: null,
-        tags: [],
-        publishedAt: null,
-      }],
+      content: [
+        {
+          id: 4,
+          slug: 'private-draft',
+          title: 'Draft',
+          statement: null,
+          difficulty: null,
+          tags: [],
+          publishedAt: null,
+        },
+      ],
       page: 2,
       size: 25,
       totalElements: 1,
@@ -47,7 +49,12 @@ describe('training API contract', () => {
   it('submits source as multipart data with the correct metadata and extension', async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(jsonResponse(csrf))
-      .mockResolvedValueOnce(jsonResponse({ submissionId: 8, judgementId: 'j-8', status: 'PENDING', submittedAt: '' }, 201));
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { submissionId: 8, judgementId: 'j-8', status: 'PENDING', submittedAt: '' },
+          201,
+        ),
+      );
 
     await trainingApi.submit(4, 'cpp', 'int main() {}', 12, 31);
 
@@ -70,7 +77,12 @@ describe('training API contract', () => {
   it('uses the output ZIP extension and omits optional submission identifiers', async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(jsonResponse(csrf))
-      .mockResolvedValueOnce(jsonResponse({ submissionId: 9, judgementId: 'j-9', status: 'PENDING', submittedAt: '' }, 201));
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { submissionId: 9, judgementId: 'j-9', status: 'PENDING', submittedAt: '' },
+          201,
+        ),
+      );
 
     await trainingApi.submit(5, 'output', 'zip-bytes');
 
@@ -87,8 +99,16 @@ describe('training API contract', () => {
     await trainingApi.enroll(7);
     await trainingApi.favorite(4, true);
     await trainingApi.archiveVirtualSession(11);
-    await trainingApi.createVirtualSession({ title: 'Practice', durationMinutes: 90, problemIds: [4, 5] });
-    await trainingApi.updatePracticeSettings({ dailySubmissionLimit: 20, concurrentJudgingLimit: 2, sourceRetentionDays: 30 });
+    await trainingApi.createVirtualSession({
+      title: 'Practice',
+      durationMinutes: 90,
+      problemIds: [4, 5],
+    });
+    await trainingApi.updatePracticeSettings({
+      dailySubmissionLimit: 20,
+      concurrentJudgingLimit: 2,
+      sourceRetentionDays: 30,
+    });
     await trainingApi.saveEditorial(4, 'zh-CN', {
       title: '题解',
       body: '# 解法',
@@ -105,8 +125,16 @@ describe('training API contract', () => {
       '/api/admin/practice/settings',
       '/api/admin/problems/4/editorials/zh-CN',
     ]);
-    expect(calls.every(([, options]) => (options?.headers as Headers).get('X-XSRF-TOKEN') === 'token')).toBe(true);
-    expect(calls[1][1]).toEqual(expect.objectContaining({ body: JSON.stringify({ favorite: true }) }));
-    expect(calls[3][1]).toEqual(expect.objectContaining({ body: JSON.stringify({ title: 'Practice', durationMinutes: 90, problemIds: [4, 5] }) }));
+    expect(
+      calls.every(([, options]) => (options?.headers as Headers).get('X-XSRF-TOKEN') === 'token'),
+    ).toBe(true);
+    expect(calls[1][1]).toEqual(
+      expect.objectContaining({ body: JSON.stringify({ favorite: true }) }),
+    );
+    expect(calls[3][1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({ title: 'Practice', durationMinutes: 90, problemIds: [4, 5] }),
+      }),
+    );
   });
 });

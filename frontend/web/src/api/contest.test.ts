@@ -31,9 +31,6 @@ describe('contest API contract', () => {
 
     await contestApi.listProblems(7, 'zh-CN');
 
-    expect(fetch).toHaveBeenCalledWith(
-      '/api/contests/7/problems?lang=zh-CN',
-      expect.any(Object),
-    );
+    expect(fetch).toHaveBeenCalledWith('/api/contests/7/problems?lang=zh-CN', expect.any(Object));
   });
 });

@@ -11,7 +11,8 @@ vi.mock('../components/CodeEditor.vue', () => ({
     name: 'CodeEditor',
     props: ['modelValue', 'language', 'readonly', 'height'],
     emits: ['update:modelValue'],
-    template: '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    template:
+      '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
 }));
 
@@ -34,23 +35,34 @@ const submission = {
   scoreMilli: null,
   source: 'int main() { return 0; }',
   sourceSha256: null,
-  judgements: [{
-    id: 'j-9',
-    verdict: 'ACCEPTED',
-    totalTimeMs: 12,
-    peakMemoryKb: 2048,
-    compileLog: 'compiled',
-    workerId: 'worker-1',
-    startedAt: '2026-08-01T09:00:10Z',
-    completedAt: '2026-08-01T09:00:12Z',
-    createdAt: '2026-08-01T09:00:10Z',
-    version: 1,
-    superseded: false,
-    active: true,
-    scoreMilli: null,
-    runs: [{ testIndex: 1, verdict: 'ACCEPTED', timeMs: 12, memoryKb: 2048, exitCode: 0, stderrTail: null }],
-    subtaskScores: [],
-  }],
+  judgements: [
+    {
+      id: 'j-9',
+      verdict: 'ACCEPTED',
+      totalTimeMs: 12,
+      peakMemoryKb: 2048,
+      compileLog: 'compiled',
+      workerId: 'worker-1',
+      startedAt: '2026-08-01T09:00:10Z',
+      completedAt: '2026-08-01T09:00:12Z',
+      createdAt: '2026-08-01T09:00:10Z',
+      version: 1,
+      superseded: false,
+      active: true,
+      scoreMilli: null,
+      runs: [
+        {
+          testIndex: 1,
+          verdict: 'ACCEPTED',
+          timeMs: 12,
+          memoryKb: 2048,
+          exitCode: 0,
+          stderrTail: null,
+        },
+      ],
+      subtaskScores: [],
+    },
+  ],
 };
 
 describe('SubmissionDetailView', () => {

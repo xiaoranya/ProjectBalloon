@@ -15,86 +15,98 @@
       </div>
     </el-header>
     <el-main class="page-body">
-    <ElAlert
-      v-if="errorMessage"
-      class="page-alert"
-      type="error"
-      show-icon
-      :closable="false"
-      :title="errorMessage"
-    />
+      <ElAlert
+        v-if="errorMessage"
+        class="page-alert"
+        type="error"
+        show-icon
+        :closable="false"
+        :title="errorMessage"
+      />
 
-    <ElCard shadow="never">
-      <ElTable v-loading="loading" :data="announcements" row-key="id">
-        <ElTableColumn label="状态" width="120">
-          <template #default="{ row }">
-            <ElTag :type="statusType(row.status)">{{ statusLabel(row.status) }}</ElTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="公告" min-width="360">
-          <template #default="{ row }">
-            <div class="announcement-title">
-              <ElTag v-if="row.pinned" size="small" type="danger">置顶</ElTag>
-              <strong>{{ row.title }}</strong>
-            </div>
-            <p class="announcement-body">{{ row.body }}</p>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="发布时间" min-width="190">
-          <template #default="{ row }">
-            {{ formatDateTime(row.scheduledAt ?? row.publishedAt ?? row.cancelledAt ?? row.withdrawnAt) }}
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="版本" width="80" prop="version" />
-        <ElTableColumn label="操作" width="270" fixed="right">
-          <template #default="{ row }">
-            <template v-if="row.status === 'SCHEDULED'">
-              <ElButton link type="primary" @click="openEdit(row)">编辑计划</ElButton>
-              <ElButton link type="danger" @click="cancelSchedule(row)">取消计划</ElButton>
+      <ElCard shadow="never">
+        <ElTable v-loading="loading" :data="announcements" row-key="id">
+          <ElTableColumn label="状态" width="120">
+            <template #default="{ row }">
+              <ElTag :type="statusType(row.status)">{{ statusLabel(row.status) }}</ElTag>
             </template>
-            <template v-else-if="row.status === 'PUBLISHED'">
-              <ElButton link type="primary" @click="openEdit(row)">编辑</ElButton>
-              <ElButton link @click="togglePin(row)">{{ row.pinned ? '取消置顶' : '置顶' }}</ElButton>
-              <ElButton link type="danger" @click="withdraw(row)">撤回</ElButton>
+          </ElTableColumn>
+          <ElTableColumn label="公告" min-width="360">
+            <template #default="{ row }">
+              <div class="announcement-title">
+                <ElTag v-if="row.pinned" size="small" type="danger">置顶</ElTag>
+                <strong>{{ row.title }}</strong>
+              </div>
+              <p class="announcement-body">{{ row.body }}</p>
             </template>
-            <span v-else class="muted">不可再修改</span>
-          </template>
-        </ElTableColumn>
-        <template #empty><ElEmpty description="暂无公告" /></template>
-      </ElTable>
-    </ElCard>
+          </ElTableColumn>
+          <ElTableColumn label="发布时间" min-width="190">
+            <template #default="{ row }">
+              {{
+                formatDateTime(
+                  row.scheduledAt ?? row.publishedAt ?? row.cancelledAt ?? row.withdrawnAt,
+                )
+              }}
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="版本" width="80" prop="version" />
+          <ElTableColumn label="操作" width="270" fixed="right">
+            <template #default="{ row }">
+              <template v-if="row.status === 'SCHEDULED'">
+                <ElButton link type="primary" @click="openEdit(row)">编辑计划</ElButton>
+                <ElButton link type="danger" @click="cancelSchedule(row)">取消计划</ElButton>
+              </template>
+              <template v-else-if="row.status === 'PUBLISHED'">
+                <ElButton link type="primary" @click="openEdit(row)">编辑</ElButton>
+                <ElButton link @click="togglePin(row)">{{
+                  row.pinned ? '取消置顶' : '置顶'
+                }}</ElButton>
+                <ElButton link type="danger" @click="withdraw(row)">撤回</ElButton>
+              </template>
+              <span v-else class="muted">不可再修改</span>
+            </template>
+          </ElTableColumn>
+          <template #empty><ElEmpty description="暂无公告" /></template>
+        </ElTable>
+      </ElCard>
 
-    <ElDialog v-model="editorVisible" :title="editorTitle" width="680px">
-      <ElForm label-position="top">
-        <ElFormItem label="标题">
-          <ElInput v-model="form.title" maxlength="255" show-word-limit />
-        </ElFormItem>
-        <ElFormItem label="内容">
-          <ElInput v-model="form.body" type="textarea" :rows="8" maxlength="16000" show-word-limit />
-        </ElFormItem>
-        <ElFormItem v-if="!editing || editing.status === 'SCHEDULED'" label="发布方式">
-          <ElRadioGroup v-model="form.mode" :disabled="editing?.status === 'SCHEDULED'">
-            <ElRadioButton value="immediate">立即发布</ElRadioButton>
-            <ElRadioButton value="scheduled">定时发布</ElRadioButton>
-          </ElRadioGroup>
-        </ElFormItem>
-        <ElFormItem v-if="form.mode === 'scheduled'" label="计划发布时间">
-          <ElDatePicker
-            v-model="form.scheduledAt"
-            type="datetime"
-            placeholder="选择比赛结束前的未来时间"
-            :disabled-date="disablePastDate"
-          />
-        </ElFormItem>
-        <ElFormItem><ElCheckbox v-model="form.pinned">置顶公告</ElCheckbox></ElFormItem>
-      </ElForm>
-      <template #footer>
-        <ElButton @click="editorVisible = false">取消</ElButton>
-        <ElButton type="primary" :loading="saving" :disabled="!canSave" @click="save">
-          {{ editing ? '保存' : form.mode === 'scheduled' ? '创建计划' : '发布' }}
-        </ElButton>
-      </template>
-    </ElDialog>
+      <ElDialog v-model="editorVisible" :title="editorTitle" width="680px">
+        <ElForm label-position="top">
+          <ElFormItem label="标题">
+            <ElInput v-model="form.title" maxlength="255" show-word-limit />
+          </ElFormItem>
+          <ElFormItem label="内容">
+            <ElInput
+              v-model="form.body"
+              type="textarea"
+              :rows="8"
+              maxlength="16000"
+              show-word-limit
+            />
+          </ElFormItem>
+          <ElFormItem v-if="!editing || editing.status === 'SCHEDULED'" label="发布方式">
+            <ElRadioGroup v-model="form.mode" :disabled="editing?.status === 'SCHEDULED'">
+              <ElRadioButton value="immediate">立即发布</ElRadioButton>
+              <ElRadioButton value="scheduled">定时发布</ElRadioButton>
+            </ElRadioGroup>
+          </ElFormItem>
+          <ElFormItem v-if="form.mode === 'scheduled'" label="计划发布时间">
+            <ElDatePicker
+              v-model="form.scheduledAt"
+              type="datetime"
+              placeholder="选择比赛结束前的未来时间"
+              :disabled-date="disablePastDate"
+            />
+          </ElFormItem>
+          <ElFormItem><ElCheckbox v-model="form.pinned">置顶公告</ElCheckbox></ElFormItem>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="editorVisible = false">取消</ElButton>
+          <ElButton type="primary" :loading="saving" :disabled="!canSave" @click="save">
+            {{ editing ? '保存' : form.mode === 'scheduled' ? '创建计划' : '发布' }}
+          </ElButton>
+        </template>
+      </ElDialog>
     </el-main>
   </el-container>
 </template>
@@ -104,11 +116,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { ArrowLeft, Refresh } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRoute, useRouter } from 'vue-router';
-import {
-  announcementApi,
-  type Announcement,
-  type AnnouncementStatus,
-} from '../api/announcements';
+import { announcementApi, type Announcement, type AnnouncementStatus } from '../api/announcements';
 import { getErrorMessage } from '../api/client';
 import { formatDateTime } from '../utils/format';
 
@@ -133,18 +141,24 @@ const editorTitle = computed(() => {
   if (!editing.value) return '新建公告';
   return editing.value.status === 'SCHEDULED' ? '编辑定时公告' : '编辑已发布公告';
 });
-const canSave = computed(() => Boolean(
-  form.title.trim()
-    && form.body.trim()
-    && (form.mode === 'immediate' || (form.scheduledAt && form.scheduledAt.getTime() > Date.now())),
-));
+const canSave = computed(() =>
+  Boolean(
+    form.title.trim() &&
+    form.body.trim() &&
+    (form.mode === 'immediate' || (form.scheduledAt && form.scheduledAt.getTime() > Date.now())),
+  ),
+);
 
 function statusLabel(status: AnnouncementStatus) {
-  return { SCHEDULED: '待发布', PUBLISHED: '已发布', WITHDRAWN: '已撤回', CANCELLED: '已取消' }[status];
+  return { SCHEDULED: '待发布', PUBLISHED: '已发布', WITHDRAWN: '已撤回', CANCELLED: '已取消' }[
+    status
+  ];
 }
 
 function statusType(status: AnnouncementStatus) {
-  return ({ SCHEDULED: 'warning', PUBLISHED: 'success', WITHDRAWN: 'info', CANCELLED: 'info' } as const)[status];
+  return (
+    { SCHEDULED: 'warning', PUBLISHED: 'success', WITHDRAWN: 'info', CANCELLED: 'info' } as const
+  )[status];
 }
 
 function disablePastDate(date: Date) {
@@ -209,7 +223,9 @@ async function save() {
       await announcementApi.create(contestId, payload);
     }
     editorVisible.value = false;
-    ElMessage.success(editing.value ? '公告已保存' : payload.scheduledAt ? '定时公告已创建' : '公告已发布');
+    ElMessage.success(
+      editing.value ? '公告已保存' : payload.scheduledAt ? '定时公告已创建' : '公告已发布',
+    );
     await load();
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
@@ -221,7 +237,9 @@ async function save() {
 async function cancelSchedule(tableRow: Record<string, unknown>) {
   const item = tableRow as unknown as Announcement;
   try {
-    await ElMessageBox.confirm('取消后该计划不可恢复，确认继续？', '取消定时公告', { type: 'warning' });
+    await ElMessageBox.confirm('取消后该计划不可恢复，确认继续？', '取消定时公告', {
+      type: 'warning',
+    });
     await announcementApi.cancel(item.id);
     ElMessage.success('定时公告已取消');
     await load();
@@ -289,9 +307,19 @@ onMounted(load);
 .page-alert {
   margin-bottom: 20px;
 }
-.announcement-title { display: flex; align-items: center; gap: 8px; }
-.announcement-body { margin: 6px 0 0; color: #64748b; white-space: pre-wrap; }
-.muted { color: #94a3b8; }
+.announcement-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.announcement-body {
+  margin: 6px 0 0;
+  color: #64748b;
+  white-space: pre-wrap;
+}
+.muted {
+  color: #94a3b8;
+}
 @media (max-width: 680px) {
   .admin-page-header {
     align-items: stretch;

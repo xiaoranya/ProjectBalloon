@@ -31,7 +31,13 @@ const contest = {
 describe('ContestListView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.listContests.mockResolvedValue({ content: [contest], page: 0, size: 50, totalElements: 1, totalPages: 1 });
+    mocks.listContests.mockResolvedValue({
+      content: [contest],
+      page: 0,
+      size: 50,
+      totalElements: 1,
+      totalPages: 1,
+    });
     mocks.logout.mockResolvedValue(undefined);
   });
 
@@ -42,14 +48,20 @@ describe('ContestListView', () => {
     expect(mocks.listContests).toHaveBeenCalledWith(0, 50);
     expect(wrapper.text()).toContain('Alice');
     expect(wrapper.text()).toContain('Spring Finals');
-    await wrapper.findAll('button').find((button) => button.text().includes('进入比赛'))!.trigger('click');
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('进入比赛'))!
+      .trigger('click');
     expect(mocks.push).toHaveBeenCalledWith('/contests/7/problems');
   });
 
   it('logs out before navigating to login', async () => {
     const wrapper = mount(ContestListView);
     await flushPromises();
-    await wrapper.findAll('button').find((button) => button.text().includes('退出登录'))!.trigger('click');
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('退出登录'))!
+      .trigger('click');
     await flushPromises();
 
     expect(mocks.logout).toHaveBeenCalledOnce();

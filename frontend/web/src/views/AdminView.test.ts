@@ -32,16 +32,18 @@ describe('AdminView', () => {
       objectCleanup: { pending: 2, failed: 1, missingReferences: 3 },
     });
     listAuditLogs.mockResolvedValue({
-      content: [{
-        id: 1,
-        actorUserId: 88,
-        action: 'STAFF_ACCOUNT_UPDATED',
-        targetType: 'user',
-        targetId: '9',
-        requestIp: '10.0.0.8',
-        result: 'success',
-        createdAt: '2026-07-20T05:00:00Z',
-      }],
+      content: [
+        {
+          id: 1,
+          actorUserId: 88,
+          action: 'STAFF_ACCOUNT_UPDATED',
+          targetType: 'user',
+          targetId: '9',
+          requestIp: '10.0.0.8',
+          result: 'success',
+          createdAt: '2026-07-20T05:00:00Z',
+        },
+      ],
       page: 0,
       size: 25,
       totalElements: 1,

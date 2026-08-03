@@ -16,25 +16,60 @@ vi.mock('../api/admin', () => ({ adminApi: { getHealth: vi.fn() } }));
 vi.mock('../api/contest', () => ({ contestApi: { listContests: vi.fn() } }));
 vi.mock('../api/printing', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/printing')>();
-  return { ...actual, printingApi: { listAll: vi.fn(), retry: vi.fn(), cancel: vi.fn(), reject: vi.fn(), pdf: vi.fn() } };
+  return {
+    ...actual,
+    printingApi: {
+      listAll: vi.fn(),
+      retry: vi.fn(),
+      cancel: vi.fn(),
+      reject: vi.fn(),
+      pdf: vi.fn(),
+    },
+  };
 });
-vi.mock('../realtime/contest-events', () => ({ subscribeContestEvents: vi.fn(() => ({ stop: vi.fn() })) }));
+vi.mock('../realtime/contest-events', () => ({
+  subscribeContestEvents: vi.fn(() => ({ stop: vi.fn() })),
+}));
 
 const request = {
-  id: 9, contestId: 8, teamId: 2, teamName: 'Team', seatNo: 'A01', contentHash: 'abc', pageCount: 1,
-  status: 'FAILED' as const, printerId: null, cupsJobId: null, requestedByUserId: 3, operatorUserId: null,
-  completedAt: null, failedReason: 'CUPS down', createdAt: '2026-07-20T08:00:00Z', updatedAt: '2026-07-20T08:00:00Z', version: 0,
+  id: 9,
+  contestId: 8,
+  teamId: 2,
+  teamName: 'Team',
+  seatNo: 'A01',
+  contentHash: 'abc',
+  pageCount: 1,
+  status: 'FAILED' as const,
+  printerId: null,
+  cupsJobId: null,
+  requestedByUserId: 3,
+  operatorUserId: null,
+  completedAt: null,
+  failedReason: 'CUPS down',
+  createdAt: '2026-07-20T08:00:00Z',
+  updatedAt: '2026-07-20T08:00:00Z',
+  version: 0,
 };
 
-function mountView() { return mount(PrinterRequestsView, { attachTo: document.body }); }
+function mountView() {
+  return mount(PrinterRequestsView, { attachTo: document.body });
+}
 
 describe('PrinterRequestsView', () => {
   beforeEach(() => {
     replace.mockReset();
-    vi.mocked(contestApi.listContests).mockResolvedValue({ content: [
-      { id: 7, name: 'Contest 7' }, { id: 8, name: 'Contest 8' },
-    ] } as Awaited<ReturnType<typeof contestApi.listContests>>);
-    vi.mocked(adminApi.getHealth).mockResolvedValue({ status: 'up', service: 'api', time: '', cups: { status: 'down' } });
+    vi.mocked(contestApi.listContests).mockResolvedValue({
+      content: [
+        { id: 7, name: 'Contest 7' },
+        { id: 8, name: 'Contest 8' },
+      ],
+    } as Awaited<ReturnType<typeof contestApi.listContests>>);
+    vi.mocked(adminApi.getHealth).mockResolvedValue({
+      status: 'up',
+      service: 'api',
+      time: '',
+      cups: { status: 'down' },
+    });
     vi.mocked(printingApi.listAll).mockResolvedValue([request]);
     vi.mocked(printingApi.retry).mockResolvedValue({ ...request, status: 'QUEUED' });
   });
@@ -44,9 +79,13 @@ describe('PrinterRequestsView', () => {
     await flushPromises();
     expect(printingApi.listAll).toHaveBeenCalledWith(8, undefined);
     expect(wrapper.text()).toContain('CUPS 连接不可用');
-    expect(subscribeContestEvents).toHaveBeenCalledWith(expect.objectContaining({
-      contestId: 8, scope: 'STAFF', eventTypes: ['PRINT_REQUEST_UPDATED'],
-    }));
+    expect(subscribeContestEvents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contestId: 8,
+        scope: 'STAFF',
+        eventTypes: ['PRINT_REQUEST_UPDATED'],
+      }),
+    );
     wrapper.unmount();
   });
 
@@ -83,7 +122,9 @@ describe('PrinterRequestsView', () => {
     await flushPromises();
     await wrapper.find('tbody tr').trigger('click');
     await flushPromises();
-    const retry = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.includes('重试')) as HTMLButtonElement;
+    const retry = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('重试'),
+    ) as HTMLButtonElement;
     retry.click();
     await flushPromises();
     expect(printingApi.retry).toHaveBeenCalledWith(9);
@@ -91,7 +132,9 @@ describe('PrinterRequestsView', () => {
   });
 
   it('warns when a successful mutation cannot refresh the queue', async () => {
-    const warning = vi.spyOn(ElMessage, 'warning').mockImplementation(() => ({ close: vi.fn() } as never));
+    const warning = vi
+      .spyOn(ElMessage, 'warning')
+      .mockImplementation(() => ({ close: vi.fn() }) as never);
     vi.mocked(printingApi.listAll)
       .mockResolvedValueOnce([request])
       .mockRejectedValueOnce(new Error('refresh unavailable'));
@@ -99,7 +142,9 @@ describe('PrinterRequestsView', () => {
     await flushPromises();
     await wrapper.find('tbody tr').trigger('click');
     await flushPromises();
-    const retry = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.includes('重试')) as HTMLButtonElement;
+    const retry = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('重试'),
+    ) as HTMLButtonElement;
     retry.click();
     await flushPromises();
     expect(warning).toHaveBeenCalledWith('打印请求已重试，但刷新队列失败，请手动重试');
@@ -115,7 +160,11 @@ describe('PrinterRequestsView', () => {
     await wrapper.find('tbody tr').trigger('click');
     await flushPromises();
     expect(document.body.textContent).toContain('PDF 正在生成');
-    expect(Array.from(document.body.querySelectorAll('button')).some((button) => button.textContent?.includes('下载 PDF'))).toBe(false);
+    expect(
+      Array.from(document.body.querySelectorAll('button')).some((button) =>
+        button.textContent?.includes('下载 PDF'),
+      ),
+    ).toBe(false);
     wrapper.unmount();
   });
 
@@ -124,12 +173,16 @@ describe('PrinterRequestsView', () => {
     const revokeObjectURL = vi.fn();
     vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
     vi.mocked(printingApi.pdf).mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' }));
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
     const wrapper = mountView();
     await flushPromises();
     await wrapper.find('tbody tr').trigger('click');
     await flushPromises();
-    const download = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.includes('下载 PDF')) as HTMLButtonElement;
+    const download = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('下载 PDF'),
+    ) as HTMLButtonElement;
     download.click();
     await flushPromises();
     await new Promise((resolve) => window.setTimeout(resolve, 0));

@@ -7,7 +7,10 @@ import Components from 'unplugin-vue-components/vite';
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers';
 
 const apiProxyTarget = process.env.XCPC_API_PROXY_TARGET || 'http://127.0.0.1:18080';
-const appVersion = readFileSync(fileURLToPath(new URL('../../VERSION', import.meta.url)), 'utf8').trim();
+const appVersion = readFileSync(
+  fileURLToPath(new URL('../../VERSION', import.meta.url)),
+  'utf8',
+).trim();
 
 export default defineConfig({
   define: {

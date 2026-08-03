@@ -6,21 +6,34 @@
           <p class="eyebrow">Printing</p>
           <h1>赛中打印</h1>
         </div>
-        <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
+        <div
+          class="clarification-live-state"
+          :class="{ connected: realtimeConnected }"
+          aria-live="polite"
+        >
           <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
         </div>
       </div>
     </el-header>
 
     <el-main class="page-body">
-      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+      <ElAlert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+        class="page-alert"
+      />
 
       <ElRow :gutter="22" align="top" class="printing-team-grid">
         <ElCol :xs="24" :md="9">
           <ElCard shadow="never" class="print-compose-card">
             <template #header>
               <div class="card-header">
-                <div><strong>新建打印请求</strong><small>最多 20 KiB、5 页；仅支持纯文本。</small></div>
+                <div>
+                  <strong>新建打印请求</strong><small>最多 20 KiB、5 页；仅支持纯文本。</small>
+                </div>
               </div>
             </template>
             <ElForm label-position="top" @submit.prevent="submitPrintRequest">
@@ -37,7 +50,13 @@
                 <span>{{ formatBytes(validation.bytes) }} / 20 KiB</span>
                 <span>预计 {{ validation.pageCount }} / 5 页</span>
               </div>
-              <ElButton type="primary" native-type="submit" class="wide-button" :loading="submitting" :disabled="validation.error !== null">
+              <ElButton
+                type="primary"
+                native-type="submit"
+                class="wide-button"
+                :loading="submitting"
+                :disabled="validation.error !== null"
+              >
                 提交打印
               </ElButton>
             </ElForm>
@@ -46,8 +65,13 @@
         <ElCol :xs="24" :md="15">
           <div class="clarification-list-column">
             <div class="clarification-list-heading">
-              <div><h2>我的打印</h2><p>打印内容不会在历史记录中返回。</p></div>
-              <ElButton :icon="Refresh" :loading="loading" @click="loadRequests(false)">刷新</ElButton>
+              <div>
+                <h2>我的打印</h2>
+                <p>打印内容不会在历史记录中返回。</p>
+              </div>
+              <ElButton :icon="Refresh" :loading="loading" @click="loadRequests(false)"
+                >刷新</ElButton
+              >
             </div>
             <ElSkeleton v-if="loading && requests.length === 0" :rows="5" animated />
             <ElEmpty v-else-if="requests.length === 0" description="本队尚未提交打印请求" />
@@ -55,7 +79,9 @@
               <article v-for="item in requests" :key="item.id" class="clarification-card">
                 <div class="clarification-card-meta">
                   <div>
-                    <ElTag :type="printStatusType(item.status)">{{ printStatusLabel(item.status) }}</ElTag>
+                    <ElTag :type="printStatusType(item.status)">{{
+                      printStatusLabel(item.status)
+                    }}</ElTag>
                     <ElTag type="info" effect="plain">{{ item.pageCount }} 页</ElTag>
                   </div>
                   <time>{{ formatDateTime(item.createdAt) }}</time>
@@ -96,7 +122,10 @@ import {
   type PrintRequestResponse,
   type PrintRequestStatus,
 } from '../api/printing';
-import { subscribeContestEvents, type ContestRealtimeSubscription } from '../realtime/contest-events';
+import {
+  subscribeContestEvents,
+  type ContestRealtimeSubscription,
+} from '../realtime/contest-events';
 import { formatBytes, formatDateTime } from '../utils/format';
 
 const route = useRoute();
@@ -115,19 +144,28 @@ const validation = computed(() => validatePrintContent(content.value));
 
 function printStatusLabel(status: PrintRequestStatus) {
   return {
-    REQUESTED: '已申请', QUEUED: '排队中', PRINTING: '打印中', COMPLETED: '已完成',
-    FAILED: '打印失败', CANCELLED: '已取消', REJECTED: '已拒绝',
+    REQUESTED: '已申请',
+    QUEUED: '排队中',
+    PRINTING: '打印中',
+    COMPLETED: '已完成',
+    FAILED: '打印失败',
+    CANCELLED: '已取消',
+    REJECTED: '已拒绝',
   }[status];
 }
 
-function printStatusType(status: PrintRequestStatus): 'success' | 'danger' | 'warning' | 'info' | 'primary' {
+function printStatusType(
+  status: PrintRequestStatus,
+): 'success' | 'danger' | 'warning' | 'info' | 'primary' {
   if (status === 'COMPLETED') return 'success';
   if (status === 'FAILED' || status === 'REJECTED') return 'danger';
   if (status === 'REQUESTED' || status === 'QUEUED' || status === 'PRINTING') return 'warning';
   return 'info';
 }
 
-function isPdfReady(item: PrintRequestResponse) { return item.status !== 'REQUESTED'; }
+function isPdfReady(item: PrintRequestResponse) {
+  return item.status !== 'REQUESTED';
+}
 
 async function loadRequests(silent = true) {
   const activeContestId = contestId.value;
@@ -206,12 +244,20 @@ async function activateContest() {
     scope: 'TEAM',
     eventTypes: ['PRINT_REQUEST_UPDATED'],
     onEvent: () => void loadRequests(),
-    onConnectionChange: (connected) => { realtimeConnected.value = connected; },
+    onConnectionChange: (connected) => {
+      realtimeConnected.value = connected;
+    },
     poll: () => loadRequests(),
   });
 }
 
-watch(() => route.params.contestId, () => { void activateContest(); }, { immediate: true });
+watch(
+  () => route.params.contestId,
+  () => {
+    void activateContest();
+  },
+  { immediate: true },
+);
 
 onUnmounted(() => realtime?.stop());
 </script>
@@ -302,7 +348,7 @@ onUnmounted(() => realtime?.stop());
 }
 
 .print-compose-card :deep(.el-textarea__inner) {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   line-height: 1.55;
 }
 

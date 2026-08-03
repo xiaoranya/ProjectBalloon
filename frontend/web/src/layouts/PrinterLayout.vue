@@ -6,7 +6,10 @@
         <div><strong>打印工作台</strong><small>Print Request Desk</small></div>
       </RouterLink>
       <div class="judge-user">
-        <div><strong>{{ session.state.user?.displayName }}</strong><small>打印员</small></div>
+        <div>
+          <strong>{{ session.state.user?.displayName }}</strong
+          ><small>打印员</small>
+        </div>
         <ElButton plain :icon="SwitchButton" @click="logout">退出登录</ElButton>
       </div>
     </el-header>

@@ -16,7 +16,9 @@ describe('Rust admin API contract', () => {
   });
 
   it('reads degraded readiness from the public Rust health route', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ status: 'down', service: 'xcpc-platform' }, 503));
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ status: 'down', service: 'xcpc-platform' }, 503),
+    );
 
     await expect(adminApi.getHealth()).resolves.toMatchObject({ status: 'down' });
     expect(fetch).toHaveBeenCalledWith(
@@ -68,7 +70,9 @@ describe('Rust admin API contract', () => {
   it('uses exact staff and contest-scope bodies including reset password', async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }),
+      )
       .mockResolvedValueOnce(jsonResponse({ id: 9 }))
       .mockResolvedValueOnce(jsonResponse({ id: 9 }))
       .mockResolvedValueOnce(jsonResponse({ id: 9 }))
@@ -91,26 +95,34 @@ describe('Rust admin API contract', () => {
       '/api/admin/staff-accounts/9/reset-password',
       '/api/admin/contest-admins/9/contests',
     ]);
-    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify({
-        username: 'judge-01',
-        displayName: 'Judge 01',
-        userType: 'JUDGE',
-        initialPassword: 'temporary123',
-        requirePasswordReset: true,
+    expect(fetchMock.mock.calls[1][1]).toEqual(
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          username: 'judge-01',
+          displayName: 'Judge 01',
+          userType: 'JUDGE',
+          initialPassword: 'temporary123',
+          requirePasswordReset: true,
+        }),
       }),
-    }));
-    expect(fetchMock.mock.calls[2][1]).toEqual(expect.objectContaining({
-      method: 'PATCH',
-      body: JSON.stringify({ displayName: 'Chief Judge', enabled: false }),
-    }));
-    expect(fetchMock.mock.calls[3][1]).toEqual(expect.objectContaining({
-      body: JSON.stringify({ newPassword: 'reset-password', requirePasswordReset: false }),
-    }));
-    expect(fetchMock.mock.calls[4][1]).toEqual(expect.objectContaining({
-      method: 'PUT',
-      body: JSON.stringify({ contestIds: [2, 4] }),
-    }));
+    );
+    expect(fetchMock.mock.calls[2][1]).toEqual(
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ displayName: 'Chief Judge', enabled: false }),
+      }),
+    );
+    expect(fetchMock.mock.calls[3][1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({ newPassword: 'reset-password', requirePasswordReset: false }),
+      }),
+    );
+    expect(fetchMock.mock.calls[4][1]).toEqual(
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ contestIds: [2, 4] }),
+      }),
+    );
   });
 });

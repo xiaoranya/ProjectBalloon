@@ -66,7 +66,9 @@ describe('Rust contest administration API contract', () => {
   it('starts a CSRF-protected bounded similarity backfill', async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }),
+      )
       .mockResolvedValueOnce(jsonResponse({ scanned: 10, updated: 9, failed: 1 }));
 
     await adminContestApi.backfillSubmissionSimilarity(42);
@@ -82,24 +84,26 @@ describe('Rust contest administration API contract', () => {
 
     await adminContestApi.getJudgeQueueStatus(42);
 
-    expect(vi.mocked(fetch).mock.calls[0][0]).toBe(
-      '/api/admin/contests/42/judge-queue/status',
-    );
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe('/api/admin/contests/42/judge-queue/status');
   });
 
   it('passes expectedJudgementId to the contest-scoped single rejudge route', async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }),
+      )
       .mockResolvedValueOnce(jsonResponse({ submissionId: 9, status: 'PENDING' }, 202));
 
     await adminContestApi.rejudgeSubmission(42, 9, '11111111-1111-1111-1111-111111111111');
 
     expect(fetchMock.mock.calls[1][0]).toBe('/api/admin/contests/42/submissions/9/rejudge');
-    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify({ expectedJudgementId: '11111111-1111-1111-1111-111111111111' }),
-    }));
+    expect(fetchMock.mock.calls[1][1]).toEqual(
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ expectedJudgementId: '11111111-1111-1111-1111-111111111111' }),
+      }),
+    );
   });
 
   it('uses the exact Rust export URLs', async () => {
@@ -122,34 +126,61 @@ describe('Rust contest administration API contract', () => {
   it('sends lifecycle and extension concurrency contracts in camelCase', async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }),
+      )
       .mockResolvedValueOnce(jsonResponse({ contestId: 42, to: 'RUNNING' }))
       .mockResolvedValueOnce(jsonResponse({ contestId: 42, endAt: '2026-07-20T14:00:00Z' }));
 
     await adminContestApi.transitionContest(42, 'RUNNING');
-    await adminContestApi.extendContest(
-      42,
-      '2026-07-20T12:00:00Z',
-      '2026-07-20T14:00:00Z',
-    );
+    await adminContestApi.extendContest(42, '2026-07-20T12:00:00Z', '2026-07-20T14:00:00Z');
 
     expect(fetchMock.mock.calls[1][0]).toBe('/api/contests/42/transitions');
-    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({ body: JSON.stringify({ to: 'RUNNING' }) }));
+    expect(fetchMock.mock.calls[1][1]).toEqual(
+      expect.objectContaining({ body: JSON.stringify({ to: 'RUNNING' }) }),
+    );
     expect(fetchMock.mock.calls[2][0]).toBe('/api/contests/42/extensions');
-    expect(fetchMock.mock.calls[2][1]).toEqual(expect.objectContaining({
-      body: JSON.stringify({
-        expectedEndAt: '2026-07-20T12:00:00Z',
-        newEndAt: '2026-07-20T14:00:00Z',
+    expect(fetchMock.mock.calls[2][1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({
+          expectedEndAt: '2026-07-20T12:00:00Z',
+          newEndAt: '2026-07-20T14:00:00Z',
+        }),
       }),
-    }));
+    );
   });
 
   it('uses the Java-compatible contest clone route', async () => {
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' })).mockResolvedValueOnce(jsonResponse({ sourceContestId: 42, problemsCopied: 2, teamsCopied: 3 }, 201));
-    await adminContestApi.cloneContest(42, { name: 'Copy', visibility: 'PRIVATE', startAt: null, freezeAt: null, endAt: null, copyTeams: true });
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ sourceContestId: 42, problemsCopied: 2, teamsCopied: 3 }, 201),
+      );
+    await adminContestApi.cloneContest(42, {
+      name: 'Copy',
+      visibility: 'PRIVATE',
+      startAt: null,
+      freezeAt: null,
+      endAt: null,
+      copyTeams: true,
+    });
     expect(fetchMock.mock.calls[1][0]).toBe('/api/contests/42/clones');
-    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'POST', body: JSON.stringify({ name: 'Copy', visibility: 'PRIVATE', startAt: null, freezeAt: null, endAt: null, copyTeams: true }) }));
+    expect(fetchMock.mock.calls[1][1]).toEqual(
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Copy',
+          visibility: 'PRIVATE',
+          startAt: null,
+          freezeAt: null,
+          endAt: null,
+          copyTeams: true,
+        }),
+      }),
+    );
   });
 
   it('caps each problem request at the Rust size limit and omits unsupported sorting', async () => {
@@ -165,27 +196,33 @@ describe('Rust contest administration API contract', () => {
 
   it('loads every problem page without increasing the per-request size', async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce(jsonResponse({
-        content: [{ id: 1, title: 'First' }],
-        page: 0,
-        size: 100,
-        totalElements: 201,
-        totalPages: 3,
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        content: [{ id: 101, title: 'Second page' }],
-        page: 1,
-        size: 100,
-        totalElements: 201,
-        totalPages: 3,
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        content: [{ id: 201, title: 'Third page' }],
-        page: 2,
-        size: 100,
-        totalElements: 201,
-        totalPages: 3,
-      }));
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: [{ id: 1, title: 'First' }],
+          page: 0,
+          size: 100,
+          totalElements: 201,
+          totalPages: 3,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: [{ id: 101, title: 'Second page' }],
+          page: 1,
+          size: 100,
+          totalElements: 201,
+          totalPages: 3,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: [{ id: 201, title: 'Third page' }],
+          page: 2,
+          size: 100,
+          totalElements: 201,
+          totalPages: 3,
+        }),
+      );
 
     const problems = await adminContestApi.listAllProblems(42);
 
@@ -200,7 +237,9 @@ describe('Rust contest administration API contract', () => {
   it('updates an assigned problem through the contest-scoped PATCH route', async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }),
+      )
       .mockResolvedValueOnce(jsonResponse({ contestId: 42, problemId: 7, alias: 'B' }));
 
     await adminContestApi.updateProblemAssignment(42, 7, {
@@ -210,45 +249,74 @@ describe('Rust contest administration API contract', () => {
     });
 
     expect(fetchMock.mock.calls[1][0]).toBe('/api/contests/42/problems/7');
-    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({
-      method: 'PATCH',
-      body: JSON.stringify({ alias: 'B', displayOrder: 2, color: '#ff0000' }),
-    }));
+    expect(fetchMock.mock.calls[1][1]).toEqual(
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ alias: 'B', displayOrder: 2, color: '#ff0000' }),
+      }),
+    );
   });
 
   it('sends the complete reorder array to the Rust PUT route', async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }),
+      )
       .mockResolvedValueOnce(jsonResponse([]));
-    const entries = [{ problemId: 3, displayOrder: 1 }, { problemId: 5, displayOrder: 2 }];
+    const entries = [
+      { problemId: 3, displayOrder: 1 },
+      { problemId: 5, displayOrder: 2 },
+    ];
 
     await adminContestApi.reorderProblems(42, entries);
 
     expect(fetchMock.mock.calls[1][0]).toBe('/api/contests/42/problems/reorder');
-    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'PUT', body: JSON.stringify(entries) }));
+    expect(fetchMock.mock.calls[1][1]).toEqual(
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify(entries) }),
+    );
   });
 
   it('persists OI scoring policy and subtask test mappings', async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }),
+      )
       .mockResolvedValueOnce(jsonResponse({ contestId: 42, scoringMode: 'IOI' }))
-      .mockResolvedValueOnce(jsonResponse({ contestId: 42, problemId: 7, maxScoreMilli: 100000, subtasks: [] }));
+      .mockResolvedValueOnce(
+        jsonResponse({ contestId: 42, problemId: 7, maxScoreMilli: 100000, subtasks: [] }),
+      );
 
     await adminContestApi.updateScoringPolicy(42, {
-      scoringMode: 'IOI', scoreAggregation: 'BEST', feedbackPolicy: 'SCORE_ONLY',
+      scoringMode: 'IOI',
+      scoreAggregation: 'BEST',
+      feedbackPolicy: 'SCORE_ONLY',
     });
     await adminContestApi.replaceProblemSubtasks(42, 7, {
       maxScoreMilli: 100000,
-      subtasks: [{ subtaskKey: 'BASIC', name: 'Basic', displayOrder: 1, scoreMilli: 100000, testIndexes: [1, 2] }],
+      subtasks: [
+        {
+          subtaskKey: 'BASIC',
+          name: 'Basic',
+          displayOrder: 1,
+          scoreMilli: 100000,
+          testIndexes: [1, 2],
+        },
+      ],
     });
 
     expect(fetchMock.mock.calls[1][0]).toBe('/api/admin/contests/42/scoring-policy');
-    expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({
-      method: 'PUT',
-      body: JSON.stringify({ scoringMode: 'IOI', scoreAggregation: 'BEST', feedbackPolicy: 'SCORE_ONLY' }),
-    }));
+    expect(fetchMock.mock.calls[1][1]).toEqual(
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          scoringMode: 'IOI',
+          scoreAggregation: 'BEST',
+          feedbackPolicy: 'SCORE_ONLY',
+        }),
+      }),
+    );
     expect(fetchMock.mock.calls[2][0]).toBe('/api/admin/contests/42/problems/7/subtasks');
     expect(fetchMock.mock.calls[2][1]).toEqual(expect.objectContaining({ method: 'PUT' }));
   });

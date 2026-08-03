@@ -2,24 +2,53 @@ import type { RouteRecordRaw } from 'vue-router';
 
 export const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/contests' },
-  { path: '/problem-bank', name: 'problem-bank', component: () => import('./views/ProblemBankView.vue') },
-  { path: '/practice', name: 'practice', component: () => import('./views/PracticeView.vue'), meta: { requiresAuth: true } },
-  { path: '/practice/virtual', name: 'practice-virtual', component: () => import('./views/VirtualPracticeView.vue'), meta: { requiresAuth: true } },
-  { path: '/training', name: 'training', component: () => import('./views/TrainingView.vue'), meta: { requiresAuth: true } },
+  {
+    path: '/problem-bank',
+    name: 'problem-bank',
+    component: () => import('./views/ProblemBankView.vue'),
+  },
+  {
+    path: '/practice',
+    name: 'practice',
+    component: () => import('./views/PracticeView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/practice/virtual',
+    name: 'practice-virtual',
+    component: () => import('./views/VirtualPracticeView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/training',
+    name: 'training',
+    component: () => import('./views/TrainingView.vue'),
+    meta: { requiresAuth: true },
+  },
   {
     path: '/login',
     name: 'login',
     component: () => import('./views/LoginView.vue'),
     meta: { guestOnly: true },
   },
-  { path: '/register', name: 'register', component: () => import('./views/RegisterView.vue'), meta: { guestOnly: true } },
+  {
+    path: '/register',
+    name: 'register',
+    component: () => import('./views/RegisterView.vue'),
+    meta: { guestOnly: true },
+  },
   {
     path: '/change-password',
     name: 'change-password',
     component: () => import('./views/ChangePasswordView.vue'),
     meta: { requiresAuth: true },
   },
-  { path: '/profile', name: 'profile', component: () => import('./views/ProfileView.vue'), meta: { requiresAuth: true } },
+  {
+    path: '/profile',
+    name: 'profile',
+    component: () => import('./views/ProfileView.vue'),
+    meta: { requiresAuth: true },
+  },
   {
     path: '/contests',
     name: 'contests',
@@ -37,7 +66,11 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('./layouts/JudgeLayout.vue'),
     meta: { requiresAuth: true, requiresStaff: true, requiresJudge: true },
     children: [
-      { path: '', name: 'judge-home', component: () => import('./views/JudgeClarificationView.vue') },
+      {
+        path: '',
+        name: 'judge-home',
+        component: () => import('./views/JudgeClarificationView.vue'),
+      },
     ],
   },
   {
@@ -45,7 +78,11 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('./layouts/PrinterLayout.vue'),
     meta: { requiresAuth: true, requiresStaff: true, requiresPrinter: true },
     children: [
-      { path: '', name: 'printer-home', component: () => import('./views/PrinterRequestsView.vue') },
+      {
+        path: '',
+        name: 'printer-home',
+        component: () => import('./views/PrinterRequestsView.vue'),
+      },
     ],
   },
   {
@@ -61,7 +98,11 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('./layouts/ResolverLayout.vue'),
     meta: { requiresAuth: true, requiresStaff: true, requiresResolverOperator: true },
     children: [
-      { path: '', name: 'resolver-home', component: () => import('./views/ResolverManageView.vue') },
+      {
+        path: '',
+        name: 'resolver-home',
+        component: () => import('./views/ResolverManageView.vue'),
+      },
     ],
   },
   {
@@ -70,8 +111,16 @@ export const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresStaff: true, requiresAwardOperator: true },
     children: [
       { path: '', name: 'awards-home', component: () => import('./views/AwardsManageView.vue') },
-      { path: 'presentation', name: 'awards-presentation', component: () => import('./views/AwardPresentationControlView.vue') },
-      { path: 'host-script', name: 'awards-host-script', component: () => import('./views/AwardHostScriptView.vue') },
+      {
+        path: 'presentation',
+        name: 'awards-presentation',
+        component: () => import('./views/AwardPresentationControlView.vue'),
+      },
+      {
+        path: 'host-script',
+        name: 'awards-host-script',
+        component: () => import('./views/AwardHostScriptView.vue'),
+      },
     ],
   },
   {
@@ -95,12 +144,42 @@ export const routes: RouteRecordRaw[] = [
     name: 'screen-client',
     component: () => import('./views/ScreenClientView.vue'),
   },
-  { path: '/live/manage', name: 'live-manage', component: () => import('./views/LiveManageView.vue'), meta: { requiresAuth: true, requiresStaff: true, requiresLiveOperator: true } },
-  { path: '/live', name: 'live', component: () => import('./views/LiveView.vue'), props: { view: 'scoreboard' } },
-  { path: '/live/first-blood', name: 'live-first-blood', component: () => import('./views/LiveView.vue'), props: { view: 'first-blood' } },
-  { path: '/live/balloons', name: 'live-balloons', component: () => import('./views/LiveView.vue'), props: { view: 'balloons' } },
-  { path: '/live/freeze-countdown', name: 'live-freeze', component: () => import('./views/LiveView.vue'), props: { view: 'freeze' } },
-  { path: '/live/statistics', name: 'live-statistics', component: () => import('./views/LiveView.vue'), props: { view: 'statistics' } },
+  {
+    path: '/live/manage',
+    name: 'live-manage',
+    component: () => import('./views/LiveManageView.vue'),
+    meta: { requiresAuth: true, requiresStaff: true, requiresLiveOperator: true },
+  },
+  {
+    path: '/live',
+    name: 'live',
+    component: () => import('./views/LiveView.vue'),
+    props: { view: 'scoreboard' },
+  },
+  {
+    path: '/live/first-blood',
+    name: 'live-first-blood',
+    component: () => import('./views/LiveView.vue'),
+    props: { view: 'first-blood' },
+  },
+  {
+    path: '/live/balloons',
+    name: 'live-balloons',
+    component: () => import('./views/LiveView.vue'),
+    props: { view: 'balloons' },
+  },
+  {
+    path: '/live/freeze-countdown',
+    name: 'live-freeze',
+    component: () => import('./views/LiveView.vue'),
+    props: { view: 'freeze' },
+  },
+  {
+    path: '/live/statistics',
+    name: 'live-statistics',
+    component: () => import('./views/LiveView.vue'),
+    props: { view: 'statistics' },
+  },
   {
     path: '/admin',
     component: () => import('./layouts/AdminLayout.vue'),
@@ -181,7 +260,11 @@ export const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresTeam: true },
     children: [
       { path: '', redirect: { name: 'problems' } },
-      { path: 'problems', name: 'problems', component: () => import('./views/ProblemListView.vue') },
+      {
+        path: 'problems',
+        name: 'problems',
+        component: () => import('./views/ProblemListView.vue'),
+      },
       {
         path: 'problems/:problemId',
         name: 'problem-detail',
@@ -215,5 +298,9 @@ export const routes: RouteRecordRaw[] = [
     ],
   },
   { path: '/forbidden', name: 'forbidden', component: () => import('./views/ForbiddenView.vue') },
-  { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('./views/NotFoundView.vue') },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: () => import('./views/NotFoundView.vue'),
+  },
 ];

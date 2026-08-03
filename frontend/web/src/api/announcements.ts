@@ -41,7 +41,10 @@ export const announcementApi = {
       body: payload,
     });
   },
-  update(id: number, payload: { title: string; body: string; pinned: boolean; expectedVersion: number }) {
+  update(
+    id: number,
+    payload: { title: string; body: string; pinned: boolean; expectedVersion: number },
+  ) {
     return apiRequest<Announcement>(`/api/announcements/${id}`, { method: 'PATCH', body: payload });
   },
   schedule(id: number, payload: AnnouncementPayload) {

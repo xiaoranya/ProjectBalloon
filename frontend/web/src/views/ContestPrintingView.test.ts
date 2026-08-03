@@ -11,12 +11,28 @@ vi.mock('../api/printing', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/printing')>();
   return { ...actual, printingApi: { create: vi.fn(), listMine: vi.fn(), pdf: vi.fn() } };
 });
-vi.mock('../realtime/contest-events', () => ({ subscribeContestEvents: vi.fn(() => ({ stop: vi.fn() })) }));
+vi.mock('../realtime/contest-events', () => ({
+  subscribeContestEvents: vi.fn(() => ({ stop: vi.fn() })),
+}));
 
 const request = {
-  id: 9, contestId: 7, teamId: 2, teamName: 'Team', seatNo: 'A01', contentHash: 'abc', pageCount: 1,
-  status: 'QUEUED' as const, printerId: null, cupsJobId: null, requestedByUserId: 3, operatorUserId: null,
-  completedAt: null, failedReason: null, createdAt: '2026-07-20T08:00:00Z', updatedAt: '2026-07-20T08:00:00Z', version: 0,
+  id: 9,
+  contestId: 7,
+  teamId: 2,
+  teamName: 'Team',
+  seatNo: 'A01',
+  contentHash: 'abc',
+  pageCount: 1,
+  status: 'QUEUED' as const,
+  printerId: null,
+  cupsJobId: null,
+  requestedByUserId: 3,
+  operatorUserId: null,
+  completedAt: null,
+  failedReason: null,
+  createdAt: '2026-07-20T08:00:00Z',
+  updatedAt: '2026-07-20T08:00:00Z',
+  version: 0,
 };
 
 describe('ContestPrintingView', () => {
@@ -32,11 +48,13 @@ describe('ContestPrintingView', () => {
     await flushPromises();
     expect(printingApi.listMine).toHaveBeenCalledWith(7);
     expect(wrapper.text()).toContain('打印请求 #9');
-    expect(subscribeContestEvents).toHaveBeenCalledWith(expect.objectContaining({
-      contestId: 7,
-      scope: 'TEAM',
-      eventTypes: ['PRINT_REQUEST_UPDATED'],
-    }));
+    expect(subscribeContestEvents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contestId: 7,
+        scope: 'TEAM',
+        eventTypes: ['PRINT_REQUEST_UPDATED'],
+      }),
+    );
   });
 
   it('normalizes content before creating and clears the editor', async () => {
@@ -79,7 +97,9 @@ describe('ContestPrintingView', () => {
 
     expect(stop).toHaveBeenCalled();
     expect(printingApi.listMine).toHaveBeenLastCalledWith(8);
-    expect(subscribeContestEvents).toHaveBeenLastCalledWith(expect.objectContaining({ contestId: 8 }));
+    expect(subscribeContestEvents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ contestId: 8 }),
+    );
     wrapper.unmount();
   });
 
@@ -87,10 +107,14 @@ describe('ContestPrintingView', () => {
     const createObjectURL = vi.fn(() => 'blob:team-print');
     const revokeObjectURL = vi.fn();
     vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
     const wrapper = mount(ContestPrintingView, { attachTo: document.body });
     await flushPromises();
-    const download = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.includes('下载 PDF')) as HTMLButtonElement;
+    const download = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('下载 PDF'),
+    ) as HTMLButtonElement;
     download.click();
     await flushPromises();
     await new Promise((resolve) => window.setTimeout(resolve, 0));

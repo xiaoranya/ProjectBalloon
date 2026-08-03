@@ -91,11 +91,44 @@ export interface PracticeProgress {
   solvedAt: string | null;
   updatedAt: string;
 }
-export interface Editorial { problemId: number; langCode: string; title: string; bodyHtml: string; bodyMarkdown?: string; unlockPolicy: string; unlocked: boolean; updatedAt: string; }
-export interface VirtualSession { id:number;title:string;startAt:string;endAt:string;serverTime:string;status:'SCHEDULED'|'RUNNING'|'ENDED'|'ARCHIVED';totalProblems:number;solvedProblems:number; }
-export interface VirtualProblem { problemId:number;slug:string;title:string;position:number;solved:boolean;attempts:number; }
-export interface VirtualSessionDetail { session:VirtualSession;problems:VirtualProblem[]; }
-export interface PracticeSettings { dailySubmissionLimit:number; concurrentJudgingLimit:number; sourceRetentionDays:number; updatedAt:string; }
+export interface Editorial {
+  problemId: number;
+  langCode: string;
+  title: string;
+  bodyHtml: string;
+  bodyMarkdown?: string;
+  unlockPolicy: string;
+  unlocked: boolean;
+  updatedAt: string;
+}
+export interface VirtualSession {
+  id: number;
+  title: string;
+  startAt: string;
+  endAt: string;
+  serverTime: string;
+  status: 'SCHEDULED' | 'RUNNING' | 'ENDED' | 'ARCHIVED';
+  totalProblems: number;
+  solvedProblems: number;
+}
+export interface VirtualProblem {
+  problemId: number;
+  slug: string;
+  title: string;
+  position: number;
+  solved: boolean;
+  attempts: number;
+}
+export interface VirtualSessionDetail {
+  session: VirtualSession;
+  problems: VirtualProblem[];
+}
+export interface PracticeSettings {
+  dailySubmissionLimit: number;
+  concurrentJudgingLimit: number;
+  sourceRetentionDays: number;
+  updatedAt: string;
+}
 
 export const trainingApi = {
   problemBank(page = 0, size = 50, tag?: string, difficulty?: number) {
@@ -116,15 +149,50 @@ export const trainingApi = {
   enroll(id: number) {
     return apiRequest<TrainingEnrollment>(`/api/training/sets/${id}/enroll`, { method: 'POST' });
   },
-  submit(problemId: number, language: string, source: string, trainingEnrollmentId?: number, virtualSessionId?: number) {
+  submit(
+    problemId: number,
+    language: string,
+    source: string,
+    trainingEnrollmentId?: number,
+    virtualSessionId?: number,
+  ) {
     const body = new FormData();
-    body.append('metadata', JSON.stringify({ problemId, language, ...(trainingEnrollmentId ? { trainingEnrollmentId } : {}), ...(virtualSessionId ? { virtualSessionId } : {}) }));
-    const extension = language === 'cpp' ? 'cpp' : language === 'java' ? 'java' : language === 'python' ? 'py' : language === 'output' ? 'zip' : 'c';
-    body.append('source', new File([source], `Main.${extension}`, { type: language === 'output' ? 'application/zip' : 'text/plain' }));
-    return apiRequest<{ submissionId: number; judgementId: string; status: string; submittedAt: string }>('/api/practice/submissions', { method: 'POST', body });
+    body.append(
+      'metadata',
+      JSON.stringify({
+        problemId,
+        language,
+        ...(trainingEnrollmentId ? { trainingEnrollmentId } : {}),
+        ...(virtualSessionId ? { virtualSessionId } : {}),
+      }),
+    );
+    const extension =
+      language === 'cpp'
+        ? 'cpp'
+        : language === 'java'
+          ? 'java'
+          : language === 'python'
+            ? 'py'
+            : language === 'output'
+              ? 'zip'
+              : 'c';
+    body.append(
+      'source',
+      new File([source], `Main.${extension}`, {
+        type: language === 'output' ? 'application/zip' : 'text/plain',
+      }),
+    );
+    return apiRequest<{
+      submissionId: number;
+      judgementId: string;
+      status: string;
+      submittedAt: string;
+    }>('/api/practice/submissions', { method: 'POST', body });
   },
   submissions() {
-    return apiRequest<PageResponse<PracticeSubmission>>('/api/practice/submissions?page=0&size=100');
+    return apiRequest<PageResponse<PracticeSubmission>>(
+      '/api/practice/submissions?page=0&size=100',
+    );
   },
   submission(id: number) {
     return apiRequest<PracticeSubmissionDetail>(`/api/practice/submissions/${id}`);
@@ -132,15 +200,59 @@ export const trainingApi = {
   progress() {
     return apiRequest<PracticeProgress[]>('/api/practice/progress');
   },
-  favorites() { return apiRequest<BankProblem[]>('/api/practice/favorites'); },
-  favorite(problemId: number, favorite: boolean) { return apiRequest<{ problemId: number; favorite: boolean }>(`/api/practice/problems/${problemId}/favorite`, { method: 'PUT', body: { favorite } }); },
-  editorial(problemId: number, lang = 'en') { return apiRequest<Editorial>(`/api/practice/problems/${problemId}/editorial?lang=${encodeURIComponent(lang)}`); },
-  virtualSessions() { return apiRequest<VirtualSession[]>('/api/practice/virtual-sessions'); },
-  virtualSession(id:number) { return apiRequest<VirtualSessionDetail>(`/api/practice/virtual-sessions/${id}`); },
-  archiveVirtualSession(id:number) { return apiRequest<VirtualSession>(`/api/practice/virtual-sessions/${id}/archive`,{method:'POST'}); },
-  createVirtualSession(payload:{title:string;durationMinutes:number;problemIds:number[]}) { return apiRequest<VirtualSession>('/api/practice/virtual-sessions',{method:'POST',body:payload}); },
-  practiceSettings() { return apiRequest<PracticeSettings>('/api/admin/practice/settings'); },
-  updatePracticeSettings(payload:Omit<PracticeSettings,'updatedAt'>) { return apiRequest<PracticeSettings>('/api/admin/practice/settings',{method:'PUT',body:payload}); },
-  adminEditorial(problemId:number, lang='en') { return apiRequest<Editorial>(`/api/admin/problems/${problemId}/editorials/${encodeURIComponent(lang)}`); },
-  saveEditorial(problemId:number, lang:string, payload:{title:string;body:string;unlockPolicy:string;published:boolean}) { return apiRequest<Editorial>(`/api/admin/problems/${problemId}/editorials/${encodeURIComponent(lang)}`,{method:'PUT',body:payload}); },
+  favorites() {
+    return apiRequest<BankProblem[]>('/api/practice/favorites');
+  },
+  favorite(problemId: number, favorite: boolean) {
+    return apiRequest<{ problemId: number; favorite: boolean }>(
+      `/api/practice/problems/${problemId}/favorite`,
+      { method: 'PUT', body: { favorite } },
+    );
+  },
+  editorial(problemId: number, lang = 'en') {
+    return apiRequest<Editorial>(
+      `/api/practice/problems/${problemId}/editorial?lang=${encodeURIComponent(lang)}`,
+    );
+  },
+  virtualSessions() {
+    return apiRequest<VirtualSession[]>('/api/practice/virtual-sessions');
+  },
+  virtualSession(id: number) {
+    return apiRequest<VirtualSessionDetail>(`/api/practice/virtual-sessions/${id}`);
+  },
+  archiveVirtualSession(id: number) {
+    return apiRequest<VirtualSession>(`/api/practice/virtual-sessions/${id}/archive`, {
+      method: 'POST',
+    });
+  },
+  createVirtualSession(payload: { title: string; durationMinutes: number; problemIds: number[] }) {
+    return apiRequest<VirtualSession>('/api/practice/virtual-sessions', {
+      method: 'POST',
+      body: payload,
+    });
+  },
+  practiceSettings() {
+    return apiRequest<PracticeSettings>('/api/admin/practice/settings');
+  },
+  updatePracticeSettings(payload: Omit<PracticeSettings, 'updatedAt'>) {
+    return apiRequest<PracticeSettings>('/api/admin/practice/settings', {
+      method: 'PUT',
+      body: payload,
+    });
+  },
+  adminEditorial(problemId: number, lang = 'en') {
+    return apiRequest<Editorial>(
+      `/api/admin/problems/${problemId}/editorials/${encodeURIComponent(lang)}`,
+    );
+  },
+  saveEditorial(
+    problemId: number,
+    lang: string,
+    payload: { title: string; body: string; unlockPolicy: string; published: boolean },
+  ) {
+    return apiRequest<Editorial>(
+      `/api/admin/problems/${problemId}/editorials/${encodeURIComponent(lang)}`,
+      { method: 'PUT', body: payload },
+    );
+  },
 };

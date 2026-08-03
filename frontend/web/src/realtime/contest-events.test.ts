@@ -51,8 +51,14 @@ describe('Rust contest SSE client', () => {
 
     const source = EventSourceMock.instances[0];
     expect(source.url).toBe('/api/team/events/contests/7');
-    source.message({ ...baseEvent, type: 'CLARIFICATION_UPDATED', payload: { clarificationId: 9, action: 'REPLIED' } });
-    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'CLARIFICATION_UPDATED' }));
+    source.message({
+      ...baseEvent,
+      type: 'CLARIFICATION_UPDATED',
+      payload: { clarificationId: 9, action: 'REPLIED' },
+    });
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'CLARIFICATION_UPDATED' }),
+    );
     subscription.stop();
     expect(source.close).toHaveBeenCalled();
   });
@@ -96,9 +102,11 @@ describe('Rust contest SSE client', () => {
       type: 'PRINT_REQUEST_UPDATED',
       payload: { printRequestId: 19, action: 'COMPLETED' },
     });
-    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
-      payload: { printRequestId: 19, action: 'COMPLETED' },
-    }));
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { printRequestId: 19, action: 'COMPLETED' },
+      }),
+    );
     subscription.stop();
   });
 
@@ -176,7 +184,12 @@ describe('Rust contest SSE client', () => {
 
   it('does not overlap fallback polls while an async refresh is pending', async () => {
     let resolvePoll!: () => void;
-    const poll = vi.fn(() => new Promise<void>((resolve) => { resolvePoll = resolve; }));
+    const poll = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvePoll = resolve;
+        }),
+    );
     const subscription = subscribeContestEvents({
       contestId: 7,
       scope: 'TEAM',

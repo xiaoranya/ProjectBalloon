@@ -2,19 +2,32 @@
   <el-container direction="vertical" class="page-section">
     <el-main class="page-body">
       <ElSkeleton v-if="loading" :rows="10" animated />
-      <ElAlert v-else-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false">
-        <template #default><ElButton link type="primary" @click="loadProblem">重新加载</ElButton></template>
+      <ElAlert
+        v-else-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+      >
+        <template #default
+          ><ElButton link type="primary" @click="loadProblem">重新加载</ElButton></template
+        >
       </ElAlert>
       <template v-else-if="problem">
         <div class="problem-heading">
-          <ElButton link :icon="ArrowLeft" @click="router.push(`/contests/${contestId}/problems`)">返回题目列表</ElButton>
+          <ElButton link :icon="ArrowLeft" @click="router.push(`/contests/${contestId}/problems`)"
+            >返回题目列表</ElButton
+          >
           <div class="problem-title-line">
             <span class="large-alias" :style="{ '--problem-color': problem.color || '#2563eb' }">
               {{ problem.alias }}
             </span>
             <div>
               <h1>{{ problem.title }}</h1>
-              <p>{{ problem.timeLimitMs }} ms · {{ problem.memoryLimitMb }} MB · 输出限制 {{ problem.outputLimitKb }} KiB</p>
+              <p>
+                {{ problem.timeLimitMs }} ms · {{ problem.memoryLimitMb }} MB · 输出限制
+                {{ problem.outputLimitKb }} KiB
+              </p>
             </div>
           </div>
         </div>
@@ -25,7 +38,11 @@
               <div v-if="problem.statement" class="statement-language">
                 <ElTag effect="plain">{{ problem.statement.langCode }}</ElTag>
               </div>
-              <div v-if="problem.statement" class="markdown-body" v-html="problem.statement.renderedHtml"></div>
+              <div
+                v-if="problem.statement"
+                class="markdown-body"
+                v-html="problem.statement.renderedHtml"
+              ></div>
               <ElEmpty v-else description="暂无已发布题面" />
             </article>
           </ElCol>
@@ -112,7 +129,15 @@
                   class="wide-button"
                   native-type="submit"
                   :loading="submitting"
-                  :disabled="contest?.status !== 'RUNNING' || !language || (language === 'output' ? !sourceFile : codeMode === 'file' ? !codeFile : !source.trim())"
+                  :disabled="
+                    contest?.status !== 'RUNNING' ||
+                    !language ||
+                    (language === 'output'
+                      ? !sourceFile
+                      : codeMode === 'file'
+                        ? !codeFile
+                        : !source.trim())
+                  "
                 >
                   {{ language === 'output' ? '提交输出' : '提交代码' }}
                 </ElButton>
@@ -240,10 +265,12 @@ function onCodeFileRemove() {
 
 async function submit() {
   if (!language.value) return;
-  let file: File | null = null;
+  let file: File;
   if (language.value === 'output') {
+    if (!sourceFile.value) return;
     file = sourceFile.value;
   } else if (codeMode.value === 'file') {
+    if (!codeFile.value) return;
     file = codeFile.value;
   } else {
     if (!source.value.trim()) return;
@@ -253,7 +280,6 @@ async function submit() {
     }
     file = new File([source.value], sourceFileName(), { type: 'text/plain' });
   }
-  if (!file) return;
   submitting.value = true;
   submitError.value = '';
   try {
@@ -267,14 +293,18 @@ async function submit() {
   }
 }
 
-watch([contestId, problemId], () => {
-  problem.value = null;
-  source.value = '';
-  sourceFile.value = null;
-  codeFile.value = null;
-  codeMode.value = 'editor';
-  void loadProblem();
-}, { immediate: true });
+watch(
+  [contestId, problemId],
+  () => {
+    problem.value = null;
+    source.value = '';
+    sourceFile.value = null;
+    codeFile.value = null;
+    codeMode.value = 'editor';
+    void loadProblem();
+  },
+  { immediate: true },
+);
 
 watch(language, () => {
   codeFile.value = null;
@@ -396,7 +426,7 @@ watch(language, () => {
   padding: 18px;
   color: #dbeafe;
   background: #101827;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   font-size: 13px;
   line-height: 1.65;
 }

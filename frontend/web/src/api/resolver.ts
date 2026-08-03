@@ -70,31 +70,60 @@ export interface ResolverSources {
   finalSnapshot: ResolverSourceSnapshot;
 }
 
-function runPath(id: number, suffix = '') { return `/api/admin/resolver-runs/${id}${suffix}`; }
+function runPath(id: number, suffix = '') {
+  return `/api/admin/resolver-runs/${id}${suffix}`;
+}
 function command(id: number, action: string, expectedVersion: number) {
-  return apiRequest<ResolverRun>(runPath(id, `/${action}`), { method: 'POST', body: { expectedVersion } });
+  return apiRequest<ResolverRun>(runPath(id, `/${action}`), {
+    method: 'POST',
+    body: { expectedVersion },
+  });
 }
 
 export const resolverApi = {
-  list(contestId: number) { return apiRequest<ResolverRun[]>(`/api/admin/contests/${contestId}/resolver-runs`); },
-  sources(contestId: number) { return apiRequest<ResolverSources>(`/api/admin/contests/${contestId}/resolver-sources`); },
+  list(contestId: number) {
+    return apiRequest<ResolverRun[]>(`/api/admin/contests/${contestId}/resolver-runs`);
+  },
+  sources(contestId: number) {
+    return apiRequest<ResolverSources>(`/api/admin/contests/${contestId}/resolver-sources`);
+  },
   create(contestId: number, publicSnapshotId: number, finalSnapshotId: number, official: boolean) {
     return apiRequest<ResolverRun>(`/api/admin/contests/${contestId}/resolver-runs`, {
-      method: 'POST', body: { publicSnapshotId, finalSnapshotId, official },
+      method: 'POST',
+      body: { publicSnapshotId, finalSnapshotId, official },
     });
   },
-  get(id: number) { return apiRequest<ResolverRun>(runPath(id)); },
-  publicState(id: number) { return apiRequest<ResolverPublicRun>(`/api/public/resolver-runs/${id}/state`); },
-  events(id: number) { return apiRequest<ResolverEvent[]>(runPath(id, '/events')); },
-  start(id: number, version: number) { return command(id, 'start', version); },
-  next(id: number, version: number) { return command(id, 'next', version); },
-  previous(id: number, version: number) { return command(id, 'previous', version); },
-  pause(id: number, version: number) { return command(id, 'pause', version); },
-  resume(id: number, version: number) { return command(id, 'resume', version); },
-  complete(id: number, version: number) { return command(id, 'complete', version); },
+  get(id: number) {
+    return apiRequest<ResolverRun>(runPath(id));
+  },
+  publicState(id: number) {
+    return apiRequest<ResolverPublicRun>(`/api/public/resolver-runs/${id}/state`);
+  },
+  events(id: number) {
+    return apiRequest<ResolverEvent[]>(runPath(id, '/events'));
+  },
+  start(id: number, version: number) {
+    return command(id, 'start', version);
+  },
+  next(id: number, version: number) {
+    return command(id, 'next', version);
+  },
+  previous(id: number, version: number) {
+    return command(id, 'previous', version);
+  },
+  pause(id: number, version: number) {
+    return command(id, 'pause', version);
+  },
+  resume(id: number, version: number) {
+    return command(id, 'resume', version);
+  },
+  complete(id: number, version: number) {
+    return command(id, 'complete', version);
+  },
   autoPlay(id: number, expectedVersion: number, enabled: boolean, intervalMilliseconds: number) {
     return apiRequest<ResolverRun>(runPath(id, '/auto-play'), {
-      method: 'POST', body: { expectedVersion, enabled, intervalMilliseconds },
+      method: 'POST',
+      body: { expectedVersion, enabled, intervalMilliseconds },
     });
   },
 };

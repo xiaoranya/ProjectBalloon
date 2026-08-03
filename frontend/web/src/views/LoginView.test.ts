@@ -7,7 +7,10 @@ const route = { query: {} };
 vi.mock('../auth/session', () => ({
   useSession: () => ({ state: { loading: false }, login: mocks.login, logout: mocks.logout }),
 }));
-vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ replace: mocks.replace }) }));
+vi.mock('vue-router', () => ({
+  useRoute: () => route,
+  useRouter: () => ({ replace: mocks.replace }),
+}));
 
 const individual = {
   id: 4,
@@ -26,7 +29,11 @@ describe('LoginView', () => {
     mocks.logout.mockResolvedValue(undefined);
   });
 
-  async function submit(wrapper: ReturnType<typeof mount>, username = 'alice', password = 'password') {
+  async function submit(
+    wrapper: ReturnType<typeof mount>,
+    username = 'alice',
+    password = 'password',
+  ) {
     const inputs = wrapper.findAll('input');
     await inputs[0].setValue(username);
     await inputs[1].setValue(password);

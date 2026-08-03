@@ -2,17 +2,44 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminProblemEditorView from './AdminProblemEditorView.vue';
 
-const { getProblem, updateProblem, listTestdataVersions, listAttachments, listStatements, deleteStatement, routeParams, routeQuery, routerPush } = vi.hoisted(() => ({
-  getProblem: vi.fn(), updateProblem: vi.fn(), listTestdataVersions: vi.fn(), listAttachments: vi.fn(), listStatements: vi.fn(), deleteStatement: vi.fn(),
-  routeParams: { problemId: '7' as string | undefined }, routeQuery: {} as Record<string, string>,
+const {
+  getProblem,
+  updateProblem,
+  listTestdataVersions,
+  listAttachments,
+  listStatements,
+  deleteStatement,
+  routeParams,
+  routeQuery,
+  routerPush,
+} = vi.hoisted(() => ({
+  getProblem: vi.fn(),
+  updateProblem: vi.fn(),
+  listTestdataVersions: vi.fn(),
+  listAttachments: vi.fn(),
+  listStatements: vi.fn(),
+  deleteStatement: vi.fn(),
+  routeParams: { problemId: '7' as string | undefined },
+  routeQuery: {} as Record<string, string>,
   routerPush: vi.fn(),
 }));
 vi.mock('../api/admin-problems', () => ({
   adminProblemApi: {
-    getProblem, updateProblem, createProblem: vi.fn(), upsertStatement: vi.fn(),
-    uploadAttachment: vi.fn(), deleteAttachment: vi.fn(), downloadAttachment: vi.fn(),
-    uploadTestdata: vi.fn(), downloadTestdata: vi.fn(), listTestdataVersions,
-    downloadTestdataVersion: vi.fn(), activateTestdataVersion: vi.fn(), listAttachments, listStatements, deleteStatement,
+    getProblem,
+    updateProblem,
+    createProblem: vi.fn(),
+    upsertStatement: vi.fn(),
+    uploadAttachment: vi.fn(),
+    deleteAttachment: vi.fn(),
+    downloadAttachment: vi.fn(),
+    uploadTestdata: vi.fn(),
+    downloadTestdata: vi.fn(),
+    listTestdataVersions,
+    downloadTestdataVersion: vi.fn(),
+    activateTestdataVersion: vi.fn(),
+    listAttachments,
+    listStatements,
+    deleteStatement,
   },
 }));
 vi.mock('vue-router', () => ({
@@ -21,10 +48,20 @@ vi.mock('vue-router', () => ({
 }));
 
 const problem = {
-  id: 7, slug: 'two-sum', title: 'Two Sum', timeLimitMs: 1000, memoryLimitMb: 256,
-  outputLimitKb: 65536, languages: ['cpp'], testdataVersion: 1, testdataSha256: 'abc',
-  defaultLangCode: 'en', createdBy: 1, version: 3,
-  createdAt: '2026-07-20T00:00:00Z', updatedAt: '2026-07-20T00:00:00Z',
+  id: 7,
+  slug: 'two-sum',
+  title: 'Two Sum',
+  timeLimitMs: 1000,
+  memoryLimitMb: 256,
+  outputLimitKb: 65536,
+  languages: ['cpp'],
+  testdataVersion: 1,
+  testdataSha256: 'abc',
+  defaultLangCode: 'en',
+  createdBy: 1,
+  version: 3,
+  createdAt: '2026-07-20T00:00:00Z',
+  updatedAt: '2026-07-20T00:00:00Z',
 };
 
 describe('AdminProblemEditorView', () => {
@@ -34,14 +71,27 @@ describe('AdminProblemEditorView', () => {
     routerPush.mockReset();
     getProblem.mockResolvedValue(problem);
     listTestdataVersions.mockResolvedValue([
-      { problemId: 7, version: 1, caseCount: 1, bytes: 20, sha256: 'abc', uploadedByUserId: 1,
-        active: true, createdAt: '2026-07-20T00:00:00Z' },
+      {
+        problemId: 7,
+        version: 1,
+        caseCount: 1,
+        bytes: 20,
+        sha256: 'abc',
+        uploadedByUserId: 1,
+        active: true,
+        createdAt: '2026-07-20T00:00:00Z',
+      },
     ]);
     listAttachments.mockResolvedValue([]);
-    listStatements.mockResolvedValue([{
-      problemId: 7, langCode: 'en', body: '# Existing statement',
-      renderedHtml: '<h1>Existing statement</h1>', updatedAt: '2026-07-20T00:00:00Z',
-    }]);
+    listStatements.mockResolvedValue([
+      {
+        problemId: 7,
+        langCode: 'en',
+        body: '# Existing statement',
+        renderedHtml: '<h1>Existing statement</h1>',
+        updatedAt: '2026-07-20T00:00:00Z',
+      },
+    ]);
     updateProblem.mockResolvedValue({ ...problem, version: 4 });
   });
 
@@ -74,16 +124,21 @@ describe('AdminProblemEditorView', () => {
   it('submits the loaded optimistic-concurrency version when saving metadata', async () => {
     const wrapper = mount(AdminProblemEditorView);
     await flushPromises();
-    const saveButton = wrapper.findAll('button').find((button) => button.text().includes('保存基本信息'));
+    const saveButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('保存基本信息'));
     await saveButton?.trigger('click');
     await flushPromises();
 
-    expect(updateProblem).toHaveBeenCalledWith(7, expect.objectContaining({
-      expectedVersion: 3,
-      slug: 'two-sum',
-      title: 'Two Sum',
-      languages: ['cpp'],
-      defaultLangCode: 'en',
-    }));
+    expect(updateProblem).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({
+        expectedVersion: 3,
+        slug: 'two-sum',
+        title: 'Two Sum',
+        languages: ['cpp'],
+        defaultLangCode: 'en',
+      }),
+    );
   });
 });
