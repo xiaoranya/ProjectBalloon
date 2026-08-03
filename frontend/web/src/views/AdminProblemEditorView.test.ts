@@ -46,6 +46,14 @@ vi.mock('vue-router', () => ({
   useRoute: () => ({ params: routeParams, query: routeQuery }),
   useRouter: () => ({ push: routerPush, replace: vi.fn() }),
 }));
+vi.mock('../components/CodeEditor.vue', () => ({
+  default: {
+    name: 'CodeEditor',
+    props: ['modelValue', 'language', 'readonly', 'height', 'placeholder'],
+    emits: ['update:modelValue'],
+    template: '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+}));
 
 const problem = {
   id: 7,

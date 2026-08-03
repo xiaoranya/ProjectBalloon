@@ -184,10 +184,10 @@
                   >移除草稿</ElButton
                 >
               </ElSpace>
-              <ElInput
+              <CodeEditor
                 v-model="statement.body"
-                type="textarea"
-                :rows="14"
+                language="markdown"
+                height="360px"
                 placeholder="Markdown 题面正文"
               />
               <ElRow justify="end" class="problem-editor-actions">

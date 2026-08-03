@@ -8,6 +8,7 @@ import * as monaco from 'monaco-editor/editor/editor.api';
 import 'monaco-editor/languages/definitions/cpp/register';
 import 'monaco-editor/languages/definitions/java/register';
 import 'monaco-editor/languages/definitions/python/register';
+import 'monaco-editor/languages/definitions/markdown/register';
 import 'monaco-editor/editor/contrib/suggest/browser/suggestController.js';
 import editorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import { registerCompletionProviders } from './monacoCompletion';
@@ -22,8 +23,9 @@ const props = withDefaults(
     language?: string;
     readonly?: boolean;
     height?: string;
+    placeholder?: string;
   }>(),
-  { language: 'cpp', readonly: false, height: '360px' },
+  { language: 'cpp', readonly: false, height: '360px', placeholder: '' },
 );
 const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>();
 
@@ -34,6 +36,7 @@ let syncTimer: number | undefined;
 function languageId(language: string): string {
   if (language === 'java') return 'java';
   if (language === 'python') return 'python';
+  if (language === 'markdown') return 'markdown';
   return 'cpp';
 }
 
@@ -56,6 +59,7 @@ onMounted(() => {
     folding: true,
     glyphMargin: false,
     wordWrap: 'off',
+    placeholder: props.placeholder || undefined,
     theme: 'vs',
   });
   editor.onDidChangeModelContent(() => {
