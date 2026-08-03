@@ -15,6 +15,14 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../api/training', () => ({ trainingApi: mocks }));
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }));
+vi.mock('../components/CodeEditor.vue', () => ({
+  default: {
+    name: 'CodeEditor',
+    props: ['modelValue', 'language', 'readonly', 'height'],
+    emits: ['update:modelValue'],
+    template: '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+}));
 
 const problems = [
   { id: 1, slug: 'accepted', title: '已通过题', statement: '<p>Accepted</p>', difficulty: 1, tags: ['easy'], publishedAt: null },

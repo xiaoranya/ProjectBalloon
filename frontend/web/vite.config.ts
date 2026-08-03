@@ -13,6 +13,11 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
   },
+  resolve: {
+    alias: {
+      'monaco-editor/editor/editor.worker.js?worker': `${fileURLToPath(new URL('./node_modules/monaco-editor/esm/vs/editor/editor.worker.js', import.meta.url))}?worker`,
+    },
+  },
   plugins: [
     vue(),
     AutoImport({

@@ -6,6 +6,14 @@ const mocks = vi.hoisted(() => ({ getSubmission: vi.fn(), push: vi.fn() }));
 const route = { params: { contestId: '7', submissionId: '9' } };
 vi.mock('../api/contest', () => ({ contestApi: { getSubmission: mocks.getSubmission } }));
 vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ push: mocks.push }) }));
+vi.mock('../components/CodeEditor.vue', () => ({
+  default: {
+    name: 'CodeEditor',
+    props: ['modelValue', 'language', 'readonly', 'height'],
+    emits: ['update:modelValue'],
+    template: '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+}));
 
 const submission = {
   id: 9,
@@ -58,7 +66,8 @@ describe('SubmissionDetailView', () => {
     expect(mocks.getSubmission).toHaveBeenCalledWith(7, 9);
     expect(wrapper.text()).toContain('答案正确');
     expect(wrapper.text()).toContain('compiled');
-    expect(wrapper.text()).toContain('int main() { return 0; }');
+    const sourceEditor = wrapper.find('textarea').element as HTMLTextAreaElement;
+    expect(sourceEditor.value).toContain('int main() { return 0; }');
     expect(wrapper.text()).toContain('12 ms');
     wrapper.unmount();
   });

@@ -101,7 +101,13 @@
             <span class="muted-note">SHA-256 {{ submission.sourceSha256 ?? '—' }}</span>
           </div>
         </template>
-        <pre><code>{{ submission.source }}</code></pre>
+        <CodeEditor
+          v-model="submission.source"
+          :language="submission.language"
+          readonly
+          height="420px"
+          class="source-editor"
+        />
       </ElCard>
       </template>
     </el-main>
@@ -112,6 +118,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowLeft } from '@element-plus/icons-vue';
+import CodeEditor from '../components/CodeEditor.vue';
 import { contestApi } from '../api/contest';
 import { getErrorMessage } from '../api/client';
 import type { SubmissionDetail } from '../api/types';
@@ -314,8 +321,7 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
-.markdown-body pre,
-.source-card pre {
+.markdown-body pre {
   overflow-x: auto;
   border-radius: 0;
   padding: 18px;
@@ -326,11 +332,9 @@ onUnmounted(() => {
   line-height: 1.65;
 }
 
-.source-card pre {
-  max-height: 540px;
-  margin: 0;
-  color: #dbeafe;
-  white-space: pre;
+.source-editor {
+  margin-top: 4px;
+  border: 0;
 }
 
 @media (max-width: 640px) {
