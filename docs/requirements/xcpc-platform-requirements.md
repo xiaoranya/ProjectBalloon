@@ -115,8 +115,6 @@ bin/
   bootstrap-admin
 
 web/
-judge-images/
-  judge-runtime-*.tar
 systemd/
 config/
 nginx/
@@ -130,16 +128,27 @@ docs/
   disaster-recovery.md
 ```
 
+判题 Runtime 镜像不随二进制发行包发布，单独提供
+`project-balloon-<版本>-<平台>-judge-images.tar.gz` 归档，解压后通过
+`install.sh --judge-images judge-images` 导入：
+
+```text
+judge-images/
+  judge-runtime-*.tar
+  SHA256SUMS
+```
+
 现场部署流程：
 
 ```text
-拷贝二进制发行包到服务器
+拷贝二进制发行包和对应的 judge-images 归档到服务器
   ↓
 部署 PostgreSQL、Redis、RabbitMQ、RustFS
   ↓
 在 app/gateway 主机执行 install.sh --role api --no-start
   ↓
-在 judge 主机部署 Docker/Podman，并执行 install.sh --role worker --no-start
+在 judge 主机部署 Docker/Podman，
+  并执行 install.sh --role worker --no-start --judge-images ../judge-images
   ↓
 填写 /etc/project-balloon/project-balloon.env
   ↓

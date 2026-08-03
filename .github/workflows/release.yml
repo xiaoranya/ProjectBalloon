@@ -27,31 +27,26 @@ jobs:
             target: x86_64-unknown-linux-gnu
             package_target: linux-amd64
             package_kind: deployment
-            runtime_images: true
           - name: linux-arm64
             os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             package_target: linux-arm64
             package_kind: deployment
-            runtime_images: true
           - name: macos-x86_64
             os: macos-15-intel
             target: x86_64-apple-darwin
             package_target: macos-x86_64
             package_kind: portable
-            runtime_images: false
           - name: macos-arm64
             os: macos-15
             target: aarch64-apple-darwin
             package_target: macos-arm64
             package_kind: portable
-            runtime_images: false
           - name: windows-x86_64
             os: windows-2022
             target: x86_64-pc-windows-msvc
             package_target: windows-x86_64
             package_kind: portable
-            runtime_images: false
     defaults:
       run:
         shell: bash
@@ -78,8 +73,6 @@ jobs:
             echo "runner architecture $actual does not match target ${{ matrix.target }}" >&2
             exit 1
           }
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-        if: matrix.runtime_images
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           toolchain: 1.94.0
@@ -103,12 +96,6 @@ jobs:
           }
       - name: Build target binaries and frontend
         run: scripts/release/build-binaries.sh
-      - name: Build Judge Runtime images
-        if: matrix.runtime_images
-        run: scripts/build-judge-runtimes.sh
-      - name: Export Judge Runtime images
-        if: matrix.runtime_images
-        run: scripts/release/export-judge-images.sh
       - name: Create release archive
         run: |
           set -euo pipefail
@@ -142,10 +129,63 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  judge-images:
+    name: Judge Runtime images (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            os: ubuntu-24.04
+            package_target: linux-amd64
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            package_target: linux-arm64
+    env:
+      PROJECT_BALLOON_PACKAGE_TARGET: ${{ matrix.package_target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify runner architecture
+        run: |
+          set -euo pipefail
+          actual="$(uname -m)"
+          normalized="$actual"
+          [ "$normalized" = "arm64" ] && normalized='aarch64'
+          case "${{ matrix.package_target }}" in
+            *-amd64) expected='x86_64' ;;
+            *-arm64) expected='aarch64' ;;
+            *) echo "unsupported package target: ${{ matrix.package_target }}" >&2; exit 1 ;;
+          esac
+          [ "$normalized" = "$expected" ] || {
+            echo "runner architecture $actual does not match target ${{ matrix.package_target }}" >&2
+            exit 1
+          }
+      - name: Build Judge Runtime images
+        run: scripts/build-judge-runtimes.sh
+      - name: Export Judge Runtime images
+        run: scripts/release/export-judge-images.sh
+      - name: Package Judge Runtime images
+        run: scripts/release/make-judge-images-package.sh
+      - name: Verify Judge Runtime image archive
+        run: |
+          set -euo pipefail
+          archive="$(find dist -mindepth 1 -maxdepth 1 -type f -name '*judge-images*.tar.gz' -print -quit)"
+          [ -n "$archive" ] || { echo 'judge images archive was not created' >&2; exit 1; }
+          tar -tzf "$archive" >/dev/null
+          (cd dist && sha256sum "$(basename "$archive")" > SHA256SUMS)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: judge-images-${{ matrix.package_target }}
+          path: dist/project-balloon-*-judge-images.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
   publish:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: package
+    needs: [package, judge-images]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -154,6 +194,11 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: release-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: judge-images-*
           path: dist
           merge-multiple: true
       - name: Create release checksums
@@ -167,6 +212,11 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           make_latest: ${{ !contains(github.ref_name, '-') }}
           body: |
+            Per-platform binary packages: linux-amd64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64.
+            Judge Runtime images are published separately for linux-amd64 and linux-arm64 as
+            project-balloon-<version>-<target>-judge-images.tar.gz; extract the matching archive and pass
+            its judge-images directory to install.sh with --judge-images.
+
             Platform validation notice: only Linux x86_64 has been tested end to end.
             Linux arm64, macOS, and Windows artifacts contain build/package checks only and are not runtime- or installation-validated yet.
           files: |

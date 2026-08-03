@@ -33,17 +33,20 @@ Acceptable development or rehearsal deployments may use fewer machines, but prod
 
 ## Binary Release Package Mapping
 
-Source repository directories map to the release package as follows:
+Source repository directories map to the release packages as follows:
 
 | Source | Binary package output |
 |---|---|
 | Rust release binaries | `bin/` |
 | Vue production build | `web/` |
-| Judge Runtime images | `judge-images/*.tar` |
 | systemd units and environment templates | `systemd/`, `config/` |
 | Nginx template | `nginx/` |
 | backup scripts | `scripts/backup/` |
 | deployment script libraries | `scripts/lib/` |
+
+Judge Runtime images are no longer bundled. They are published as a separate
+archive, `project-balloon-<version>-<target>-judge-images.tar.gz`, and imported
+with `install.sh --judge-images` on Judge hosts.
 
 Generated release package shape:
 
@@ -51,7 +54,6 @@ Generated release package shape:
 project-balloon-vX.Y.Z-linux-amd64/
   bin/
   web/
-  judge-images/
   systemd/
   config/
   nginx/
@@ -61,13 +63,22 @@ project-balloon-vX.Y.Z-linux-amd64/
   PACKAGE-SHA256SUMS
 ```
 
+Separate Judge Runtime image archive shape:
+
+```text
+project-balloon-vX.Y.Z-linux-amd64-judge-images.tar.gz
+  judge-images/
+    judge-runtime-*.tar
+    SHA256SUMS
+```
+
 The release workflow also builds `linux-arm64`, `macos-x86_64`,
-`macos-arm64`, and `windows-x86_64` archives. Linux arm64 receives the same
-deployment package shape with arm64 Judge Runtime images. macOS and Windows
-receive portable binary packages without the Linux installer or Judge Runtime
-archives. Only Linux x86_64 is currently tested end to end; the other targets
-are build/package outputs until their runtime and installation flows are
-validated.
+`macos-arm64`, and `windows-x86_64` binary archives. Linux arm64 receives the
+same deployment package shape, and Judge Runtime image archives are built for
+both Linux amd64 and Linux arm64. macOS and Windows receive portable binary
+packages without the Linux installer or Judge Runtime archives. Only Linux
+x86_64 is currently tested end to end; the other targets are build/package
+outputs until their runtime and installation flows are validated.
 
 ## Compose Files
 
@@ -92,11 +103,11 @@ Compose images must use fixed version tags. `latest` is not allowed for official
 ## Binary Deployment Flow
 
 ```text
-Copy binary release archive to target host
+Copy binary release archive and matching judge-images archive to target host
   -> install external PostgreSQL, Redis, RabbitMQ, and RustFS
   -> run install.sh --role api --no-start on app/gateway hosts
   -> install Docker/Podman on judge hosts
-  -> run install.sh --role worker --skip-nginx --no-start on judge hosts
+  -> run install.sh --role worker --skip-nginx --no-start --judge-images ../judge-images on judge hosts
   -> fill in /etc/project-balloon/project-balloon.env
   -> run the corresponding role again to import images and start services
   -> bootstrap the first administrator

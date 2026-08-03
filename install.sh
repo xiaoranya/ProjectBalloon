@@ -10,6 +10,7 @@ API_USER="project-balloon-api"
 WORKER_USER="project-balloon-worker"
 CONTAINER_CLI="${PROJECT_BALLOON_CONTAINER_CLI:-}"
 CONTAINER_GROUP="${PROJECT_BALLOON_CONTAINER_GROUP:-}"
+JUDGE_IMAGES_DIR="${PROJECT_BALLOON_JUDGE_IMAGES_DIR:-}"
 ROLE=all
 NO_START=0
 INSTALL_NGINX=1
@@ -18,8 +19,8 @@ usage() {
   cat <<'EOF'
 Usage: install.sh [options]
 
-Installs ProjectBalloon binaries, Judge Runtime images, systemd units, and
-the bundled frontend. PostgreSQL, Redis, RabbitMQ, RustFS, Docker/Podman,
+Installs ProjectBalloon binaries, optional Judge Runtime images, systemd units,
+and the bundled frontend. PostgreSQL, Redis, RabbitMQ, RustFS, Docker/Podman,
 CUPS, and Nginx remain host-managed prerequisites.
 
 Options:
@@ -30,6 +31,7 @@ Options:
   --config-dir PATH       Configuration directory (default: /etc/project-balloon)
   --container-cli NAME    Use docker or podman for image import
   --container-group NAME  Socket group for the Judge Worker
+  --judge-images DIR      Judge Runtime image archive directory (default: judge-images/ bundled in the package)
   -h, --help              Show this help
 EOF
 }
@@ -72,6 +74,11 @@ while [ "$#" -gt 0 ]; do
       CONTAINER_GROUP="$2"
       shift
       ;;
+    --judge-images)
+      [ "$#" -ge 2 ] || die '--judge-images requires a directory'
+      JUDGE_IMAGES_DIR="$2"
+      shift
+      ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
@@ -87,7 +94,6 @@ esac
 
 [ "$(id -u)" -eq 0 ] || die 'run this installer as root'
 [ -d "$PACKAGE_ROOT/bin" ] || die "missing binary directory in package: $PACKAGE_ROOT/bin"
-[ -d "$PACKAGE_ROOT/judge-images" ] || die "missing judge image directory in package: $PACKAGE_ROOT/judge-images"
 case "$PREFIX" in
   /|/etc|/usr|/var|/opt) die "refusing unsafe installation prefix: $PREFIX" ;;
 esac
@@ -240,18 +246,31 @@ if [ "$INSTALL_WORKER" -eq 1 ] && [ ! -S "$XCPC_SANDBOX_SOCKET" ]; then
   log "warning: sandbox socket is not available yet: $XCPC_SANDBOX_SOCKET"
 fi
 
-if [ "$INSTALL_WORKER" -eq 1 ] && [ -f "$PACKAGE_ROOT/judge-images/SHA256SUMS" ]; then
-  (cd "$PACKAGE_ROOT/judge-images" && sha256sum -c SHA256SUMS)
-fi
 if [ "$INSTALL_WORKER" -eq 1 ]; then
-  shopt -s nullglob
-  judge_archives=("$PACKAGE_ROOT"/judge-images/*.tar)
-  [ "${#judge_archives[@]}" -gt 0 ] || die 'no Judge Runtime image archives found'
-  for archive in "${judge_archives[@]}"; do
-    log "loading $(basename "$archive") with $CONTAINER_CLI"
-    "$CONTAINER_CLI" load --input "$archive" >/dev/null
-  done
-  shopt -u nullglob
+  if [ -n "$JUDGE_IMAGES_DIR" ]; then
+    [ -d "$JUDGE_IMAGES_DIR" ] || die "judge images directory not found: $JUDGE_IMAGES_DIR"
+    [ -f "$JUDGE_IMAGES_DIR/SHA256SUMS" ] \
+      || die "missing SHA256SUMS in judge images directory: $JUDGE_IMAGES_DIR"
+    (cd "$JUDGE_IMAGES_DIR" && sha256sum -c SHA256SUMS)
+    judge_archives=("$JUDGE_IMAGES_DIR"/*.tar)
+    [ "${#judge_archives[@]}" -gt 0 ] || die 'no Judge Runtime image archives found'
+    for archive in "${judge_archives[@]}"; do
+      log "loading $(basename "$archive") with $CONTAINER_CLI"
+      "$CONTAINER_CLI" load --input "$archive" >/dev/null
+    done
+  elif [ -d "$PACKAGE_ROOT/judge-images" ]; then
+    (cd "$PACKAGE_ROOT/judge-images" && sha256sum -c SHA256SUMS)
+    shopt -s nullglob
+    judge_archives=("$PACKAGE_ROOT"/judge-images/*.tar)
+    [ "${#judge_archives[@]}" -gt 0 ] || die 'no Judge Runtime image archives found'
+    for archive in "${judge_archives[@]}"; do
+      log "loading $(basename "$archive") with $CONTAINER_CLI"
+      "$CONTAINER_CLI" load --input "$archive" >/dev/null
+    done
+    shopt -u nullglob
+  else
+    die 'Judge Runtime image archives are not bundled; download the separate judge-images archive and pass --judge-images DIR'
+  fi
 fi
 
 render_unit() {
