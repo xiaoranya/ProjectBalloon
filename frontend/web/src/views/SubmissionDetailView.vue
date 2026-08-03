@@ -117,7 +117,11 @@
               <span class="muted-note">SHA-256 {{ submission.sourceSha256 ?? '—' }}</span>
             </div>
           </template>
-          <CodeEditor
+          <ElEmpty
+            v-if="submission.language === 'output'"
+            description="输出题提交为 ZIP 归档，不支持在线查看"
+          /><CodeEditor
+            v-else
             v-model="submission.source"
             :language="submission.language"
             readonly

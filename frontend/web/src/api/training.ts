@@ -9,6 +9,7 @@ export interface BankProblem {
   difficulty: number | null;
   tags: string[];
   publishedAt: string | null;
+  languages: string[];
 }
 
 export interface TrainingSet {

@@ -720,7 +720,11 @@
           </ElDescriptions>
           <ElCard shadow="never" class="source-card submission-detail-source">
             <template #header><strong>提交源码</strong></template>
-            <CodeEditor
+            <ElEmpty
+              v-if="submissionDetail.language === 'output'"
+              description="输出题提交为 ZIP 归档，不支持在线查看"
+            /><CodeEditor
+              v-else
               v-model="submissionDetail.source"
               readonly
               :language="submissionDetail.language"

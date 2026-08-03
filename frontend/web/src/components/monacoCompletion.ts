@@ -358,6 +358,7 @@ export function registerCompletionProviders(): void {
   if (registered) return;
   registered = true;
   monaco.languages.registerCompletionItemProvider('cpp', makeProvider(CPP));
+  monaco.languages.registerCompletionItemProvider('c', makeProvider(CPP));
   monaco.languages.registerCompletionItemProvider('java', makeProvider(JAVA));
   monaco.languages.registerCompletionItemProvider('python', makeProvider(PYTHON));
 }

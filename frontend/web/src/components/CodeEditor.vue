@@ -39,6 +39,7 @@ let editor: monaco.editor.IStandaloneCodeEditor | null = null;
 let syncTimer: number | undefined;
 
 function languageId(language: string): string {
+  if (language === 'c' || language === 'cpp') return language;
   if (language === 'java') return 'java';
   if (language === 'python') return 'python';
   if (language === 'markdown') return 'markdown';

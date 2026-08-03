@@ -134,7 +134,11 @@
             }}</ElDescriptionsItem></ElDescriptions
           >
           <h3>源码</h3>
-          <CodeEditor
+          <ElEmpty
+            v-if="submissionDetail.language === 'output'"
+            description="输出题提交为 ZIP 归档，不支持在线查看"
+          /><CodeEditor
+            v-else
             v-model="submissionDetail.source"
             :language="submissionDetail.language"
             readonly
@@ -187,7 +191,12 @@ const problems = ref<BankProblem[]>([]),
   editorialVisible = ref(false),
   submissionDetail = ref<PracticeSubmissionDetail>(),
   submissionVisible = ref(false);
-const languages = ['c', 'cpp', 'java', 'python'];
+const defaultLanguages = ['c', 'cpp', 'java', 'python'];
+const languages = computed(() => {
+  const allowed = selected.value?.languages;
+  if (allowed && allowed.length > 0) return allowed;
+  return defaultLanguages;
+});
 function status(id: number) {
   return progress.value.find((item) => item.problemId === id);
 }
@@ -210,7 +219,9 @@ function select(item: BankProblem) {
   selected.value = item;
   source.value = '';
   message.value = '';
-  language.value = 'cpp';
+  language.value = languages.value.includes(language.value)
+    ? language.value
+    : (languages.value[0] ?? 'cpp');
 }
 async function loadSubmissions() {
   try {
