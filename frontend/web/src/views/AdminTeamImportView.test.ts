@@ -16,6 +16,15 @@ vi.mock('../api/team-import', () => ({
   teamImportApi: { importTeams: mocks.importTeams, addMember: mocks.addMember },
 }));
 vi.mock('../auth/session', () => ({ useSession: () => ({ isContestAdmin: { value: false } }) }));
+vi.mock('../components/CodeEditor.vue', () => ({
+  default: {
+    name: 'CodeEditor',
+    props: ['modelValue', 'language', 'readonly', 'height', 'placeholder'],
+    emits: ['update:modelValue'],
+    template:
+      '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+}));
 vi.mock('element-plus', async (importOriginal) => {
   const actual = await importOriginal<typeof import('element-plus')>();
   return {

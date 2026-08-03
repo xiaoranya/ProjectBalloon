@@ -68,7 +68,10 @@
                       label="通过后解锁"
                       value="AFTER_ACCEPTED" /></ElSelect></ElFormItem
                 ><ElFormItem label="Markdown 内容"
-                  ><ElInput v-model="editorial.body" type="textarea" :rows="14" /></ElFormItem
+                  ><CodeEditor
+                    v-model="editorial.body"
+                    language="markdown"
+                    height="360px" /></ElFormItem
                 ><ElCheckbox v-model="editorial.published">发布题解</ElCheckbox>
                 <div class="editorial-actions">
                   <ElButton type="primary" :loading="savingEditorial" @click="saveEditorial"
@@ -86,6 +89,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { getErrorMessage } from '../api/client';
 import { trainingApi, type BankProblem } from '../api/training';
+import CodeEditor from '../components/CodeEditor.vue';
 const problems = ref<BankProblem[]>([]),
   editorialProblemId = ref<number>(),
   editorialLang = ref('en'),

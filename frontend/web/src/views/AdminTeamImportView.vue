@@ -83,11 +83,11 @@
             ><small>{{ drafts.length }} 支队伍，预计 {{ plannedBatchCount }} 个后台批次</small>
           </div>
         </template>
-        <ElInput
+        <CodeEditor
           v-model="source"
-          type="textarea"
-          :rows="14"
-          :disabled="importing"
+          language="json"
+          height="360px"
+          :readonly="importing"
           placeholder="粘贴 JSON 数组"
         />
         <ElRow justify="end" class="team-import-source-actions-row">
@@ -217,6 +217,7 @@ import { adminApi } from '../api/admin';
 import { getErrorMessage } from '../api/client';
 import { teamImportApi } from '../api/team-import';
 import type { Contest } from '../api/types';
+import CodeEditor from '../components/CodeEditor.vue';
 import type {
   ParticipationType,
   TeamBatchImportRequest,

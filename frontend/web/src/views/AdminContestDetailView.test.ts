@@ -21,6 +21,15 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('../api/admin-contests', () => ({ adminContestApi: api }));
 vi.mock('../auth/session', () => ({ useSession: () => ({ isSuperAdmin: api.isSuperAdmin }) }));
+vi.mock('../components/CodeEditor.vue', () => ({
+  default: {
+    name: 'CodeEditor',
+    props: ['modelValue', 'language', 'readonly', 'height'],
+    emits: ['update:modelValue'],
+    template:
+      '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+}));
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { contestId: '42' } }),
   useRouter: () => ({ push: api.push }),

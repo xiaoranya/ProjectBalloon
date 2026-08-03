@@ -51,7 +51,8 @@ vi.mock('../components/CodeEditor.vue', () => ({
     name: 'CodeEditor',
     props: ['modelValue', 'language', 'readonly', 'height', 'placeholder'],
     emits: ['update:modelValue'],
-    template: '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    template:
+      '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
 }));
 

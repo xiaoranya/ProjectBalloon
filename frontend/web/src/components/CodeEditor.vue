@@ -9,12 +9,17 @@ import 'monaco-editor/languages/definitions/cpp/register';
 import 'monaco-editor/languages/definitions/java/register';
 import 'monaco-editor/languages/definitions/python/register';
 import 'monaco-editor/languages/definitions/markdown/register';
+import 'monaco-editor/language/json/monaco.contribution.js';
 import 'monaco-editor/editor/contrib/suggest/browser/suggestController.js';
 import editorWorker from 'monaco-editor/editor/editor.worker.js?worker';
+import jsonWorker from 'monaco-editor/language/json/json.worker.js?worker';
 import { registerCompletionProviders } from './monacoCompletion';
 
 self.MonacoEnvironment = {
-  getWorker: () => new editorWorker(),
+  getWorker(_moduleId: string, label: string): Worker {
+    if (label === 'json') return new jsonWorker();
+    return new editorWorker();
+  },
 };
 
 const props = withDefaults(
@@ -37,6 +42,7 @@ function languageId(language: string): string {
   if (language === 'java') return 'java';
   if (language === 'python') return 'python';
   if (language === 'markdown') return 'markdown';
+  if (language === 'json') return 'json';
   return 'cpp';
 }
 

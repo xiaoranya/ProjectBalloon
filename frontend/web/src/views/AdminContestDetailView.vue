@@ -720,7 +720,12 @@
           </ElDescriptions>
           <ElCard shadow="never" class="source-card submission-detail-source">
             <template #header><strong>提交源码</strong></template>
-            <pre><code>{{ submissionDetail.source }}</code></pre>
+            <CodeEditor
+              v-model="submissionDetail.source"
+              readonly
+              :language="submissionDetail.language"
+              height="320px"
+            />
           </ElCard>
         </template>
       </ElDialog>
@@ -736,6 +741,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { adminContestApi, type JudgeQueueStatus, type ScoringPolicy } from '../api/admin-contests';
 import { ApiError, getErrorMessage } from '../api/client';
 import { useSession } from '../auth/session';
+import CodeEditor from '../components/CodeEditor.vue';
 import type {
   Contest,
   ContestProblem,
