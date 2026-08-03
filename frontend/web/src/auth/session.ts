@@ -49,10 +49,15 @@ async function login(username: string, password: string) {
 async function register(username: string, password: string, displayName: string) {
   state.loading = true;
   try {
-    state.user = await apiRequest<CurrentUser>('/api/auth/register', { method: 'POST', body: { username, password, displayName } });
+    state.user = await apiRequest<CurrentUser>('/api/auth/register', {
+      method: 'POST',
+      body: { username, password, displayName },
+    });
     state.initialized = true;
     return state.user;
-  } finally { state.loading = false; }
+  } finally {
+    state.loading = false;
+  }
 }
 
 async function logout() {
@@ -90,9 +95,11 @@ function clearSession() {
 setUnauthorizedHandler(clearSession);
 
 function hasPermission(role: string) {
-  return state.user?.userType === 'SUPER_ADMIN'
-    || state.user?.userType === role
-    || state.user?.roles.includes(role) === true;
+  return (
+    state.user?.userType === 'SUPER_ADMIN' ||
+    state.user?.userType === role ||
+    state.user?.roles.includes(role) === true
+  );
 }
 
 export function useSession() {
@@ -100,7 +107,9 @@ export function useSession() {
     state: readonly(state),
     isAuthenticated: computed(() => state.user !== null),
     isTeam: computed(() => state.user?.userType === 'TEAM'),
-    isStaff: computed(() => state.user !== null && !['TEAM', 'INDIVIDUAL'].includes(state.user.userType)),
+    isStaff: computed(
+      () => state.user !== null && !['TEAM', 'INDIVIDUAL'].includes(state.user.userType),
+    ),
     isIndividual: computed(() => state.user?.userType === 'INDIVIDUAL'),
     isAdmin: computed(() => ['SUPER_ADMIN', 'CONTEST_ADMIN'].includes(state.user?.userType ?? '')),
     isSuperAdmin: computed(() => state.user?.userType === 'SUPER_ADMIN'),

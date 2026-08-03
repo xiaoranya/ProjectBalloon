@@ -12,7 +12,14 @@
     </el-header>
 
     <el-main class="page-body">
-      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert">
+      <ElAlert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+        class="page-alert"
+      >
         <template #default>
           <ElButton link type="primary" @click="loadContests">重新加载</ElButton>
         </template>
@@ -29,11 +36,22 @@
           </div>
           <h2>{{ contest.name }}</h2>
           <dl class="contest-times">
-            <div><dt>开始</dt><dd>{{ formatDateTime(contest.startAt) }}</dd></div>
-            <div><dt>封榜</dt><dd>{{ formatDateTime(contest.freezeAt) }}</dd></div>
-            <div><dt>结束</dt><dd>{{ formatDateTime(contest.endAt) }}</dd></div>
+            <div>
+              <dt>开始</dt>
+              <dd>{{ formatDateTime(contest.startAt) }}</dd>
+            </div>
+            <div>
+              <dt>封榜</dt>
+              <dd>{{ formatDateTime(contest.freezeAt) }}</dd>
+            </div>
+            <div>
+              <dt>结束</dt>
+              <dd>{{ formatDateTime(contest.endAt) }}</dd>
+            </div>
           </dl>
-          <ElButton type="primary" size="large" @click="enterContest(contest.id)">进入比赛</ElButton>
+          <ElButton type="primary" size="large" @click="enterContest(contest.id)"
+            >进入比赛</ElButton
+          >
         </article>
       </div>
       <ElRow v-if="page.totalPages > 1" justify="end" class="pagination-row">
@@ -60,7 +78,13 @@ import { contestStatusLabel, formatDateTime } from '../utils/format';
 
 const router = useRouter();
 const session = useSession();
-const page = ref<PageResponse<Contest>>({ content: [], page: 0, size: 50, totalElements: 0, totalPages: 0 });
+const page = ref<PageResponse<Contest>>({
+  content: [],
+  page: 0,
+  size: 50,
+  totalElements: 0,
+  totalPages: 0,
+});
 const currentPage = ref(1);
 const loading = ref(false);
 const errorMessage = ref('');

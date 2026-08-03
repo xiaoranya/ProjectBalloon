@@ -11,13 +11,28 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }));
 describe('AdminProblemListView', () => {
   beforeEach(() => {
     listProblems.mockResolvedValue({
-      content: [{
-        id: 7, slug: 'two-sum', title: 'Two Sum', timeLimitMs: 1000, memoryLimitMb: 256,
-        outputLimitKb: 65536, languages: ['cpp', 'python'], testdataVersion: 2,
-        testdataSha256: 'abc', defaultLangCode: 'en', createdBy: 1, version: 3,
-        createdAt: '2026-07-20T00:00:00Z', updatedAt: '2026-07-20T00:00:00Z',
-      }],
-      page: 0, size: 50, totalElements: 1, totalPages: 1,
+      content: [
+        {
+          id: 7,
+          slug: 'two-sum',
+          title: 'Two Sum',
+          timeLimitMs: 1000,
+          memoryLimitMb: 256,
+          outputLimitKb: 65536,
+          languages: ['cpp', 'python'],
+          testdataVersion: 2,
+          testdataSha256: 'abc',
+          defaultLangCode: 'en',
+          createdBy: 1,
+          version: 3,
+          createdAt: '2026-07-20T00:00:00Z',
+          updatedAt: '2026-07-20T00:00:00Z',
+        },
+      ],
+      page: 0,
+      size: 50,
+      totalElements: 1,
+      totalPages: 1,
     });
   });
 

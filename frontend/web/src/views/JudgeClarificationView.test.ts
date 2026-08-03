@@ -3,16 +3,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import JudgeClarificationView from './JudgeClarificationView.vue';
 
 const mocks = vi.hoisted(() => ({
-  listContests: vi.fn(), listAll: vi.fn(), get: vi.fn(), reply: vi.fn(), close: vi.fn(), convert: vi.fn(),
-  subscribe: vi.fn(), replace: vi.fn(), confirm: vi.fn(), success: vi.fn(), error: vi.fn(),
+  listContests: vi.fn(),
+  listAll: vi.fn(),
+  get: vi.fn(),
+  reply: vi.fn(),
+  close: vi.fn(),
+  convert: vi.fn(),
+  subscribe: vi.fn(),
+  replace: vi.fn(),
+  confirm: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
 }));
 vi.mock('../api/contest', () => ({ contestApi: { listContests: mocks.listContests } }));
-vi.mock('../api/clarifications', () => ({ clarificationApi: {
-  listAll: mocks.listAll, get: mocks.get, reply: mocks.reply, close: mocks.close, convert: mocks.convert,
-} }));
+vi.mock('../api/clarifications', () => ({
+  clarificationApi: {
+    listAll: mocks.listAll,
+    get: mocks.get,
+    reply: mocks.reply,
+    close: mocks.close,
+    convert: mocks.convert,
+  },
+}));
 vi.mock('../realtime/contest-events', () => ({ subscribeContestEvents: mocks.subscribe }));
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ query: {} }), useRouter: () => ({ replace: mocks.replace }),
+  useRoute: () => ({ query: {} }),
+  useRouter: () => ({ replace: mocks.replace }),
 }));
 vi.mock('element-plus', async (importOriginal) => {
   const actual = await importOriginal<typeof import('element-plus')>();
@@ -24,15 +40,33 @@ vi.mock('element-plus', async (importOriginal) => {
 });
 
 const pending = {
-  id: 9, contestId: 7, teamId: 3, teamName: 'Team Three', scope: 'PROBLEM', problemId: 2,
-  problemAlias: 'A', question: 'Is the input sorted?', status: 'PENDING', reply: null,
-  replyVisibility: null, askedByUserId: 44, repliedByUserId: null, repliedAt: null,
-  convertedAnnouncementId: null, createdAt: '2026-07-20T08:00:00Z',
-  updatedAt: '2026-07-20T08:00:00Z', version: 0,
+  id: 9,
+  contestId: 7,
+  teamId: 3,
+  teamName: 'Team Three',
+  scope: 'PROBLEM',
+  problemId: 2,
+  problemAlias: 'A',
+  question: 'Is the input sorted?',
+  status: 'PENDING',
+  reply: null,
+  replyVisibility: null,
+  askedByUserId: 44,
+  repliedByUserId: null,
+  repliedAt: null,
+  convertedAnnouncementId: null,
+  createdAt: '2026-07-20T08:00:00Z',
+  updatedAt: '2026-07-20T08:00:00Z',
+  version: 0,
 };
 const answered = {
-  ...pending, status: 'ANSWERED', reply: 'No.', replyVisibility: 'PUBLIC', repliedByUserId: 55,
-  repliedAt: '2026-07-20T08:03:00Z', version: 1,
+  ...pending,
+  status: 'ANSWERED',
+  reply: 'No.',
+  replyVisibility: 'PUBLIC',
+  repliedByUserId: 55,
+  repliedAt: '2026-07-20T08:03:00Z',
+  version: 1,
 };
 
 function button(wrapper: ReturnType<typeof mount>, text: string) {
@@ -54,9 +88,13 @@ describe('JudgeClarificationView', () => {
     await flushPromises();
 
     expect(mocks.listAll).toHaveBeenCalledWith(7, 'PENDING');
-    expect(mocks.subscribe).toHaveBeenCalledWith(expect.objectContaining({
-      contestId: 7, scope: 'STAFF', eventTypes: ['CLARIFICATION_UPDATED'],
-    }));
+    expect(mocks.subscribe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contestId: 7,
+        scope: 'STAFF',
+        eventTypes: ['CLARIFICATION_UPDATED'],
+      }),
+    );
     expect(wrapper.text()).toContain('Team Three');
   });
 
@@ -77,12 +115,15 @@ describe('JudgeClarificationView', () => {
     await flushPromises();
     await button(wrapper, '查看详情').trigger('click');
     await flushPromises();
-    const textarea = document.body.querySelector('.clarification-reply-form textarea') as HTMLTextAreaElement;
+    const textarea = document.body.querySelector(
+      '.clarification-reply-form textarea',
+    ) as HTMLTextAreaElement;
     textarea.value = ' Public answer ';
     textarea.dispatchEvent(new Event('input'));
     await flushPromises();
-    const publicRadio = Array.from(document.body.querySelectorAll('.clarification-reply-form label'))
-      .find((label) => label.textContent?.includes('公开回复')) as HTMLLabelElement;
+    const publicRadio = Array.from(
+      document.body.querySelectorAll('.clarification-reply-form label'),
+    ).find((label) => label.textContent?.includes('公开回复')) as HTMLLabelElement;
     publicRadio.click();
     await flushPromises();
     await button(wrapper, '提交回复').trigger('click');

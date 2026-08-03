@@ -2,19 +2,32 @@
   <el-container direction="vertical" class="page-section">
     <el-main class="page-body">
       <ElSkeleton v-if="loading" :rows="10" animated />
-      <ElAlert v-else-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false">
-        <template #default><ElButton link type="primary" @click="loadProblem">重新加载</ElButton></template>
+      <ElAlert
+        v-else-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+      >
+        <template #default
+          ><ElButton link type="primary" @click="loadProblem">重新加载</ElButton></template
+        >
       </ElAlert>
       <template v-else-if="problem">
         <div class="problem-heading">
-          <ElButton link :icon="ArrowLeft" @click="router.push(`/contests/${contestId}/problems`)">返回题目列表</ElButton>
+          <ElButton link :icon="ArrowLeft" @click="router.push(`/contests/${contestId}/problems`)"
+            >返回题目列表</ElButton
+          >
           <div class="problem-title-line">
             <span class="large-alias" :style="{ '--problem-color': problem.color || '#2563eb' }">
               {{ problem.alias }}
             </span>
             <div>
               <h1>{{ problem.title }}</h1>
-              <p>{{ problem.timeLimitMs }} ms · {{ problem.memoryLimitMb }} MB · 输出限制 {{ problem.outputLimitKb }} KiB</p>
+              <p>
+                {{ problem.timeLimitMs }} ms · {{ problem.memoryLimitMb }} MB · 输出限制
+                {{ problem.outputLimitKb }} KiB
+              </p>
             </div>
           </div>
         </div>
@@ -25,7 +38,11 @@
               <div v-if="problem.statement" class="statement-language">
                 <ElTag effect="plain">{{ problem.statement.langCode }}</ElTag>
               </div>
-              <div v-if="problem.statement" class="markdown-body" v-html="problem.statement.renderedHtml"></div>
+              <div
+                v-if="problem.statement"
+                class="markdown-body"
+                v-html="problem.statement.renderedHtml"
+              ></div>
               <ElEmpty v-else description="暂无已发布题面" />
             </article>
           </ElCol>
@@ -53,22 +70,50 @@
                     />
                   </ElSelect>
                 </ElFormItem>
-                <ElFormItem :label="language === 'output' ? '输出 ZIP' : '源码文件'">
+                <ElFormItem v-if="language === 'output'" :label="'输出 ZIP'">
                   <ElUpload
                     ref="uploadRef"
                     :auto-upload="false"
                     :limit="1"
                     :on-change="onFileChange"
                     :on-remove="onFileRemove"
-                    :accept="acceptedExtensions"
+                    accept=".zip"
                     drag
                   >
                     <ElIcon class="upload-icon"><UploadFilled /></ElIcon>
-                    <div>拖放源码到这里，或点击选择</div>
+                    <div>拖放输出 ZIP 到这里，或点击选择</div>
                     <template #tip>
-                      <span>最大 64 KiB，扩展名需与提交类型匹配</span>
+                      <span>最大 64 KiB</span>
                     </template>
                   </ElUpload>
+                </ElFormItem>
+                <ElFormItem v-else label="源码">
+                  <div class="code-input">
+                    <ElSegmented v-model="codeMode" :options="codeModeOptions" size="small" />
+                    <CodeEditor
+                      v-if="codeMode === 'editor'"
+                      v-model="source"
+                      :language="language"
+                      height="320px"
+                      class="wide-control"
+                    />
+                    <ElUpload
+                      v-else
+                      ref="codeUploadRef"
+                      :auto-upload="false"
+                      :limit="1"
+                      :on-change="onCodeFileChange"
+                      :on-remove="onCodeFileRemove"
+                      :accept="sourceAccept"
+                      drag
+                    >
+                      <ElIcon class="upload-icon"><UploadFilled /></ElIcon>
+                      <div>拖放源码文件到这里，或点击选择</div>
+                      <template #tip>
+                        <span>扩展名需匹配所选语言（{{ sourceAccept }}），最大 64 KiB</span>
+                      </template>
+                    </ElUpload>
+                  </div>
                 </ElFormItem>
                 <ElAlert
                   v-if="submitError"
@@ -84,7 +129,15 @@
                   class="wide-button"
                   native-type="submit"
                   :loading="submitting"
-                  :disabled="contest?.status !== 'RUNNING' || !sourceFile || !language"
+                  :disabled="
+                    contest?.status !== 'RUNNING' ||
+                    !language ||
+                    (language === 'output'
+                      ? !sourceFile
+                      : codeMode === 'file'
+                        ? !codeFile
+                        : !source.trim())
+                  "
                 >
                   {{ language === 'output' ? '提交输出' : '提交代码' }}
                 </ElButton>
@@ -103,6 +156,7 @@ import { useRoute, useRouter } from 'vue-router';
 import type { UploadFile, UploadInstance } from 'element-plus';
 import { ElMessage } from 'element-plus';
 import { ArrowLeft } from '@element-plus/icons-vue';
+import CodeEditor from '../components/CodeEditor.vue';
 import { contestApi } from '../api/contest';
 import { getErrorMessage } from '../api/client';
 import type { Contest, ContestProblem } from '../api/types';
@@ -117,22 +171,36 @@ const problem = ref<ContestProblem | null>(null);
 const loading = ref(false);
 const errorMessage = ref('');
 const language = ref('');
+const source = ref('');
+const codeMode = ref<'editor' | 'file'>('editor');
+const codeModeOptions = [
+  { label: '编辑器', value: 'editor' },
+  { label: '上传文件', value: 'file' },
+];
 const sourceFile = ref<File | null>(null);
+const codeFile = ref<File | null>(null);
 const uploadRef = ref<UploadInstance>();
+const codeUploadRef = ref<UploadInstance>();
 const submitting = ref(false);
 const submitError = ref('');
 const contest = computed(() => props.contest);
 
-const acceptedExtensions = computed(() => {
-  const extensions: Record<string, string> = {
+function sourceFileName(): string {
+  const extension: Record<string, string> = {
     c: '.c',
-    cpp: '.cc,.cpp,.cxx',
+    cpp: '.cpp',
     java: '.java',
     python: '.py',
-    output: '.zip',
   };
-  return extensions[language.value] ?? '';
-});
+  return `Main${extension[language.value] ?? '.txt'}`;
+}
+
+function sourceAccept(): string {
+  if (language.value === 'cpp') return '.cpp,.cc,.cxx';
+  if (language.value === 'java') return '.java';
+  if (language.value === 'python') return '.py';
+  return '.c';
+}
 
 async function loadProblem() {
   loading.value = true;
@@ -170,12 +238,52 @@ function onFileRemove() {
   sourceFile.value = null;
 }
 
+function onCodeFileChange(uploadFile: UploadFile) {
+  const file = uploadFile.raw ?? null;
+  submitError.value = '';
+  if (!file) return;
+  if (file.size > 65_536) {
+    submitError.value = '提交文件不能超过 64 KiB';
+    codeFile.value = null;
+    codeUploadRef.value?.clearFiles();
+    return;
+  }
+  const lowerName = file.name.toLowerCase();
+  const extensions = sourceAccept().split(',');
+  if (!extensions.some((extension) => lowerName.endsWith(extension))) {
+    submitError.value = `源码文件扩展名需匹配所选语言（${sourceAccept()}）`;
+    codeFile.value = null;
+    codeUploadRef.value?.clearFiles();
+    return;
+  }
+  codeFile.value = file;
+}
+
+function onCodeFileRemove() {
+  codeFile.value = null;
+}
+
 async function submit() {
-  if (!sourceFile.value || !language.value) return;
+  if (!language.value) return;
+  let file: File;
+  if (language.value === 'output') {
+    if (!sourceFile.value) return;
+    file = sourceFile.value;
+  } else if (codeMode.value === 'file') {
+    if (!codeFile.value) return;
+    file = codeFile.value;
+  } else {
+    if (!source.value.trim()) return;
+    if (new Blob([source.value]).size > 65_536) {
+      submitError.value = '提交内容不能超过 64 KiB';
+      return;
+    }
+    file = new File([source.value], sourceFileName(), { type: 'text/plain' });
+  }
   submitting.value = true;
   submitError.value = '';
   try {
-    const result = await contestApi.submit(contestId.value, problemId.value, language.value, sourceFile.value);
+    const result = await contestApi.submit(contestId.value, problemId.value, language.value, file);
     ElMessage.success('提交成功，正在等待判题');
     await router.push(`/contests/${contestId.value}/submissions/${result.submissionId}`);
   } catch (error) {
@@ -185,11 +293,23 @@ async function submit() {
   }
 }
 
-watch([contestId, problemId], () => {
-  problem.value = null;
-  sourceFile.value = null;
-  void loadProblem();
-}, { immediate: true });
+watch(
+  [contestId, problemId],
+  () => {
+    problem.value = null;
+    source.value = '';
+    sourceFile.value = null;
+    codeFile.value = null;
+    codeMode.value = 'editor';
+    void loadProblem();
+  },
+  { immediate: true },
+);
+
+watch(language, () => {
+  codeFile.value = null;
+  codeUploadRef.value?.clearFiles();
+});
 </script>
 
 <style scoped>
@@ -306,7 +426,7 @@ watch([contestId, problemId], () => {
   padding: 18px;
   color: #dbeafe;
   background: #101827;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   font-size: 13px;
   line-height: 1.65;
 }
@@ -344,6 +464,16 @@ watch([contestId, problemId], () => {
 .upload-icon {
   margin-bottom: 8px;
   font-size: 34px;
+}
+
+.code-input {
+  display: grid;
+  width: 100%;
+  gap: 10px;
+}
+
+.code-input :deep(.el-segmented) {
+  justify-self: start;
 }
 
 @media (max-width: 900px) {

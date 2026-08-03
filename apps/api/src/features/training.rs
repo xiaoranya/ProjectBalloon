@@ -29,7 +29,7 @@ const fn default_size() -> u32 {
     50
 }
 
-#[derive(Debug, Serialize, ToSchema, FromRow)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BankProblem {
     pub id: i64,
@@ -39,6 +39,38 @@ pub struct BankProblem {
     pub difficulty: Option<i16>,
     pub tags: serde_json::Value,
     pub published_at: Option<time::OffsetDateTime>,
+    pub languages: Vec<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct BankProblemRow {
+    pub id: i64,
+    pub slug: String,
+    pub title: String,
+    pub statement: Option<String>,
+    pub difficulty: Option<i16>,
+    pub tags: serde_json::Value,
+    pub published_at: Option<time::OffsetDateTime>,
+    pub languages: String,
+}
+
+impl TryFrom<BankProblemRow> for BankProblem {
+    type Error = AppError;
+
+    fn try_from(row: BankProblemRow) -> Result<Self, Self::Error> {
+        let languages = serde_json::from_str(&row.languages)
+            .map_err(|error| AppError::internal("decode bank problem languages", error))?;
+        Ok(BankProblem {
+            id: row.id,
+            slug: row.slug,
+            title: row.title,
+            statement: row.statement,
+            difficulty: row.difficulty,
+            tags: row.tags,
+            published_at: row.published_at,
+            languages,
+        })
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema, FromRow)]
@@ -190,11 +222,14 @@ pub async fn list_bank(
     let (size, offset) = validate_page(&query)?;
     let tag = query.tag.as_deref().map(str::trim).filter(|v| !v.is_empty());
     let total = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM problem_bank_entries b JOIN problems p ON p.id=b.problem_id AND p.deleted_at IS NULL WHERE b.visibility='PUBLIC' AND ($1::text IS NULL OR b.tags::jsonb ? $1) AND ($2::smallint IS NULL OR b.difficulty=$2)").bind(tag).bind(query.difficulty).fetch_one(state.database()).await.map_err(|e| AppError::internal("count public problem bank", e))?;
-    let mut rows = sqlx::query_as::<_, BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.deleted_at IS NULL AND b.visibility='PUBLIC' AND ($1::text IS NULL OR b.tags::jsonb ? $1) AND ($2::smallint IS NULL OR b.difficulty=$2) ORDER BY b.published_at DESC,b.problem_id DESC LIMIT $3 OFFSET $4").bind(tag).bind(query.difficulty).bind(size).bind(offset).fetch_all(state.database()).await.map_err(|e| AppError::internal("list public problem bank", e))?;
-    for row in &mut rows {
-        row.statement = row.statement.take().map(|statement| render_safe_statement(&statement));
+    let rows = sqlx::query_as::<_, BankProblemRow>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at,p.languages FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.deleted_at IS NULL AND b.visibility='PUBLIC' AND ($1::text IS NULL OR b.tags::jsonb ? $1) AND ($2::smallint IS NULL OR b.difficulty=$2) ORDER BY b.published_at DESC,b.problem_id DESC LIMIT $3 OFFSET $4").bind(tag).bind(query.difficulty).bind(size).bind(offset).fetch_all(state.database()).await.map_err(|e| AppError::internal("list public problem bank", e))?;
+    let mut problems =
+        rows.into_iter().map(BankProblem::try_from).collect::<Result<Vec<_>, _>>()?;
+    for problem in &mut problems {
+        problem.statement =
+            problem.statement.take().map(|statement| render_safe_statement(&statement));
     }
-    Ok(Json(PageResponse::new(rows, query.page, query.size, total)))
+    Ok(Json(PageResponse::new(problems, query.page, query.size, total)))
 }
 
 #[utoipa::path(get, path = "/api/public/problem-bank/{slug}", operation_id = "getPublicProblemBankProblem", tag = "training", params(("slug" = String, Path)), responses((status = 200, body = BankProblem), (status = 404, body = crate::error::ApiErrorBody)))]
@@ -202,9 +237,10 @@ pub async fn get_bank(
     State(state): State<AppState>,
     Path(slug): Path<String>,
 ) -> Result<Json<BankProblem>, AppError> {
-    let mut row = sqlx::query_as::<_, BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.slug=$1 AND p.deleted_at IS NULL AND b.visibility='PUBLIC'").bind(slug).fetch_optional(state.database()).await.map_err(|e| AppError::internal("get public problem bank problem", e))?.ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem is not public"))?;
-    row.statement = row.statement.take().map(|statement| render_safe_statement(&statement));
-    Ok(Json(row))
+    let row = sqlx::query_as::<_, BankProblemRow>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at,p.languages FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.slug=$1 AND p.deleted_at IS NULL AND b.visibility='PUBLIC'").bind(slug).fetch_optional(state.database()).await.map_err(|e| AppError::internal("get public problem bank problem", e))?.ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem is not public"))?;
+    let mut problem: BankProblem = row.try_into()?;
+    problem.statement = problem.statement.take().map(|statement| render_safe_statement(&statement));
+    Ok(Json(problem))
 }
 
 #[utoipa::path(put, path = "/api/admin/problems/{problem_id}/publication", operation_id = "updateProblemPublication", tag = "training", params(("problem_id" = i64, Path)), request_body = PublicationRequest, responses((status = 200, body = BankProblem), (status = 400, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
@@ -244,13 +280,14 @@ pub async fn update_publication(
     .ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem not found"))?;
     sqlx::query("INSERT INTO problem_bank_entries(problem_id,visibility,difficulty,tags,published_at,updated_at) VALUES($1,$2,$3,$4,CASE WHEN $2='PUBLIC' THEN coalesce((SELECT published_at FROM problem_bank_entries WHERE problem_id=$1),now()) ELSE NULL END,now()) ON CONFLICT(problem_id) DO UPDATE SET visibility=EXCLUDED.visibility,difficulty=EXCLUDED.difficulty,tags=EXCLUDED.tags,published_at=EXCLUDED.published_at,updated_at=now()")
         .bind(problem_id).bind(&request.visibility).bind(request.difficulty).bind(tags).execute(&mut *transaction).await.map_err(|e| AppError::internal("update problem publication", e))?;
-    let row = sqlx::query_as::<_, BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.id=$1 AND p.deleted_at IS NULL").bind(problem_id).fetch_one(&mut *transaction).await.map_err(|e| AppError::internal("load problem publication", e))?;
+    let row = sqlx::query_as::<_, BankProblemRow>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at,p.languages FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.id=$1 AND p.deleted_at IS NULL").bind(problem_id).fetch_one(&mut *transaction).await.map_err(|e| AppError::internal("load problem publication", e))?;
+    let problem: BankProblem = row.try_into()?;
     transaction
         .commit()
         .await
         .map_err(|e| AppError::internal("commit problem publication update", e))?;
     let _ = context;
-    Ok(Json(row))
+    Ok(Json(problem))
 }
 
 async fn team_for_user(state: &AppState, user_id: i64) -> Result<Option<i64>, AppError> {
@@ -502,8 +539,9 @@ pub async fn list_favorites(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<BankProblem>>, AppError> {
     context.require_password_ready()?;
-    let rows=sqlx::query_as::<_,BankProblem>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM practice_problem_favorites f JOIN problems p ON p.id=f.problem_id AND p.deleted_at IS NULL JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE f.user_id=$1 ORDER BY f.created_at DESC").bind(context.user().id).fetch_all(state.database()).await.map_err(|e|AppError::internal("list practice favorites",e))?;
-    Ok(Json(rows))
+    let rows=sqlx::query_as::<_,BankProblemRow>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at,p.languages FROM practice_problem_favorites f JOIN problems p ON p.id=f.problem_id AND p.deleted_at IS NULL JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE f.user_id=$1 ORDER BY f.created_at DESC").bind(context.user().id).fetch_all(state.database()).await.map_err(|e|AppError::internal("list practice favorites",e))?;
+    let problems = rows.into_iter().map(BankProblem::try_from).collect::<Result<Vec<_>, _>>()?;
+    Ok(Json(problems))
 }
 
 #[utoipa::path(put, path = "/api/practice/problems/{problem_id}/favorite", operation_id = "setPracticeFavorite", tag = "practice", params(("problem_id" = i64, Path)), request_body = FavoriteRequest, responses((status = 200, body = FavoriteResponse)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
@@ -660,7 +698,7 @@ mod tests {
     use sqlx::PgPool;
 
     use super::{
-        BankProblem, BankQuery, ProgressRequest, SetItemRequest, SetRequest,
+        BankProblem, BankProblemRow, BankQuery, ProgressRequest, SetItemRequest, SetRequest,
         load_public_training_items, load_public_training_set, load_public_training_sets,
         validate_page, validate_progress_request, validate_set_request, write_set,
     };
@@ -822,13 +860,14 @@ mod tests {
         .await
         .expect("insert private publication");
 
-        let row = sqlx::query_as::<_, BankProblem>(
-            "SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.id=$1",
+        let row = sqlx::query_as::<_, BankProblemRow>(
+            "SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at,p.languages FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.id=$1",
         )
         .bind(problem_id)
         .fetch_one(&pool)
         .await
         .expect("load private publication response");
+        let row: BankProblem = row.try_into().expect("decode private publication response");
 
         assert_eq!(row.published_at, None);
     }

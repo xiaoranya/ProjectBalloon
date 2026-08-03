@@ -6,14 +6,25 @@
           <p class="eyebrow">Clarifications</p>
           <h1>赛中答疑</h1>
         </div>
-        <div class="clarification-live-state" :class="{ connected: realtimeConnected }" aria-live="polite">
+        <div
+          class="clarification-live-state"
+          :class="{ connected: realtimeConnected }"
+          aria-live="polite"
+        >
           <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
         </div>
       </div>
     </el-header>
 
     <el-main class="page-body">
-      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+      <ElAlert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+        class="page-alert"
+      />
 
       <ElRow :gutter="24" align="top" class="clarification-team-grid">
         <ElCol :xs="24" :md="9">
@@ -31,7 +42,12 @@
                 </ElRadioGroup>
               </ElFormItem>
               <ElFormItem v-if="form.scope === 'PROBLEM'" label="题目">
-                <ElSelect v-model="form.problemId" filterable placeholder="请选择题目" class="wide-control">
+                <ElSelect
+                  v-model="form.problemId"
+                  filterable
+                  placeholder="请选择题目"
+                  class="wide-control"
+                >
                   <ElOption
                     v-for="problem in problems"
                     :key="problem.problemId"
@@ -50,7 +66,13 @@
                   placeholder="请清晰描述需要裁判确认的内容"
                 />
               </ElFormItem>
-              <ElButton type="primary" native-type="submit" class="wide-button" :loading="submitting" :disabled="!canSubmit">
+              <ElButton
+                type="primary"
+                native-type="submit"
+                class="wide-button"
+                :loading="submitting"
+                :disabled="!canSubmit"
+              >
                 提交问题
               </ElButton>
             </ElForm>
@@ -59,8 +81,13 @@
         <ElCol :xs="24" :md="15">
           <div class="clarification-list-column">
             <div class="clarification-list-heading">
-              <div><h2>我的问题</h2><p>仅显示本队问题和裁判回复。</p></div>
-              <ElButton :icon="Refresh" :loading="loading" @click="loadClarifications(false)">刷新</ElButton>
+              <div>
+                <h2>我的问题</h2>
+                <p>仅显示本队问题和裁判回复。</p>
+              </div>
+              <ElButton :icon="Refresh" :loading="loading" @click="loadClarifications(false)"
+                >刷新</ElButton
+              >
             </div>
             <ElSkeleton v-if="loading && clarifications.length === 0" :rows="5" animated />
             <ElEmpty v-else-if="clarifications.length === 0" description="本队尚未提交问题" />
@@ -69,7 +96,9 @@
                 <div class="clarification-card-meta">
                   <div>
                     <ElTag :type="statusType(item.status)">{{ statusLabel(item.status) }}</ElTag>
-                    <ElTag v-if="item.problemAlias" type="info" effect="plain">题目 {{ item.problemAlias }}</ElTag>
+                    <ElTag v-if="item.problemAlias" type="info" effect="plain"
+                      >题目 {{ item.problemAlias }}</ElTag
+                    >
                     <ElTag v-else type="info" effect="plain">通用</ElTag>
                   </div>
                   <time>{{ formatDateTime(item.createdAt) }}</time>
@@ -79,7 +108,8 @@
                   <strong>裁判回复</strong>
                   <p>{{ item.reply }}</p>
                   <small>
-                    {{ item.replyVisibility === 'PUBLIC' ? '公开回复' : '仅本队可见' }} · {{ formatDateTime(item.repliedAt) }}
+                    {{ item.replyVisibility === 'PUBLIC' ? '公开回复' : '仅本队可见' }} ·
+                    {{ formatDateTime(item.repliedAt) }}
                   </small>
                 </div>
                 <p v-else class="clarification-pending-copy">
@@ -99,11 +129,19 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Refresh } from '@element-plus/icons-vue';
-import { clarificationApi, type Clarification, type ClarificationScope, type ClarificationStatus } from '../api/clarifications';
+import {
+  clarificationApi,
+  type Clarification,
+  type ClarificationScope,
+  type ClarificationStatus,
+} from '../api/clarifications';
 import { contestApi } from '../api/contest';
 import { getErrorMessage } from '../api/client';
 import type { ContestProblem } from '../api/types';
-import { subscribeContestEvents, type ContestRealtimeSubscription } from '../realtime/contest-events';
+import {
+  subscribeContestEvents,
+  type ContestRealtimeSubscription,
+} from '../realtime/contest-events';
 import { formatDateTime } from '../utils/format';
 
 const route = useRoute();
@@ -121,7 +159,9 @@ const form = reactive<{ scope: ClarificationScope; problemId: number | null; que
 });
 let realtime: ContestRealtimeSubscription | undefined;
 
-const canSubmit = computed(() => form.question.trim().length > 0 && (form.scope === 'GENERAL' || form.problemId !== null));
+const canSubmit = computed(
+  () => form.question.trim().length > 0 && (form.scope === 'GENERAL' || form.problemId !== null),
+);
 
 function statusLabel(status: ClarificationStatus) {
   return { PENDING: '待回复', ANSWERED: '已回复', CLOSED: '已关闭' }[status];
@@ -148,11 +188,15 @@ async function submitQuestion() {
   if (!canSubmit.value) return;
   submitting.value = true;
   try {
-    const request = form.scope === 'GENERAL'
-      ? { scope: 'GENERAL' as const, problemId: null, question }
-      : { scope: 'PROBLEM' as const, problemId: form.problemId!, question };
+    const request =
+      form.scope === 'GENERAL'
+        ? { scope: 'GENERAL' as const, problemId: null, question }
+        : { scope: 'PROBLEM' as const, problemId: form.problemId!, question };
     const created = await clarificationApi.ask(contestId, request);
-    clarifications.value = [created, ...clarifications.value.filter((item) => item.id !== created.id)];
+    clarifications.value = [
+      created,
+      ...clarifications.value.filter((item) => item.id !== created.id),
+    ];
     form.question = '';
     form.problemId = null;
     form.scope = 'GENERAL';
@@ -179,7 +223,9 @@ onMounted(async () => {
     scope: 'TEAM',
     eventTypes: ['CLARIFICATION_UPDATED'],
     onEvent: () => void loadClarifications(),
-    onConnectionChange: (connected) => { realtimeConnected.value = connected; },
+    onConnectionChange: (connected) => {
+      realtimeConnected.value = connected;
+    },
     poll: () => loadClarifications(),
   });
 });

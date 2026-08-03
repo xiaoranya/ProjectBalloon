@@ -20,10 +20,25 @@ describe('balloonApi', () => {
     await balloonApi.cancel(9, 4, 'duplicate');
     await balloonApi.reopen(9, 5);
     await balloonApi.note(9, 6, 'north gate');
-    expect(apiRequest).toHaveBeenNthCalledWith(1, '/api/balloons/9/claim', { method: 'POST', body: { expectedVersion: 2 } });
-    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/balloons/9/deliver', { method: 'POST', body: { expectedVersion: 3 } });
-    expect(apiRequest).toHaveBeenNthCalledWith(3, '/api/balloons/9/cancel', { method: 'POST', body: { expectedVersion: 4, reason: 'duplicate' } });
-    expect(apiRequest).toHaveBeenNthCalledWith(4, '/api/balloons/9/reopen', { method: 'POST', body: { expectedVersion: 5 } });
-    expect(apiRequest).toHaveBeenNthCalledWith(5, '/api/balloons/9/note', { method: 'PATCH', body: { expectedVersion: 6, note: 'north gate' } });
+    expect(apiRequest).toHaveBeenNthCalledWith(1, '/api/balloons/9/claim', {
+      method: 'POST',
+      body: { expectedVersion: 2 },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/balloons/9/deliver', {
+      method: 'POST',
+      body: { expectedVersion: 3 },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(3, '/api/balloons/9/cancel', {
+      method: 'POST',
+      body: { expectedVersion: 4, reason: 'duplicate' },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(4, '/api/balloons/9/reopen', {
+      method: 'POST',
+      body: { expectedVersion: 5 },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(5, '/api/balloons/9/note', {
+      method: 'PATCH',
+      body: { expectedVersion: 6, note: 'north gate' },
+    });
   });
 });

@@ -9,307 +9,340 @@
           <h1>批量重判工作台</h1>
         </div>
         <div class="admin-page-actions">
-          <ElButton :icon="Refresh" :loading="tasksLoading" @click="loadTasks(false)">刷新任务</ElButton>
+          <ElButton :icon="Refresh" :loading="tasksLoading" @click="loadTasks(false)"
+            >刷新任务</ElButton
+          >
         </div>
       </div>
     </el-header>
     <el-main class="page-body">
-    <ElAlert
-      v-if="errorMessage"
-      class="page-alert"
-      type="error"
-      show-icon
-      :closable="false"
-      :title="errorMessage"
-    />
+      <ElAlert
+        v-if="errorMessage"
+        class="page-alert"
+        type="error"
+        show-icon
+        :closable="false"
+        :title="errorMessage"
+      />
 
-    <ElRow :gutter="20" class="rejudge-workbench-row">
-      <ElCol :xs="24" :md="16">
-      <ElCard shadow="never" class="rejudge-filter-card">
-        <template #header>
-          <div class="card-header">
-            <div>
-              <strong>1. 筛选与预览</strong>
-              <small>比赛范围由 URL 固定；全部筛选均可留空。</small>
-            </div>
-          </div>
-        </template>
+      <ElRow :gutter="20" class="rejudge-workbench-row">
+        <ElCol :xs="24" :md="16">
+          <ElCard shadow="never" class="rejudge-filter-card">
+            <template #header>
+              <div class="card-header">
+                <div>
+                  <strong>1. 筛选与预览</strong>
+                  <small>比赛范围由 URL 固定；全部筛选均可留空。</small>
+                </div>
+              </div>
+            </template>
 
-        <ElForm label-position="top">
-          <ElRow :gutter="14" class="rejudge-filter-grid-row">
-            <ElCol :xs="24" :sm="12" :md="6">
-              <ElFormItem label="题目">
-                <ElSelect v-model="filter.problemId" clearable filterable placeholder="全部题目">
-                  <ElOption
-                    v-for="problem in contestProblems"
-                    :key="problem.problemId"
-                    :label="`${problem.alias} · ${problem.title}`"
-                    :value="problem.problemId"
-                  />
-                </ElSelect>
-              </ElFormItem>
-            </ElCol>
-            <ElCol :xs="24" :sm="12" :md="6">
-              <ElFormItem label="队伍">
-                <ElSelect v-model="filter.teamId" clearable filterable placeholder="全部队伍">
-                  <ElOption
-                    v-for="team in contestTeams"
-                    :key="team.teamId"
-                    :label="`${team.teamName} (#${team.teamId})`"
-                    :value="team.teamId"
-                  />
-                </ElSelect>
-              </ElFormItem>
-            </ElCol>
-            <ElCol :xs="24" :sm="12" :md="6">
-              <ElFormItem label="语言">
-                <ElSelect v-model="filter.language" clearable placeholder="全部语言">
-                  <ElOption label="C" value="c" />
-                  <ElOption label="C++" value="cpp" />
-                  <ElOption label="Java" value="java" />
-                  <ElOption label="Python" value="python" />
-                </ElSelect>
-              </ElFormItem>
-            </ElCol>
-            <ElCol :xs="24" :sm="12" :md="6">
-              <ElFormItem label="当前判罚">
-                <ElSelect v-model="filter.verdict" clearable placeholder="全部最终判罚">
-                  <ElOption
-                    v-for="option in verdictOptions"
-                    :key="option.value"
-                    :label="option.label"
-                    :value="option.value"
-                  />
-                </ElSelect>
-              </ElFormItem>
-            </ElCol>
-            <ElCol :xs="24" :sm="12" :md="12">
-              <ElFormItem label="提交时间">
-                <ElDatePicker
-                  v-model="filter.submittedRange"
-                  type="datetimerange"
-                  start-placeholder="起始时间"
-                  end-placeholder="结束时间"
-                  range-separator="至"
-                />
-              </ElFormItem>
-            </ElCol>
-          </ElRow>
-        </ElForm>
+            <ElForm label-position="top">
+              <ElRow :gutter="14" class="rejudge-filter-grid-row">
+                <ElCol :xs="24" :sm="12" :md="6">
+                  <ElFormItem label="题目">
+                    <ElSelect
+                      v-model="filter.problemId"
+                      clearable
+                      filterable
+                      placeholder="全部题目"
+                    >
+                      <ElOption
+                        v-for="problem in contestProblems"
+                        :key="problem.problemId"
+                        :label="`${problem.alias} · ${problem.title}`"
+                        :value="problem.problemId"
+                      />
+                    </ElSelect>
+                  </ElFormItem>
+                </ElCol>
+                <ElCol :xs="24" :sm="12" :md="6">
+                  <ElFormItem label="队伍">
+                    <ElSelect v-model="filter.teamId" clearable filterable placeholder="全部队伍">
+                      <ElOption
+                        v-for="team in contestTeams"
+                        :key="team.teamId"
+                        :label="`${team.teamName} (#${team.teamId})`"
+                        :value="team.teamId"
+                      />
+                    </ElSelect>
+                  </ElFormItem>
+                </ElCol>
+                <ElCol :xs="24" :sm="12" :md="6">
+                  <ElFormItem label="语言">
+                    <ElSelect v-model="filter.language" clearable placeholder="全部语言">
+                      <ElOption label="C" value="c" />
+                      <ElOption label="C++" value="cpp" />
+                      <ElOption label="Java" value="java" />
+                      <ElOption label="Python" value="python" />
+                    </ElSelect>
+                  </ElFormItem>
+                </ElCol>
+                <ElCol :xs="24" :sm="12" :md="6">
+                  <ElFormItem label="当前判罚">
+                    <ElSelect v-model="filter.verdict" clearable placeholder="全部最终判罚">
+                      <ElOption
+                        v-for="option in verdictOptions"
+                        :key="option.value"
+                        :label="option.label"
+                        :value="option.value"
+                      />
+                    </ElSelect>
+                  </ElFormItem>
+                </ElCol>
+                <ElCol :xs="24" :sm="12" :md="12">
+                  <ElFormItem label="提交时间">
+                    <ElDatePicker
+                      v-model="filter.submittedRange"
+                      type="datetimerange"
+                      start-placeholder="起始时间"
+                      end-placeholder="结束时间"
+                      range-separator="至"
+                    />
+                  </ElFormItem>
+                </ElCol>
+              </ElRow>
+            </ElForm>
 
-        <ElSpace wrap :size="14" class="rejudge-preview-actions-row">
-          <ElButton type="primary" plain :loading="previewing" @click="preview">
-            预览影响范围
-          </ElButton>
-          <span class="muted-text">预览只统计，不创建判题任务。</span>
-        </ElSpace>
+            <ElSpace wrap :size="14" class="rejudge-preview-actions-row">
+              <ElButton type="primary" plain :loading="previewing" @click="preview">
+                预览影响范围
+              </ElButton>
+              <span class="muted-text">预览只统计，不创建判题任务。</span>
+            </ElSpace>
 
-        <ElAlert
-          v-if="previewResult && previewStale"
-          class="rejudge-inline-alert"
-          type="warning"
-          show-icon
-          :closable="false"
-          title="筛选条件已变化，当前预览已失效，请重新预览。"
-        />
-      </ElCard>
-      </ElCol>
-
-      <ElCol :xs="24" :md="8">
-      <ElCard shadow="never" class="rejudge-confirm-card">
-        <template #header>
-          <div class="card-header">
-            <div>
-              <strong>2. 确认创建</strong>
-              <small>数量快照与幂等键共同保护重复操作。</small>
-            </div>
-          </div>
-        </template>
-
-        <ElEmpty v-if="!previewResult" description="先预览筛选结果" :image-size="76" />
-        <template v-else>
-          <div class="rejudge-preview-count" aria-live="polite">
-            <span>匹配提交</span>
-            <strong>{{ previewResult.matchedSubmissions }}</strong>
-            <small>Rust 创建上限为 10,000 条</small>
-          </div>
-
-          <ElAlert
-            v-if="previewResult.matchedSubmissions === 0"
-            class="rejudge-inline-alert"
-            type="info"
-            show-icon
-            :closable="false"
-            title="当前筛选没有可重判的已完成提交。"
-          />
-          <ElAlert
-            v-else-if="previewResult.matchedSubmissions > 10_000"
-            class="rejudge-inline-alert"
-            type="warning"
-            show-icon
-            :closable="false"
-            title="匹配数量超过单任务上限，请缩小筛选范围。"
-          />
-
-          <ElForm label-position="top" class="rejudge-confirm-form">
-            <ElFormItem label="幂等键">
-              <ElInput v-model="idempotencyKey" maxlength="128" show-word-limit>
-                <template #append>
-                  <ElButton :icon="Refresh" aria-label="生成新幂等键" @click="regenerateIdempotencyKey" />
-                </template>
-              </ElInput>
-              <p class="form-help">需为 8–128 字节。网络重试时保留同一键；只在发起一项新操作时更换。</p>
-            </ElFormItem>
-            <ElFormItem :label="`输入 ${confirmationRequirement || '确认文本'} 以继续`">
-              <ElInput
-                v-model="confirmationText"
-                autocomplete="off"
-                :placeholder="confirmationRequirement"
-              />
-            </ElFormItem>
-          </ElForm>
-
-          <ElAlert
-            class="rejudge-inline-alert"
-            type="warning"
-            show-icon
-            :closable="false"
-            title="重判会让匹配提交重新进入评测队列，并可能短暂改变榜单；任务不能整体撤销。"
-          />
-          <ElButton
-            type="danger"
-            class="wide-button"
-            :loading="creating"
-            :disabled="!canCreate"
-            @click="createTask"
-          >
-            创建批量重判任务
-          </ElButton>
-        </template>
-      </ElCard>
-      </ElCol>
-    </ElRow>
-
-    <ElCard shadow="never" class="rejudge-tasks-card">
-      <template #header>
-        <div class="card-header">
-          <div>
-            <strong>任务列表</strong>
-            <small>最多显示本场比赛最近 100 项；活动任务自动轮询。</small>
-          </div>
-          <span class="rejudge-poll-state" aria-live="polite">
-            {{ polling ? '自动刷新中' : '暂无活动任务' }}
-          </span>
-        </div>
-      </template>
-
-      <ElTable v-loading="tasksLoading && tasks.length === 0" :data="tasks" row-key="id">
-        <ElTableColumn prop="id" label="任务 ID" width="100" />
-        <ElTableColumn label="状态" width="120">
-          <template #default="{ row }">
-            <ElTag :type="taskStatusType(row.status)">{{ taskStatusLabel(row.status) }}</ElTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="进度" min-width="250">
-          <template #default="{ row }">
-            <ElProgress
-              :percentage="progressPercentage(row as BatchRejudgeTask)"
-              :status="progressStatus(row as BatchRejudgeTask)"
-              :stroke-width="10"
-            />
-            <small class="rejudge-progress-copy">
-              {{ row.processedItems }} / {{ row.totalItems }} · 成功 {{ row.succeededItems }} · 失败 {{ row.failedItems }}
-            </small>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="创建时间" min-width="170">
-          <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
-        </ElTableColumn>
-        <ElTableColumn label="操作" width="220" fixed="right">
-          <template #default="{ row }">
-            <ElButton link @click="selectTask(row.id)">查看明细</ElButton>
-            <ElButton
-              v-if="row.status === 'PENDING' || row.status === 'RUNNING'"
-              link
+            <ElAlert
+              v-if="previewResult && previewStale"
+              class="rejudge-inline-alert"
               type="warning"
-              :loading="mutatingTaskId === row.id"
-              @click="pauseTask(row as BatchRejudgeTask)"
-            >
-              暂停
-            </ElButton>
-            <ElButton
-              v-if="row.status === 'PAUSED'"
-              link
-              type="primary"
-              :loading="mutatingTaskId === row.id"
-              @click="resumeTask(row as BatchRejudgeTask)"
-            >
-              恢复
-            </ElButton>
-          </template>
-        </ElTableColumn>
-        <template #empty><ElEmpty description="尚未创建批量重判任务" /></template>
-      </ElTable>
-    </ElCard>
+              show-icon
+              :closable="false"
+              title="筛选条件已变化，当前预览已失效，请重新预览。"
+            />
+          </ElCard>
+        </ElCol>
 
-    <ElDialog v-model="detailVisible" title="批量重判任务明细" width="min(1100px, 94vw)" @closed="selectedTask = null">
-      <ElSkeleton v-if="detailLoading" :rows="8" animated />
-      <template v-else-if="selectedTask">
-        <div class="rejudge-detail-heading">
-          <ElDescriptions :column="2" border>
-            <ElDescriptionsItem label="任务">#{{ selectedTask.id }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="状态">
-              <ElTag :type="taskStatusType(selectedTask.status)">{{ taskStatusLabel(selectedTask.status) }}</ElTag>
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="进度">
-              {{ selectedTask.processedItems }} / {{ selectedTask.totalItems }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="成功 / 失败">
-              {{ selectedTask.succeededItems }} / {{ selectedTask.failedItems }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="开始">{{ formatDateTime(selectedTask.startedAt) }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="完成">{{ formatDateTime(selectedTask.completedAt) }}</ElDescriptionsItem>
-          </ElDescriptions>
-          <ElProgress
-            :percentage="progressPercentage(selectedTask)"
-            :status="progressStatus(selectedTask)"
-            :stroke-width="14"
-          />
-        </div>
+        <ElCol :xs="24" :md="8">
+          <ElCard shadow="never" class="rejudge-confirm-card">
+            <template #header>
+              <div class="card-header">
+                <div>
+                  <strong>2. 确认创建</strong>
+                  <small>数量快照与幂等键共同保护重复操作。</small>
+                </div>
+              </div>
+            </template>
 
-        <ElAlert
-          v-if="selectedTask.itemsTruncated"
-          class="rejudge-inline-alert"
-          type="warning"
-          show-icon
-          :closable="false"
-          :title="`任务共有 ${selectedTask.totalItems} 条，明细仅返回按 ID 排序的前 1,000 条。聚合进度仍是完整数据。`"
-        />
+            <ElEmpty v-if="!previewResult" description="先预览筛选结果" :image-size="76" />
+            <template v-else>
+              <div class="rejudge-preview-count" aria-live="polite">
+                <span>匹配提交</span>
+                <strong>{{ previewResult.matchedSubmissions }}</strong>
+                <small>Rust 创建上限为 10,000 条</small>
+              </div>
 
-        <ElTable :data="selectedTask.items" row-key="id" max-height="500">
-          <ElTableColumn prop="submissionId" label="提交 ID" width="110" />
+              <ElAlert
+                v-if="previewResult.matchedSubmissions === 0"
+                class="rejudge-inline-alert"
+                type="info"
+                show-icon
+                :closable="false"
+                title="当前筛选没有可重判的已完成提交。"
+              />
+              <ElAlert
+                v-else-if="previewResult.matchedSubmissions > 10_000"
+                class="rejudge-inline-alert"
+                type="warning"
+                show-icon
+                :closable="false"
+                title="匹配数量超过单任务上限，请缩小筛选范围。"
+              />
+
+              <ElForm label-position="top" class="rejudge-confirm-form">
+                <ElFormItem label="幂等键">
+                  <ElInput v-model="idempotencyKey" maxlength="128" show-word-limit>
+                    <template #append>
+                      <ElButton
+                        :icon="Refresh"
+                        aria-label="生成新幂等键"
+                        @click="regenerateIdempotencyKey"
+                      />
+                    </template>
+                  </ElInput>
+                  <p class="form-help">
+                    需为 8–128 字节。网络重试时保留同一键；只在发起一项新操作时更换。
+                  </p>
+                </ElFormItem>
+                <ElFormItem :label="`输入 ${confirmationRequirement || '确认文本'} 以继续`">
+                  <ElInput
+                    v-model="confirmationText"
+                    autocomplete="off"
+                    :placeholder="confirmationRequirement"
+                  />
+                </ElFormItem>
+              </ElForm>
+
+              <ElAlert
+                class="rejudge-inline-alert"
+                type="warning"
+                show-icon
+                :closable="false"
+                title="重判会让匹配提交重新进入评测队列，并可能短暂改变榜单；任务不能整体撤销。"
+              />
+              <ElButton
+                type="danger"
+                class="wide-button"
+                :loading="creating"
+                :disabled="!canCreate"
+                @click="createTask"
+              >
+                创建批量重判任务
+              </ElButton>
+            </template>
+          </ElCard>
+        </ElCol>
+      </ElRow>
+
+      <ElCard shadow="never" class="rejudge-tasks-card">
+        <template #header>
+          <div class="card-header">
+            <div>
+              <strong>任务列表</strong>
+              <small>最多显示本场比赛最近 100 项；活动任务自动轮询。</small>
+            </div>
+            <span class="rejudge-poll-state" aria-live="polite">
+              {{ polling ? '自动刷新中' : '暂无活动任务' }}
+            </span>
+          </div>
+        </template>
+
+        <ElTable v-loading="tasksLoading && tasks.length === 0" :data="tasks" row-key="id">
+          <ElTableColumn prop="id" label="任务 ID" width="100" />
           <ElTableColumn label="状态" width="120">
             <template #default="{ row }">
-              <ElTag :type="itemStatusType(row.status)" effect="plain">{{ itemStatusLabel(row.status) }}</ElTag>
+              <ElTag :type="taskStatusType(row.status)">{{ taskStatusLabel(row.status) }}</ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="attempts" label="尝试次数" width="100" />
-          <ElTableColumn prop="oldJudgementId" label="原判定 ID" min-width="250">
-            <template #default="{ row }"><code>{{ row.oldJudgementId ?? '—' }}</code></template>
+          <ElTableColumn label="进度" min-width="250">
+            <template #default="{ row }">
+              <ElProgress
+                :percentage="progressPercentage(row as BatchRejudgeTask)"
+                :status="progressStatus(row as BatchRejudgeTask)"
+                :stroke-width="10"
+              />
+              <small class="rejudge-progress-copy">
+                {{ row.processedItems }} / {{ row.totalItems }} · 成功 {{ row.succeededItems }} ·
+                失败 {{ row.failedItems }}
+              </small>
+            </template>
           </ElTableColumn>
-          <ElTableColumn prop="newJudgementId" label="新判定 ID" min-width="250">
-            <template #default="{ row }"><code>{{ row.newJudgementId ?? '—' }}</code></template>
+          <ElTableColumn label="创建时间" min-width="170">
+            <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
           </ElTableColumn>
-          <ElTableColumn label="处理时间" min-width="170">
-            <template #default="{ row }">{{ formatDateTime(row.processedAt) }}</template>
+          <ElTableColumn label="操作" width="220" fixed="right">
+            <template #default="{ row }">
+              <ElButton link @click="selectTask(row.id)">查看明细</ElButton>
+              <ElButton
+                v-if="row.status === 'PENDING' || row.status === 'RUNNING'"
+                link
+                type="warning"
+                :loading="mutatingTaskId === row.id"
+                @click="pauseTask(row as BatchRejudgeTask)"
+              >
+                暂停
+              </ElButton>
+              <ElButton
+                v-if="row.status === 'PAUSED'"
+                link
+                type="primary"
+                :loading="mutatingTaskId === row.id"
+                @click="resumeTask(row as BatchRejudgeTask)"
+              >
+                恢复
+              </ElButton>
+            </template>
           </ElTableColumn>
-          <ElTableColumn prop="errorMessage" label="错误" min-width="240">
-            <template #default="{ row }"><span class="error-text">{{ row.errorMessage ?? '—' }}</span></template>
-          </ElTableColumn>
-          <template #empty><ElEmpty description="任务明细尚未生成" /></template>
+          <template #empty><ElEmpty description="尚未创建批量重判任务" /></template>
         </ElTable>
-      </template>
-    </ElDialog>
+      </ElCard>
+
+      <ElDialog
+        v-model="detailVisible"
+        title="批量重判任务明细"
+        width="min(1100px, 94vw)"
+        @closed="selectedTask = null"
+      >
+        <ElSkeleton v-if="detailLoading" :rows="8" animated />
+        <template v-else-if="selectedTask">
+          <div class="rejudge-detail-heading">
+            <ElDescriptions :column="2" border>
+              <ElDescriptionsItem label="任务">#{{ selectedTask.id }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="状态">
+                <ElTag :type="taskStatusType(selectedTask.status)">{{
+                  taskStatusLabel(selectedTask.status)
+                }}</ElTag>
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="进度">
+                {{ selectedTask.processedItems }} / {{ selectedTask.totalItems }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="成功 / 失败">
+                {{ selectedTask.succeededItems }} / {{ selectedTask.failedItems }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="开始">{{
+                formatDateTime(selectedTask.startedAt)
+              }}</ElDescriptionsItem>
+              <ElDescriptionsItem label="完成">{{
+                formatDateTime(selectedTask.completedAt)
+              }}</ElDescriptionsItem>
+            </ElDescriptions>
+            <ElProgress
+              :percentage="progressPercentage(selectedTask)"
+              :status="progressStatus(selectedTask)"
+              :stroke-width="14"
+            />
+          </div>
+
+          <ElAlert
+            v-if="selectedTask.itemsTruncated"
+            class="rejudge-inline-alert"
+            type="warning"
+            show-icon
+            :closable="false"
+            :title="`任务共有 ${selectedTask.totalItems} 条，明细仅返回按 ID 排序的前 1,000 条。聚合进度仍是完整数据。`"
+          />
+
+          <ElTable :data="selectedTask.items" row-key="id" max-height="500">
+            <ElTableColumn prop="submissionId" label="提交 ID" width="110" />
+            <ElTableColumn label="状态" width="120">
+              <template #default="{ row }">
+                <ElTag :type="itemStatusType(row.status)" effect="plain">{{
+                  itemStatusLabel(row.status)
+                }}</ElTag>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn prop="attempts" label="尝试次数" width="100" />
+            <ElTableColumn prop="oldJudgementId" label="原判定 ID" min-width="250">
+              <template #default="{ row }"
+                ><code>{{ row.oldJudgementId ?? '—' }}</code></template
+              >
+            </ElTableColumn>
+            <ElTableColumn prop="newJudgementId" label="新判定 ID" min-width="250">
+              <template #default="{ row }"
+                ><code>{{ row.newJudgementId ?? '—' }}</code></template
+              >
+            </ElTableColumn>
+            <ElTableColumn label="处理时间" min-width="170">
+              <template #default="{ row }">{{ formatDateTime(row.processedAt) }}</template>
+            </ElTableColumn>
+            <ElTableColumn prop="errorMessage" label="错误" min-width="240">
+              <template #default="{ row }"
+                ><span class="error-text">{{ row.errorMessage ?? '—' }}</span></template
+              >
+            </ElTableColumn>
+            <template #empty><ElEmpty description="任务明细尚未生成" /></template>
+          </ElTable>
+        </template>
+      </ElDialog>
     </el-main>
   </el-container>
 </template>
@@ -382,22 +415,26 @@ const filterRequest = computed<BatchRejudgeFilter>(() => ({
   submittedTo: filter.submittedRange?.[1]?.toISOString() ?? null,
 }));
 const currentFingerprint = computed(() => JSON.stringify(filterRequest.value));
-const previewStale = computed(() => Boolean(previewResult.value && currentFingerprint.value !== previewFingerprint.value));
-const confirmationRequirement = computed(() => previewResult.value
-  ? `REJUDGE ${previewResult.value.matchedSubmissions}`
-  : '');
+const previewStale = computed(() =>
+  Boolean(previewResult.value && currentFingerprint.value !== previewFingerprint.value),
+);
+const confirmationRequirement = computed(() =>
+  previewResult.value ? `REJUDGE ${previewResult.value.matchedSubmissions}` : '',
+);
 const idempotencyKeyValid = computed(() => {
   const bytes = new TextEncoder().encode(idempotencyKey.value.trim()).length;
   return bytes >= 8 && bytes <= 128;
 });
-const canCreate = computed(() => Boolean(
-  previewResult.value
-  && !previewStale.value
-  && previewResult.value.matchedSubmissions >= 1
-  && previewResult.value.matchedSubmissions <= 10_000
-  && confirmationText.value === confirmationRequirement.value
-  && idempotencyKeyValid.value,
-));
+const canCreate = computed(() =>
+  Boolean(
+    previewResult.value &&
+    !previewStale.value &&
+    previewResult.value.matchedSubmissions >= 1 &&
+    previewResult.value.matchedSubmissions <= 10_000 &&
+    confirmationText.value === confirmationRequirement.value &&
+    idempotencyKeyValid.value,
+  ),
+);
 const polling = computed(() => tasks.value.some((task) => isActiveTask(task.status)));
 
 function regenerateIdempotencyKey() {
@@ -414,7 +451,9 @@ async function loadContext() {
     ]);
     contest.value = contestValue;
     contestProblems.value = [...problemValues].sort((a, b) => a.displayOrder - b.displayOrder);
-    contestTeams.value = [...teamValues].sort((a, b) => a.teamName.localeCompare(b.teamName, 'zh-CN'));
+    contestTeams.value = [...teamValues].sort((a, b) =>
+      a.teamName.localeCompare(b.teamName, 'zh-CN'),
+    );
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   }
@@ -565,7 +604,9 @@ function progressStatus(task: BatchRejudgeTask): '' | 'success' | 'exception' | 
   return '';
 }
 
-function taskStatusType(status: BatchRejudgeTaskStatus): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
+function taskStatusType(
+  status: BatchRejudgeTaskStatus,
+): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
   return {
     PENDING: 'info',
     RUNNING: 'primary',
@@ -585,7 +626,9 @@ function taskStatusLabel(status: BatchRejudgeTaskStatus) {
   }[status];
 }
 
-function itemStatusType(status: BatchRejudgeItemStatus): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
+function itemStatusType(
+  status: BatchRejudgeItemStatus,
+): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
   return {
     PENDING: 'info',
     PROCESSING: 'primary',

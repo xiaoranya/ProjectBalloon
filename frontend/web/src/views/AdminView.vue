@@ -38,7 +38,10 @@
             <ElCard
               shadow="never"
               class="health-component-card"
-              :class="{ down: component.status === 'down', neutral: component.status === 'neutral' }"
+              :class="{
+                down: component.status === 'down',
+                neutral: component.status === 'neutral',
+              }"
             >
               <div class="health-component-title">
                 <span>{{ component.name }}</span>
@@ -47,7 +50,11 @@
                 </ElTag>
               </div>
               <el-descriptions :column="1" size="small">
-                <el-descriptions-item v-for="detail in component.details" :key="detail.label" :label="detail.label">
+                <el-descriptions-item
+                  v-for="detail in component.details"
+                  :key="detail.label"
+                  :label="detail.label"
+                >
                   {{ detail.value }}
                 </el-descriptions-item>
               </el-descriptions>
@@ -57,73 +64,80 @@
       </section>
 
       <section v-if="session.isSuperAdmin.value" class="operations-audit">
-      <div class="operations-section-heading">
-        <h2>审计日志</h2>
-      </div>
+        <div class="operations-section-heading">
+          <h2>审计日志</h2>
+        </div>
 
-      <ElCard shadow="never">
-        <el-form inline class="audit-filters" @submit.prevent="applyFilters">
-          <ElSpace wrap :size="10">
-            <ElInput v-model="filters.action" clearable placeholder="操作名称" @keyup.enter="applyFilters" />
-            <ElInputNumber
-              v-model="filters.actorUserId"
-              :min="1"
-              :controls="false"
-              placeholder="操作人 ID"
-            />
-            <ElSelect v-model="filters.result" clearable placeholder="全部结果">
-              <ElOption label="成功" value="success" />
-              <ElOption label="失败" value="failed" />
-            </ElSelect>
-            <ElDatePicker
-              v-model="filters.timeRange"
-              type="datetimerange"
-              start-placeholder="开始时间"
-              end-placeholder="结束时间"
-              range-separator="至"
-            />
-            <ElButton type="primary" @click="applyFilters">查询</ElButton>
-            <ElButton @click="resetFilters">重置</ElButton>
-          </ElSpace>
-        </el-form>
+        <ElCard shadow="never">
+          <el-form inline class="audit-filters" @submit.prevent="applyFilters">
+            <ElSpace wrap :size="10">
+              <ElInput
+                v-model="filters.action"
+                clearable
+                placeholder="操作名称"
+                @keyup.enter="applyFilters"
+              />
+              <ElInputNumber
+                v-model="filters.actorUserId"
+                :min="1"
+                :controls="false"
+                placeholder="操作人 ID"
+              />
+              <ElSelect v-model="filters.result" clearable placeholder="全部结果">
+                <ElOption label="成功" value="success" />
+                <ElOption label="失败" value="failed" />
+              </ElSelect>
+              <ElDatePicker
+                v-model="filters.timeRange"
+                type="datetimerange"
+                start-placeholder="开始时间"
+                end-placeholder="结束时间"
+                range-separator="至"
+              />
+              <ElButton type="primary" @click="applyFilters">查询</ElButton>
+              <ElButton @click="resetFilters">重置</ElButton>
+            </ElSpace>
+          </el-form>
 
-        <ElTable v-loading="auditLoading" :data="auditPage.content" row-key="id">
-          <ElTableColumn label="时间" min-width="175">
-            <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
-          </ElTableColumn>
-          <ElTableColumn prop="action" label="操作" min-width="210" />
-          <ElTableColumn label="操作人" width="105">
-            <template #default="{ row }">{{ row.actorUserId ?? '系统' }}</template>
-          </ElTableColumn>
-          <ElTableColumn label="目标" min-width="180">
-            <template #default="{ row }">
-              {{ [row.targetType, row.targetId].filter(Boolean).join(' #') || '—' }}
+          <ElTable v-loading="auditLoading" :data="auditPage.content" row-key="id">
+            <ElTableColumn label="时间" min-width="175">
+              <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+            </ElTableColumn>
+            <ElTableColumn prop="action" label="操作" min-width="210" />
+            <ElTableColumn label="操作人" width="105">
+              <template #default="{ row }">{{ row.actorUserId ?? '系统' }}</template>
+            </ElTableColumn>
+            <ElTableColumn label="目标" min-width="180">
+              <template #default="{ row }">
+                {{ [row.targetType, row.targetId].filter(Boolean).join(' #') || '—' }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="来源 IP" min-width="135">
+              <template #default="{ row }">{{ row.requestIp || '—' }}</template>
+            </ElTableColumn>
+            <ElTableColumn label="结果" width="100">
+              <template #default="{ row }">
+                <ElTag :type="resultTagType(row.result)" effect="light">{{
+                  resultLabel(row.result)
+                }}</ElTag>
+              </template>
+            </ElTableColumn>
+            <template #empty>
+              <ElEmpty description="没有符合条件的审计记录" />
             </template>
-          </ElTableColumn>
-          <ElTableColumn label="来源 IP" min-width="135">
-            <template #default="{ row }">{{ row.requestIp || '—' }}</template>
-          </ElTableColumn>
-          <ElTableColumn label="结果" width="100">
-            <template #default="{ row }">
-              <ElTag :type="resultTagType(row.result)" effect="light">{{ resultLabel(row.result) }}</ElTag>
-            </template>
-          </ElTableColumn>
-          <template #empty>
-            <ElEmpty description="没有符合条件的审计记录" />
-          </template>
-        </ElTable>
+          </ElTable>
 
-        <ElRow justify="end" class="audit-pagination">
-          <ElPagination
-            v-if="auditPage.totalElements > pageSize"
-            v-model:current-page="currentPage"
-            :page-size="pageSize"
-            :total="auditPage.totalElements"
-            layout="prev, pager, next, total"
-            @current-change="loadAuditLogs"
-          />
-        </ElRow>
-      </ElCard>
+          <ElRow justify="end" class="audit-pagination">
+            <ElPagination
+              v-if="auditPage.totalElements > pageSize"
+              v-model:current-page="currentPage"
+              :page-size="pageSize"
+              :total="auditPage.totalElements"
+              layout="prev, pager, next, total"
+              @current-change="loadAuditLogs"
+            />
+          </ElRow>
+        </ElCard>
       </section>
     </el-main>
   </el-container>
@@ -173,11 +187,13 @@ const filters = reactive<{
 
 const healthComponents = computed<HealthCard[]>(() => {
   if (!health.value) return [];
-  const cards: HealthCard[] = [{
-    name: 'API 与 PostgreSQL',
-    status: health.value.status,
-    details: [{ label: '服务', value: health.value.service }],
-  }];
+  const cards: HealthCard[] = [
+    {
+      name: 'API 与 PostgreSQL',
+      status: health.value.status,
+      details: [{ label: '服务', value: health.value.service }],
+    },
+  ];
   const realtime = health.value.realtimeOutbox;
   cards.push({
     name: '实时事件',
@@ -186,7 +202,15 @@ const healthComponents = computed<HealthCard[]>(() => {
       ? [
           { label: '待投递', value: realtime.pending },
           { label: '失败', value: realtime.failed },
-          { label: 'Redis', value: realtime.redisConnected === undefined ? '未配置' : realtime.redisConnected ? '已连接' : '未连接' },
+          {
+            label: 'Redis',
+            value:
+              realtime.redisConnected === undefined
+                ? '未配置'
+                : realtime.redisConnected
+                  ? '已连接'
+                  : '未连接',
+          },
         ]
       : [{ label: '状态', value: '数据库探测不可用' }],
   });
@@ -199,7 +223,10 @@ const healthComponents = computed<HealthCard[]>(() => {
           { label: '待投递', value: judge.pending },
           { label: '失败', value: judge.failed },
           { label: '在线 / 过期', value: `${judge.workers.online} / ${judge.workers.stale}` },
-          { label: '活跃 / 容量', value: `${judge.workers.activeTasks} / ${judge.workers.capacity}` },
+          {
+            label: '活跃 / 容量',
+            value: `${judge.workers.activeTasks} / ${judge.workers.capacity}`,
+          },
         ]
       : [{ label: '状态', value: '数据库探测不可用' }],
   });
@@ -218,7 +245,12 @@ const healthComponents = computed<HealthCard[]>(() => {
   const cleanup = health.value.objectCleanup;
   cards.push({
     name: '对象存储一致性',
-    status: cleanup && (cleanup.failed > 0 || cleanup.missingReferences > 0) ? 'down' : cleanup ? 'up' : 'neutral',
+    status:
+      cleanup && (cleanup.failed > 0 || cleanup.missingReferences > 0)
+        ? 'down'
+        : cleanup
+          ? 'up'
+          : 'neutral',
     details: cleanup
       ? [
           { label: '待清理', value: cleanup.pending },
@@ -231,11 +263,16 @@ const healthComponents = computed<HealthCard[]>(() => {
   return cards;
 });
 
-function dependencyCard(name: string, dependency: { status: 'up' | 'down' } | undefined): HealthCard {
+function dependencyCard(
+  name: string,
+  dependency: { status: 'up' | 'down' } | undefined,
+): HealthCard {
   return {
     name,
     status: dependency?.status ?? 'neutral',
-    details: [{ label: '状态', value: dependency ? healthStatusLabel(dependency.status) : '未配置' }],
+    details: [
+      { label: '状态', value: dependency ? healthStatusLabel(dependency.status) : '未配置' },
+    ],
   };
 }
 
@@ -305,11 +342,19 @@ function healthTagType(status: CardStatus) {
 }
 
 function resultLabel(result: string) {
-  return result.toLowerCase() === 'success' ? '成功' : result.toLowerCase() === 'failed' ? '失败' : result;
+  return result.toLowerCase() === 'success'
+    ? '成功'
+    : result.toLowerCase() === 'failed'
+      ? '失败'
+      : result;
 }
 
 function resultTagType(result: string) {
-  return result.toLowerCase() === 'success' ? 'success' : result.toLowerCase() === 'failed' ? 'danger' : 'info';
+  return result.toLowerCase() === 'success'
+    ? 'success'
+    : result.toLowerCase() === 'failed'
+      ? 'danger'
+      : 'info';
 }
 
 onMounted(refreshAll);

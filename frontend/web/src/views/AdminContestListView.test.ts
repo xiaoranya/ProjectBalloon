@@ -18,19 +18,21 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 describe('AdminContestListView', () => {
   beforeEach(() => {
     listContests.mockResolvedValue({
-      content: [{
-        id: 42,
-        name: 'Rust Regional',
-        status: 'DRAFT',
-        visibility: 'PRIVATE',
-        startAt: null,
-        freezeAt: null,
-        endAt: null,
-        version: 0,
-        createdAt: '2026-07-20T00:00:00Z',
-        updatedAt: '2026-07-20T00:00:00Z',
-        deletedAt: null,
-      }],
+      content: [
+        {
+          id: 42,
+          name: 'Rust Regional',
+          status: 'DRAFT',
+          visibility: 'PRIVATE',
+          startAt: null,
+          freezeAt: null,
+          endAt: null,
+          version: 0,
+          createdAt: '2026-07-20T00:00:00Z',
+          updatedAt: '2026-07-20T00:00:00Z',
+          deletedAt: null,
+        },
+      ],
       page: 0,
       size: 25,
       totalElements: 1,

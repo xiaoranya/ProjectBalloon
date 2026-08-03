@@ -24,13 +24,16 @@ export interface ContestRealtimeSubscription {
   stop(): void;
 }
 
-export function subscribeContestEvents(options: ContestRealtimeOptions): ContestRealtimeSubscription {
+export function subscribeContestEvents(
+  options: ContestRealtimeOptions,
+): ContestRealtimeSubscription {
   const pollIntervalMs = options.pollIntervalMs ?? 10_000;
-  const path = options.scope === 'TEAM'
-    ? `/api/team/events/contests/${options.contestId}`
-    : options.scope === 'PUBLIC'
-      ? `/api/public/events/contests/${options.contestId}`
-      : `/api/events/contests/${options.contestId}`;
+  const path =
+    options.scope === 'TEAM'
+      ? `/api/team/events/contests/${options.contestId}`
+      : options.scope === 'PUBLIC'
+        ? `/api/public/events/contests/${options.contestId}`
+        : `/api/events/contests/${options.contestId}`;
   let source: EventSource | null = null;
   let pollingTimer: number | undefined;
   let polling = false;
@@ -52,8 +55,12 @@ export function subscribeContestEvents(options: ContestRealtimeOptions): Contest
       const result = options.poll();
       if (result && typeof result.then === 'function') {
         void result.then(
-          () => { pollInFlight = false; },
-          () => { pollInFlight = false; },
+          () => {
+            pollInFlight = false;
+          },
+          () => {
+            pollInFlight = false;
+          },
         );
       } else {
         pollInFlight = false;
@@ -75,10 +82,11 @@ export function subscribeContestEvents(options: ContestRealtimeOptions): Contest
     try {
       const event = JSON.parse(message.data) as RealtimeEvent;
       if (
-        event.version !== 1
-        || event.contestId !== options.contestId
-        || event.scope !== options.scope
-      ) return;
+        event.version !== 1 ||
+        event.contestId !== options.contestId ||
+        event.scope !== options.scope
+      )
+        return;
       if (event.type === 'CONNECTED') {
         stopPolling();
         options.onConnectionChange?.(true);

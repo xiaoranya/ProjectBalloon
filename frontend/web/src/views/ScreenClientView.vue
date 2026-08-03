@@ -1,4 +1,20 @@
-<template><main class="screen-client"><header><div><small>PROJECT BALLOON · SCREEN #{{ registration?.instanceId ?? '—' }}</small><strong>{{ registration?.name || screenName }}</strong></div><span :class="{ online }">{{ online ? 'CONTROL CONNECTED' : 'CONNECTING' }}</span></header><section><p>{{ viewLabel(currentView) }}</p><h1>{{ currentView }}</h1><span v-if="errorMessage">{{ errorMessage }}</span><span v-else>等待控制台下发画面切换命令</span></section></main></template>
+<template>
+  <main class="screen-client">
+    <header>
+      <div>
+        <small>PROJECT BALLOON · SCREEN #{{ registration?.instanceId ?? '—' }}</small
+        ><strong>{{ registration?.name || screenName }}</strong>
+      </div>
+      <span :class="{ online }">{{ online ? 'CONTROL CONNECTED' : 'CONNECTING' }}</span>
+    </header>
+    <section>
+      <p>{{ viewLabel(currentView) }}</p>
+      <h1>{{ currentView }}</h1>
+      <span v-if="errorMessage">{{ errorMessage }}</span
+      ><span v-else>等待控制台下发画面切换命令</span>
+    </section>
+  </main>
+</template>
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
@@ -20,7 +36,15 @@ let heartbeatInFlight = false;
 let stopped = false;
 
 function viewLabel(value: ScreenViewTarget) {
-  return ({ SCOREBOARD: '实时榜单', FIRST_BLOOD: 'First Blood', BALLOONS: '气球状态', FREEZE_COUNTDOWN: '封榜倒计时', STATISTICS: '比赛统计', RESOLVER: '滚榜仪式', AWARDS: '颁奖典礼' })[value];
+  return {
+    SCOREBOARD: '实时榜单',
+    FIRST_BLOOD: 'First Blood',
+    BALLOONS: '气球状态',
+    FREEZE_COUNTDOWN: '封榜倒计时',
+    STATISTICS: '比赛统计',
+    RESOLVER: '滚榜仪式',
+    AWARDS: '颁奖典礼',
+  }[value];
 }
 
 function scheduleHeartbeat() {
@@ -38,7 +62,11 @@ async function heartbeat() {
   heartbeatInFlight = true;
   const started = Date.now();
   try {
-    const response = await screenApi.heartbeat(value.instanceId, value.clientToken, currentView.value);
+    const response = await screenApi.heartbeat(
+      value.instanceId,
+      value.clientToken,
+      currentView.value,
+    );
     if (boundaryTimer !== undefined) window.clearTimeout(boundaryTimer);
     const serverNow = new Date(response.serverTime).getTime() + (Date.now() - started) / 2;
     const playback = resolveScreenPlayback(response.groupPlayback, serverNow);
@@ -81,7 +109,12 @@ onMounted(async () => {
     if (stored) {
       try {
         const parsed = JSON.parse(stored) as Partial<ScreenRegistration>;
-        if (parsed.contestId === contestId && typeof parsed.instanceId === 'number' && typeof parsed.clientToken === 'string' && parsed.clientToken) {
+        if (
+          parsed.contestId === contestId &&
+          typeof parsed.instanceId === 'number' &&
+          typeof parsed.clientToken === 'string' &&
+          parsed.clientToken
+        ) {
           registration.value = parsed as ScreenRegistration;
         } else {
           localStorage.removeItem(storageKey);
@@ -110,4 +143,39 @@ onBeforeUnmount(() => {
   if (boundaryTimer !== undefined) window.clearTimeout(boundaryTimer);
 });
 </script>
-<style scoped>.screen-client{min-height:100vh;background:#07111f;color:#fff;padding:32px;display:grid;grid-template-rows:auto 1fr}.screen-client header{display:flex;justify-content:space-between}.screen-client header div{display:grid}.screen-client header span{color:#f59e0b}.screen-client header span.online{color:#22c55e}.screen-client section{display:grid;place-content:center;text-align:center}.screen-client section p{color:#22c55e;letter-spacing:.3em}.screen-client section h1{font-size:clamp(56px,10vw,150px);margin:12px}</style>
+<style scoped>
+.screen-client {
+  min-height: 100vh;
+  background: #07111f;
+  color: #fff;
+  padding: 32px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+.screen-client header {
+  display: flex;
+  justify-content: space-between;
+}
+.screen-client header div {
+  display: grid;
+}
+.screen-client header span {
+  color: #f59e0b;
+}
+.screen-client header span.online {
+  color: #22c55e;
+}
+.screen-client section {
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+.screen-client section p {
+  color: #22c55e;
+  letter-spacing: 0.3em;
+}
+.screen-client section h1 {
+  font-size: clamp(56px, 10vw, 150px);
+  margin: 12px;
+}
+</style>

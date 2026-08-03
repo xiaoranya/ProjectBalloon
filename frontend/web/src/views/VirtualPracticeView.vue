@@ -13,7 +13,9 @@
             <ElMenuItem v-for="item in sessions" :key="item.id" :index="String(item.id)">
               <div class="session-item">
                 <strong>{{ item.title }}</strong>
-                <span>{{ item.solvedProblems }} / {{ item.totalProblems }} · {{ item.status }}</span>
+                <span
+                  >{{ item.solvedProblems }} / {{ item.totalProblems }} · {{ item.status }}</span
+                >
               </div>
             </ElMenuItem>
           </ElMenu>
@@ -26,7 +28,13 @@
             </div>
             <div class="session-actions">
               <strong>{{ countdown }}</strong>
-              <ElButton v-if="selected.session.status !== 'ARCHIVED'" link type="danger" @click="archive">归档</ElButton>
+              <ElButton
+                v-if="selected.session.status !== 'ARCHIVED'"
+                link
+                type="danger"
+                @click="archive"
+                >归档</ElButton
+              >
             </div>
           </div>
           <ElTable :data="selected.problems" row-key="problemId">
@@ -35,12 +43,18 @@
             <ElTableColumn prop="attempts" label="尝试" width="80" />
             <ElTableColumn label="状态" width="90">
               <template #default="{ row }">
-                <ElTag :type="row.solved ? 'success' : 'info'">{{ row.solved ? '已通过' : '未通过' }}</ElTag>
+                <ElTag :type="row.solved ? 'success' : 'info'">{{
+                  row.solved ? '已通过' : '未通过'
+                }}</ElTag>
               </template>
             </ElTableColumn>
             <ElTableColumn width="90">
               <template #default="{ row }">
-                <RouterLink v-if="selected?.session.status === 'RUNNING'" :to="`/practice?virtualSessionId=${selected?.session.id}&problemId=${row.problemId}`">作答</RouterLink>
+                <RouterLink
+                  v-if="selected?.session.status === 'RUNNING'"
+                  :to="`/practice?virtualSessionId=${selected?.session.id}&problemId=${row.problemId}`"
+                  >作答</RouterLink
+                >
                 <span v-else>只读</span>
               </template>
             </ElTableColumn>
@@ -59,7 +73,12 @@
         </ElFormItem>
         <ElFormItem label="题目">
           <ElSelect v-model="form.problemIds" multiple filterable style="width: 100%">
-            <ElOption v-for="item in problems" :key="item.id" :label="`${item.slug} · ${item.title}`" :value="item.id" />
+            <ElOption
+              v-for="item in problems"
+              :key="item.id"
+              :label="`${item.slug} · ${item.title}`"
+              :value="item.id"
+            />
           </ElSelect>
         </ElFormItem>
       </ElForm>
@@ -74,38 +93,157 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { getErrorMessage } from '../api/client';
-import { trainingApi, type BankProblem, type VirtualSession, type VirtualSessionDetail } from '../api/training';
-const sessions = ref<VirtualSession[]>([]), selected = ref<VirtualSessionDetail>(), problems = ref<BankProblem[]>([]), dialog = ref(false), now = ref(Date.now()), form = reactive({ title: '个人虚拟赛', durationMinutes: 300, problemIds: [] as number[] }), activeId = ref('');
+import {
+  trainingApi,
+  type BankProblem,
+  type VirtualSession,
+  type VirtualSessionDetail,
+} from '../api/training';
+const sessions = ref<VirtualSession[]>([]),
+  selected = ref<VirtualSessionDetail>(),
+  problems = ref<BankProblem[]>([]),
+  dialog = ref(false),
+  now = ref(Date.now()),
+  form = reactive({ title: '个人虚拟赛', durationMinutes: 300, problemIds: [] as number[] }),
+  activeId = ref('');
 let timer: number | undefined;
 const countdown = computed(() => {
-  if (!selected.value || selected.value.session.status !== 'RUNNING') return selected.value?.session.status === 'ARCHIVED' ? '已归档' : '已结束';
-  const seconds = Math.max(0, Math.floor((new Date(selected.value.session.endAt).getTime() - now.value) / 1000));
-  return [Math.floor(seconds / 3600), Math.floor(seconds % 3600 / 60), seconds % 60].map(v => String(v).padStart(2, '0')).join(':');
+  if (!selected.value || selected.value.session.status !== 'RUNNING')
+    return selected.value?.session.status === 'ARCHIVED' ? '已归档' : '已结束';
+  const seconds = Math.max(
+    0,
+    Math.floor((new Date(selected.value.session.endAt).getTime() - now.value) / 1000),
+  );
+  return [Math.floor(seconds / 3600), Math.floor((seconds % 3600) / 60), seconds % 60]
+    .map((v) => String(v).padStart(2, '0'))
+    .join(':');
 });
-function onMenuSelect(index: string) { void open(Number(index)); }
-async function open(id: number) { activeId.value = String(id); try { selected.value = await trainingApi.virtualSession(id) } catch (e) { ElMessage.error(getErrorMessage(e)) } }
-async function load() { try { const [list, bank] = await Promise.all([trainingApi.virtualSessions(), trainingApi.problemBank(0, 100)]); sessions.value = list; problems.value = bank.content; if (!selected.value && list[0]) await open(list[0].id) } catch (e) { ElMessage.error(getErrorMessage(e)) } }
-async function archive() { if (!selected.value) return; try { await ElMessageBox.confirm('归档后将不能继续提交，只保留查看结果。', '归档虚拟赛', { type: 'warning', confirmButtonText: '归档' }); await trainingApi.archiveVirtualSession(selected.value.session.id); await load(); await open(selected.value.session.id); ElMessage.success('虚拟赛已归档') } catch (e) { if (e !== 'cancel' && e !== 'close') ElMessage.error(getErrorMessage(e)) } }
-async function create() { if (!form.problemIds.length) return; try { const value = await trainingApi.createVirtualSession(form); dialog.value = false; await load(); await open(value.id) } catch (e) { ElMessage.error(getErrorMessage(e)) } }
-onMounted(() => { void load(); timer = window.setInterval(() => now.value = Date.now(), 1000); });
-onBeforeUnmount(() => { if (timer) clearInterval(timer); });
+function onMenuSelect(index: string) {
+  void open(Number(index));
+}
+async function open(id: number) {
+  activeId.value = String(id);
+  try {
+    selected.value = await trainingApi.virtualSession(id);
+  } catch (e) {
+    ElMessage.error(getErrorMessage(e));
+  }
+}
+async function load() {
+  try {
+    const [list, bank] = await Promise.all([
+      trainingApi.virtualSessions(),
+      trainingApi.problemBank(0, 100),
+    ]);
+    sessions.value = list;
+    problems.value = bank.content;
+    if (!selected.value && list[0]) await open(list[0].id);
+  } catch (e) {
+    ElMessage.error(getErrorMessage(e));
+  }
+}
+async function archive() {
+  if (!selected.value) return;
+  try {
+    await ElMessageBox.confirm('归档后将不能继续提交，只保留查看结果。', '归档虚拟赛', {
+      type: 'warning',
+      confirmButtonText: '归档',
+    });
+    await trainingApi.archiveVirtualSession(selected.value.session.id);
+    await load();
+    await open(selected.value.session.id);
+    ElMessage.success('虚拟赛已归档');
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(getErrorMessage(e));
+  }
+}
+async function create() {
+  if (!form.problemIds.length) return;
+  try {
+    const value = await trainingApi.createVirtualSession(form);
+    dialog.value = false;
+    await load();
+    await open(value.id);
+  } catch (e) {
+    ElMessage.error(getErrorMessage(e));
+  }
+}
+onMounted(() => {
+  void load();
+  timer = window.setInterval(() => (now.value = Date.now()), 1000);
+});
+onBeforeUnmount(() => {
+  if (timer) clearInterval(timer);
+});
 </script>
 <style scoped>
-.virtual-page { max-width: 1180px; margin: 0 auto; }
-.page-head { display: flex; justify-content: space-between; align-items: end; border-bottom: 1px solid #dcdfe6; padding: 28px 20px 18px; height: auto; }
-.page-body { padding: 0 20px 28px; }
-.page-head h1 { margin: 0; font-size: 28px; }
-.page-head p { margin: 6px 0 0; color: #606266; }
-.layout { display: grid; grid-template-columns: 260px 1fr; gap: 24px; }
-.session-nav { border-right: 1px solid #dcdfe6; padding-right: 12px; }
-.session-menu { border-right: none; }
-.session-item { display: flex; flex-direction: column; width: 100%; }
-.session-item span { color: #606266; font-size: 13px; }
-.session-head { display: flex; justify-content: space-between; align-items: end; border-bottom: 1px solid #dcdfe6; padding-bottom: 18px; margin-bottom: 20px; }
-.session-head h2 { margin: 0; }
-.session-actions strong { font: 600 28px ui-monospace, monospace; }
+.virtual-page {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  border-bottom: 1px solid #dcdfe6;
+  padding: 28px 20px 18px;
+  height: auto;
+}
+.page-body {
+  padding: 0 20px 28px;
+}
+.page-head h1 {
+  margin: 0;
+  font-size: 28px;
+}
+.page-head p {
+  margin: 6px 0 0;
+  color: #606266;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 24px;
+}
+.session-nav {
+  border-right: 1px solid #dcdfe6;
+  padding-right: 12px;
+}
+.session-menu {
+  border-right: none;
+}
+.session-item {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.session-item span {
+  color: #606266;
+  font-size: 13px;
+}
+.session-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  border-bottom: 1px solid #dcdfe6;
+  padding-bottom: 18px;
+  margin-bottom: 20px;
+}
+.session-head h2 {
+  margin: 0;
+}
+.session-actions strong {
+  font:
+    600 28px ui-monospace,
+    monospace;
+}
 @media (max-width: 720px) {
-  .layout { grid-template-columns: 1fr; }
-  .session-nav { border-right: 0; border-bottom: 1px solid #dcdfe6; }
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .session-nav {
+    border-right: 0;
+    border-bottom: 1px solid #dcdfe6;
+  }
 }
 </style>

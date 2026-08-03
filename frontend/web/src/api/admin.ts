@@ -99,9 +99,8 @@ export const adminApi = {
   async listAllManageableContests() {
     const firstPage = await this.listContests(0, 500, true);
     const remaining = await Promise.all(
-      Array.from(
-        { length: Math.max(0, firstPage.totalPages - 1) },
-        (_, index) => this.listContests(index + 1, 500, true),
+      Array.from({ length: Math.max(0, firstPage.totalPages - 1) }, (_, index) =>
+        this.listContests(index + 1, 500, true),
       ),
     );
     return [firstPage, ...remaining].flatMap((page) => page.content);

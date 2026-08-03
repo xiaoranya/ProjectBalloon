@@ -20,10 +20,21 @@ const filter: BatchRejudgeFilter = {
 
 const csrf = { headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' };
 const task = {
-  id: 5, contestId: 42, status: 'RUNNING', totalItems: 2, processedItems: 1,
-  succeededItems: 1, failedItems: 0, cancelRequested: false, createdByUserId: 7,
-  startedAt: null, completedAt: null, createdAt: '2026-07-20T08:00:00Z', updatedAt: '2026-07-20T08:00:00Z',
-  items: [], itemsTruncated: false,
+  id: 5,
+  contestId: 42,
+  status: 'RUNNING',
+  totalItems: 2,
+  processedItems: 1,
+  succeededItems: 1,
+  failedItems: 0,
+  cancelRequested: false,
+  createdByUserId: 7,
+  startedAt: null,
+  completedAt: null,
+  createdAt: '2026-07-20T08:00:00Z',
+  updatedAt: '2026-07-20T08:00:00Z',
+  items: [],
+  itemsTruncated: false,
 };
 
 describe('Rust contest-scoped bulk rejudge API contract', () => {
@@ -43,7 +54,9 @@ describe('Rust contest-scoped bulk rejudge API contract', () => {
       '/api/admin/contests/42/rejudge-tasks/preview',
       expect.objectContaining({ method: 'POST', body: JSON.stringify(filter) }),
     ]);
-    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body))).not.toHaveProperty('contestId');
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body))).not.toHaveProperty(
+      'contestId',
+    );
   });
 
   it('creates with the exact count snapshot, confirmation text, and idempotency key', async () => {
@@ -106,11 +119,13 @@ describe('Rust contest-scoped bulk rejudge API contract', () => {
       .mockResolvedValueOnce(jsonResponse(csrf))
       .mockResolvedValueOnce(jsonResponse({ code, message: code, fieldErrors: [] }, 409));
 
-    await expect(bulkRejudgeApi.create(42, {
-      filter,
-      expectedCount: 2,
-      confirmationText: 'REJUDGE 2',
-      idempotencyKey: 'batch-rejudge-42-operation-one',
-    })).rejects.toMatchObject({ status: 409, code } satisfies Partial<ApiError>);
+    await expect(
+      bulkRejudgeApi.create(42, {
+        filter,
+        expectedCount: 2,
+        confirmationText: 'REJUDGE 2',
+        idempotencyKey: 'batch-rejudge-42-operation-one',
+      }),
+    ).rejects.toMatchObject({ status: 409, code } satisfies Partial<ApiError>);
   });
 });

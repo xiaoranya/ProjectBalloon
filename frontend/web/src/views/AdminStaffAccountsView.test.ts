@@ -2,17 +2,13 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminStaffAccountsView from './AdminStaffAccountsView.vue';
 
-const {
-  listStaffAccounts,
-  createStaffAccount,
-  updateStaffAccount,
-  resetStaffPassword,
-} = vi.hoisted(() => ({
-  listStaffAccounts: vi.fn(),
-  createStaffAccount: vi.fn(),
-  updateStaffAccount: vi.fn(),
-  resetStaffPassword: vi.fn(),
-}));
+const { listStaffAccounts, createStaffAccount, updateStaffAccount, resetStaffPassword } =
+  vi.hoisted(() => ({
+    listStaffAccounts: vi.fn(),
+    createStaffAccount: vi.fn(),
+    updateStaffAccount: vi.fn(),
+    resetStaffPassword: vi.fn(),
+  }));
 
 vi.mock('../api/admin', () => ({
   adminApi: {
@@ -26,17 +22,19 @@ vi.mock('../api/admin', () => ({
 describe('AdminStaffAccountsView', () => {
   beforeEach(() => {
     listStaffAccounts.mockResolvedValue({
-      content: [{
-        id: 9,
-        username: 'judge-01',
-        displayName: 'Judge One',
-        userType: 'JUDGE',
-        enabled: true,
-        passwordResetRequired: true,
-        lastLoginAt: null,
-        createdAt: '2026-07-17T00:00:00Z',
-        updatedAt: '2026-07-17T00:00:00Z',
-      }],
+      content: [
+        {
+          id: 9,
+          username: 'judge-01',
+          displayName: 'Judge One',
+          userType: 'JUDGE',
+          enabled: true,
+          passwordResetRequired: true,
+          lastLoginAt: null,
+          createdAt: '2026-07-17T00:00:00Z',
+          updatedAt: '2026-07-17T00:00:00Z',
+        },
+      ],
     });
   });
 

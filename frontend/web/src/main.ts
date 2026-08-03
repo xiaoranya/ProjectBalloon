@@ -29,18 +29,19 @@ setUnauthorizedHandler(() => {
   session.clearSession();
   const current = router.currentRoute.value;
   if (!current.matched.some((record) => record.meta.requiresAuth)) return;
-  const staffRoute = current.matched.some((record) => (
-    record.meta.requiresStaff
-    || record.meta.requiresAdmin
-    || record.meta.requiresSuperAdmin
-    || record.meta.requiresJudge
-    || record.meta.requiresPrinter
-    || record.meta.requiresBalloonStaff
-    || record.meta.requiresAwardOperator
-    || record.meta.requiresResolverOperator
-    || record.meta.requiresScreenOperator
-    || record.meta.requiresLiveOperator
-  ));
+  const staffRoute = current.matched.some(
+    (record) =>
+      record.meta.requiresStaff ||
+      record.meta.requiresAdmin ||
+      record.meta.requiresSuperAdmin ||
+      record.meta.requiresJudge ||
+      record.meta.requiresPrinter ||
+      record.meta.requiresBalloonStaff ||
+      record.meta.requiresAwardOperator ||
+      record.meta.requiresResolverOperator ||
+      record.meta.requiresScreenOperator ||
+      record.meta.requiresLiveOperator,
+  );
   void router.replace({
     name: staffRoute ? 'admin-login' : 'login',
     query: { redirect: current.fullPath },
@@ -50,22 +51,23 @@ setUnauthorizedHandler(() => {
 router.beforeEach(async (to) => {
   await session.initialize();
   if (to.meta.requiresAuth && !session.isAuthenticated.value) {
-    const staffRoute = to.meta.requiresStaff
-      || to.meta.requiresAdmin
-      || to.meta.requiresSuperAdmin
-      || to.meta.requiresJudge
-      || to.meta.requiresPrinter
-      || to.meta.requiresBalloonStaff
-      || to.meta.requiresAwardOperator
-      || to.meta.requiresResolverOperator
-      || to.meta.requiresScreenOperator
-      || to.meta.requiresLiveOperator;
+    const staffRoute =
+      to.meta.requiresStaff ||
+      to.meta.requiresAdmin ||
+      to.meta.requiresSuperAdmin ||
+      to.meta.requiresJudge ||
+      to.meta.requiresPrinter ||
+      to.meta.requiresBalloonStaff ||
+      to.meta.requiresAwardOperator ||
+      to.meta.requiresResolverOperator ||
+      to.meta.requiresScreenOperator ||
+      to.meta.requiresLiveOperator;
     return { name: staffRoute ? 'admin-login' : 'login', query: { redirect: to.fullPath } };
   }
   if (
-    session.isAuthenticated.value
-    && session.state.user?.passwordResetRequired
-    && to.name !== 'change-password'
+    session.isAuthenticated.value &&
+    session.state.user?.passwordResetRequired &&
+    to.name !== 'change-password'
   ) {
     return { name: 'change-password' };
   }

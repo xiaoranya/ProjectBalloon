@@ -3,10 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ContestClarificationView from './ContestClarificationView.vue';
 
 const mocks = vi.hoisted(() => ({
-  listProblems: vi.fn(), listMine: vi.fn(), ask: vi.fn(), subscribe: vi.fn(), success: vi.fn(),
+  listProblems: vi.fn(),
+  listMine: vi.fn(),
+  ask: vi.fn(),
+  subscribe: vi.fn(),
+  success: vi.fn(),
 }));
 vi.mock('../api/contest', () => ({ contestApi: { listProblems: mocks.listProblems } }));
-vi.mock('../api/clarifications', () => ({ clarificationApi: { listMine: mocks.listMine, ask: mocks.ask } }));
+vi.mock('../api/clarifications', () => ({
+  clarificationApi: { listMine: mocks.listMine, ask: mocks.ask },
+}));
 vi.mock('../realtime/contest-events', () => ({ subscribeContestEvents: mocks.subscribe }));
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: { contestId: '7' } }) }));
 vi.mock('element-plus', async (importOriginal) => {
@@ -15,11 +21,24 @@ vi.mock('element-plus', async (importOriginal) => {
 });
 
 const clarification = {
-  id: 9, contestId: 7, teamId: 3, teamName: 'Sensitive Team', scope: 'GENERAL', problemId: null,
-  problemAlias: null, question: 'Is the input sorted?', status: 'ANSWERED', reply: 'No.',
-  replyVisibility: 'PRIVATE', askedByUserId: 44, repliedByUserId: 55,
-  repliedAt: '2026-07-20T08:03:00Z', convertedAnnouncementId: null,
-  createdAt: '2026-07-20T08:00:00Z', updatedAt: '2026-07-20T08:03:00Z', version: 1,
+  id: 9,
+  contestId: 7,
+  teamId: 3,
+  teamName: 'Sensitive Team',
+  scope: 'GENERAL',
+  problemId: null,
+  problemAlias: null,
+  question: 'Is the input sorted?',
+  status: 'ANSWERED',
+  reply: 'No.',
+  replyVisibility: 'PRIVATE',
+  askedByUserId: 44,
+  repliedByUserId: 55,
+  repliedAt: '2026-07-20T08:03:00Z',
+  convertedAnnouncementId: null,
+  createdAt: '2026-07-20T08:00:00Z',
+  updatedAt: '2026-07-20T08:03:00Z',
+  version: 1,
 };
 
 describe('ContestClarificationView', () => {
@@ -36,11 +55,13 @@ describe('ContestClarificationView', () => {
 
     expect(mocks.listProblems).toHaveBeenCalledWith(7);
     expect(mocks.listMine).toHaveBeenCalledWith(7);
-    expect(mocks.subscribe).toHaveBeenCalledWith(expect.objectContaining({
-      contestId: 7,
-      scope: 'TEAM',
-      eventTypes: ['CLARIFICATION_UPDATED'],
-    }));
+    expect(mocks.subscribe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contestId: 7,
+        scope: 'TEAM',
+        eventTypes: ['CLARIFICATION_UPDATED'],
+      }),
+    );
     expect(wrapper.text()).toContain('我的问题');
   });
 
@@ -56,7 +77,13 @@ describe('ContestClarificationView', () => {
   });
 
   it('submits the exact problem-scoped DTO', async () => {
-    mocks.ask.mockResolvedValue({ ...clarification, id: 10, scope: 'PROBLEM', problemId: 2, problemAlias: 'A' });
+    mocks.ask.mockResolvedValue({
+      ...clarification,
+      id: 10,
+      scope: 'PROBLEM',
+      problemId: 2,
+      problemAlias: 'A',
+    });
     const wrapper = mount(ContestClarificationView);
     await flushPromises();
     const radios = wrapper.findAll('input[type="radio"]');
@@ -69,7 +96,9 @@ describe('ContestClarificationView', () => {
     await flushPromises();
 
     expect(mocks.ask).toHaveBeenCalledWith(7, {
-      scope: 'PROBLEM', problemId: 2, question: 'Need a hint?',
+      scope: 'PROBLEM',
+      problemId: 2,
+      question: 'Need a hint?',
     });
     expect(mocks.success).toHaveBeenCalledWith('问题已提交');
   });

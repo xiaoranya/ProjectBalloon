@@ -8,7 +8,14 @@
     </el-header>
 
     <el-main class="page-body">
-      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+      <ElAlert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+        class="page-alert"
+      />
 
       <ElCard shadow="never">
         <ElTable v-loading="loading" :data="page.content" row-key="id" @row-click="editProblem">
@@ -22,24 +29,40 @@
           </ElTableColumn>
           <ElTableColumn label="语言" min-width="190">
             <template #default="{ row }">
-              <ElTag v-for="language in row.languages" :key="language" class="problem-language-tag" effect="plain">
+              <ElTag
+                v-for="language in row.languages"
+                :key="language"
+                class="problem-language-tag"
+                effect="plain"
+              >
                 {{ languageLabel(language) }}
               </ElTag>
             </template>
           </ElTableColumn>
           <ElTableColumn label="资源限制" min-width="220">
-            <template #default="{ row }">{{ row.timeLimitMs }} ms · {{ row.memoryLimitMb }} MiB · {{ row.outputLimitKb }} KiB</template>
+            <template #default="{ row }"
+              >{{ row.timeLimitMs }} ms · {{ row.memoryLimitMb }} MiB ·
+              {{ row.outputLimitKb }} KiB</template
+            >
           </ElTableColumn>
           <ElTableColumn label="测试数据" width="130">
             <template #default="{ row }">
-              <ElTag :type="row.testdataVersion > 0 ? 'success' : 'info'">v{{ row.testdataVersion }}</ElTag>
+              <ElTag :type="row.testdataVersion > 0 ? 'success' : 'info'"
+                >v{{ row.testdataVersion }}</ElTag
+              >
             </template>
           </ElTableColumn>
-          <ElTableColumn label="版本" width="90"><template #default="{ row }">{{ row.version }}</template></ElTableColumn>
+          <ElTableColumn label="版本" width="90"
+            ><template #default="{ row }">{{ row.version }}</template></ElTableColumn
+          >
           <ElTableColumn label="操作" width="150" fixed="right">
             <template #default="{ row }">
-              <ElButton link type="primary" @click.stop="editProblem(row as Problem)">编辑</ElButton>
-              <ElButton link type="danger" @click.stop="removeProblem(row as Problem)">删除</ElButton>
+              <ElButton link type="primary" @click.stop="editProblem(row as Problem)"
+                >编辑</ElButton
+              >
+              <ElButton link type="danger" @click.stop="removeProblem(row as Problem)"
+                >删除</ElButton
+              >
             </template>
           </ElTableColumn>
           <template #empty><ElEmpty description="暂无题目" /></template>
@@ -69,7 +92,13 @@ import type { PageResponse, Problem } from '../api/types';
 import { languageLabel } from '../utils/format';
 
 const router = useRouter();
-const page = ref<PageResponse<Problem>>({ content: [], page: 0, size: 50, totalElements: 0, totalPages: 0 });
+const page = ref<PageResponse<Problem>>({
+  content: [],
+  page: 0,
+  size: 50,
+  totalElements: 0,
+  totalPages: 0,
+});
 const currentPage = ref(1);
 const loading = ref(false);
 const errorMessage = ref('');

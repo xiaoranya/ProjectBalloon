@@ -6,7 +6,10 @@
         <div><strong>裁判工作台</strong><small>Clarification Desk</small></div>
       </RouterLink>
       <div class="judge-user">
-        <div><strong>{{ session.state.user?.displayName }}</strong><small>裁判</small></div>
+        <div>
+          <strong>{{ session.state.user?.displayName }}</strong
+          ><small>裁判</small>
+        </div>
         <ElButton plain :icon="SwitchButton" @click="logout">退出登录</ElButton>
       </div>
     </el-header>

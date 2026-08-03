@@ -11,9 +11,22 @@
     </el-header>
 
     <el-main class="page-body">
-      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+      <ElAlert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+        class="page-alert"
+      />
 
-      <ElTable v-loading="loading" :data="submissions" class="data-table" empty-text="暂无提交记录" @row-click="openSubmission">
+      <ElTable
+        v-loading="loading"
+        :data="submissions"
+        class="data-table"
+        empty-text="暂无提交记录"
+        @row-click="openSubmission"
+      >
         <ElTableColumn prop="id" label="#" width="90" />
         <ElTableColumn prop="problemAlias" label="题目" width="100" />
         <ElTableColumn label="语言" width="120">
@@ -101,7 +114,8 @@ async function loadSubmissions(silent = false) {
 
 function schedulePolling(delay = 4_000) {
   if (pollTimer) window.clearTimeout(pollTimer);
-  if (document.hidden || !submissions.value.some((item) => !isFinalSubmissionStatus(item.status))) return;
+  if (document.hidden || !submissions.value.some((item) => !isFinalSubmissionStatus(item.status)))
+    return;
   pollTimer = window.setTimeout(() => void loadSubmissions(true), delay);
 }
 
@@ -117,10 +131,14 @@ onMounted(() => {
   document.addEventListener('visibilitychange', handleVisibility);
 });
 
-watch(contestId, () => {
-  currentPage.value = 1;
-  void loadSubmissions();
-}, { immediate: true });
+watch(
+  contestId,
+  () => {
+    currentPage.value = 1;
+    void loadSubmissions();
+  },
+  { immediate: true },
+);
 
 onUnmounted(() => {
   if (pollTimer) window.clearTimeout(pollTimer);

@@ -1,7 +1,8 @@
 import { apiRequest } from './client';
 
 export type BatchRejudgeTaskStatus = 'PENDING' | 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
-export type BatchRejudgeItemStatus = 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
+export type BatchRejudgeItemStatus =
+  'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
 export type BatchRejudgeVerdict =
   | 'ACCEPTED'
   | 'WRONG_ANSWER'

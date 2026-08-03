@@ -55,21 +55,38 @@ export const balloonApi = {
   dispatch(contestId: number, limit = 10, zone?: string) {
     const query = new URLSearchParams({ limit: String(limit) });
     if (zone) query.set('zone', zone);
-    return apiRequest<BalloonTask[]>(`/api/contests/${contestId}/balloons/dispatch?${query}`, { method: 'POST' });
+    return apiRequest<BalloonTask[]>(`/api/contests/${contestId}/balloons/dispatch?${query}`, {
+      method: 'POST',
+    });
   },
   claim(id: number, expectedVersion: number) {
-    return apiRequest<BalloonTask>(taskPath(id, 'claim'), { method: 'POST', body: { expectedVersion } });
+    return apiRequest<BalloonTask>(taskPath(id, 'claim'), {
+      method: 'POST',
+      body: { expectedVersion },
+    });
   },
   deliver(id: number, expectedVersion: number) {
-    return apiRequest<BalloonTask>(taskPath(id, 'deliver'), { method: 'POST', body: { expectedVersion } });
+    return apiRequest<BalloonTask>(taskPath(id, 'deliver'), {
+      method: 'POST',
+      body: { expectedVersion },
+    });
   },
   cancel(id: number, expectedVersion: number, reason: string) {
-    return apiRequest<BalloonTask>(taskPath(id, 'cancel'), { method: 'POST', body: { expectedVersion, reason } });
+    return apiRequest<BalloonTask>(taskPath(id, 'cancel'), {
+      method: 'POST',
+      body: { expectedVersion, reason },
+    });
   },
   reopen(id: number, expectedVersion: number) {
-    return apiRequest<BalloonTask>(taskPath(id, 'reopen'), { method: 'POST', body: { expectedVersion } });
+    return apiRequest<BalloonTask>(taskPath(id, 'reopen'), {
+      method: 'POST',
+      body: { expectedVersion },
+    });
   },
   note(id: number, expectedVersion: number, note: string | null) {
-    return apiRequest<BalloonTask>(taskPath(id, 'note'), { method: 'PATCH', body: { expectedVersion, note } });
+    return apiRequest<BalloonTask>(taskPath(id, 'note'), {
+      method: 'PATCH',
+      body: { expectedVersion, note },
+    });
   },
 };

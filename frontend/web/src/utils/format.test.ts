@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  isFinalSubmissionStatus,
-  statusTagType,
-  submissionStatusLabel,
-} from './format';
+import { isFinalSubmissionStatus, statusTagType, submissionStatusLabel } from './format';
 
 describe('Rust submission status helpers', () => {
   it('keeps active states polling and stops on final verdicts', () => {

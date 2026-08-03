@@ -122,13 +122,7 @@ export interface StaffAccount {
   updatedAt: string;
 }
 
-export type ContestStatus =
-  | 'DRAFT'
-  | 'FROZEN_CONFIG'
-  | 'RUNNING'
-  | 'PAUSED'
-  | 'ENDED'
-  | 'ARCHIVED';
+export type ContestStatus = 'DRAFT' | 'FROZEN_CONFIG' | 'RUNNING' | 'PAUSED' | 'ENDED' | 'ARCHIVED';
 export type ContestVisibility = 'PUBLIC' | 'PRIVATE';
 
 export interface Contest {

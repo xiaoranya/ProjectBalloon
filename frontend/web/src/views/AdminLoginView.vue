@@ -17,9 +17,20 @@
             <p>使用管理员、裁判、打印员、气球或颁奖工作人员账号</p>
           </div>
         </template>
-        <ElForm ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
+        <ElForm
+          ref="formRef"
+          :model="form"
+          :rules="rules"
+          label-position="top"
+          @submit.prevent="submit"
+        >
           <ElFormItem label="用户名" prop="username">
-            <ElInput v-model="form.username" size="large" autocomplete="username" :prefix-icon="User" />
+            <ElInput
+              v-model="form.username"
+              size="large"
+              autocomplete="username"
+              :prefix-icon="User"
+            />
           </ElFormItem>
           <ElFormItem label="密码" prop="password">
             <ElInput
@@ -32,8 +43,21 @@
               @keyup.enter="submit"
             />
           </ElFormItem>
-          <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="form-alert" />
-          <ElButton type="primary" size="large" native-type="submit" :loading="session.state.loading" class="wide-button">
+          <ElAlert
+            v-if="errorMessage"
+            :title="errorMessage"
+            type="error"
+            show-icon
+            :closable="false"
+            class="form-alert"
+          />
+          <ElButton
+            type="primary"
+            size="large"
+            native-type="submit"
+            :loading="session.state.loading"
+            class="wide-button"
+          >
             进入工作台
           </ElButton>
         </ElForm>
@@ -78,10 +102,14 @@ async function submit() {
     }
     const requestedRedirect = typeof route.query.redirect === 'string' ? route.query.redirect : '';
     const allowedPrefixes = new Set([String(homeForUserType(user.userType))]);
-    if (user.userType === 'SUPER_ADMIN') ['/admin', '/judge', '/printer'].forEach((prefix) => allowedPrefixes.add(prefix));
+    if (user.userType === 'SUPER_ADMIN')
+      ['/admin', '/judge', '/printer'].forEach((prefix) => allowedPrefixes.add(prefix));
     if (user.userType === 'JUDGE' || user.roles.includes('JUDGE')) allowedPrefixes.add('/judge');
-    if (user.userType === 'PRINTER' || user.roles.includes('PRINTER')) allowedPrefixes.add('/printer');
-    const redirect = [...allowedPrefixes].some((prefix) => requestedRedirect === prefix || requestedRedirect.startsWith(`${prefix}/`))
+    if (user.userType === 'PRINTER' || user.roles.includes('PRINTER'))
+      allowedPrefixes.add('/printer');
+    const redirect = [...allowedPrefixes].some(
+      (prefix) => requestedRedirect === prefix || requestedRedirect.startsWith(`${prefix}/`),
+    )
       ? requestedRedirect
       : homeForUserType(user.userType);
     await router.replace(redirect);

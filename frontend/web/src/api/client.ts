@@ -11,7 +11,12 @@ export class ApiError extends Error {
   readonly code: string;
   readonly fieldErrors: ApiErrorBody['fieldErrors'];
 
-  constructor(status: number, code: string, message: string, fieldErrors?: ApiErrorBody['fieldErrors']) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    fieldErrors?: ApiErrorBody['fieldErrors'],
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
@@ -51,7 +56,7 @@ async function getCsrfToken(): Promise<CsrfResponse> {
 
 async function createApiError(response: Response): Promise<ApiError> {
   const contentType = response.headers.get('content-type') ?? '';
-  let body: ApiErrorBody = {};
+  let body: ApiErrorBody;
   if (contentType.includes('json')) {
     try {
       body = (await response.json()) as ApiErrorBody;
@@ -88,7 +93,12 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { acceptedStatuses = [], responseType, suppressUnauthorizedHandler = false, ...fetchOptions } = options;
+  const {
+    acceptedStatuses = [],
+    responseType,
+    suppressUnauthorizedHandler = false,
+    ...fetchOptions
+  } = options;
   const method = (fetchOptions.method ?? 'GET').toUpperCase();
   const headers = new Headers(fetchOptions.headers);
   if (!headers.has('Accept')) {

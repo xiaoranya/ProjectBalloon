@@ -15,7 +15,8 @@ export const printRequestStatuses = [
 ] as const;
 
 export type PrintRequestStatus = (typeof printRequestStatuses)[number];
-export type PrintRequestAction = 'QUEUED' | 'PRINTING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'REJECTED';
+export type PrintRequestAction =
+  'QUEUED' | 'PRINTING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'REJECTED';
 
 export interface PrintRequestResponse {
   id: number;
@@ -65,7 +66,11 @@ export function validatePrintContent(rawContent: string): PrintContentValidation
   let error: string | null = null;
 
   if (!content.trim()) error = '请输入需要打印的纯文本内容';
-  else if ([...content].some((character) => character !== '\n' && character !== '\t' && /\p{Cc}/u.test(character))) {
+  else if (
+    [...content].some(
+      (character) => character !== '\n' && character !== '\t' && /\p{Cc}/u.test(character),
+    )
+  ) {
     error = '打印内容不能包含换行和制表符以外的控制字符';
   } else if (bytes > PRINT_CONTENT_MAX_BYTES) error = '打印内容不能超过 20 KiB';
   else if (pageCount > PRINT_PAGE_MAX) error = '打印内容不能超过 5 页';

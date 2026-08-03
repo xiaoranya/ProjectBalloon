@@ -17,15 +17,22 @@ describe('resolverApi', () => {
   it('creates a run from explicit immutable snapshot identifiers', async () => {
     await resolverApi.create(7, 11, 12, true);
     expect(apiRequest).toHaveBeenCalledWith('/api/admin/contests/7/resolver-runs', {
-      method: 'POST', body: { publicSnapshotId: 11, finalSnapshotId: 12, official: true },
+      method: 'POST',
+      body: { publicSnapshotId: 11, finalSnapshotId: 12, official: true },
     });
   });
 
   it('sends the current optimistic version for commands and auto-play', async () => {
     await resolverApi.next(9, 3);
     await resolverApi.autoPlay(9, 4, true, 2500);
-    expect(apiRequest).toHaveBeenNthCalledWith(1, '/api/admin/resolver-runs/9/next', { method: 'POST', body: { expectedVersion: 3 } });
-    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/admin/resolver-runs/9/auto-play', { method: 'POST', body: { expectedVersion: 4, enabled: true, intervalMilliseconds: 2500 } });
+    expect(apiRequest).toHaveBeenNthCalledWith(1, '/api/admin/resolver-runs/9/next', {
+      method: 'POST',
+      body: { expectedVersion: 3 },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/admin/resolver-runs/9/auto-play', {
+      method: 'POST',
+      body: { expectedVersion: 4, enabled: true, intervalMilliseconds: 2500 },
+    });
   });
 
   it('uses the public state endpoint without an admin path', async () => {

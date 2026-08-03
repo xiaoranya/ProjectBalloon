@@ -21,6 +21,15 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('../api/admin-contests', () => ({ adminContestApi: api }));
 vi.mock('../auth/session', () => ({ useSession: () => ({ isSuperAdmin: api.isSuperAdmin }) }));
+vi.mock('../components/CodeEditor.vue', () => ({
+  default: {
+    name: 'CodeEditor',
+    props: ['modelValue', 'language', 'readonly', 'height'],
+    emits: ['update:modelValue'],
+    template:
+      '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+}));
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { contestId: '42' } }),
   useRouter: () => ({ push: api.push }),
@@ -47,33 +56,45 @@ describe('AdminContestDetailView', () => {
     api.listAllProblems.mockResolvedValue([]);
     api.listContestProblems.mockResolvedValue([]);
     api.listSubmissions.mockResolvedValue({
-      content: [{
-        id: 9,
-        contestId: 42,
-        problemId: 3,
-        problemAlias: 'A',
-        teamId: 8,
-        teamName: 'Team Eight',
-        language: 'cpp',
-        sourceSizeBytes: 128,
-        status: 'ACCEPTED',
-        submittedAt: '2026-07-20T09:00:00Z',
-        judgedAt: '2026-07-20T09:00:01Z',
-        activeJudgementId: '11111111-1111-1111-1111-111111111111',
-        verdict: 'ACCEPTED',
-        totalTimeMs: 10,
-        peakMemoryKb: 1024,
-      }],
+      content: [
+        {
+          id: 9,
+          contestId: 42,
+          problemId: 3,
+          problemAlias: 'A',
+          teamId: 8,
+          teamName: 'Team Eight',
+          language: 'cpp',
+          sourceSizeBytes: 128,
+          status: 'ACCEPTED',
+          submittedAt: '2026-07-20T09:00:00Z',
+          judgedAt: '2026-07-20T09:00:01Z',
+          activeJudgementId: '11111111-1111-1111-1111-111111111111',
+          verdict: 'ACCEPTED',
+          totalTimeMs: 10,
+          peakMemoryKb: 1024,
+        },
+      ],
       page: 0,
       size: 30,
       totalElements: 1,
       totalPages: 1,
     });
     api.getJudgeQueueStatus.mockResolvedValue({
-      contestId: 42, drained: true, pendingSubmissions: 0, judgingSubmissions: 0,
-      outboxPending: 0, outboxFailed: 0, checkedAt: '2026-07-20T09:00:00Z',
+      contestId: 42,
+      drained: true,
+      pendingSubmissions: 0,
+      judgingSubmissions: 0,
+      outboxPending: 0,
+      outboxFailed: 0,
+      checkedAt: '2026-07-20T09:00:00Z',
     });
-    api.getScoringPolicy.mockResolvedValue({ contestId: 42, scoringMode: 'ICPC', scoreAggregation: 'BEST', feedbackPolicy: 'FULL' });
+    api.getScoringPolicy.mockResolvedValue({
+      contestId: 42,
+      scoringMode: 'ICPC',
+      scoreAggregation: 'BEST',
+      feedbackPolicy: 'FULL',
+    });
   });
 
   it('loads contest administration resources from the Rust-aligned API', async () => {
@@ -93,7 +114,9 @@ describe('AdminContestDetailView', () => {
   it('links contest managers to the contest-scoped bulk rejudge workbench', async () => {
     const wrapper = mount(AdminContestDetailView);
     await flushPromises();
-    const entry = wrapper.findAll('button').find((button) => button.text().includes('批量重判工作台'))!;
+    const entry = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('批量重判工作台'))!;
 
     await entry.trigger('click');
 
@@ -112,11 +135,22 @@ describe('AdminContestDetailView', () => {
 
   it('links an assigned problem to the scoped content editor', async () => {
     api.listAllProblems.mockResolvedValue([{ id: 7, slug: 'sum', title: 'Sum' }]);
-    api.listContestProblems.mockResolvedValue([{
-      contestId: 42, problemId: 7, alias: 'A', displayOrder: 1, color: '#ff0000',
-      slug: 'sum', title: 'Sum', timeLimitMs: 1000, memoryLimitMb: 256,
-      outputLimitKb: 65536, languages: ['cpp'], statement: null,
-    }]);
+    api.listContestProblems.mockResolvedValue([
+      {
+        contestId: 42,
+        problemId: 7,
+        alias: 'A',
+        displayOrder: 1,
+        color: '#ff0000',
+        slug: 'sum',
+        title: 'Sum',
+        timeLimitMs: 1000,
+        memoryLimitMb: 256,
+        outputLimitKb: 65536,
+        languages: ['cpp'],
+        statement: null,
+      },
+    ]);
     const wrapper = mount(AdminContestDetailView);
     await flushPromises();
     const entry = wrapper.findAll('button').find((button) => button.text().includes('题目内容'))!;

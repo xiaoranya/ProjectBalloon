@@ -10,7 +10,14 @@
     </el-header>
 
     <el-main class="page-body">
-      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+      <ElAlert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+        class="page-alert"
+      />
 
       <ElCard shadow="never">
         <ElTable v-loading="loading" :data="page.content" row-key="id" @row-click="openContest">
@@ -23,10 +30,20 @@
             </template>
           </ElTableColumn>
           <ElTableColumn label="状态" width="130">
-            <template #default="{ row }"><ElTag :type="contestTagType(row.status)">{{ contestStatusLabel(row.status) }}</ElTag></template>
+            <template #default="{ row }"
+              ><ElTag :type="contestTagType(row.status)">{{
+                contestStatusLabel(row.status)
+              }}</ElTag></template
+            >
           </ElTableColumn>
-          <ElTableColumn label="开始时间" min-width="180"><template #default="{ row }">{{ formatDateTime(row.startAt) }}</template></ElTableColumn>
-          <ElTableColumn label="结束时间" min-width="180"><template #default="{ row }">{{ formatDateTime(row.endAt) }}</template></ElTableColumn>
+          <ElTableColumn label="开始时间" min-width="180"
+            ><template #default="{ row }">{{
+              formatDateTime(row.startAt)
+            }}</template></ElTableColumn
+          >
+          <ElTableColumn label="结束时间" min-width="180"
+            ><template #default="{ row }">{{ formatDateTime(row.endAt) }}</template></ElTableColumn
+          >
           <ElTableColumn label="操作" width="150" fixed="right">
             <template #default="{ row }">
               <ElButton link type="primary" @click.stop="openContest(row)">管理</ElButton>
@@ -48,7 +65,9 @@
 
       <ElDialog v-model="dialogVisible" :title="editing ? '编辑比赛' : '创建比赛'" width="660">
         <ElForm ref="formRef" :model="form" :rules="rules" label-position="top">
-          <ElFormItem label="比赛名称" prop="name"><ElInput v-model="form.name" maxlength="120" show-word-limit /></ElFormItem>
+          <ElFormItem label="比赛名称" prop="name"
+            ><ElInput v-model="form.name" maxlength="120" show-word-limit
+          /></ElFormItem>
           <ElFormItem label="可见性" prop="visibility">
             <ElRadioGroup v-model="form.visibility">
               <ElRadioButton value="PRIVATE">私有比赛</ElRadioButton>
@@ -57,20 +76,34 @@
           </ElFormItem>
           <ElRow :gutter="12" class="admin-form-grid">
             <ElCol :xs="24" :sm="8">
-              <ElFormItem label="开始时间"><ElDatePicker v-model="form.startAt" type="datetime" /></ElFormItem>
+              <ElFormItem label="开始时间"
+                ><ElDatePicker v-model="form.startAt" type="datetime"
+              /></ElFormItem>
             </ElCol>
             <ElCol :xs="24" :sm="8">
-              <ElFormItem label="封榜时间"><ElDatePicker v-model="form.freezeAt" type="datetime" /></ElFormItem>
+              <ElFormItem label="封榜时间"
+                ><ElDatePicker v-model="form.freezeAt" type="datetime"
+              /></ElFormItem>
             </ElCol>
             <ElCol :xs="24" :sm="8">
-              <ElFormItem label="结束时间"><ElDatePicker v-model="form.endAt" type="datetime" /></ElFormItem>
+              <ElFormItem label="结束时间"
+                ><ElDatePicker v-model="form.endAt" type="datetime"
+              /></ElFormItem>
             </ElCol>
           </ElRow>
-          <ElAlert v-if="dialogError" :title="dialogError" type="error" show-icon :closable="false" />
+          <ElAlert
+            v-if="dialogError"
+            :title="dialogError"
+            type="error"
+            show-icon
+            :closable="false"
+          />
         </ElForm>
         <template #footer>
           <ElButton @click="dialogVisible = false">取消</ElButton>
-          <ElButton type="primary" :loading="saving" @click="save">{{ editing ? '保存修改' : '创建比赛' }}</ElButton>
+          <ElButton type="primary" :loading="saving" @click="save">{{
+            editing ? '保存修改' : '创建比赛'
+          }}</ElButton>
         </template>
       </ElDialog>
     </el-main>
@@ -98,7 +131,13 @@ interface ContestForm {
 
 const router = useRouter();
 const session = useSession();
-const page = ref<PageResponse<Contest>>({ content: [], page: 0, size: 25, totalElements: 0, totalPages: 0 });
+const page = ref<PageResponse<Contest>>({
+  content: [],
+  page: 0,
+  size: 25,
+  totalElements: 0,
+  totalPages: 0,
+});
 const currentPage = ref(1);
 const loading = ref(false);
 const saving = ref(false);
@@ -107,7 +146,13 @@ const dialogError = ref('');
 const dialogVisible = ref(false);
 const editing = ref<Contest | null>(null);
 const formRef = ref<FormInstance>();
-const form = reactive<ContestForm>({ name: '', visibility: 'PRIVATE', startAt: null, freezeAt: null, endAt: null });
+const form = reactive<ContestForm>({
+  name: '',
+  visibility: 'PRIVATE',
+  startAt: null,
+  freezeAt: null,
+  endAt: null,
+});
 const rules: FormRules = { name: [{ required: true, message: '请输入比赛名称', trigger: 'blur' }] };
 
 async function loadContests() {
@@ -129,9 +174,21 @@ function resetForm(contest?: Contest) {
   form.freezeAt = contest?.freezeAt ? new Date(contest.freezeAt) : null;
   form.endAt = contest?.endAt ? new Date(contest.endAt) : null;
 }
-function openCreate() { editing.value = null; dialogError.value = ''; resetForm(); dialogVisible.value = true; }
-function openEdit(row: unknown) { editing.value = row as Contest; dialogError.value = ''; resetForm(editing.value); dialogVisible.value = true; }
-function openContest(row: unknown) { void router.push(`/admin/contests/${(row as Contest).id}`); }
+function openCreate() {
+  editing.value = null;
+  dialogError.value = '';
+  resetForm();
+  dialogVisible.value = true;
+}
+function openEdit(row: unknown) {
+  editing.value = row as Contest;
+  dialogError.value = '';
+  resetForm(editing.value);
+  dialogVisible.value = true;
+}
+function openContest(row: unknown) {
+  void router.push(`/admin/contests/${(row as Contest).id}`);
+}
 
 async function save() {
   if (!(await formRef.value?.validate().catch(() => false))) return;
@@ -143,7 +200,8 @@ async function save() {
   saving.value = true;
   dialogError.value = '';
   const payload = {
-    name: form.name.trim(), visibility: form.visibility,
+    name: form.name.trim(),
+    visibility: form.visibility,
     startAt: form.startAt?.toISOString() ?? null,
     freezeAt: form.freezeAt?.toISOString() ?? null,
     endAt: form.endAt?.toISOString() ?? null,
@@ -159,7 +217,15 @@ async function save() {
     saving.value = false;
   }
 }
-function contestTagType(status: string) { return status === 'RUNNING' ? 'success' : status === 'PAUSED' ? 'warning' : status === 'ENDED' || status === 'ARCHIVED' ? 'info' : 'primary'; }
+function contestTagType(status: string) {
+  return status === 'RUNNING'
+    ? 'success'
+    : status === 'PAUSED'
+      ? 'warning'
+      : status === 'ENDED' || status === 'ARCHIVED'
+        ? 'info'
+        : 'primary';
+}
 onMounted(loadContests);
 </script>
 

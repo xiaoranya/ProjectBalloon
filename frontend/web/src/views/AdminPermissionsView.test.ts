@@ -14,13 +14,15 @@ vi.mock('../api/admin', () => ({
 
 describe('AdminPermissionsView', () => {
   beforeEach(() => {
-    listContestAdminScopes.mockResolvedValue([{
-      userId: 7,
-      username: 'contest-admin',
-      displayName: 'Contest Administrator',
-      enabled: true,
-      contestIds: [2],
-    }]);
+    listContestAdminScopes.mockResolvedValue([
+      {
+        userId: 7,
+        username: 'contest-admin',
+        displayName: 'Contest Administrator',
+        enabled: true,
+        contestIds: [2],
+      },
+    ]);
     listContests.mockResolvedValue({
       content: [
         { id: 2, name: 'Regional', status: 'DRAFT' },
@@ -46,7 +48,9 @@ describe('AdminPermissionsView', () => {
 
     const checkboxes = wrapper.findAll('input[type="checkbox"]');
     await checkboxes[1].setValue(true);
-    const saveButton = wrapper.findAll('button').find((button) => button.text().includes('保存授权'));
+    const saveButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('保存授权'));
     await saveButton?.trigger('click');
     await flushPromises();
 

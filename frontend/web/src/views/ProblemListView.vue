@@ -11,7 +11,14 @@
     </el-header>
 
     <el-main class="page-body">
-      <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" class="page-alert" />
+      <ElAlert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        show-icon
+        :closable="false"
+        class="page-alert"
+      />
 
       <div v-loading="loading" class="problem-grid">
         <ElEmpty v-if="!loading && problems.length === 0" description="当前比赛还没有题目" />
@@ -72,10 +79,14 @@ function openProblem(problemId: number) {
   void router.push(`/contests/${contestId.value}/problems/${problemId}`);
 }
 
-watch(contestId, () => {
-  problems.value = [];
-  void loadProblems();
-}, { immediate: true });
+watch(
+  contestId,
+  () => {
+    problems.value = [];
+    void loadProblems();
+  },
+  { immediate: true },
+);
 </script>
 
 <style scoped>

@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiRequest, clearCsrfToken, getErrorMessage, setUnauthorizedHandler } from './client';
+import {
+  ApiError,
+  apiRequest,
+  clearCsrfToken,
+  getErrorMessage,
+  setUnauthorizedHandler,
+} from './client';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -53,7 +59,9 @@ describe('apiRequest', () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: 'down' }, 503));
 
-    await expect(apiRequest('/api/health', { acceptedStatuses: [503] })).resolves.toEqual({ status: 'down' });
+    await expect(apiRequest('/api/health', { acceptedStatuses: [503] })).resolves.toEqual({
+      status: 'down',
+    });
     expect(fetchMock.mock.calls[0][1]).not.toHaveProperty('acceptedStatuses');
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: 'down' }, 503));
@@ -84,7 +92,9 @@ describe('apiRequest', () => {
       jsonResponse({ code: 'SESSION_EXPIRED', message: '登录已失效' }, 401),
     );
 
-    await expect(apiRequest('/api/example', { method: 'POST' })).rejects.toMatchObject({ status: 401 });
+    await expect(apiRequest('/api/example', { method: 'POST' })).rejects.toMatchObject({
+      status: 401,
+    });
     expect(unauthorized).toHaveBeenCalledOnce();
   });
 

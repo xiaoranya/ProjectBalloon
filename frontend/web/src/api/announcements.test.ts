@@ -11,10 +11,23 @@ function jsonResponse(body: unknown, status = 200) {
 
 const csrf = { headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' };
 const announcement = {
-  id: 9, contestId: 7, title: 'Notice', body: 'Body', pinned: false, status: 'SCHEDULED',
-  createdByUserId: 1, publishedAt: null, scheduledAt: '2026-07-22T10:00:00Z', withdrawnAt: null,
-  withdrawnByUserId: null, sourceClarificationId: null, cancelledAt: null,
-  cancelledByUserId: null, createdAt: '2026-07-22T08:00:00Z', updatedAt: '2026-07-22T08:00:00Z', version: 0,
+  id: 9,
+  contestId: 7,
+  title: 'Notice',
+  body: 'Body',
+  pinned: false,
+  status: 'SCHEDULED',
+  createdByUserId: 1,
+  publishedAt: null,
+  scheduledAt: '2026-07-22T10:00:00Z',
+  withdrawnAt: null,
+  withdrawnByUserId: null,
+  sourceClarificationId: null,
+  cancelledAt: null,
+  cancelledByUserId: null,
+  createdAt: '2026-07-22T08:00:00Z',
+  updatedAt: '2026-07-22T08:00:00Z',
+  version: 0,
 };
 
 describe('Rust announcement API contract', () => {
@@ -62,7 +75,11 @@ describe('Rust announcement API contract', () => {
       '/api/announcements/9/pin',
       '/api/announcements/9/withdraw',
     ]);
-    expect(calls[0][1]).toEqual(expect.objectContaining({ method: 'POST', body: JSON.stringify(payload) }));
-    expect(calls[3][1]).toEqual(expect.objectContaining({ body: JSON.stringify({ pinned: true }) }));
+    expect(calls[0][1]).toEqual(
+      expect.objectContaining({ method: 'POST', body: JSON.stringify(payload) }),
+    );
+    expect(calls[3][1]).toEqual(
+      expect.objectContaining({ body: JSON.stringify({ pinned: true }) }),
+    );
   });
 });
