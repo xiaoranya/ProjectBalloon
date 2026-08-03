@@ -1,17 +1,19 @@
 # Binary Install
 
 The default release is a binary package. It contains the API, Judge Worker,
-bootstrap CLI, Vue static files, and four Judge Runtime images. PostgreSQL,
-Redis, RabbitMQ, RustFS, Docker or Podman, and optional CUPS/Nginx services are
-host-managed prerequisites.
+bootstrap CLI, and Vue static files. The four Judge Runtime images are
+published as a separate archive and imported with `install.sh --judge-images`.
+PostgreSQL, Redis, RabbitMQ, RustFS, Docker or Podman, and optional CUPS/Nginx
+services are host-managed prerequisites.
 
 ## Release platform status
 
 GitHub Actions produces packages for Linux amd64, Linux arm64, macOS Intel,
-macOS arm64, and Windows x64. Linux packages are deployment packages and
-include the Judge Runtime image archives. macOS and Windows packages are
-portable build packages containing the binaries and frontend only; they do not
-include the Linux systemd, Nginx, or container-image installation flow.
+macOS arm64, and Windows x64. Linux packages are deployment packages; macOS
+and Windows packages are portable build packages containing the binaries and
+frontend only; neither includes the Judge Runtime image archives. Judge
+Runtime image archives are published separately for Linux amd64 and Linux
+arm64 and must be downloaded and imported on Judge hosts.
 
 | Package | Rust target | GitHub runner |
 |---|---|---|
@@ -45,18 +47,21 @@ the rootless image store remain host preparation steps described by the sandbox
 ADR; the installer does not create that service automatically.
 
 The installer does not create databases, queues, object-storage credentials, or
-production secrets. It does import the four Judge Runtime images and creates
-the application users, directories, environment file, systemd units, and Nginx
+production secrets. It imports the four Judge Runtime images from the directory
+given by `--judge-images` (or from `judge-images/` when bundled) and creates the
+application users, directories, environment file, systemd units, and Nginx
 configuration.
 
 ## Install a release
 
-Extract the published archive and run the installer as root:
+Extract the published binary archive and the matching Judge Runtime image
+archive, then run the installer as root:
 
 ```text
 tar -xzf project-balloon-<version>-<target>.tar.gz
+tar -xzf project-balloon-<version>-<target>-judge-images.tar.gz
 cd project-balloon-<version>-<target>
-sudo ./install.sh --no-start
+sudo ./install.sh --no-start --judge-images ../judge-images
 ```
 
 For the separated topology, install only the relevant role on each host:
@@ -66,11 +71,12 @@ For the separated topology, install only the relevant role on each host:
 sudo ./install.sh --role api --no-start
 
 # judge host
-sudo ./install.sh --role worker --skip-nginx --no-start --container-group docker
+sudo ./install.sh --role worker --skip-nginx --no-start \
+  --container-group docker --judge-images ../judge-images
 ```
 
 Both hosts must receive the same external-service configuration, while each
-Judge host additionally needs its local sandbox socket and imported runtime
+Judge host additionally needs its local sandbox socket and the imported runtime
 images. The default `all` role remains convenient for a single-host rehearsal.
 
 The first run creates `/etc/project-balloon/project-balloon.env` and exits so
@@ -82,11 +88,11 @@ sudoedit /etc/project-balloon/project-balloon.env
 sudo ./install.sh
 ```
 
-The second run imports the Judge Runtime images when the selected role includes
-the Worker, installs or refreshes the relevant systemd units, validates CUPS
-when the API role enables it, reloads Nginx when available, and starts the
-selected services. The API runs embedded SQLx migrations when
-`PROJECT_BALLOON_RUN_MIGRATIONS=true`.
+The second run imports the Judge Runtime images from `--judge-images` when the
+selected role includes the Worker, installs or refreshes the relevant systemd
+units, validates CUPS when the API role enables it, reloads Nginx when
+available, and starts the selected services. The API runs embedded SQLx
+migrations when `PROJECT_BALLOON_RUN_MIGRATIONS=true`.
 
 The application is installed under `/opt/project-balloon`. The service users
 are `project-balloon-api` and `project-balloon-worker`; the latter must be able

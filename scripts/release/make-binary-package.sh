@@ -4,8 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VERSION="${PROJECT_BALLOON_IMAGE_VERSION:-$(tr -d '[:space:]' < "$ROOT/VERSION")}"
 STAGING="$ROOT/dist/binary-staging"
-JUDGE_IMAGES="${1:-$ROOT/judge-images}"
-OUT_BASE="${2:-$ROOT/dist}"
+OUT_BASE="${1:-$ROOT/dist}"
 
 [ -d "$STAGING/bin" ] || { echo 'build binary staging before packaging' >&2; exit 1; }
 TARGET="${PROJECT_BALLOON_BINARY_TARGET:-$(sed -n 's/^PROJECT_BALLOON_TARGET=//p' "$STAGING/metadata/release.env")}"
@@ -13,8 +12,6 @@ PACKAGE_TARGET="${PROJECT_BALLOON_PACKAGE_TARGET:-$(sed -n 's/^PROJECT_BALLOON_P
 PACKAGE_TARGET="${PACKAGE_TARGET:-$TARGET}"
 [ -n "$TARGET" ] || { echo 'binary target is missing from staging metadata' >&2; exit 1; }
 [ -n "$PACKAGE_TARGET" ] || { echo 'package target is missing from staging metadata' >&2; exit 1; }
-[ -f "$JUDGE_IMAGES/SHA256SUMS" ] || { echo 'export judge images before packaging' >&2; exit 1; }
-(cd "$JUDGE_IMAGES" && sha256sum -c SHA256SUMS)
 PLATFORM_TEST_STATUS="${PROJECT_BALLOON_PLATFORM_TEST_STATUS:-$(sed -n 's/^PROJECT_BALLOON_PLATFORM_TEST_STATUS=//p' "$STAGING/metadata/release.env")}"
 PLATFORM_TEST_STATUS="${PLATFORM_TEST_STATUS:-linux-x86_64-only}"
 FINAL="$OUT_BASE/project-balloon-$VERSION-$PACKAGE_TARGET"
@@ -29,12 +26,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$TMP/bin" "$TMP/web" "$TMP/judge-images" "$TMP/config" \
+mkdir -p "$TMP/bin" "$TMP/web" "$TMP/config" \
   "$TMP/systemd" "$TMP/nginx" "$TMP/lib" "$TMP/docs" "$TMP/scripts/backup" "$TMP/scripts/lib"
 cp -a "$STAGING/bin/." "$TMP/bin/"
 cp -a "$STAGING/web/." "$TMP/web/"
 cp -a "$STAGING/metadata/." "$TMP/config/"
-cp -a "$JUDGE_IMAGES/." "$TMP/judge-images/"
 cp "$ROOT/install.sh" "$TMP/install.sh"
 cp "$ROOT/deploy/binary/project-balloon.env.example" "$TMP/config/"
 cp "$ROOT/deploy/binary/bootstrap-admin.env.example" "$TMP/config/"
@@ -54,16 +50,20 @@ ProjectBalloon deployment release $VERSION ($PACKAGE_TARGET)
 Rust target: $TARGET
 Platform validation: $PLATFORM_TEST_STATUS
 
-This package installs the API and Judge Worker as systemd services, serves the
-Vue frontend through Nginx when available, and imports the four Judge Runtime
-images. PostgreSQL, Redis, RabbitMQ, RustFS, Docker/Podman, CUPS, and Nginx
-must be supplied by the operator.
+This package installs the API and Judge Worker as systemd services and serves
+the Vue frontend through Nginx when available. Judge Runtime images are
+published separately as project-balloon-$VERSION-$PACKAGE_TARGET-judge-images.tar.gz;
+download and extract that archive, then pass its extracted judge-images
+directory to install.sh with --judge-images. PostgreSQL, Redis, RabbitMQ,
+RustFS, Docker/Podman, CUPS, and Nginx must be supplied by the operator.
 
 Install as root:
   ./install.sh
+  ./install.sh --judge-images judge-images
 For separated hosts:
   ./install.sh --role api
-  ./install.sh --role worker --skip-nginx --container-group docker
+  ./install.sh --role worker --skip-nginx --container-group docker \
+    --judge-images judge-images
 Edit /etc/project-balloon/project-balloon.env, then run ./install.sh again.
 
 Only Linux x86_64 has been tested end to end. Other platform packages are

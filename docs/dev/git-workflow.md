@@ -93,7 +93,7 @@ Official contest release candidate should include:
 - Built frontend.
 - Built API and Judge Worker binaries.
 - Built frontend static files.
-- Fixed-version Judge Runtime image tar files.
+- Fixed-version Judge Runtime image tar files (published as a separate judge-images archive).
 - External-service prerequisites documented separately.
 - Checksums.
 - Install, backup, and recovery docs.
