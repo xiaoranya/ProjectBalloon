@@ -28,7 +28,7 @@ mkdir -p "$STAGING/judge-images"
 cp -a "$IMAGES/." "$STAGING/judge-images/"
 tar -C "$STAGING" -czf "$FINAL.tmp" judge-images
 tar -tzf "$FINAL.tmp" >/dev/null
-(cd "$STAGING" && sha256sum -c judge-images/SHA256SUMS)
+(cd "$STAGING/judge-images" && sha256sum -c SHA256SUMS)
 mkdir -p "$OUT_BASE"
 mv "$FINAL.tmp" "$FINAL"
 rm -rf "$STAGING"
