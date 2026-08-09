@@ -44,7 +44,7 @@ This structure keeps business consistency simple while isolating judge execution
 |---|---|
 | Nginx | LAN entrypoint, static file serving, reverse proxy, request size/time limits |
 | Web frontend | Contestant UI, admin console, screen pages, live pages, resolver, awards |
-| API backend | Business API, authentication, RBAC, contest data, submissions, scoreboard, audit |
+| API backend | Business API, authentication, direct permission-based access control, contest data, submissions, scoreboard, audit |
 | Judge Scheduler | Submission task scheduling, retry coordination, worker visibility |
 | Judge Worker | Compile, sandbox run, collect results/logs, report judge outcome |
 | PostgreSQL | Authoritative business data and contest results |
@@ -61,7 +61,7 @@ The backend should be organized by modules even if deployed as one service initi
 
 P0 modules:
 
-- Identity and RBAC
+- Identity and permission-based access control
 - Team and account management
 - Contest management
 - Problem and test data management

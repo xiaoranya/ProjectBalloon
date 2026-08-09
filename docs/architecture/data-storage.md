@@ -157,7 +157,7 @@ transfer is a separate export/import project, not an upgrade guarantee.
 
 Audit logs should record:
 
-- Actor user ID and role.
+- Actor user ID and user type.
 - Operation type.
 - Target resource.
 - Previous and new values where reasonable.
@@ -167,7 +167,7 @@ Audit logs should record:
 
 Critical audited actions:
 
-- Role and account changes.
+- Permission and account changes.
 - Contest time changes.
 - Problem/test data changes.
 - Rejudge actions.

@@ -138,26 +138,9 @@ judge-images/
   SHA256SUMS
 ```
 
-现场部署流程：
-
-```text
-拷贝二进制发行包和对应的 judge-images 归档到服务器
-  ↓
-部署 PostgreSQL、Redis、RabbitMQ、RustFS
-  ↓
-在 app/gateway 主机执行 install.sh --role api --no-start
-  ↓
-在 judge 主机部署 Docker/Podman，
-  并执行 install.sh --role worker --no-start --judge-images ../judge-images
-  ↓
-填写 /etc/project-balloon/project-balloon.env
-  ↓
-再次执行对应 role 的 install.sh 启动服务
-  ↓
-执行 bootstrap-admin 创建首个管理员
-  ↓
-执行健康检查和备份验证
-```
+现场部署的具体步骤（角色安装、环境配置、首启迁移、bootstrap-admin、健康检查）见
+[`../ops/install.md`](../ops/install.md)；安装后的日常运维见
+[`../ops/ops.md`](../ops/ops.md)，故障恢复见 [`../ops/disaster-recovery.md`](../ops/disaster-recovery.md)。
 
 Judge Runtime 镜像名称必须使用固定版本，不使用 `latest` 标签，不依赖现场公网拉取镜像。基础服务的版本、升级和备份由部署方负责。
 
@@ -884,29 +867,8 @@ audit_logs
 
 ## 28. 压测与演练
 
-正式比赛前必须进行压测和故障演练。
-
-压测内容：
-
-- 1,500 用户登录。
-- 500 队同时查看题面。
-- 500 队同时刷新榜单。
-- 100-300 次/分钟提交。
-- Judge Worker 队列积压测试。
-- Resolver 滚榜页面压力测试。
-- 多大屏同时连接测试。
-- 打印任务压力测试。
-
-故障演练：
-
-- API 服务重启。
-- Judge Worker 掉线。
-- RabbitMQ 重启。
-- Redis 清空。
-- PostgreSQL 备份恢复。
-- RustFS 读取失败。
-- 打印机离线。
-- 大屏断线重连。
+正式比赛前必须进行压测和故障演练。压测目标、自动化 k6 套件、场景与成功标准、
+以及故障演练清单见 [`../ops/pressure-test.md`](../ops/pressure-test.md)。
 
 ## 29. 版本边界
 

@@ -58,13 +58,13 @@ The Rust API uses opaque server-side sessions:
 - Login rotates the session and revokes any previous session presented by the
   browser.
 - Logout deletes the server-side session before clearing the cookie.
-- Administrative disabling, role changes, and password resets revoke the
+- Administrative disabling, permission changes, and password resets revoke the
   affected user's sessions in the same transaction. Authentication also checks
   account state and an access fingerprint as defense in depth.
 - A user flagged for password reset may access only the authentication flow
   until the password is changed; protected feature handlers must call
   `require_password_ready`.
-- Feature handlers enforce authorization with `AuthContext::require_role`;
+- Feature handlers enforce authorization with `AuthContext::require_permission`;
   route visibility in the frontend is never an authorization boundary.
 
 Before login, the frontend obtains a CSRF token from `GET /api/auth/csrf`. It
@@ -81,8 +81,8 @@ default deployment cannot sign CSRF tokens with a publicly known key.
 Only an authenticated `SUPER_ADMIN` who has completed required password changes
 may call `/api/admin/staff-accounts`.
 
-- Staff creation normalizes usernames to lowercase and assigns exactly the role
-  matching the selected staff type.
+- Staff creation normalizes usernames to lowercase and assigns the requested
+  direct permission set; `SUPER_ADMIN` is a user type, not a role.
 - `TEAM` accounts are managed by the team lifecycle and cannot be created or
   modified through the staff endpoint.
 - New and administratively reset passwords always use Argon2id and require the
@@ -92,7 +92,7 @@ may call `/api/admin/staff-accounts`.
   row locks. This serializes administrator creation and demotion, prevents lock
   inversion, and preserves at least one enabled super administrator under
   concurrent requests.
-- User mutation, role replacement, contest-scope cleanup, session revocation,
+- User mutation, permission replacement, contest-scope cleanup, session revocation,
   and audit insertion commit atomically.
 
 Contest administrator scope replacement also uses a single transaction. It
