@@ -2,22 +2,24 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminPermissionsView from './AdminPermissionsView.vue';
 
-const { listContestAdminScopes, listContests, updateContestAdminScope } = vi.hoisted(() => ({
-  listContestAdminScopes: vi.fn(),
-  listContests: vi.fn(),
-  updateContestAdminScope: vi.fn(),
-}));
+const { listContestManagementScopes, listContests, updateContestManagementScope } = vi.hoisted(
+  () => ({
+    listContestManagementScopes: vi.fn(),
+    listContests: vi.fn(),
+    updateContestManagementScope: vi.fn(),
+  }),
+);
 
 vi.mock('../api/admin', () => ({
-  adminApi: { listContestAdminScopes, listContests, updateContestAdminScope },
+  adminApi: { listContestManagementScopes, listContests, updateContestManagementScope },
 }));
 
 describe('AdminPermissionsView', () => {
   beforeEach(() => {
-    listContestAdminScopes.mockResolvedValue([
+    listContestManagementScopes.mockResolvedValue([
       {
         userId: 7,
-        username: 'contest-admin',
+        username: 'contest-manager',
         displayName: 'Contest Administrator',
         enabled: true,
         contestIds: [2],
@@ -29,9 +31,9 @@ describe('AdminPermissionsView', () => {
         { id: 4, name: 'Final', status: 'RUNNING' },
       ],
     });
-    updateContestAdminScope.mockResolvedValue({
+    updateContestManagementScope.mockResolvedValue({
       userId: 7,
-      username: 'contest-admin',
+      username: 'contest-manager',
       displayName: 'Contest Administrator',
       enabled: true,
       contestIds: [2, 4],
@@ -54,6 +56,6 @@ describe('AdminPermissionsView', () => {
     await saveButton?.trigger('click');
     await flushPromises();
 
-    expect(updateContestAdminScope).toHaveBeenCalledWith(7, [2, 4]);
+    expect(updateContestManagementScope).toHaveBeenCalledWith(7, [2, 4]);
   });
 });

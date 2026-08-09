@@ -449,11 +449,11 @@ async fn require_access(
     if !active {
         return Err(batch_not_found());
     }
-    if actor.has_role("SUPER_ADMIN") {
+    if actor.is_super_admin() {
         return Ok(());
     }
     let assigned = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM contest_admin_assignments WHERE contest_id = $1 AND user_id = $2)",
+        "SELECT EXISTS (SELECT 1 FROM contest_management_assignments WHERE contest_id = $1 AND user_id = $2)",
     )
     .bind(contest_id)
     .bind(actor.id)
@@ -699,10 +699,10 @@ async fn load_actor(database: &PgPool, user_id: i64) -> Result<AuthUser, AppErro
     let row = sqlx::query_as::<_, (String, String, String, bool, Vec<String>)>(
         r#"
         SELECT account.username, account.display_name, account.user_type, account.password_reset_required,
-               coalesce(array_agg(role.code ORDER BY role.code) FILTER (WHERE role.code IS NOT NULL), ARRAY[]::varchar[])
+               coalesce(array_agg(permission.code ORDER BY permission.code) FILTER (WHERE permission.code IS NOT NULL), ARRAY[]::varchar[])
         FROM users account
-        LEFT JOIN user_roles membership ON membership.user_id = account.id
-        LEFT JOIN roles role ON role.id = membership.role_id
+        LEFT JOIN user_permissions membership ON membership.user_id = account.id
+        LEFT JOIN permissions permission ON permission.id = membership.permission_id
         WHERE account.id = $1 AND account.enabled = true
         GROUP BY account.id
         "#,
@@ -718,7 +718,7 @@ async fn load_actor(database: &PgPool, user_id: i64) -> Result<AuthUser, AppErro
         display_name: row.1,
         user_type: UserType::from_str(&row.2)?,
         password_reset_required: row.3,
-        roles: row.4,
+        permissions: row.4,
     })
 }
 
@@ -751,7 +751,7 @@ mod tests {
             username: "batch-root".into(),
             display_name: "Batch Root".into(),
             user_type: UserType::SuperAdmin,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         let team_id = sqlx::query_scalar::<_, i64>(

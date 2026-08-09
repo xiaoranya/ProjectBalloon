@@ -29,7 +29,7 @@ const individual = {
   username: 'alice',
   displayName: 'Alice',
   userType: 'INDIVIDUAL' as const,
-  roles: [],
+  permissions: [],
   passwordResetRequired: false,
 };
 

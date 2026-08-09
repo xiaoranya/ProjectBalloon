@@ -513,35 +513,41 @@ fn validate_template(template: &str) -> Result<&str, AppError> {
 }
 
 fn require_presentation_operator(actor: &AuthUser) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN")
-        || actor.has_role("SCREEN_OPERATOR")
-        || actor.has_role("LIVE_OPERATOR")
+    if actor.is_super_admin()
+        || actor.has_permission(crate::features::auth::permissions::SCREEN_MANAGE)
+        || actor.has_permission(crate::features::auth::permissions::LIVE_MANAGE)
     {
         Ok(())
     } else {
         Err(AppError::forbidden(
-            "PRESENTATION_OPERATOR_REQUIRED",
-            "Presentation operator role is required",
+            "PRESENTATION_PERMISSION_REQUIRED",
+            "Presentation management permission is required",
         ))
     }
 }
 pub(super) fn require_screen_operator(actor: &AuthUser) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") || actor.has_role("SCREEN_OPERATOR") {
-        Ok(())
-    } else {
-        Err(AppError::forbidden("SCREEN_OPERATOR_REQUIRED", "Screen operator role is required"))
-    }
-}
-fn require_mode_operator(actor: &AuthUser, mode: &str) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN")
-        || (mode == "SCREEN" && actor.has_role("SCREEN_OPERATOR"))
-        || (mode == "LIVE" && actor.has_role("LIVE_OPERATOR"))
+    if actor.is_super_admin()
+        || actor.has_permission(crate::features::auth::permissions::SCREEN_MANAGE)
     {
         Ok(())
     } else {
         Err(AppError::forbidden(
-            "PRESENTATION_OPERATOR_REQUIRED",
-            "Presentation operator role is required",
+            "SCREEN_PERMISSION_REQUIRED",
+            "Screen management permission is required",
+        ))
+    }
+}
+fn require_mode_operator(actor: &AuthUser, mode: &str) -> Result<(), AppError> {
+    if actor.is_super_admin()
+        || (mode == "SCREEN"
+            && actor.has_permission(crate::features::auth::permissions::SCREEN_MANAGE))
+        || (mode == "LIVE" && actor.has_permission(crate::features::auth::permissions::LIVE_MANAGE))
+    {
+        Ok(())
+    } else {
+        Err(AppError::forbidden(
+            "PRESENTATION_PERMISSION_REQUIRED",
+            "Presentation management permission is required",
         ))
     }
 }
@@ -762,7 +768,7 @@ mod tests {
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires PostgreSQL"]
     async fn screen_registration_heartbeat_commands_and_revocation_are_atomic(pool: PgPool) {
-        let user = sqlx::query_scalar::<_, i64>("INSERT INTO users(username,password_hash,display_name,user_type) VALUES('screen-op','hash','Screen Op','SCREEN_OPERATOR') RETURNING id")
+        let user = sqlx::query_scalar::<_, i64>("INSERT INTO users(username,password_hash,display_name,user_type) VALUES('screen-op','hash','Screen Op','STAFF') RETURNING id")
             .fetch_one(&pool).await.expect("screen operator");
         let contest = sqlx::query_scalar::<_, i64>("INSERT INTO contests(name,status,visibility,start_at,freeze_at,end_at) VALUES('Screen Contest','RUNNING','PUBLIC',now()-interval '1 hour',now()+interval '1 hour',now()+interval '2 hours') RETURNING id")
             .fetch_one(&pool).await.expect("contest");
@@ -770,8 +776,8 @@ mod tests {
             id: user,
             username: "screen-op".into(),
             display_name: "Screen Op".into(),
-            user_type: UserType::ScreenOperator,
-            roles: vec!["SCREEN_OPERATOR".into()],
+            user_type: UserType::Staff,
+            permissions: vec!["SCREEN_MANAGE".into()],
             password_reset_required: false,
         };
         let custom_template = sqlx::query_scalar::<_, i64>(

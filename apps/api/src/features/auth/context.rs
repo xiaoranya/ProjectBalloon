@@ -66,8 +66,8 @@ impl AuthContext {
         &self.session
     }
 
-    pub fn require_role(&self, role: &'static str) -> Result<(), AppError> {
-        if self.user().has_role(role) {
+    pub fn require_permission(&self, permission: &'static str) -> Result<(), AppError> {
+        if self.user().has_permission(permission) {
             Ok(())
         } else {
             Err(AppError::forbidden("FORBIDDEN", "Insufficient permissions"))
@@ -160,7 +160,9 @@ impl FromRequestParts<AppState> for SuperAdminContext {
     ) -> Result<Self, Self::Rejection> {
         let inner = AuthContext::from_request_parts(parts, state).await?;
         inner.require_password_ready()?;
-        inner.require_role("SUPER_ADMIN")?;
+        if !inner.user().is_super_admin() {
+            return Err(AppError::forbidden("FORBIDDEN", "Insufficient permissions"));
+        }
         Ok(Self { inner })
     }
 }
@@ -174,7 +176,7 @@ impl FromRequestParts<AppState> for ContestManagerContext {
     ) -> Result<Self, Self::Rejection> {
         let inner = AuthContext::from_request_parts(parts, state).await?;
         inner.require_password_ready()?;
-        if inner.user().has_role("SUPER_ADMIN") || inner.user().has_role("CONTEST_ADMIN") {
+        if inner.user().has_permission(super::permissions::CONTEST_MANAGE) {
             Ok(Self { inner })
         } else {
             Err(AppError::forbidden("FORBIDDEN", "Insufficient permissions"))

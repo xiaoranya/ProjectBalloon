@@ -31,9 +31,9 @@ const USER_COLUMNS: &str = r#"
     u.enabled,
     u.password_reset_required,
     COALESCE(
-        array_agg(r.code ORDER BY r.code) FILTER (WHERE r.code IS NOT NULL),
+        array_agg(p.code ORDER BY p.code) FILTER (WHERE p.code IS NOT NULL),
         ARRAY[]::varchar[]
-    ) AS roles
+    ) AS permissions
 "#;
 
 pub struct LoginOutcome {
@@ -496,8 +496,8 @@ impl AuthService {
             r#"
             SELECT {USER_COLUMNS}
             FROM users u
-            LEFT JOIN user_roles ur ON ur.user_id = u.id
-            LEFT JOIN roles r ON r.id = ur.role_id
+            LEFT JOIN user_permissions up ON up.user_id = u.id
+            LEFT JOIN permissions p ON p.id = up.permission_id
             WHERE u.username = $1
             GROUP BY u.id
             "#
@@ -514,8 +514,8 @@ impl AuthService {
             r#"
             SELECT {USER_COLUMNS}
             FROM users u
-            LEFT JOIN user_roles ur ON ur.user_id = u.id
-            LEFT JOIN roles r ON r.id = ur.role_id
+            LEFT JOIN user_permissions up ON up.user_id = u.id
+            LEFT JOIN permissions p ON p.id = up.permission_id
             WHERE u.id = $1
             GROUP BY u.id
             "#
@@ -672,9 +672,9 @@ fn digest(value: &str) -> String {
 fn access_fingerprint(user: &AuthUser) -> String {
     let mut hasher = Sha256::new();
     hasher.update(user.user_type.as_str().as_bytes());
-    for role in &user.roles {
+    for permission in &user.permissions {
         hasher.update([0]);
-        hasher.update(role.as_bytes());
+        hasher.update(permission.as_bytes());
     }
     hex::encode(hasher.finalize())
 }
@@ -706,12 +706,15 @@ mod tests {
             id: 1,
             username: "admin".to_owned(),
             display_name: "Admin".to_owned(),
-            user_type: UserType::SuperAdmin,
-            roles: vec!["JUDGE".to_owned(), "SUPER_ADMIN".to_owned()],
+            user_type: UserType::Staff,
+            permissions: vec!["CLARIFICATION_MANAGE".to_owned()],
             password_reset_required: false,
         };
 
         assert_eq!(access_fingerprint(&user), access_fingerprint(&user));
+        let mut changed = user.clone();
+        changed.permissions = vec!["PRINTING_MANAGE".to_owned()];
+        assert_ne!(access_fingerprint(&user), access_fingerprint(&changed));
         assert!(constant_time_equal("same", "same"));
         assert!(!constant_time_equal("same", "different"));
     }

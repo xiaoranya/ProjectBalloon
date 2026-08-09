@@ -19,18 +19,17 @@ export interface PageResponse<T> {
   totalPages: number;
 }
 
-export type UserType =
-  | 'TEAM'
-  | 'INDIVIDUAL'
-  | 'SUPER_ADMIN'
-  | 'CONTEST_ADMIN'
-  | 'BALLOON_STAFF'
-  | 'AWARD_OPERATOR'
-  | 'JUDGE'
-  | 'PRINTER'
-  | 'RESOLVER_OPERATOR'
-  | 'SCREEN_OPERATOR'
-  | 'LIVE_OPERATOR';
+export type UserType = 'TEAM' | 'INDIVIDUAL' | 'SUPER_ADMIN' | 'STAFF';
+
+export type PermissionCode =
+  | 'CONTEST_MANAGE'
+  | 'CLARIFICATION_MANAGE'
+  | 'PRINTING_MANAGE'
+  | 'BALLOON_MANAGE'
+  | 'RESOLVER_MANAGE'
+  | 'AWARD_MANAGE'
+  | 'SCREEN_MANAGE'
+  | 'LIVE_MANAGE';
 
 export type StaffUserType = Exclude<UserType, 'TEAM' | 'INDIVIDUAL'>;
 
@@ -93,7 +92,7 @@ export interface HealthResponse {
   cups?: DependencyHealth;
 }
 
-export interface ContestAdminScope {
+export interface ContestManagementScope {
   userId: number;
   username: string;
   displayName: string;
@@ -106,7 +105,7 @@ export interface CurrentUser {
   username: string;
   displayName: string;
   userType: UserType;
-  roles: string[];
+  permissions: PermissionCode[];
   passwordResetRequired: boolean;
   competition?: CompetitionSession;
 }
@@ -128,6 +127,7 @@ export interface StaffAccount {
   username: string;
   displayName: string;
   userType: StaffUserType;
+  permissions: PermissionCode[];
   enabled: boolean;
   passwordResetRequired: boolean;
   lastLoginAt: string | null;

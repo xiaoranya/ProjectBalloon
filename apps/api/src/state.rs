@@ -11,7 +11,7 @@ use crate::features::{
     balloons::BalloonService,
     clarifications::ClarificationService,
     competition::CompetitionService,
-    contest_admin_scopes::ContestAdminScopeService,
+    contest_management_scopes::ContestManagementScopeService,
     contest_problems::ContestProblemService,
     contests::ContestService,
     judge_dispatch::RabbitJudgeTaskPublisher,
@@ -40,7 +40,7 @@ pub struct AppState {
     competition: Arc<CompetitionService>,
     announcements: Arc<AnnouncementService>,
     staff_accounts: Arc<StaffAccountService>,
-    contest_admin_scopes: Arc<ContestAdminScopeService>,
+    contest_management_scopes: Arc<ContestManagementScopeService>,
     contest_problems: Arc<ContestProblemService>,
     audit_logs: Arc<AuditLogService>,
     contests: Arc<ContestService>,
@@ -126,7 +126,8 @@ impl AppState {
         let competition = Arc::new(CompetitionService::new(database.clone()));
         let announcements = Arc::new(AnnouncementService::new(database.clone()));
         let staff_accounts = Arc::new(StaffAccountService::new(database.clone()));
-        let contest_admin_scopes = Arc::new(ContestAdminScopeService::new(database.clone()));
+        let contest_management_scopes =
+            Arc::new(ContestManagementScopeService::new(database.clone()));
         let contest_problems = Arc::new(ContestProblemService::new(database.clone()));
         let audit_logs = Arc::new(AuditLogService::new(database.clone()));
         let contests = Arc::new(ContestService::new(database.clone()));
@@ -151,7 +152,7 @@ impl AppState {
             competition,
             announcements,
             staff_accounts,
-            contest_admin_scopes,
+            contest_management_scopes,
             contest_problems,
             audit_logs,
             contests,
@@ -253,8 +254,8 @@ impl AppState {
     }
 
     #[must_use]
-    pub fn contest_admin_scopes(&self) -> &ContestAdminScopeService {
-        &self.contest_admin_scopes
+    pub fn contest_management_scopes(&self) -> &ContestManagementScopeService {
+        &self.contest_management_scopes
     }
 
     #[must_use]

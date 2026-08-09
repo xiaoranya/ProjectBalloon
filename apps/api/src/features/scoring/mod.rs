@@ -396,7 +396,7 @@ async fn require_manage_pool(
     contest_id: i64,
     actor: &AuthUser,
 ) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") {
+    if actor.is_super_admin() {
         let exists = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(SELECT 1 FROM contests WHERE id=$1 AND deleted_at IS NULL)",
         )
@@ -406,7 +406,7 @@ async fn require_manage_pool(
         .map_err(|error| AppError::internal("check scoring contest", error))?;
         return if exists { Ok(()) } else { Err(contest_not_found()) };
     }
-    let assigned = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM contest_admin_assignments assignment JOIN contests contest ON contest.id=assignment.contest_id AND contest.deleted_at IS NULL WHERE assignment.user_id=$1 AND assignment.contest_id=$2)")
+    let assigned = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM contest_management_assignments assignment JOIN contests contest ON contest.id=assignment.contest_id AND contest.deleted_at IS NULL WHERE assignment.user_id=$1 AND assignment.contest_id=$2)")
         .bind(actor.id).bind(contest_id).fetch_one(database).await
         .map_err(|error| AppError::internal("check scoring management scope", error))?;
     if assigned { Ok(()) } else { Err(contest_not_found()) }
@@ -417,11 +417,11 @@ async fn require_manage_tx(
     contest_id: i64,
     actor: &AuthUser,
 ) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") {
+    if actor.is_super_admin() {
         return Ok(());
     }
     let assigned = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM contest_admin_assignments WHERE user_id=$1 AND contest_id=$2)",
+        "SELECT EXISTS(SELECT 1 FROM contest_management_assignments WHERE user_id=$1 AND contest_id=$2)",
     )
     .bind(actor.id)
     .bind(contest_id)

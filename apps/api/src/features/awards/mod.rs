@@ -1374,10 +1374,13 @@ async fn audit(
     sqlx::query("INSERT INTO audit_logs(actor_user_id,action,target_type,target_id,request_ip,result)VALUES($1,$2,'AWARD',$3,$4,'success')").bind(actor).bind(action).bind(id.to_string()).bind(ip.to_string()).execute(&mut**tx).await.map(|_|()).map_err(|e|AppError::internal("record award audit",e))
 }
 fn require_operator(a: &AuthUser) -> Result<(), AppError> {
-    if a.has_role("SUPER_ADMIN") || a.has_role("AWARD_OPERATOR") {
+    if a.is_super_admin() || a.has_permission(crate::features::auth::permissions::AWARD_MANAGE) {
         Ok(())
     } else {
-        Err(AppError::forbidden("AWARD_OPERATOR_REQUIRED", "Award operator role is required"))
+        Err(AppError::forbidden(
+            "AWARD_PERMISSION_REQUIRED",
+            "Award management permission is required",
+        ))
     }
 }
 
@@ -1835,7 +1838,7 @@ mod tests {
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires PostgreSQL"]
     async fn awards_use_official_resolver_snapshot_and_freeze(pool: PgPool) {
-        let user = sqlx::query_scalar::<_, i64>("INSERT INTO users(username,password_hash,display_name,user_type) VALUES('award-op','hash','Award Op','AWARD_OPERATOR') RETURNING id").fetch_one(&pool).await.expect("user");
+        let user = sqlx::query_scalar::<_, i64>("INSERT INTO users(username,password_hash,display_name,user_type) VALUES('award-op','hash','Award Op','STAFF') RETURNING id").fetch_one(&pool).await.expect("user");
         let contest = sqlx::query_scalar::<_, i64>("INSERT INTO contests(name,status,visibility,start_at,freeze_at,end_at) VALUES('Award Contest','ENDED','PUBLIC',now()-interval '3 hours',now()-interval '2 hours',now()-interval '1 hour') RETURNING id").fetch_one(&pool).await.expect("contest");
         let mut rows = Vec::new();
         for rank in 1_u32..=2 {
@@ -1880,8 +1883,8 @@ mod tests {
             id: user,
             username: "award-op".into(),
             display_name: "Award Op".into(),
-            user_type: UserType::AwardOperator,
-            roles: vec!["AWARD_OPERATOR".into()],
+            user_type: UserType::Staff,
+            permissions: vec!["AWARD_MANAGE".into()],
             password_reset_required: false,
         };
         let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);

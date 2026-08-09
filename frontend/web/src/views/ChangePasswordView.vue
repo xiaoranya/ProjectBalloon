@@ -66,7 +66,7 @@ import { computed, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { FormInstance, FormRules } from 'element-plus';
 import { getErrorMessage } from '../api/client';
-import { homeForUserType } from '../auth/access';
+import { homeForUser } from '../auth/access';
 import { useSession } from '../auth/session';
 import { useI18n } from '../i18n';
 
@@ -99,7 +99,7 @@ async function submit() {
   errorMessage.value = '';
   try {
     const user = await session.changePassword(form.currentPassword, form.newPassword);
-    await router.replace(homeForUserType(user.userType));
+    await router.replace(homeForUser(user));
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   }

@@ -9,11 +9,11 @@ const MAX_CONTESTS_PER_ADMIN: usize = 1_000;
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ReplaceContestAdminScopeRequest {
+pub struct ReplaceContestManagementScopeRequest {
     pub contest_ids: Vec<i64>,
 }
 
-impl ReplaceContestAdminScopeRequest {
+impl ReplaceContestManagementScopeRequest {
     pub fn validate(self) -> Result<Vec<i64>, AppError> {
         if self.contest_ids.len() > MAX_CONTESTS_PER_ADMIN {
             return Err(AppError::validation("contestIds", "must contain at most 1000 entries"));
@@ -27,7 +27,7 @@ impl ReplaceContestAdminScopeRequest {
 
 #[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
-pub struct ContestAdminScopeResponse {
+pub struct ContestManagementScopeResponse {
     pub user_id: i64,
     pub username: String,
     pub display_name: String,
@@ -37,11 +37,11 @@ pub struct ContestAdminScopeResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::ReplaceContestAdminScopeRequest;
+    use super::ReplaceContestManagementScopeRequest;
 
     #[test]
     fn scope_ids_are_sorted_and_deduplicated() {
-        let ids = ReplaceContestAdminScopeRequest { contest_ids: vec![3, 1, 3, 2] }
+        let ids = ReplaceContestManagementScopeRequest { contest_ids: vec![3, 1, 3, 2] }
             .validate()
             .expect("valid IDs");
         assert_eq!(ids, vec![1, 2, 3]);
@@ -49,6 +49,6 @@ mod tests {
 
     #[test]
     fn non_positive_scope_ids_are_rejected() {
-        assert!(ReplaceContestAdminScopeRequest { contest_ids: vec![0] }.validate().is_err());
+        assert!(ReplaceContestManagementScopeRequest { contest_ids: vec![0] }.validate().is_err());
     }
 }

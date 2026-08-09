@@ -480,14 +480,14 @@ pub(crate) async fn require_manage_tx(
     contest_id: i64,
     actor: &AuthUser,
 ) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") {
+    if actor.is_super_admin() {
         return Ok(());
     }
-    if !actor.has_role("CONTEST_ADMIN") {
+    if !actor.has_permission(crate::features::auth::permissions::CONTEST_MANAGE) {
         return Err(not_found());
     }
     let allowed = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM contest_admin_assignments WHERE contest_id = $1 AND user_id = $2)",
+        "SELECT EXISTS (SELECT 1 FROM contest_management_assignments WHERE contest_id = $1 AND user_id = $2)",
     ).bind(contest_id).bind(actor.id).fetch_one(&mut **tx).await
         .map_err(|error| AppError::internal("check announcement management scope", error))?;
     if allowed { Ok(()) } else { Err(not_found()) }
@@ -515,10 +515,10 @@ async fn require_readable(
         SELECT EXISTS (
             SELECT 1 FROM contests contest WHERE contest.id = $1 AND contest.deleted_at IS NULL
               AND (contest.visibility = 'PUBLIC' OR $2 OR
-                   EXISTS (SELECT 1 FROM contest_admin_assignments a WHERE a.contest_id = contest.id AND a.user_id = $3) OR
+                   EXISTS (SELECT 1 FROM contest_management_assignments a WHERE a.contest_id = contest.id AND a.user_id = $3) OR
                    EXISTS (SELECT 1 FROM team_accounts ta JOIN contest_teams ct ON ct.team_id = ta.team_id WHERE ta.user_id = $3 AND ct.contest_id = contest.id))
         )
-    "#).bind(contest_id).bind(actor.has_role("SUPER_ADMIN")).bind(actor.id).fetch_one(database).await
+    "#).bind(contest_id).bind(actor.is_super_admin()).bind(actor.id).fetch_one(database).await
         .map_err(|error| AppError::internal("check announcement visibility", error))?;
     if readable { Ok(()) } else { Err(not_found()) }
 }
@@ -925,7 +925,7 @@ mod tests {
             username: "ann-root".into(),
             display_name: "Ann Root".into(),
             user_type: UserType::SuperAdmin,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         let team = AuthUser {
@@ -933,7 +933,7 @@ mod tests {
             username: "ann-team".into(),
             display_name: "Ann Team".into(),
             user_type: UserType::Team,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         let service = AnnouncementService::new(pool.clone());
@@ -1016,7 +1016,7 @@ mod tests {
             username: "schedule-root".into(),
             display_name: "Schedule Root".into(),
             user_type: UserType::SuperAdmin,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         let service = AnnouncementService::new(pool.clone());

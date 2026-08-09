@@ -3,9 +3,10 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     features::{
-        announcements, audit_logs, auth, awards, balloons, clarifications, contest_admin_scopes,
-        contest_problems, contests, presentation, printing, problems, realtime, resolver,
-        scoreboard, scoring, staff_accounts, submissions, teams, training, virtual_practice,
+        announcements, audit_logs, auth, awards, balloons, clarifications,
+        contest_management_scopes, contest_problems, contests, presentation, printing, problems,
+        realtime, resolver, scoreboard, scoring, staff_accounts, submissions, teams, training,
+        virtual_practice,
     },
     health, metrics,
 };
@@ -217,8 +218,8 @@ const SWAGGER_UI_PATH: &str = "/api/docs";
         staff_accounts::handlers::create,
         staff_accounts::handlers::update,
         staff_accounts::handlers::reset_password,
-        contest_admin_scopes::handlers::list,
-        contest_admin_scopes::handlers::replace,
+        contest_management_scopes::handlers::list,
+        contest_management_scopes::handlers::replace,
         audit_logs::handlers::list,
         realtime::handlers::subscribe_public,
         realtime::handlers::subscribe_staff,
@@ -247,7 +248,7 @@ const SWAGGER_UI_PATH: &str = "/api/docs";
         (name = "announcements", description = "Contest announcement publication workflow"),
         (name = "judge-queue", description = "Judge queue operations and observability"),
         (name = "staff-accounts", description = "Staff account administration"),
-        (name = "admin-scopes", description = "Contest administrator scope management"),
+        (name = "admin-scopes", description = "Contest manager scope management"),
         (name = "audit-logs", description = "Administrative audit log queries"),
         (name = "realtime", description = "Server-sent contest event streams"),
         (name = "observability", description = "Prometheus operational metrics")
@@ -610,8 +611,8 @@ mod tests {
             ("/api/admin/staff-accounts", "post"),
             ("/api/admin/staff-accounts/{user_id}", "patch"),
             ("/api/admin/staff-accounts/{user_id}/reset-password", "post"),
-            ("/api/admin/contest-admins", "get"),
-            ("/api/admin/contest-admins/{user_id}/contests", "put"),
+            ("/api/admin/contest-managers", "get"),
+            ("/api/admin/contest-managers/{user_id}/contests", "put"),
             ("/api/admin/audit-logs", "get"),
             ("/api/public/events/contests/{contest_id}", "get"),
             ("/api/events/contests/{contest_id}", "get"),
@@ -621,7 +622,7 @@ mod tests {
         }
         for (path, method) in [
             ("/api/admin/staff-accounts", "get"),
-            ("/api/admin/contest-admins", "get"),
+            ("/api/admin/contest-managers", "get"),
             ("/api/admin/audit-logs", "get"),
         ] {
             assert!(document["paths"][path][method]["security"][0]["session_cookie"].is_array());
@@ -630,7 +631,7 @@ mod tests {
             ("/api/admin/staff-accounts", "post"),
             ("/api/admin/staff-accounts/{user_id}", "patch"),
             ("/api/admin/staff-accounts/{user_id}/reset-password", "post"),
-            ("/api/admin/contest-admins/{user_id}/contests", "put"),
+            ("/api/admin/contest-managers/{user_id}/contests", "put"),
         ] {
             let security = &document["paths"][path][method]["security"][0];
             assert!(security["session_cookie"].is_array());
@@ -764,6 +765,15 @@ mod tests {
             document["components"]["schemas"]["CurrentUserResponse"]["properties"]["userType"]["$ref"],
             "#/components/schemas/UserType"
         );
+        assert!(
+            document["components"]["schemas"]["CurrentUserResponse"]["properties"]["permissions"]
+                .is_object()
+        );
+        assert!(
+            document["components"]["schemas"]["CurrentUserResponse"]["properties"]["roles"]
+                .is_null()
+        );
+        assert!(document["paths"]["/api/admin/contest-admins"].is_null());
         assert_eq!(
             document["components"]["schemas"]["ContestResponse"]["properties"]["createdAt"]["format"],
             "date-time"

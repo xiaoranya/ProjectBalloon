@@ -8,7 +8,7 @@ describe('clarification routing', () => {
     const admin = routes.find((route) => route.path === '/admin');
     expect(
       admin?.children?.find((route) => route.name === 'admin-competition')?.meta,
-    ).toMatchObject({ requiresAdmin: true, competitionOnly: true });
+    ).toMatchObject({ requiredPermission: 'CONTEST_MANAGE', competitionOnly: true });
   });
 
   it('allows authenticated individual users to access public training', () => {
@@ -37,32 +37,32 @@ describe('clarification routing', () => {
     });
   });
 
-  it('adds the judge workspace only behind the JUDGE role guard', () => {
+  it('guards the clarification workspace by permission', () => {
     const judge = routes.find((route) => route.path === '/judge');
     expect(judge?.meta).toMatchObject({
       requiresAuth: true,
       requiresStaff: true,
-      requiresJudge: true,
+      requiredPermission: 'CLARIFICATION_MANAGE',
     });
     expect(judge?.children?.find((child) => child.name === 'judge-home')).toBeDefined();
   });
 
-  it('adds the printer workspace only behind the PRINTER role guard', () => {
+  it('guards the printer workspace by permission', () => {
     const printer = routes.find((route) => route.path === '/printer');
     expect(printer?.meta).toMatchObject({
       requiresAuth: true,
       requiresStaff: true,
-      requiresPrinter: true,
+      requiredPermission: 'PRINTING_MANAGE',
     });
     expect(printer?.children?.find((child) => child.name === 'printer-home')).toBeDefined();
   });
 
-  it('adds the balloon workspace behind the BALLOON_STAFF role guard', () => {
+  it('guards the balloon workspace by permission', () => {
     const balloon = routes.find((route) => route.path === '/balloon');
     expect(balloon?.meta).toMatchObject({
       requiresAuth: true,
       requiresStaff: true,
-      requiresBalloonStaff: true,
+      requiredPermission: 'BALLOON_MANAGE',
     });
     expect(balloon?.children?.find((child) => child.name === 'balloon-home')).toBeDefined();
   });
@@ -72,7 +72,7 @@ describe('clarification routing', () => {
     expect(resolver?.meta).toMatchObject({
       requiresAuth: true,
       requiresStaff: true,
-      requiresResolverOperator: true,
+      requiredPermission: 'RESOLVER_MANAGE',
     });
     expect(resolver?.children?.find((child) => child.name === 'resolver-home')).toBeDefined();
     expect(
@@ -85,7 +85,7 @@ describe('clarification routing', () => {
     expect(awards?.meta).toMatchObject({
       requiresAuth: true,
       requiresStaff: true,
-      requiresAwardOperator: true,
+      requiredPermission: 'AWARD_MANAGE',
     });
     expect(awards?.children?.find((child) => child.name === 'awards-home')).toBeDefined();
     expect(awards?.children?.find((child) => child.name === 'awards-presentation')).toBeDefined();
@@ -98,7 +98,7 @@ describe('clarification routing', () => {
   it('guards screen controls while keeping the registered screen client public', () => {
     expect(routes.find((route) => route.name === 'screen-manage')?.meta).toMatchObject({
       requiresAuth: true,
-      requiresScreenOperator: true,
+      requiredPermission: 'SCREEN_MANAGE',
     });
     expect(
       routes.find((route) => route.name === 'screen-client')?.meta?.requiresAuth,
@@ -107,13 +107,13 @@ describe('clarification routing', () => {
 });
 
 describe('admin bulk rejudge routing', () => {
-  it('uses a contest-scoped route guarded for SUPER_ADMIN and CONTEST_ADMIN managers', () => {
+  it('uses a contest-scoped route guarded by contest management permission', () => {
     const admin = routes.find((route) => route.path === '/admin');
     const route = admin?.children?.find((child) => child.name === 'admin-contest-rejudge-tasks');
 
     expect(route).toMatchObject({
       path: 'contests/:contestId/rejudge-tasks',
-      meta: { requiresAdmin: true },
+      meta: { requiredPermission: 'CONTEST_MANAGE' },
     });
     expect(route?.meta?.requiresSuperAdmin).not.toBe(true);
   });
@@ -123,7 +123,7 @@ describe('admin bulk rejudge routing', () => {
     const editor = admin?.children?.find((child) => child.name === 'admin-problem-editor');
     const create = admin?.children?.find((child) => child.name === 'admin-problem-new');
 
-    expect(editor?.meta).toMatchObject({ requiresAdmin: true });
+    expect(editor?.meta).toMatchObject({ requiredPermission: 'CONTEST_MANAGE' });
     expect(editor?.meta?.requiresSuperAdmin).not.toBe(true);
     expect(create?.meta).toMatchObject({ requiresSuperAdmin: true });
   });

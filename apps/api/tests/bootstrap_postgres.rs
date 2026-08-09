@@ -16,12 +16,10 @@ async fn bootstrap_is_atomic_and_one_time(pool: PgPool) {
     .await
     .expect("fresh database must bootstrap");
 
-    let row = sqlx::query_as::<_, (String, String, bool, bool, String)>(
+    let row = sqlx::query_as::<_, (String, String, bool, bool)>(
         r#"
-        SELECT u.username, u.user_type, u.enabled, u.password_reset_required, r.code
+        SELECT u.username, u.user_type, u.enabled, u.password_reset_required
         FROM users u
-        JOIN user_roles ur ON ur.user_id = u.id
-        JOIN roles r ON r.id = ur.role_id
         WHERE u.id = $1
         "#,
     )
@@ -33,7 +31,6 @@ async fn bootstrap_is_atomic_and_one_time(pool: PgPool) {
     assert_eq!(row.1, "SUPER_ADMIN");
     assert!(row.2);
     assert!(row.3);
-    assert_eq!(row.4, "SUPER_ADMIN");
 
     let audit_count = sqlx::query_scalar::<_, i64>(
         "SELECT count(*) FROM audit_logs WHERE action = 'SUPER_ADMIN_BOOTSTRAPPED'",

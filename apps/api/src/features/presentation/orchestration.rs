@@ -798,7 +798,7 @@ mod tests {
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires PostgreSQL"]
     async fn playlists_groups_and_heartbeat_share_an_optimistic_timeline(pool: PgPool) {
-        let user = sqlx::query_scalar::<_, i64>("INSERT INTO users(username,password_hash,display_name,user_type) VALUES('orchestration-op','hash','Orchestration Op','SCREEN_OPERATOR') RETURNING id")
+        let user = sqlx::query_scalar::<_, i64>("INSERT INTO users(username,password_hash,display_name,user_type) VALUES('orchestration-op','hash','Orchestration Op','STAFF') RETURNING id")
             .fetch_one(&pool).await.expect("screen operator");
         let contest = sqlx::query_scalar::<_, i64>("INSERT INTO contests(name,status,visibility,start_at,freeze_at,end_at) VALUES('Orchestration Contest','RUNNING','PUBLIC',now()-interval '1 hour',now()+interval '1 hour',now()+interval '2 hours') RETURNING id")
             .fetch_one(&pool).await.expect("contest");
@@ -806,8 +806,8 @@ mod tests {
             id: user,
             username: "orchestration-op".into(),
             display_name: "Orchestration Op".into(),
-            user_type: UserType::ScreenOperator,
-            roles: vec!["SCREEN_OPERATOR".into()],
+            user_type: UserType::Staff,
+            permissions: vec!["SCREEN_MANAGE".into()],
             password_reset_required: false,
         };
         let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);

@@ -140,10 +140,15 @@ pub struct PresentationMetrics {
 }
 
 fn require_live_operator(actor: &AuthUser) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") || actor.has_role("LIVE_OPERATOR") {
+    if actor.is_super_admin()
+        || actor.has_permission(crate::features::auth::permissions::LIVE_MANAGE)
+    {
         Ok(())
     } else {
-        Err(AppError::forbidden("LIVE_OPERATOR_REQUIRED", "Live operator role is required"))
+        Err(AppError::forbidden(
+            "LIVE_PERMISSION_REQUIRED",
+            "Live management permission is required",
+        ))
     }
 }
 fn hash(value: &str) -> String {
@@ -383,7 +388,7 @@ mod tests {
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires PostgreSQL"]
     async fn live_tokens_gate_published_data_and_metrics(pool: PgPool) {
-        let user = sqlx::query_scalar::<_, i64>("INSERT INTO users(username,password_hash,display_name,user_type) VALUES('live-op','hash','Live Op','LIVE_OPERATOR') RETURNING id").fetch_one(&pool).await.expect("operator");
+        let user = sqlx::query_scalar::<_, i64>("INSERT INTO users(username,password_hash,display_name,user_type) VALUES('live-op','hash','Live Op','STAFF') RETURNING id").fetch_one(&pool).await.expect("operator");
         let contest = sqlx::query_scalar::<_, i64>("INSERT INTO contests(name,status,visibility,start_at,freeze_at,end_at) VALUES('Live Contest','RUNNING','PUBLIC',now()-interval '1 hour',now()+interval '1 hour',now()+interval '2 hours') RETURNING id").fetch_one(&pool).await.expect("contest");
         sqlx::query("INSERT INTO presentation_configs(contest_id,mode,enabled,updated_by_user_id) VALUES($1,'LIVE',true,$2)").bind(contest).bind(user).execute(&pool).await.expect("config");
         let raw = "raw-token-visible-once";

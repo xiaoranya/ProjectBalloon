@@ -29,7 +29,7 @@ use super::model::{
         ("size" = Option<u32>, Query, description = "Page size from 1 through 500; defaults to 50"),
         ("sort" = Option<String>, Query, description = "Allowed field and direction, for example updatedAt,desc"),
         ("includeDeleted" = Option<bool>, Query, description = "Include soft-deleted contests; super administrator only"),
-        ("manageableOnly" = Option<bool>, Query, description = "Return only contests manageable by the current contest administrator")
+        ("manageableOnly" = Option<bool>, Query, description = "Return only contests manageable by the current contest manager")
     ),
     responses(
         (status = 200, description = "Contests visible to the anonymous or authenticated actor", body = PageResponse<ContestResponse>),

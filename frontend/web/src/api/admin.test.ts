@@ -81,19 +81,20 @@ describe('Rust admin API contract', () => {
     await adminApi.createStaffAccount({
       username: 'judge-01',
       displayName: 'Judge 01',
-      userType: 'JUDGE',
+      isSuperAdmin: false,
+      permissions: ['CLARIFICATION_MANAGE'],
       initialPassword: 'temporary123',
       requirePasswordReset: true,
     });
     await adminApi.updateStaffAccount(9, { displayName: 'Chief Judge', enabled: false });
     await adminApi.resetStaffPassword(9, 'reset-password', false);
-    await adminApi.updateContestAdminScope(9, [2, 4]);
+    await adminApi.updateContestManagementScope(9, [2, 4]);
 
     expect(fetchMock.mock.calls.slice(1).map(([url]) => url)).toEqual([
       '/api/admin/staff-accounts',
       '/api/admin/staff-accounts/9',
       '/api/admin/staff-accounts/9/reset-password',
-      '/api/admin/contest-admins/9/contests',
+      '/api/admin/contest-managers/9/contests',
     ]);
     expect(fetchMock.mock.calls[1][1]).toEqual(
       expect.objectContaining({
@@ -101,7 +102,8 @@ describe('Rust admin API contract', () => {
         body: JSON.stringify({
           username: 'judge-01',
           displayName: 'Judge 01',
-          userType: 'JUDGE',
+          isSuperAdmin: false,
+          permissions: ['CLARIFICATION_MANAGE'],
           initialPassword: 'temporary123',
           requirePasswordReset: true,
         }),

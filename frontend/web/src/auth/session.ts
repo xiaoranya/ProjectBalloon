@@ -1,6 +1,7 @@
 import { computed, reactive, readonly } from 'vue';
 import { apiRequest, clearCsrfToken, setUnauthorizedHandler } from '../api/client';
 import type { CurrentUser, DeploymentInfo } from '../api/types';
+import type { PermissionCode } from '../api/types';
 
 const state = reactive({
   user: null as CurrentUser | null,
@@ -110,11 +111,10 @@ function clearSession() {
 
 setUnauthorizedHandler(clearSession);
 
-function hasPermission(role: string) {
+function hasPermission(permission: string) {
   return (
     state.user?.userType === 'SUPER_ADMIN' ||
-    state.user?.userType === role ||
-    state.user?.roles.includes(role) === true
+    state.user?.permissions.includes(permission as PermissionCode) === true
   );
 }
 
@@ -127,16 +127,9 @@ export function useSession() {
       () => state.user !== null && !['TEAM', 'INDIVIDUAL'].includes(state.user.userType),
     ),
     isIndividual: computed(() => state.user?.userType === 'INDIVIDUAL'),
-    isAdmin: computed(() => ['SUPER_ADMIN', 'CONTEST_ADMIN'].includes(state.user?.userType ?? '')),
+    canManageContests: computed(() => hasPermission('CONTEST_MANAGE')),
     isSuperAdmin: computed(() => state.user?.userType === 'SUPER_ADMIN'),
-    isContestAdmin: computed(() => state.user?.userType === 'CONTEST_ADMIN'),
-    isJudge: computed(() => hasPermission('JUDGE')),
-    isPrinter: computed(() => hasPermission('PRINTER')),
-    isBalloonStaff: computed(() => hasPermission('BALLOON_STAFF')),
-    isAwardOperator: computed(() => hasPermission('AWARD_OPERATOR')),
-    isResolverOperator: computed(() => hasPermission('RESOLVER_OPERATOR')),
-    isScreenOperator: computed(() => hasPermission('SCREEN_OPERATOR')),
-    isLiveOperator: computed(() => hasPermission('LIVE_OPERATOR')),
+    hasPermission,
     initialize,
     login,
     workstationLogin,

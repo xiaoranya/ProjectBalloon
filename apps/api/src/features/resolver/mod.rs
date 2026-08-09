@@ -942,10 +942,15 @@ async fn audit(
 }
 
 fn require_operator(actor: &AuthUser) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") || actor.has_role("RESOLVER_OPERATOR") {
+    if actor.is_super_admin()
+        || actor.has_permission(crate::features::auth::permissions::RESOLVER_MANAGE)
+    {
         Ok(())
     } else {
-        Err(AppError::forbidden("RESOLVER_OPERATOR_REQUIRED", "Resolver operator role is required"))
+        Err(AppError::forbidden(
+            "RESOLVER_PERMISSION_REQUIRED",
+            "Resolver management permission is required",
+        ))
     }
 }
 
@@ -1174,7 +1179,7 @@ mod tests {
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires PostgreSQL"]
     async fn official_run_is_immutable_reversible_and_restart_safe(pool: PgPool) {
-        let user_id = sqlx::query_scalar::<_, i64>("INSERT INTO users (username, password_hash, display_name, user_type) VALUES ('resolver-op', 'hash', 'Resolver Operator', 'RESOLVER_OPERATOR') RETURNING id")
+        let user_id = sqlx::query_scalar::<_, i64>("INSERT INTO users (username, password_hash, display_name, user_type) VALUES ('resolver-op', 'hash', 'Resolver Operator', 'STAFF') RETURNING id")
             .fetch_one(&pool).await.expect("insert Resolver operator");
         let contest_id = sqlx::query_scalar::<_, i64>("INSERT INTO contests (name, status, visibility, start_at, freeze_at, end_at) VALUES ('Resolver Contest', 'ENDED', 'PUBLIC', now() - interval '3 hours', now() - interval '2 hours', now() - interval '1 hour') RETURNING id")
             .fetch_one(&pool).await.expect("insert Resolver contest");
@@ -1208,8 +1213,8 @@ mod tests {
             id: user_id,
             username: "resolver-op".to_owned(),
             display_name: "Resolver Operator".to_owned(),
-            user_type: UserType::ResolverOperator,
-            roles: vec!["RESOLVER_OPERATOR".to_owned()],
+            user_type: UserType::Staff,
+            permissions: vec!["RESOLVER_MANAGE".to_owned()],
             password_reset_required: false,
         };
         let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);

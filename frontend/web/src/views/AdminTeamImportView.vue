@@ -8,13 +8,13 @@
     </el-header>
     <el-main class="page-body">
       <ElAlert
-        v-if="session.isContestAdmin.value"
+        v-if="!session.isSuperAdmin.value"
         type="warning"
         show-icon
         :closable="false"
         class="page-alert"
         :title="
-          t('比赛管理员只能导入到已授权比赛。下拉框已请求可管理比赛；后端权限校验始终是最终边界。')
+          t('赛事管理员只能导入到已授权比赛。下拉框已请求可管理比赛；后端权限校验始终是最终边界。')
         "
       />
       <ElAlert
@@ -35,7 +35,7 @@
             <ElFormItem :label="t('比赛')">
               <ElSelect
                 v-model="contestId"
-                :clearable="!session.isContestAdmin.value"
+                :clearable="session.isSuperAdmin.value"
                 filterable
                 :placeholder="t('超级管理员可不分配比赛')"
               >
@@ -313,7 +313,7 @@ const successfulBatchCount = computed(
 onMounted(async () => {
   try {
     contests.value = await adminApi.listAllManageableContests();
-    if (session.isContestAdmin.value) contestId.value = contests.value[0]?.id ?? null;
+    if (!session.isSuperAdmin.value) contestId.value = contests.value[0]?.id ?? null;
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   }
@@ -454,8 +454,8 @@ function requestRows(chunk: TeamDraft[]): TeamBatchImportRequest['teams'] {
 }
 
 async function submitImport() {
-  if (session.isContestAdmin.value && contestId.value === null) {
-    errorMessage.value = t('比赛管理员必须选择一个可管理比赛');
+  if (!session.isSuperAdmin.value && contestId.value === null) {
+    errorMessage.value = t('赛事管理员必须选择一个可管理比赛');
     return;
   }
   try {

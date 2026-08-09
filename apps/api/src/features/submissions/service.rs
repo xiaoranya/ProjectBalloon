@@ -187,11 +187,11 @@ impl SubmissionService {
             .begin()
             .await
             .map_err(|error| AppError::internal("begin submission rejudge", error))?;
-        if !actor.has_role("SUPER_ADMIN") {
+        if !actor.is_super_admin() {
             let assigned = sqlx::query_scalar::<_, bool>(
                 r#"
                 SELECT EXISTS (
-                    SELECT 1 FROM contest_admin_assignments
+                    SELECT 1 FROM contest_management_assignments
                     WHERE contest_id = $1 AND user_id = $2
                 )
                 "#,
@@ -865,7 +865,7 @@ mod tests {
             username: "submit-team".into(),
             display_name: "Submit Team".into(),
             user_type: UserType::Team,
-            roles: vec!["TEAM_LEADER".into()],
+            permissions: vec![],
             password_reset_required: false,
         };
         let memory = Arc::new(MemoryStorage::default());
@@ -949,7 +949,7 @@ mod tests {
             username: "submit-team-2".into(),
             display_name: "Submit Team 2".into(),
             user_type: UserType::Team,
-            roles: vec!["TEAM_LEADER".into()],
+            permissions: vec![],
             password_reset_required: false,
         };
         let second_response = service
@@ -1033,7 +1033,7 @@ mod tests {
             username: "rejudge-root".into(),
             display_name: "Rejudge Root".into(),
             user_type: UserType::SuperAdmin,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         sqlx::query(
@@ -1243,7 +1243,7 @@ mod tests {
             username: "other-team".into(),
             display_name: "Other Team".into(),
             user_type: UserType::Team,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         assert!(

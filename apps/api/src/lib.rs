@@ -28,7 +28,7 @@ use axum::{
 use crate::{
     features::{
         announcements, audit_logs, auth, awards, balloons, clarifications, competition,
-        contest_admin_scopes, contest_problems, contests, presentation, printing, problems,
+        contest_management_scopes, contest_problems, contests, presentation, printing, problems,
         realtime, resolver, scoreboard, scoring, staff_accounts, submissions, teams, training,
         virtual_practice,
     },
@@ -282,8 +282,11 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
             "/api/admin/staff-accounts/{user_id}/reset-password",
             post(staff_accounts::reset_password),
         )
-        .route("/api/admin/contest-admins", get(contest_admin_scopes::list))
-        .route("/api/admin/contest-admins/{user_id}/contests", put(contest_admin_scopes::replace))
+        .route("/api/admin/contest-managers", get(contest_management_scopes::list))
+        .route(
+            "/api/admin/contest-managers/{user_id}/contests",
+            put(contest_management_scopes::replace),
+        )
         .route("/api/admin/audit-logs", get(audit_logs::list))
         .route("/api/contests", get(contests::list).post(contests::create))
         .route(

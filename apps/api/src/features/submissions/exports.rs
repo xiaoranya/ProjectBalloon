@@ -701,7 +701,7 @@ mod tests {
             username: "export-root".into(),
             display_name: "Export Root".into(),
             user_type: UserType::SuperAdmin,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         let service = SubmissionService::new(pool.clone());

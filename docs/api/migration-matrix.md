@@ -55,7 +55,7 @@ because they require a Docker daemon and fixed images.
 
 | Domain | Outcome | Notes |
 |---|---|---|
-| Authentication, staff accounts, permissions | VERIFIED | Session, CSRF, password migration/reset, role and contest-scope management are covered |
+| Authentication, staff accounts, permissions | VERIFIED | Session, CSRF, password migration/reset, direct account permissions, and contest-scope management are covered |
 | Contests, teams, roster, lifecycle, archive | VERIFIED | Includes clone, automatic milestones, pre-archive task checks, and database read-only protection |
 | Problem bank and contest problems | VERIFIED | PostgreSQL service behavior and file-transfer paths pass the integration suite; the remaining catalog mutations are intentionally super-administrator-only |
 | Submission, rejudge, Judge transport | VERIFIED | Contest-scoped projections, durable Outbox, RabbitMQ result idempotency, batch tasks, exports, and queue drain status exist |
