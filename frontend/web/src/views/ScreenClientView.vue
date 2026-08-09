@@ -2,7 +2,7 @@
   <main class="screen-client">
     <header>
       <div>
-        <small>PROJECT BALLOON · SCREEN #{{ registration?.instanceId ?? '—' }}</small
+        <small>ProjectBalloon · SCREEN #{{ registration?.instanceId ?? '—' }}</small
         ><strong>{{ registration?.name || screenName }}</strong>
       </div>
       <span :class="{ online }">{{ online ? 'CONTROL CONNECTED' : 'CONNECTING' }}</span>

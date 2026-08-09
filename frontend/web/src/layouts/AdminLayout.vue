@@ -4,7 +4,7 @@
       <RouterLink class="admin-brand" to="/admin">
         <span>PB</span>
         <div>
-          <strong>Project Balloon</strong>
+          <strong>ProjectBalloon</strong>
           <small>赛事管理控制台</small>
         </div>
       </RouterLink>

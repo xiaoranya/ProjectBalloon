@@ -8,7 +8,7 @@
     </div>
     <header v-if="presentation" class="award-display-header">
       <div>
-        <span>PROJECT BALLOON · AWARD CEREMONY</span><strong>{{ presentation.contestName }}</strong>
+        <span>ProjectBalloon · AWARD CEREMONY</span><strong>{{ presentation.contestName }}</strong>
       </div>
       <button type="button" @click="toggleFullscreen">全屏</button>
     </header>

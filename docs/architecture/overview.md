@@ -1,6 +1,6 @@
 # Architecture Overview
 
-This document describes the first-version architecture for the XCPC/ICPC competition platform. The source requirement document is `docs/requirements/xcpc-platform-requirements.md`.
+This document describes the first-version architecture for ProjectBalloon, an XCPC/ICPC competition platform. The source requirement document is `docs/requirements/project-balloon-requirements.md`.
 
 ## Goals
 

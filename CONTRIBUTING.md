@@ -1,8 +1,8 @@
 # Contributing to ProjectBalloon
 
 ProjectBalloon is an offline-first XCPC/ICPC contest platform. The active
-implementation is the Rust workspace at the repository root; the nested
-`ProjectBalloon/` directory is retained only as a legacy behavioral reference.
+implementation is the Rust workspace at the repository root. Compatibility
+behavior is preserved through API contracts and migration tests.
 
 Before opening a pull request, run:
 

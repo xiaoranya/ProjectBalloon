@@ -2,7 +2,7 @@
   <el-container direction="vertical" class="login-page admin-login-page">
     <el-main class="login-page-main">
       <section class="login-copy">
-        <p class="eyebrow">Project Balloon Admin</p>
+        <p class="eyebrow">ProjectBalloon Admin</p>
         <h1>让比赛运行得更稳、更清晰。</h1>
         <div class="login-feature">
           <ElIcon><DataAnalysis /></ElIcon>

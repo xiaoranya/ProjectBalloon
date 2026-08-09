@@ -48,7 +48,7 @@ async fn apply_forwarded_client_ip(
     next.run(request).await
 }
 
-pub const SERVICE_NAME: &str = "xcpc-platform";
+pub const SERVICE_NAME: &str = "ProjectBalloon";
 
 pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
     Router::new()
