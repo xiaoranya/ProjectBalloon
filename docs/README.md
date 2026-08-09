@@ -27,9 +27,19 @@ API migration matrix.
   architectural decisions, including `ADR-002-rust-backend-reset.md`.
 - `api/`: externally observable HTTP contract and Rust implementation notes.
 - `dev/`: Rust and frontend development rules.
-- `ops/`: offline installation, operation, pressure testing, and recovery.
+- `ops/`: quickstart, configuration reference, offline installation,
+  operation, troubleshooting, pressure testing, and recovery.
 - `user/`: role-based user manuals for contestants, administrators, and on-site
   operators (new content; published as the "User Guide" section).
+
+## Language
+
+Every document in this directory has a Chinese mirror under `docs/zh-CN/`
+with the same directory structure; the English version remains canonical.
+`api/openapi.yaml` is a machine-generated contract and is not mirrored.
+The requirements document is kept in `docs/requirements/` (Chinese original in
+`docs/zh-CN/requirements/`) for traceability and is excluded from the published
+documentation site.
 
 ## Source Layout
 

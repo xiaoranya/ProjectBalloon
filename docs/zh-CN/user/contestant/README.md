@@ -1,0 +1,69 @@
+# 选手指南
+
+本指南介绍队员在线上比赛中的操作：账号、提交代码、解读判定结果、查看榜单、提问 Clarification 与使用打印队列。
+
+## 账号与登录
+
+- 账号通常由主办方导入，队长会收到凭据。若启用了自助注册，可使用 `/register`。
+- 生成的账号可能要求在首次登录时修改密码。修改前只能访问认证流程。
+- 登出或修改密码会撤销当前会话与其他会话；之后需要重新登录。
+- 请保留浏览器会话 cookie；默认会话时长为 12 小时（`PROJECT_BALLOON_SESSION_TTL_SECONDS`）。
+
+## 比赛页面
+
+登录后，`/contests` 会列出你的队伍可以加入的比赛。进入比赛后可访问以下页面：
+
+| 页面 | 路由 | 用途 |
+| --- | --- | --- |
+| 题目 | `/contests/:contestId/problems` | 题目列表与题面 |
+| 提交 | `/contests/:contestId/submissions` | 提交代码并查看历史 |
+| Clarification | `/contests/:contestId/clarifications` | 提问与阅读公告 |
+| 打印 | `/contests/:contestId/printing` | 把代码发送到现场打印机 |
+| 榜单 | `/contests/:contestId/scoreboard` | 实时排名 |
+
+## 提交代码
+
+- 选择题目、语言，并上传或粘贴源码文件。
+- 支持语言为判题运行时镜像：C、C++、Java 与 Python。
+- 限流：每队每分钟最多 20 次提交；超限会返回限流错误，请稍候再试，不要反复提交。
+- 提交在队列中时状态为 `PENDING`/`JUDGING`，由 Worker 池处理。高峰期结果可能延迟。
+
+### 解读判定结果
+
+| 判定 | 含义 |
+| --- | --- |
+| `ACCEPTED` | 你的解法通过了全部测试用例 |
+| `WRONG_ANSWER` | 输出与预期答案不一致 |
+| `TIME_LIMIT_EXCEEDED` | 运行超过时限（Java 2 倍、Python 3 倍） |
+| `MEMORY_LIMIT_EXCEEDED` | 超过内存限制 |
+| `RUNTIME_ERROR` | 崩溃或异常退出 |
+| `COMPILE_ERROR` | 源码未通过编译或语法检查 |
+| `OUTPUT_LIMIT_EXCEEDED` | 输出超过输出限制 |
+| `SYSTEM_ERROR` | 判题基础设施问题；请联系工作人员重判 |
+| `CANCELLED` | 该判定已被取代或取消 |
+
+比较器在比较输出前会规范化 CR/LF、行尾空格/制表符与尾部空行；其余内容按字节精确比较。
+
+## 榜单与封榜
+
+- 公共榜单按通过题数与罚时排序。
+- 封榜期间（`freeze_at` 之后），公共榜隐藏封榜时间之后的提交。你自己的提交与管理榜仍显示真实状态。
+- 比赛结束后公共榜保持冻结，不会自动揭示隐藏的提交。
+- First Blood 按题目对正式非明星队伍跟踪，并显示在榜单与直播视图上。
+
+## Clarification
+
+- 在 Clarification 页面可以就题目或比赛提问。
+- 公开公告也会列在该页面。
+- 限流：每队每 5 分钟最多 1 条。
+- 工作人员可以私密回复、把问题转为公开公告或关闭问题。回复会显示在你的 Clarification 页面。
+
+## 打印（现场比赛）
+
+- 打印页面可把源码发送到场地打印机。
+- 限制：单次请求最多 20 KiB 内容与 5 页；每队每 10 分钟 1 次；全场比赛每队最多 20 次。
+- 关注请求状态（`QUEUED`、`PRINTING`、`DONE`、`FAILED`）。任务失败时请打印台重试。
+
+## 个人资料
+
+使用 `/profile` 查看队伍与成员信息，使用 `/change-password` 修改密码。修改后请用新密码重新登录。
