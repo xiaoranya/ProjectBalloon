@@ -21,12 +21,15 @@ API migration matrix.
 
 ## Document Map
 
-- `requirements/`: product and contest requirements.
+- `requirements/`: product and contest requirements. Kept in the repository for
+  traceability; excluded from the published documentation site for now.
 - `architecture/`: system boundaries, data ownership, judge, security, and
   architectural decisions, including `ADR-002-rust-backend-reset.md`.
 - `api/`: externally observable HTTP contract and Rust implementation notes.
 - `dev/`: Rust and frontend development rules.
 - `ops/`: offline installation, operation, pressure testing, and recovery.
+- `user/`: role-based user manuals for contestants, administrators, and on-site
+  operators (new content; published as the "User Guide" section).
 
 ## Source Layout
 
