@@ -32,7 +32,7 @@ jobs:
       - name: Install SQLx CLI
         run: |
           if rg -q 'sqlx::(query|query_as|query_scalar|query_file)!' apps crates; then
-            cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features rustls,postgres
+            cargo install sqlx-cli --version 0.9.0 --no-default-features --features rustls,postgres
           else
             echo 'No SQLx compile-time query macros found; SQLx metadata is not required.'
           fi

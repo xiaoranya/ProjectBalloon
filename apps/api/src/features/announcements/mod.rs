@@ -354,7 +354,7 @@ impl AnnouncementService {
         if include_withdrawn {
             require_manage_pool(&self.database, contest_id, actor).await?;
         }
-        sqlx::query_as::<_, AnnouncementResponse>(&format!(
+        sqlx::query_as::<_, AnnouncementResponse>(safe_sql!(
             "{SELECT_COLUMNS} WHERE announcement.contest_id = $1 AND (announcement.status = 'PUBLISHED' OR $2) ORDER BY announcement.pinned DESC, announcement.published_at DESC NULLS LAST, announcement.id DESC LIMIT 1000"
         )).bind(contest_id).bind(include_withdrawn).fetch_all(&self.database).await
             .map_err(|error| AppError::internal("list announcements", error))
@@ -385,7 +385,7 @@ pub(crate) async fn load(database: &PgPool, id: i64) -> Result<AnnouncementRespo
     if id <= 0 {
         return Err(not_found());
     }
-    sqlx::query_as::<_, AnnouncementResponse>(&format!(
+    sqlx::query_as::<_, AnnouncementResponse>(safe_sql!(
         "{SELECT_COLUMNS} WHERE announcement.id = $1"
     ))
     .bind(id)

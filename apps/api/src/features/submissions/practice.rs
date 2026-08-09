@@ -303,7 +303,7 @@ async fn load_context_tx(
     problem_id: i64,
 ) -> Result<PracticeContext, AppError> {
     let query = format!("{PRACTICE_CONTEXT_QUERY} FOR SHARE OF bank,problem,version");
-    sqlx::query_as(&query)
+    sqlx::query_as(sqlx::AssertSqlSafe(query))
         .bind(problem_id)
         .fetch_optional(&mut **tx)
         .await

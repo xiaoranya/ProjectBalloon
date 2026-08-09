@@ -1246,7 +1246,7 @@ async fn insert_rule(
 
 const CATEGORY_SQL: &str = "SELECT c.id,c.contest_id,c.code,c.name,c.display_order,c.include_star,c.group_name,c.participation_type,c.first_blood,c.version,r.rule_type,r.ratio::float8 AS ratio,r.fixed_count,r.rank_from,r.rank_to FROM award_categories c JOIN award_rules r ON r.category_id=c.id";
 async fn category_query(db: &PgPool, c: i64) -> Result<Vec<CategoryResponse>, AppError> {
-    sqlx::query_as(&format!("{CATEGORY_SQL} WHERE c.contest_id=$1 ORDER BY c.display_order,c.id"))
+    sqlx::query_as(safe_sql!("{CATEGORY_SQL} WHERE c.contest_id=$1 ORDER BY c.display_order,c.id"))
         .bind(c)
         .fetch_all(db)
         .await
@@ -1256,14 +1256,14 @@ async fn category_query_tx(
     tx: &mut Transaction<'_, Postgres>,
     c: i64,
 ) -> Result<Vec<CategoryResponse>, AppError> {
-    sqlx::query_as(&format!("{CATEGORY_SQL} WHERE c.contest_id=$1 ORDER BY c.display_order,c.id"))
+    sqlx::query_as(safe_sql!("{CATEGORY_SQL} WHERE c.contest_id=$1 ORDER BY c.display_order,c.id"))
         .bind(c)
         .fetch_all(&mut **tx)
         .await
         .map_err(|e| AppError::internal("list award categories", e))
 }
 async fn load_category(db: &PgPool, id: i64) -> Result<CategoryResponse, AppError> {
-    sqlx::query_as(&format!("{CATEGORY_SQL} WHERE c.id=$1"))
+    sqlx::query_as(safe_sql!("{CATEGORY_SQL} WHERE c.id=$1"))
         .bind(id)
         .fetch_optional(db)
         .await

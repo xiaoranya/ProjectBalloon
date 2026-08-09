@@ -124,7 +124,7 @@ pub async fn list(
         "{SESSION_SELECT} WHERE s.user_id=$1 GROUP BY s.id ORDER BY s.created_at DESC,s.id DESC"
     );
     Ok(Json(
-        sqlx::query_as(&sql)
+        sqlx::query_as(sqlx::AssertSqlSafe(sql))
             .bind(context.user().id)
             .fetch_all(state.database())
             .await
@@ -178,7 +178,7 @@ async fn load_session(
     user: i64,
 ) -> Result<VirtualSessionResponse, AppError> {
     let sql = format!("{SESSION_SELECT} WHERE s.id=$1 AND s.user_id=$2 GROUP BY s.id");
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .bind(user)
         .fetch_optional(state.database())

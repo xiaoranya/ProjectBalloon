@@ -91,7 +91,7 @@ impl ProblemService {
             LIMIT $1 OFFSET $2
             "#
         );
-        let rows = sqlx::query_as::<_, ProblemRow>(&sql)
+        let rows = sqlx::query_as::<_, ProblemRow>(sqlx::AssertSqlSafe(sql))
             .bind(i64::from(query.size))
             .bind(offset)
             .fetch_all(&self.database)
@@ -110,7 +110,7 @@ impl ProblemService {
         require_problem_manage_pool(&self.database, problem_id, actor).await?;
         let sql =
             format!("SELECT {PROBLEM_COLUMNS} FROM problems WHERE id = $1 AND deleted_at IS NULL");
-        sqlx::query_as::<_, ProblemRow>(&sql)
+        sqlx::query_as::<_, ProblemRow>(sqlx::AssertSqlSafe(sql))
             .bind(problem_id)
             .fetch_optional(&self.database)
             .await
@@ -140,7 +140,7 @@ impl ProblemService {
             RETURNING {PROBLEM_COLUMNS}
             "#
         );
-        let row = sqlx::query_as::<_, ProblemRow>(&sql)
+        let row = sqlx::query_as::<_, ProblemRow>(sqlx::AssertSqlSafe(sql))
             .bind(request.slug)
             .bind(request.title)
             .bind(request.time_limit_ms)
@@ -197,7 +197,7 @@ impl ProblemService {
             RETURNING {PROBLEM_COLUMNS}
             "#
         );
-        let row = sqlx::query_as::<_, ProblemRow>(&sql)
+        let row = sqlx::query_as::<_, ProblemRow>(sqlx::AssertSqlSafe(sql))
             .bind(request.slug)
             .bind(request.title)
             .bind(request.time_limit_ms)
@@ -509,7 +509,7 @@ impl ProblemService {
             record_audit(&mut transaction, actor.id, "PROBLEM_INTERACTOR_UPLOADED", problem_id, request_ip).await?;
             transaction.commit().await.map_err(|error| AppError::internal("commit interactor update", error))?;
             let sql = format!("SELECT {PROBLEM_COLUMNS} FROM problems WHERE id=$1");
-            sqlx::query_as::<_, ProblemRow>(&sql).bind(problem_id).fetch_one(&self.database).await
+            sqlx::query_as::<_, ProblemRow>(sqlx::AssertSqlSafe(sql)).bind(problem_id).fetch_one(&self.database).await
                 .map_err(|error| AppError::internal("load updated interactor problem", error))?.response()
         }.await;
         if persisted.is_err()

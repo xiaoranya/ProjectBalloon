@@ -55,7 +55,7 @@ impl StaffAccountService {
             LIMIT $1 OFFSET $2
             "#
         );
-        let rows = sqlx::query_as::<_, StaffAccountRow>(&sql)
+        let rows = sqlx::query_as::<_, StaffAccountRow>(sqlx::AssertSqlSafe(sql))
             .bind(i64::from(query.size))
             .bind(offset)
             .fetch_all(&self.database)
@@ -91,7 +91,7 @@ impl StaffAccountService {
             RETURNING {ACCOUNT_COLUMNS}
             "#
         );
-        let row = sqlx::query_as::<_, StaffAccountRow>(&sql)
+        let row = sqlx::query_as::<_, StaffAccountRow>(sqlx::AssertSqlSafe(sql))
             .bind(request.username)
             .bind(password_hash)
             .bind(request.display_name)
@@ -201,7 +201,7 @@ impl StaffAccountService {
             RETURNING {ACCOUNT_COLUMNS}
             "#
         );
-        let updated = sqlx::query_as::<_, StaffAccountRow>(&sql)
+        let updated = sqlx::query_as::<_, StaffAccountRow>(sqlx::AssertSqlSafe(sql))
             .bind(next_display_name)
             .bind(next_type.as_str())
             .bind(next_enabled)
@@ -250,7 +250,7 @@ impl StaffAccountService {
             RETURNING {ACCOUNT_COLUMNS}
             "#
         );
-        let updated = sqlx::query_as::<_, StaffAccountRow>(&sql)
+        let updated = sqlx::query_as::<_, StaffAccountRow>(sqlx::AssertSqlSafe(sql))
             .bind(password_hash)
             .bind(require_password_reset)
             .bind(user_id)
@@ -280,7 +280,7 @@ async fn lock_staff_account(
         FOR UPDATE
         "#
     );
-    sqlx::query_as::<_, StaffAccountRow>(&sql)
+    sqlx::query_as::<_, StaffAccountRow>(sqlx::AssertSqlSafe(sql))
         .bind(user_id)
         .fetch_optional(&mut **transaction)
         .await

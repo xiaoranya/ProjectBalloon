@@ -335,7 +335,7 @@ impl BatchRejudgeService {
         actor: &AuthUser,
     ) -> Result<Vec<BatchRejudgeTaskResponse>, AppError> {
         require_access(&self.database, contest_id, actor).await?;
-        let rows = sqlx::query_as::<_, BatchRejudgeTaskRow>(&format!(
+        let rows = sqlx::query_as::<_, BatchRejudgeTaskRow>(safe_sql!(
             "{} WHERE contest_id = $1 ORDER BY created_at DESC, id DESC LIMIT 100",
             TASK_COLUMNS
         ))
@@ -418,7 +418,7 @@ async fn load_task(
     contest_id: i64,
     task_id: i64,
 ) -> Result<BatchRejudgeTaskResponse, AppError> {
-    sqlx::query_as::<_, BatchRejudgeTaskRow>(&format!(
+    sqlx::query_as::<_, BatchRejudgeTaskRow>(safe_sql!(
         "{} WHERE id = $1 AND contest_id = $2",
         TASK_COLUMNS
     ))
@@ -468,7 +468,7 @@ async fn count_matches(
     contest_id: i64,
     filter: &BatchRejudgeFilter,
 ) -> Result<i32, AppError> {
-    let count = sqlx::query_scalar::<_, i64>(&format!("SELECT count(*) {MATCHING_SUBMISSIONS}"))
+    let count = sqlx::query_scalar::<_, i64>(safe_sql!("SELECT count(*) {MATCHING_SUBMISSIONS}"))
         .bind(contest_id)
         .bind(filter.problem_id)
         .bind(filter.team_id)
@@ -505,7 +505,7 @@ async fn insert_items(
     contest_id: i64,
     filter: &BatchRejudgeFilter,
 ) -> Result<i32, AppError> {
-    let result = sqlx::query(&format!(
+    let result = sqlx::query(safe_sql!(
         "INSERT INTO batch_rejudge_items (task_id, submission_id, status, old_judgement_id) SELECT $8, submission.id, 'PENDING', judgement.id {MATCHING_SUBMISSIONS}"
     ))
     .bind(contest_id)
