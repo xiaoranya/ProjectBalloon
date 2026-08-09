@@ -82,7 +82,7 @@ impl ContestService {
         user: Option<&AuthUser>,
     ) -> Result<PageResponse<ContestResponse>, AppError> {
         let access = ReadAccess::for_user(user);
-        if query.manageable_only && !access.super_admin && access.contest_admin_id.is_none() {
+        if query.manageable_only && !access.super_admin && access.contest_manager_id.is_none() {
             return Err(AppError::forbidden(
                 "FORBIDDEN",
                 "Only contest managers may list manageable contests",
@@ -104,7 +104,7 @@ impl ContestService {
                     $2
                     OR ($3::bigint IS NOT NULL AND EXISTS (
                         SELECT 1
-                        FROM contest_admin_assignments caa
+                        FROM contest_management_assignments caa
                         WHERE caa.contest_id = c.id AND caa.user_id = $3
                     ))
                     OR (NOT $5 AND c.visibility = 'PUBLIC' AND c.status <> 'DRAFT')
@@ -120,7 +120,7 @@ impl ContestService {
         )
         .bind(include_deleted)
         .bind(access.read_all)
-        .bind(access.contest_admin_id)
+        .bind(access.contest_manager_id)
         .bind(access.team_user_id)
         .bind(query.manageable_only)
         .fetch_one(&self.database)
@@ -146,7 +146,7 @@ impl ContestService {
                     $2
                     OR ($3::bigint IS NOT NULL AND EXISTS (
                         SELECT 1
-                        FROM contest_admin_assignments caa
+                        FROM contest_management_assignments caa
                         WHERE caa.contest_id = c.id AND caa.user_id = $3
                     ))
                     OR (NOT $5 AND c.visibility = 'PUBLIC' AND c.status <> 'DRAFT')
@@ -166,7 +166,7 @@ impl ContestService {
         let rows = sqlx::query_as::<_, ContestRow>(sqlx::AssertSqlSafe(sql))
             .bind(include_deleted)
             .bind(access.read_all)
-            .bind(access.contest_admin_id)
+            .bind(access.contest_manager_id)
             .bind(access.team_user_id)
             .bind(query.manageable_only)
             .bind(i64::from(query.size))
@@ -197,7 +197,7 @@ impl ContestService {
                     $2
                     OR ($3::bigint IS NOT NULL AND EXISTS (
                         SELECT 1
-                        FROM contest_admin_assignments caa
+                        FROM contest_management_assignments caa
                         WHERE caa.contest_id = c.id AND caa.user_id = $3
                     ))
                     OR (c.visibility = 'PUBLIC' AND c.status <> 'DRAFT')
@@ -214,7 +214,7 @@ impl ContestService {
         sqlx::query_as::<_, ContestRow>(sqlx::AssertSqlSafe(sql))
             .bind(contest_id)
             .bind(access.read_all)
-            .bind(access.contest_admin_id)
+            .bind(access.contest_manager_id)
             .bind(access.team_user_id)
             .fetch_optional(&self.database)
             .await
@@ -711,32 +711,38 @@ impl ContestService {
 struct ReadAccess {
     super_admin: bool,
     read_all: bool,
-    contest_admin_id: Option<i64>,
+    contest_manager_id: Option<i64>,
     team_user_id: Option<i64>,
 }
 
 impl ReadAccess {
     fn for_user(user: Option<&AuthUser>) -> Self {
-        let super_admin = user.is_some_and(|user| user.has_role("SUPER_ADMIN"));
+        let super_admin = user.is_some_and(|user| user.is_super_admin());
         let read_all = user.is_some_and(can_read_all);
-        let contest_admin_id =
-            user.filter(|user| user.user_type == UserType::ContestAdmin).map(|user| user.id);
+        let contest_manager_id = user
+            .filter(|user| {
+                !user.is_super_admin()
+                    && user.has_permission(crate::features::auth::permissions::CONTEST_MANAGE)
+            })
+            .map(|user| user.id);
         let team_user_id = user.filter(|user| user.user_type == UserType::Team).map(|user| user.id);
-        Self { super_admin, read_all, contest_admin_id, team_user_id }
+        Self { super_admin, read_all, contest_manager_id, team_user_id }
     }
 }
 
 fn can_read_all(user: &AuthUser) -> bool {
-    const READ_ALL_ROLES: [&str; 7] = [
-        "SUPER_ADMIN",
-        "JUDGE",
-        "PRINTER",
-        "BALLOON_STAFF",
-        "RESOLVER_OPERATOR",
-        "SCREEN_OPERATOR",
-        "LIVE_OPERATOR",
-    ];
-    READ_ALL_ROLES.iter().any(|role| user.has_role(role))
+    user.is_super_admin()
+        || [
+            crate::features::auth::permissions::CLARIFICATION_MANAGE,
+            crate::features::auth::permissions::PRINTING_MANAGE,
+            crate::features::auth::permissions::BALLOON_MANAGE,
+            crate::features::auth::permissions::RESOLVER_MANAGE,
+            crate::features::auth::permissions::AWARD_MANAGE,
+            crate::features::auth::permissions::SCREEN_MANAGE,
+            crate::features::auth::permissions::LIVE_MANAGE,
+        ]
+        .iter()
+        .any(|permission| user.has_permission(permission))
 }
 
 async fn require_manage(
@@ -744,30 +750,17 @@ async fn require_manage(
     contest_id: i64,
     actor: &AuthUser,
 ) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") {
+    if actor.is_super_admin() {
         return Ok(());
     }
-    let valid_actor = sqlx::query_scalar::<_, bool>(
-        r#"
-        SELECT enabled AND user_type = 'CONTEST_ADMIN'
-        FROM users
-        WHERE id = $1
-        FOR SHARE
-        "#,
-    )
-    .bind(actor.id)
-    .fetch_optional(&mut **transaction)
-    .await
-    .map_err(|error| AppError::internal("lock contest administrator access", error))?
-    .unwrap_or(false);
-    if !valid_actor {
+    if !actor.has_permission(crate::features::auth::permissions::CONTEST_MANAGE) {
         return Err(contest_not_found());
     }
     let assigned = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS (
             SELECT 1
-            FROM contest_admin_assignments
+            FROM contest_management_assignments
             WHERE user_id = $1 AND contest_id = $2
         )
         "#,
@@ -776,7 +769,7 @@ async fn require_manage(
     .bind(contest_id)
     .fetch_one(&mut **transaction)
     .await
-    .map_err(|error| AppError::internal("check contest administrator scope", error))?;
+    .map_err(|error| AppError::internal("check contest manager scope", error))?;
     if assigned { Ok(()) } else { Err(contest_not_found()) }
 }
 
@@ -1072,7 +1065,7 @@ mod tests {
             username: "archive-root".into(),
             display_name: "Archive Root".into(),
             user_type: UserType::SuperAdmin,
-            roles: vec![],
+            permissions: vec![],
             password_reset_required: false,
         };
         let service = ContestService::new(pool.clone());

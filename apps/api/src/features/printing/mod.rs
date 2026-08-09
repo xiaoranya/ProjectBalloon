@@ -378,7 +378,9 @@ impl PrintingService {
         .await
         .map_err(|error| AppError::internal("load print PDF metadata", error))?
         .ok_or_else(print_not_found)?;
-        if !actor.has_role("SUPER_ADMIN") && !actor.has_role("PRINTER") {
+        if !actor.is_super_admin()
+            && !actor.has_permission(crate::features::auth::permissions::PRINTING_MANAGE)
+        {
             let own = sqlx::query_scalar::<_, bool>(
                 "SELECT EXISTS (SELECT 1 FROM team_accounts WHERE user_id = $1 AND team_id = $2)",
             )
@@ -556,10 +558,15 @@ async fn render_pdf(content: &str) -> Result<Bytes, AppError> {
 }
 
 fn require_operator(actor: &AuthUser) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") || actor.has_role("PRINTER") {
+    if actor.is_super_admin()
+        || actor.has_permission(crate::features::auth::permissions::PRINTING_MANAGE)
+    {
         Ok(())
     } else {
-        Err(AppError::forbidden("PRINTER_ROLE_REQUIRED", "Printer role is required"))
+        Err(AppError::forbidden(
+            "PRINTING_PERMISSION_REQUIRED",
+            "Printing management permission is required",
+        ))
     }
 }
 
@@ -841,7 +848,7 @@ mod tests {
             username: "print-team".into(),
             display_name: "Print Team".into(),
             user_type: UserType::Team,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         let other = AuthUser {
@@ -849,7 +856,7 @@ mod tests {
             username: "print-other".into(),
             display_name: "Print Other".into(),
             user_type: UserType::Team,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         let admin = AuthUser {
@@ -857,7 +864,7 @@ mod tests {
             username: "print-root".into(),
             display_name: "Print Root".into(),
             user_type: UserType::SuperAdmin,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         let storage = ObjectStorageHandle::with_buckets(

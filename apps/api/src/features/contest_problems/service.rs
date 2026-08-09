@@ -372,19 +372,19 @@ async fn require_readable(
         return if participating { Ok(()) } else { Err(contest_not_found()) };
     }
 
-    if actor.has_role("SUPER_ADMIN")
-        || actor.has_role("JUDGE")
-        || actor.has_role("PRINTER")
-        || actor.has_role("BALLOON_STAFF")
-        || actor.has_role("RESOLVER_OPERATOR")
-        || actor.has_role("AWARD_OPERATOR")
-        || actor.has_role("SCREEN_OPERATOR")
-        || actor.has_role("LIVE_OPERATOR")
+    if actor.is_super_admin()
+        || actor.has_permission(crate::features::auth::permissions::CLARIFICATION_MANAGE)
+        || actor.has_permission(crate::features::auth::permissions::PRINTING_MANAGE)
+        || actor.has_permission(crate::features::auth::permissions::BALLOON_MANAGE)
+        || actor.has_permission(crate::features::auth::permissions::RESOLVER_MANAGE)
+        || actor.has_permission(crate::features::auth::permissions::AWARD_MANAGE)
+        || actor.has_permission(crate::features::auth::permissions::SCREEN_MANAGE)
+        || actor.has_permission(crate::features::auth::permissions::LIVE_MANAGE)
     {
         return Ok(());
     }
     let assigned = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM contest_admin_assignments WHERE user_id = $1 AND contest_id = $2)",
+        "SELECT EXISTS (SELECT 1 FROM contest_management_assignments WHERE user_id = $1 AND contest_id = $2)",
     )
     .bind(actor.id)
     .bind(contest_id)
@@ -399,11 +399,11 @@ async fn require_manage_transaction(
     contest_id: i64,
     actor: &AuthUser,
 ) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") {
+    if actor.is_super_admin() {
         return Ok(());
     }
     let assigned = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM contest_admin_assignments WHERE user_id = $1 AND contest_id = $2)",
+        "SELECT EXISTS (SELECT 1 FROM contest_management_assignments WHERE user_id = $1 AND contest_id = $2)",
     )
     .bind(actor.id)
     .bind(contest_id)
@@ -542,7 +542,7 @@ mod tests {
             username: "admin".into(),
             display_name: "Admin".into(),
             user_type: UserType::SuperAdmin,
-            roles: vec!["SUPER_ADMIN".into()],
+            permissions: vec![],
             password_reset_required: false,
         };
         let service = ContestProblemService::new(pool.clone());
@@ -650,9 +650,9 @@ mod tests {
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
-    async fn contest_admin_can_assign_and_remove_within_scope(pool: PgPool) {
+    async fn contest_manager_can_assign_and_remove_within_scope(pool: PgPool) {
         let admin_id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO users (username, password_hash, display_name, user_type, enabled, password_reset_required) VALUES ('problem-manager', 'test-hash', 'Problem Manager', 'CONTEST_ADMIN', true, false) RETURNING id",
+            "INSERT INTO users (username, password_hash, display_name, user_type, enabled, password_reset_required) VALUES ('problem-manager', 'test-hash', 'Problem Manager', 'STAFF', true, false) RETURNING id",
         )
         .fetch_one(&pool)
         .await
@@ -670,18 +670,20 @@ mod tests {
         .fetch_one(&pool)
         .await
         .expect("insert problem");
-        sqlx::query("INSERT INTO contest_admin_assignments (user_id, contest_id) VALUES ($1, $2)")
-            .bind(admin_id)
-            .bind(contest_id)
-            .execute(&pool)
-            .await
-            .expect("assign contest admin scope");
+        sqlx::query(
+            "INSERT INTO contest_management_assignments (user_id, contest_id) VALUES ($1, $2)",
+        )
+        .bind(admin_id)
+        .bind(contest_id)
+        .execute(&pool)
+        .await
+        .expect("assign contest admin scope");
         let actor = AuthUser {
             id: admin_id,
             username: "problem-manager".into(),
             display_name: "Problem Manager".into(),
-            user_type: UserType::ContestAdmin,
-            roles: vec!["CONTEST_ADMIN".into()],
+            user_type: UserType::Staff,
+            permissions: vec!["CONTEST_MANAGE".into()],
             password_reset_required: false,
         };
         let service = ContestProblemService::new(pool.clone());
@@ -785,7 +787,7 @@ mod tests {
             username: "team-1".into(),
             display_name: "Team 1".into(),
             user_type: UserType::Team,
-            roles: vec!["TEAM_LEADER".into()],
+            permissions: vec![],
             password_reset_required: false,
         };
         let service = ContestProblemService::new(pool.clone());

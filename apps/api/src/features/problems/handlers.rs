@@ -31,13 +31,13 @@ use super::model::{
     params(
         ("page" = Option<u32>, Query),
         ("size" = Option<u32>, Query),
-        ("contestId" = Option<i64>, Query, description = "Required contest scope for contest administrators")
+        ("contestId" = Option<i64>, Query, description = "Required contest scope for contest managers")
     ),
     responses(
         (status = 200, description = "Problem catalog", body = PageResponse<ProblemResponse>),
         (status = 400, description = "Invalid pagination", body = crate::error::ApiErrorBody),
         (status = 401, description = "Authentication required", body = crate::error::ApiErrorBody),
-        (status = 403, description = "Super administrator or scoped contest administrator access and completed password reset required", body = crate::error::ApiErrorBody),
+        (status = 403, description = "Super administrator or scoped contest manager access and completed password reset required", body = crate::error::ApiErrorBody),
         (status = 404, description = "Contest was not found or outside management scope", body = crate::error::ApiErrorBody)
     ),
     security(("session_cookie" = []))

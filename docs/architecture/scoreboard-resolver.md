@@ -133,7 +133,7 @@ P0 controls:
 - Auto play.
 - Persist and recover current state.
 
-Public resolver pages include screen and live variants. Operator APIs must require privileged roles.
+Public resolver pages include screen and live variants. Operator APIs require the corresponding account permission.
 
 ## Validation Checklist
 

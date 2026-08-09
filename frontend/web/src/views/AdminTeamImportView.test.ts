@@ -15,7 +15,7 @@ vi.mock('../api/admin', () => ({
 vi.mock('../api/team-import', () => ({
   teamImportApi: { importTeams: mocks.importTeams, addMember: mocks.addMember },
 }));
-vi.mock('../auth/session', () => ({ useSession: () => ({ isContestAdmin: { value: false } }) }));
+vi.mock('../auth/session', () => ({ useSession: () => ({ isSuperAdmin: { value: true } }) }));
 vi.mock('../components/CodeEditor.vue', () => ({
   default: {
     name: 'CodeEditor',

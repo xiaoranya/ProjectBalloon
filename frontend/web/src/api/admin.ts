@@ -2,16 +2,18 @@ import { apiRequest } from './client';
 import type {
   AuditLog,
   Contest,
-  ContestAdminScope,
+  ContestManagementScope,
   HealthResponse,
   PageResponse,
   StaffAccount,
+  PermissionCode,
 } from './types';
 
 export interface StaffAccountPayload {
   username: string;
   displayName: string;
-  userType: StaffAccount['userType'];
+  isSuperAdmin: boolean;
+  permissions: PermissionCode[];
   initialPassword: string;
   requirePasswordReset: boolean;
 }
@@ -60,7 +62,9 @@ export const adminApi = {
 
   updateStaffAccount(
     userId: number,
-    payload: Partial<Pick<StaffAccount, 'displayName' | 'userType' | 'enabled'>>,
+    payload: Partial<Pick<StaffAccount, 'displayName' | 'permissions' | 'enabled'>> & {
+      isSuperAdmin?: boolean;
+    },
   ) {
     return apiRequest<StaffAccount>(`/api/admin/staff-accounts/${userId}`, {
       method: 'PATCH',
@@ -75,12 +79,12 @@ export const adminApi = {
     });
   },
 
-  listContestAdminScopes() {
-    return apiRequest<ContestAdminScope[]>('/api/admin/contest-admins');
+  listContestManagementScopes() {
+    return apiRequest<ContestManagementScope[]>('/api/admin/contest-managers');
   },
 
-  updateContestAdminScope(userId: number, contestIds: number[]) {
-    return apiRequest<ContestAdminScope>(`/api/admin/contest-admins/${userId}/contests`, {
+  updateContestManagementScope(userId: number, contestIds: number[]) {
+    return apiRequest<ContestManagementScope>(`/api/admin/contest-managers/${userId}/contests`, {
       method: 'PUT',
       body: { contestIds },
     });

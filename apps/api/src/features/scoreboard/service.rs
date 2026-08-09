@@ -175,13 +175,13 @@ impl ScoreboardService {
         if contest_id <= 0 {
             return Err(contest_not_found());
         }
-        if actor.has_role("SUPER_ADMIN") {
+        if actor.is_super_admin() {
             return Ok(());
         }
         let assigned = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS (
-                SELECT 1 FROM contest_admin_assignments
+                SELECT 1 FROM contest_management_assignments
                 WHERE contest_id = $1 AND user_id = $2
             )
             "#,
@@ -803,7 +803,7 @@ mod tests {
             username: "root".to_owned(),
             display_name: "Root".to_owned(),
             user_type: UserType::SuperAdmin,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         let true_board =

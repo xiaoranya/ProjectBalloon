@@ -16,7 +16,7 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
-import { homeForUserType } from '../auth/access';
+import { homeForUser } from '../auth/access';
 import { useSession } from '../auth/session';
 import { useI18n } from '../i18n';
 
@@ -25,7 +25,7 @@ const session = useSession();
 const { t } = useI18n();
 
 async function goHome() {
-  await router.push(homeForUserType(session.state.user?.userType));
+  await router.push(homeForUser(session.state.user));
 }
 </script>
 

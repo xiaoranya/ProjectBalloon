@@ -560,10 +560,10 @@ ALTER SEQUENCE public.clarifications_id_seq OWNED BY public.clarifications.id;
 
 
 --
--- Name: contest_admin_assignments; Type: TABLE; Schema: public; Owner: -
+-- Name: contest_management_assignments; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.contest_admin_assignments (
+CREATE TABLE public.contest_management_assignments (
     id bigint NOT NULL,
     user_id bigint NOT NULL,
     contest_id bigint NOT NULL,
@@ -573,10 +573,10 @@ CREATE TABLE public.contest_admin_assignments (
 
 
 --
--- Name: contest_admin_assignments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+-- Name: contest_management_assignments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-CREATE SEQUENCE public.contest_admin_assignments_id_seq
+CREATE SEQUENCE public.contest_management_assignments_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -585,10 +585,10 @@ CREATE SEQUENCE public.contest_admin_assignments_id_seq
 
 
 --
--- Name: contest_admin_assignments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+-- Name: contest_management_assignments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.contest_admin_assignments_id_seq OWNED BY public.contest_admin_assignments.id;
+ALTER SEQUENCE public.contest_management_assignments_id_seq OWNED BY public.contest_management_assignments.id;
 
 
 --
@@ -1074,49 +1074,6 @@ ALTER SEQUENCE public.resolver_team_states_id_seq OWNED BY public.resolver_team_
 
 
 --
--- Name: role_permissions; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.role_permissions (
-    role_id bigint NOT NULL,
-    permission_id bigint NOT NULL
-);
-
-
---
--- Name: roles; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.roles (
-    id bigint NOT NULL,
-    code character varying(64) NOT NULL,
-    name character varying(128) NOT NULL,
-    description text,
-    builtin boolean DEFAULT false NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: roles_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.roles_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: roles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.roles_id_seq OWNED BY public.roles.id;
-
-
---
 -- Name: runs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1578,16 +1535,6 @@ ALTER SEQUENCE public.teams_id_seq OWNED BY public.teams.id;
 
 
 --
--- Name: user_roles; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.user_roles (
-    user_id bigint NOT NULL,
-    role_id bigint NOT NULL
-);
-
-
---
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1723,10 +1670,10 @@ ALTER TABLE ONLY public.clarifications ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
--- Name: contest_admin_assignments id; Type: DEFAULT; Schema: public; Owner: -
+-- Name: contest_management_assignments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.contest_admin_assignments ALTER COLUMN id SET DEFAULT nextval('public.contest_admin_assignments_id_seq'::regclass);
+ALTER TABLE ONLY public.contest_management_assignments ALTER COLUMN id SET DEFAULT nextval('public.contest_management_assignments_id_seq'::regclass);
 
 
 --
@@ -1811,13 +1758,6 @@ ALTER TABLE ONLY public.resolver_snapshots ALTER COLUMN id SET DEFAULT nextval('
 --
 
 ALTER TABLE ONLY public.resolver_team_states ALTER COLUMN id SET DEFAULT nextval('public.resolver_team_states_id_seq'::regclass);
-
-
---
--- Name: roles id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.roles ALTER COLUMN id SET DEFAULT nextval('public.roles_id_seq'::regclass);
 
 
 --
@@ -2095,19 +2035,19 @@ ALTER TABLE ONLY public.clarifications
 
 
 --
--- Name: contest_admin_assignments contest_admin_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: contest_management_assignments contest_management_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.contest_admin_assignments
-    ADD CONSTRAINT contest_admin_assignments_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.contest_management_assignments
+    ADD CONSTRAINT contest_management_assignments_pkey PRIMARY KEY (id);
 
 
 --
--- Name: contest_admin_assignments contest_admin_assignments_user_id_contest_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: contest_management_assignments contest_management_assignments_user_id_contest_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.contest_admin_assignments
-    ADD CONSTRAINT contest_admin_assignments_user_id_contest_id_key UNIQUE (user_id, contest_id);
+ALTER TABLE ONLY public.contest_management_assignments
+    ADD CONSTRAINT contest_management_assignments_user_id_contest_id_key UNIQUE (user_id, contest_id);
 
 
 --
@@ -2276,30 +2216,6 @@ ALTER TABLE ONLY public.resolver_snapshots
 
 ALTER TABLE ONLY public.resolver_team_states
     ADD CONSTRAINT resolver_team_states_pkey PRIMARY KEY (id);
-
-
---
--- Name: role_permissions role_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.role_permissions
-    ADD CONSTRAINT role_permissions_pkey PRIMARY KEY (role_id, permission_id);
-
-
---
--- Name: roles roles_code_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.roles
-    ADD CONSTRAINT roles_code_key UNIQUE (code);
-
-
---
--- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.roles
-    ADD CONSTRAINT roles_pkey PRIMARY KEY (id);
 
 
 --
@@ -2487,14 +2403,6 @@ ALTER TABLE ONLY public.presentation_configs
 
 
 --
--- Name: user_roles user_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.user_roles
-    ADD CONSTRAINT user_roles_pkey PRIMARY KEY (user_id, role_id);
-
-
---
 -- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2651,17 +2559,17 @@ CREATE INDEX idx_clarifications_contest_team_created ON public.clarifications US
 
 
 --
--- Name: idx_contest_admin_assignments_contest_id; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_contest_management_assignments_contest_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_contest_admin_assignments_contest_id ON public.contest_admin_assignments USING btree (contest_id);
+CREATE INDEX idx_contest_management_assignments_contest_id ON public.contest_management_assignments USING btree (contest_id);
 
 
 --
--- Name: idx_contest_admin_assignments_user_id; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_contest_management_assignments_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_contest_admin_assignments_user_id ON public.contest_admin_assignments USING btree (user_id);
+CREATE INDEX idx_contest_management_assignments_user_id ON public.contest_management_assignments USING btree (user_id);
 
 
 --
@@ -3135,27 +3043,27 @@ ALTER TABLE ONLY public.clarifications
 
 
 --
--- Name: contest_admin_assignments contest_admin_assignments_assigned_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: contest_management_assignments contest_management_assignments_assigned_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.contest_admin_assignments
-    ADD CONSTRAINT contest_admin_assignments_assigned_by_user_id_fkey FOREIGN KEY (assigned_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
-
-
---
--- Name: contest_admin_assignments contest_admin_assignments_contest_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.contest_admin_assignments
-    ADD CONSTRAINT contest_admin_assignments_contest_id_fkey FOREIGN KEY (contest_id) REFERENCES public.contests(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.contest_management_assignments
+    ADD CONSTRAINT contest_management_assignments_assigned_by_user_id_fkey FOREIGN KEY (assigned_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
--- Name: contest_admin_assignments contest_admin_assignments_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: contest_management_assignments contest_management_assignments_contest_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.contest_admin_assignments
-    ADD CONSTRAINT contest_admin_assignments_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.contest_management_assignments
+    ADD CONSTRAINT contest_management_assignments_contest_id_fkey FOREIGN KEY (contest_id) REFERENCES public.contests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: contest_management_assignments contest_management_assignments_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.contest_management_assignments
+    ADD CONSTRAINT contest_management_assignments_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -3284,22 +3192,6 @@ ALTER TABLE ONLY public.resolver_snapshots
 
 ALTER TABLE ONLY public.resolver_team_states
     ADD CONSTRAINT resolver_team_states_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.resolver_runs(id);
-
-
---
--- Name: role_permissions role_permissions_permission_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.role_permissions
-    ADD CONSTRAINT role_permissions_permission_id_fkey FOREIGN KEY (permission_id) REFERENCES public.permissions(id) ON DELETE CASCADE;
-
-
---
--- Name: role_permissions role_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.role_permissions
-    ADD CONSTRAINT role_permissions_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
 
 
 --
@@ -3463,32 +3355,5 @@ ALTER TABLE ONLY public.team_members
 
 
 --
--- Name: user_roles user_roles_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.user_roles
-    ADD CONSTRAINT user_roles_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
-
-
---
--- Name: user_roles user_roles_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.user_roles
-    ADD CONSTRAINT user_roles_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
---
 -- PostgreSQL database dump complete
 --
-
-INSERT INTO public.roles (code, name, description, builtin) VALUES
-    ('CONTEST_ADMIN', 'Contest Administrator', 'Manages contests and teams', true),
-    ('TEAM_LEADER', 'Team Leader', 'Team-side read-only role', true),
-    ('BALLOON_STAFF', 'Balloon Staff', 'On-site balloon delivery operator', true),
-    ('AWARD_OPERATOR', 'Award Operator', 'Manages award categories, recipients, and freeze', true),
-    ('JUDGE', 'Judge', 'Replies to clarifications and processes submissions', true),
-    ('PRINTER', 'Printer', 'On-site print queue operator', true),
-    ('RESOLVER_OPERATOR', 'Resolver Operator', 'Operates official scoreboard resolver runs', true),
-    ('SCREEN_OPERATOR', 'Screen Operator', 'Configures venue presentation screens', true),
-    ('LIVE_OPERATOR', 'Live Operator', 'Configures public broadcast presentation pages', true);

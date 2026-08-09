@@ -34,7 +34,7 @@ Required controls:
 
 - Hash new passwords with Argon2id. Accept legacy BCrypt hashes only during
   migration and upgrade them after a successful login.
-- RBAC for all admin and operator APIs.
+- Direct, composable account permissions for all staff APIs.
 - Apply login rate limits from shared PostgreSQL audit state so limits cannot be
   bypassed by switching API instances.
 - Submission rate limit.
@@ -111,16 +111,16 @@ Contest reads use one visibility policy in the database query so pagination
 counts and returned rows cannot disagree:
 
 - public contests are readable anonymously;
-- team and contest-administrator access is resolved from authoritative
+- team and contest-manager access is resolved from authoritative
   assignment tables;
-- explicitly designated operational roles may read private contests without
+- explicitly assigned operational permissions may read private contests without
   receiving configuration permissions;
 - inaccessible and nonexistent contest details both return `CONTEST_NOT_FOUND`
   to avoid private-contest enumeration.
 
-Contest administrators are authorized again inside mutation transactions.
-Their user row is held with a shared lock while the assignment is checked, so a
-concurrent scope or account change cannot partially overlap a contest update.
+Contest managers are authorized again inside mutation transactions. Permission
+changes revoke active sessions, and contest assignments are checked in the same
+transaction as each mutation.
 Only super administrators may create contests or inspect soft-deleted records.
 
 ## Team Identity

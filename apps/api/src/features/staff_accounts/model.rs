@@ -1,8 +1,14 @@
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use utoipa::ToSchema;
 
-use crate::{error::AppError, features::auth::model::UserType, pagination::checked_offset};
+use crate::{
+    error::AppError,
+    features::auth::{model::UserType, permissions},
+    pagination::checked_offset,
+};
 
 pub const DEFAULT_PAGE_SIZE: u32 = 100;
 pub const MAX_PAGE_SIZE: u32 = 100;
@@ -43,7 +49,10 @@ impl PageQuery {
 pub struct CreateStaffAccountRequest {
     pub username: String,
     pub display_name: String,
-    pub user_type: UserType,
+    #[serde(default)]
+    pub is_super_admin: bool,
+    #[serde(default)]
+    pub permissions: Vec<String>,
     pub initial_password: String,
     /// Require the staff account to change its password at first login.
     /// Defaults to `true`.
@@ -55,6 +64,7 @@ pub struct ValidatedCreate {
     pub username: String,
     pub display_name: String,
     pub user_type: UserType,
+    pub permissions: Vec<String>,
     pub initial_password: String,
     pub require_password_reset: bool,
 }
@@ -73,12 +83,19 @@ impl CreateStaffAccountRequest {
             ));
         }
         let display_name = validate_display_name(self.display_name)?;
-        validate_staff_type(self.user_type)?;
+        let permissions = validate_permissions(self.permissions)?;
+        if self.is_super_admin && !permissions.is_empty() {
+            return Err(AppError::validation(
+                "permissions",
+                "super administrators must not have explicit permissions",
+            ));
+        }
         validate_password("initialPassword", &self.initial_password)?;
         Ok(ValidatedCreate {
             username,
             display_name,
-            user_type: self.user_type,
+            user_type: if self.is_super_admin { UserType::SuperAdmin } else { UserType::Staff },
+            permissions,
             initial_password: self.initial_password,
             require_password_reset: self.require_password_reset,
         })
@@ -89,26 +106,35 @@ impl CreateStaffAccountRequest {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateStaffAccountRequest {
     pub display_name: Option<String>,
-    pub user_type: Option<UserType>,
+    pub is_super_admin: Option<bool>,
+    pub permissions: Option<Vec<String>>,
     pub enabled: Option<bool>,
 }
 
 pub struct ValidatedUpdate {
     pub display_name: Option<String>,
-    pub user_type: Option<UserType>,
+    pub is_super_admin: Option<bool>,
+    pub permissions: Option<Vec<String>>,
     pub enabled: Option<bool>,
 }
 
 impl UpdateStaffAccountRequest {
     pub fn validate(self) -> Result<ValidatedUpdate, AppError> {
         let display_name = self.display_name.map(validate_display_name).transpose()?;
-        if let Some(user_type) = self.user_type {
-            validate_staff_type(user_type)?;
-        }
-        if display_name.is_none() && self.user_type.is_none() && self.enabled.is_none() {
+        let permissions = self.permissions.map(validate_permissions).transpose()?;
+        if display_name.is_none()
+            && self.is_super_admin.is_none()
+            && permissions.is_none()
+            && self.enabled.is_none()
+        {
             return Err(AppError::validation("request", "must include at least one change"));
         }
-        Ok(ValidatedUpdate { display_name, user_type: self.user_type, enabled: self.enabled })
+        Ok(ValidatedUpdate {
+            display_name,
+            is_super_admin: self.is_super_admin,
+            permissions,
+            enabled: self.enabled,
+        })
     }
 }
 
@@ -148,6 +174,7 @@ pub struct StaffAccountResponse {
     pub username: String,
     pub display_name: String,
     pub user_type: UserType,
+    pub permissions: Vec<String>,
     pub enabled: bool,
     pub password_reset_required: bool,
     #[serde(with = "time::serde::rfc3339::option")]
@@ -164,6 +191,7 @@ pub(super) struct StaffAccountRow {
     pub username: String,
     pub display_name: String,
     pub user_type: String,
+    pub permissions: Vec<String>,
     pub enabled: bool,
     pub password_reset_required: bool,
     pub last_login_at: Option<OffsetDateTime>,
@@ -178,6 +206,7 @@ impl StaffAccountRow {
             username: self.username,
             display_name: self.display_name,
             user_type: self.user_type.parse()?,
+            permissions: self.permissions,
             enabled: self.enabled,
             password_reset_required: self.password_reset_required,
             last_login_at: self.last_login_at,
@@ -198,12 +227,12 @@ fn validate_display_name(value: String) -> Result<String, AppError> {
     Ok(value)
 }
 
-fn validate_staff_type(user_type: UserType) -> Result<(), AppError> {
-    if user_type.is_staff() {
-        Ok(())
-    } else {
-        Err(AppError::validation("userType", "TEAM is not a staff account type"))
+fn validate_permissions(values: Vec<String>) -> Result<Vec<String>, AppError> {
+    let values = values.into_iter().collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
+    if values.iter().any(|code| !permissions::ASSIGNABLE.contains(&code.as_str())) {
+        return Err(AppError::validation("permissions", "contains an unknown permission"));
     }
+    Ok(values)
 }
 
 fn validate_password(field: &'static str, value: &str) -> Result<(), AppError> {
@@ -219,14 +248,13 @@ mod tests {
     use super::{
         CreateStaffAccountRequest, PageQuery, ResetStaffPasswordRequest, UpdateStaffAccountRequest,
     };
-    use crate::features::auth::model::UserType;
-
     #[test]
     fn create_normalizes_username_and_display_name() {
         let validated = CreateStaffAccountRequest {
             username: " Staff.One ".to_owned(),
             display_name: " Operator ".to_owned(),
-            user_type: UserType::Judge,
+            is_super_admin: false,
+            permissions: vec!["PRINTING_MANAGE".to_owned()],
             initial_password: "temporary-password".to_owned(),
             require_password_reset: true,
         }
@@ -241,7 +269,8 @@ mod tests {
         let validated = CreateStaffAccountRequest {
             username: "staff.two".to_owned(),
             display_name: "Operator Two".to_owned(),
-            user_type: UserType::Judge,
+            is_super_admin: false,
+            permissions: vec![],
             initial_password: "temporary-password".to_owned(),
             require_password_reset: false,
         }
@@ -251,11 +280,12 @@ mod tests {
     }
 
     #[test]
-    fn team_accounts_are_rejected() {
+    fn unknown_permissions_are_rejected() {
         let request = CreateStaffAccountRequest {
             username: "team-user".to_owned(),
             display_name: "Team".to_owned(),
-            user_type: UserType::Team,
+            is_super_admin: false,
+            permissions: vec!["UNKNOWN".to_owned()],
             initial_password: "temporary-password".to_owned(),
             require_password_reset: true,
         };
@@ -264,8 +294,12 @@ mod tests {
 
     #[test]
     fn empty_update_is_rejected() {
-        let request =
-            UpdateStaffAccountRequest { display_name: None, user_type: None, enabled: None };
+        let request = UpdateStaffAccountRequest {
+            display_name: None,
+            is_super_admin: None,
+            permissions: None,
+            enabled: None,
+        };
         assert!(request.validate().is_err());
     }
 

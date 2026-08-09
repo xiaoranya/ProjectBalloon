@@ -10,16 +10,9 @@ use crate::features::competition::model::CompetitionSessionResponse;
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum UserType {
     SuperAdmin,
-    ContestAdmin,
-    Judge,
+    Staff,
     Team,
     Individual,
-    Printer,
-    BalloonStaff,
-    ResolverOperator,
-    AwardOperator,
-    ScreenOperator,
-    LiveOperator,
 }
 
 impl UserType {
@@ -27,16 +20,9 @@ impl UserType {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::SuperAdmin => "SUPER_ADMIN",
-            Self::ContestAdmin => "CONTEST_ADMIN",
-            Self::Judge => "JUDGE",
+            Self::Staff => "STAFF",
             Self::Team => "TEAM",
             Self::Individual => "INDIVIDUAL",
-            Self::Printer => "PRINTER",
-            Self::BalloonStaff => "BALLOON_STAFF",
-            Self::ResolverOperator => "RESOLVER_OPERATOR",
-            Self::AwardOperator => "AWARD_OPERATOR",
-            Self::ScreenOperator => "SCREEN_OPERATOR",
-            Self::LiveOperator => "LIVE_OPERATOR",
         }
     }
 
@@ -52,16 +38,9 @@ impl FromStr for UserType {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "SUPER_ADMIN" => Ok(Self::SuperAdmin),
-            "CONTEST_ADMIN" => Ok(Self::ContestAdmin),
-            "JUDGE" => Ok(Self::Judge),
+            "STAFF" => Ok(Self::Staff),
             "TEAM" => Ok(Self::Team),
             "INDIVIDUAL" => Ok(Self::Individual),
-            "PRINTER" => Ok(Self::Printer),
-            "BALLOON_STAFF" => Ok(Self::BalloonStaff),
-            "RESOLVER_OPERATOR" => Ok(Self::ResolverOperator),
-            "AWARD_OPERATOR" => Ok(Self::AwardOperator),
-            "SCREEN_OPERATOR" => Ok(Self::ScreenOperator),
-            "LIVE_OPERATOR" => Ok(Self::LiveOperator),
             invalid => Err(AppError::internal("invalid users.user_type", invalid)),
         }
     }
@@ -73,14 +52,20 @@ pub struct AuthUser {
     pub username: String,
     pub display_name: String,
     pub user_type: UserType,
-    pub roles: Vec<String>,
+    pub permissions: Vec<String>,
     pub password_reset_required: bool,
 }
 
 impl AuthUser {
     #[must_use]
-    pub fn has_role(&self, role: &str) -> bool {
-        self.user_type == UserType::SuperAdmin || self.roles.iter().any(|code| code == role)
+    pub fn has_permission(&self, permission: &str) -> bool {
+        self.user_type == UserType::SuperAdmin
+            || self.permissions.iter().any(|code| code == permission)
+    }
+
+    #[must_use]
+    pub const fn is_super_admin(&self) -> bool {
+        matches!(self.user_type, UserType::SuperAdmin)
     }
 
     #[must_use]
@@ -90,7 +75,7 @@ impl AuthUser {
             username: self.username.clone(),
             display_name: self.display_name.clone(),
             user_type: self.user_type,
-            roles: self.roles.clone(),
+            permissions: self.permissions.clone(),
             password_reset_required: self.password_reset_required,
             competition: None,
         }
@@ -104,7 +89,7 @@ pub struct CurrentUserResponse {
     pub username: String,
     pub display_name: String,
     pub user_type: UserType,
-    pub roles: Vec<String>,
+    pub permissions: Vec<String>,
     pub password_reset_required: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub competition: Option<CompetitionSessionResponse>,
@@ -234,7 +219,7 @@ pub(super) struct UserRow {
     pub user_type: String,
     pub enabled: bool,
     pub password_reset_required: bool,
-    pub roles: Vec<String>,
+    pub permissions: Vec<String>,
 }
 
 impl UserRow {
@@ -244,7 +229,7 @@ impl UserRow {
             username: self.username.clone(),
             display_name: self.display_name.clone(),
             user_type: self.user_type.parse()?,
-            roles: self.roles.clone(),
+            permissions: self.permissions.clone(),
             password_reset_required: self.password_reset_required,
         })
     }
@@ -257,10 +242,7 @@ mod tests {
     #[test]
     fn user_type_wire_names_are_stable() {
         assert_eq!(UserType::SuperAdmin.as_str(), "SUPER_ADMIN");
-        assert_eq!(
-            "BALLOON_STAFF".parse::<UserType>().expect("valid type"),
-            UserType::BalloonStaff
-        );
+        assert_eq!("STAFF".parse::<UserType>().expect("valid type"), UserType::Staff);
     }
 
     #[test]

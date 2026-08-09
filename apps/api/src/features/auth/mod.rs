@@ -3,6 +3,7 @@ pub(crate) mod csrf;
 pub(crate) mod handlers;
 pub mod model;
 mod password;
+pub mod permissions;
 mod service;
 
 pub use context::{AuthContext, ContestManagerContext, OptionalAuthContext, SuperAdminContext};

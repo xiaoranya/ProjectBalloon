@@ -300,10 +300,10 @@ paths:
       responses:
         "200":
           description: OK
-  /api/admin/contest-admins/{userId}/contests:
+  /api/admin/contest-managers/{userId}/contests:
     put:
       tags:
-      - contest-admin-scope-controller
+      - contest-management-scope-controller
       operationId: replace
       parameters:
       - name: userId
@@ -316,7 +316,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ContestAdminScopeRequest"
+              $ref: "#/components/schemas/ContestManagementScopeRequest"
         required: true
       responses:
         "200":
@@ -324,7 +324,7 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/ContestAdminScopeResponse"
+                $ref: "#/components/schemas/ContestManagementScopeResponse"
   /api/teams:
     get:
       tags:
@@ -3073,10 +3073,10 @@ paths:
               schema:
                 type: string
                 format: binary
-  /api/admin/contest-admins:
+  /api/admin/contest-managers:
     get:
       tags:
-      - contest-admin-scope-controller
+      - contest-management-scope-controller
       operationId: list_11
       responses:
         "200":
@@ -3086,7 +3086,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/ContestAdminScopeResponse"
+                  $ref: "#/components/schemas/ContestManagementScopeResponse"
   /api/admin/batch-rejudge/tasks/{taskId}:
     get:
       tags:
@@ -3861,7 +3861,7 @@ components:
         rankTo:
           type: integer
           format: int32
-    ContestAdminScopeRequest:
+    ContestManagementScopeRequest:
       required:
       - contestIds
       type: object
@@ -3871,7 +3871,7 @@ components:
           items:
             type: integer
             format: int64
-    ContestAdminScopeResponse:
+    ContestManagementScopeResponse:
       type: object
       properties:
         userId:
@@ -4894,16 +4894,10 @@ components:
           type: string
           enum:
           - SUPER_ADMIN
-          - CONTEST_ADMIN
-          - JUDGE
+          - STAFF
           - TEAM
-          - PRINTER
-          - BALLOON_STAFF
-          - RESOLVER_OPERATOR
-          - AWARD_OPERATOR
-          - SCREEN_OPERATOR
-          - LIVE_OPERATOR
-        roles:
+          - INDIVIDUAL
+        permissions:
           type: array
           items:
             type: string
@@ -4953,7 +4947,6 @@ components:
       required:
       - displayName
       - initialPassword
-      - userType
       - username
       type: object
       properties:
@@ -4966,19 +4959,13 @@ components:
           maxLength: 128
           minLength: 0
           type: string
-        userType:
-          type: string
-          enum:
-          - SUPER_ADMIN
-          - CONTEST_ADMIN
-          - JUDGE
-          - TEAM
-          - PRINTER
-          - BALLOON_STAFF
-          - RESOLVER_OPERATOR
-          - AWARD_OPERATOR
-          - SCREEN_OPERATOR
-          - LIVE_OPERATOR
+        isSuperAdmin:
+          type: boolean
+          default: false
+        permissions:
+          type: array
+          items:
+            type: string
         initialPassword:
           maxLength: 128
           minLength: 8
@@ -4997,15 +4984,13 @@ components:
           type: string
           enum:
           - SUPER_ADMIN
-          - CONTEST_ADMIN
-          - JUDGE
+          - STAFF
           - TEAM
-          - PRINTER
-          - BALLOON_STAFF
-          - RESOLVER_OPERATOR
-          - AWARD_OPERATOR
-          - SCREEN_OPERATOR
-          - LIVE_OPERATOR
+          - INDIVIDUAL
+        permissions:
+          type: array
+          items:
+            type: string
         enabled:
           type: boolean
         passwordResetRequired:
@@ -5216,19 +5201,12 @@ components:
           maxLength: 128
           minLength: 1
           type: string
-        userType:
-          type: string
-          enum:
-          - SUPER_ADMIN
-          - CONTEST_ADMIN
-          - JUDGE
-          - TEAM
-          - PRINTER
-          - BALLOON_STAFF
-          - RESOLVER_OPERATOR
-          - AWARD_OPERATOR
-          - SCREEN_OPERATOR
-          - LIVE_OPERATOR
+        isSuperAdmin:
+          type: boolean
+        permissions:
+          type: array
+          items:
+            type: string
         enabled:
           type: boolean
     Pageable:

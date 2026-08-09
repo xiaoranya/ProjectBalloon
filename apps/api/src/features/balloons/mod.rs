@@ -301,10 +301,12 @@ impl BalloonService {
         request: DispatchPolicyRequest,
         actor: &AuthUser,
     ) -> Result<DispatchPolicyResponse, AppError> {
-        if !actor.has_role("SUPER_ADMIN") && !actor.has_role("CONTEST_ADMIN") {
+        if !actor.is_super_admin()
+            && !actor.has_permission(crate::features::auth::permissions::CONTEST_MANAGE)
+        {
             return Err(AppError::forbidden(
                 "BALLOON_POLICY_ADMIN_REQUIRED",
-                "Contest administrator access is required",
+                "Contest manager access is required",
             ));
         }
         if !matches!(request.strategy.as_str(), "FIFO" | "PRIORITY" | "ZONE")
@@ -319,9 +321,9 @@ impl BalloonService {
             ));
         }
         ensure_contest(&self.database, contest_id).await?;
-        if !actor.has_role("SUPER_ADMIN") {
+        if !actor.is_super_admin() {
             let assigned = sqlx::query_scalar::<_, bool>(
-                "SELECT EXISTS (SELECT 1 FROM contest_admin_assignments WHERE contest_id = $1 AND user_id = $2)",
+                "SELECT EXISTS (SELECT 1 FROM contest_management_assignments WHERE contest_id = $1 AND user_id = $2)",
             )
             .bind(contest_id)
             .bind(actor.id)
@@ -478,10 +480,15 @@ async fn ensure_contest(database: &PgPool, contest_id: i64) -> Result<(), AppErr
 }
 
 fn require_operator(actor: &AuthUser) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") || actor.has_role("BALLOON_STAFF") {
+    if actor.is_super_admin()
+        || actor.has_permission(crate::features::auth::permissions::BALLOON_MANAGE)
+    {
         Ok(())
     } else {
-        Err(AppError::forbidden("BALLOON_STAFF_REQUIRED", "Balloon staff role is required"))
+        Err(AppError::forbidden(
+            "BALLOON_PERMISSION_REQUIRED",
+            "Balloon management permission is required",
+        ))
     }
 }
 
@@ -758,9 +765,9 @@ mod tests {
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires PostgreSQL"]
     async fn balloon_workbench_enforces_claim_ownership_and_recovery(pool: PgPool) {
-        let first_user = sqlx::query_scalar::<_, i64>("INSERT INTO users (username, password_hash, display_name, user_type) VALUES ('balloon-one', 'hash', 'Balloon One', 'BALLOON_STAFF') RETURNING id")
+        let first_user = sqlx::query_scalar::<_, i64>("INSERT INTO users (username, password_hash, display_name, user_type) VALUES ('balloon-one', 'hash', 'Balloon One', 'STAFF') RETURNING id")
             .fetch_one(&pool).await.expect("insert first balloon operator");
-        let second_user = sqlx::query_scalar::<_, i64>("INSERT INTO users (username, password_hash, display_name, user_type) VALUES ('balloon-two', 'hash', 'Balloon Two', 'BALLOON_STAFF') RETURNING id")
+        let second_user = sqlx::query_scalar::<_, i64>("INSERT INTO users (username, password_hash, display_name, user_type) VALUES ('balloon-two', 'hash', 'Balloon Two', 'STAFF') RETURNING id")
             .fetch_one(&pool).await.expect("insert second balloon operator");
         let contest_id = sqlx::query_scalar::<_, i64>("INSERT INTO contests (name, status, visibility, start_at, freeze_at, end_at) VALUES ('Balloon Workbench', 'RUNNING', 'PRIVATE', now() - interval '1 hour', now() + interval '1 hour', now() + interval '2 hours') RETURNING id")
             .fetch_one(&pool).await.expect("insert balloon contest");
@@ -794,8 +801,8 @@ mod tests {
             id,
             username: username.to_owned(),
             display_name: username.to_owned(),
-            user_type: UserType::BalloonStaff,
-            roles: vec!["BALLOON_STAFF".to_owned()],
+            user_type: UserType::Staff,
+            permissions: vec!["BALLOON_MANAGE".to_owned()],
             password_reset_required: false,
         };
         let first = actor(first_user, "balloon-one");

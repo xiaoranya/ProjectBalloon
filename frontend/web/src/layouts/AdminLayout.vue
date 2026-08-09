@@ -14,16 +14,16 @@
           <ElIcon><Monitor /></ElIcon>
           <span>{{ t('健康与审计') }}</span>
         </el-menu-item>
-        <el-menu-item v-if="session.isAdmin.value" index="/admin/contests">
+        <el-menu-item v-if="session.canManageContests.value" index="/admin/contests">
           <ElIcon><Trophy /></ElIcon>
           <span>{{ t('比赛管理') }}</span>
         </el-menu-item>
-        <el-menu-item v-if="session.isAdmin.value" index="/admin/team-import">
+        <el-menu-item v-if="session.canManageContests.value" index="/admin/team-import">
           <ElIcon><UploadFilled /></ElIcon>
           <span>{{ t('队伍批量导入') }}</span>
         </el-menu-item>
         <el-menu-item
-          v-if="session.isAdmin.value && session.state.deployment.mode === 'competition'"
+          v-if="session.canManageContests.value && session.state.deployment.mode === 'competition'"
           index="/admin/competition"
         >
           <ElIcon><Connection /></ElIcon>
@@ -46,14 +46,14 @@
         </el-menu-item>
         <el-menu-item v-if="session.isSuperAdmin.value" index="/admin/permissions">
           <ElIcon><Lock /></ElIcon>
-          <span>{{ t('比赛管理员权限') }}</span>
+          <span>{{ t('赛事管理范围') }}</span>
         </el-menu-item>
       </el-menu>
 
       <div class="admin-user">
         <div>
           <strong>{{ session.state.user?.displayName }}</strong>
-          <small>{{ roleLabel }}</small>
+          <small>{{ accountTypeLabel }}</small>
         </div>
         <ElButton text :icon="SwitchButton" :aria-label="t('退出登录')" @click="logout" />
       </div>
@@ -76,20 +76,13 @@ const route = useRoute();
 const router = useRouter();
 const session = useSession();
 const { t } = useI18n();
-const roleLabels: Record<string, string> = {
+const accountTypeLabels: Record<string, string> = {
   SUPER_ADMIN: '超级管理员',
-  CONTEST_ADMIN: '比赛管理员',
-  JUDGE: '裁判',
-  PRINTER: '打印员',
-  BALLOON_STAFF: '气球工作人员',
-  AWARD_OPERATOR: '颁奖操作员',
-  RESOLVER_OPERATOR: '滚榜操作员',
-  SCREEN_OPERATOR: '大屏操作员',
-  LIVE_OPERATOR: '直播操作员',
+  STAFF: '工作人员',
 };
-const roleLabel = computed(() => {
+const accountTypeLabel = computed(() => {
   const userType = session.state.user?.userType ?? '';
-  return t(roleLabels[userType] ?? userType);
+  return t(accountTypeLabels[userType] ?? userType);
 });
 
 async function logout() {

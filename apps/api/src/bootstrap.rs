@@ -18,8 +18,6 @@ pub enum BootstrapError {
     Invalid(&'static str),
     #[error("administrator bootstrap is unavailable because the users table is not empty")]
     AlreadyInitialized,
-    #[error("the SUPER_ADMIN role is missing; run database migrations first")]
-    MissingRole,
     #[error("failed to hash the bootstrap password")]
     Password,
     #[error("bootstrap database operation failed: {0}")]
@@ -78,10 +76,6 @@ pub async fn bootstrap_super_admin(
         return Err(BootstrapError::AlreadyInitialized);
     }
 
-    let role_id = sqlx::query_scalar::<_, i64>("SELECT id FROM roles WHERE code = 'SUPER_ADMIN'")
-        .fetch_optional(&mut *transaction)
-        .await?
-        .ok_or(BootstrapError::MissingRole)?;
     let user_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO users
@@ -96,11 +90,6 @@ pub async fn bootstrap_super_admin(
     .bind(admin.display_name)
     .fetch_one(&mut *transaction)
     .await?;
-    sqlx::query("INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)")
-        .bind(user_id)
-        .bind(role_id)
-        .execute(&mut *transaction)
-        .await?;
     sqlx::query(
         r#"
         INSERT INTO audit_logs

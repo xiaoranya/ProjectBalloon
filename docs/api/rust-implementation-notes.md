@@ -143,28 +143,27 @@ Important stable errors:
 | 409 | `USERNAME_TAKEN` | The normalized username already exists |
 | 409 | `SELF_ACCESS_CHANGE_FORBIDDEN` | The actor attempted to remove their own super-admin access |
 | 409 | `LAST_SUPER_ADMIN` | The mutation would leave no enabled super administrator |
-| 409 | `STAFF_ROLE_NOT_CONFIGURED` | Required built-in role data is missing |
 
 Password hashes and raw session tokens never appear in responses. Successful
 mutations write `STAFF_ACCOUNT_CREATED`, `STAFF_ACCOUNT_UPDATED`, or
 `STAFF_PASSWORD_RESET` to `audit_logs`.
 
-## Contest Administrator Scopes
+## Contest Management Scopes
 
 Both endpoints require `SuperAdminContext`:
 
 | Method | Path | Behavior |
 |---|---|---|
-| `GET` | `/api/admin/contest-admins` | Lists contest administrators and sorted contest IDs |
-| `PUT` | `/api/admin/contest-admins/{userId}/contests` | Atomically replaces the administrator's scope |
+| `GET` | `/api/admin/contest-managers` | Lists accounts with `CONTEST_MANAGE` and sorted contest IDs |
+| `PUT` | `/api/admin/contest-managers/{userId}/contests` | Atomically replaces the manager's scope |
 
 Input IDs must be positive, are deduplicated and sorted, and are limited to
 1,000 entries. Every referenced contest must exist and must not be soft
 deleted. Validation, deletion, bulk insertion, and
-`CONTEST_ADMIN_SCOPE_UPDATED` audit insertion share one transaction. A failed
+`CONTEST_MANAGEMENT_SCOPE_UPDATED` audit insertion share one transaction. A failed
 validation leaves the previous scope unchanged.
 
-Stable not-found errors are `CONTEST_ADMIN_NOT_FOUND` and `CONTEST_NOT_FOUND`.
+Stable not-found errors are `CONTEST_MANAGER_NOT_FOUND` and `CONTEST_NOT_FOUND`.
 
 ## Audit Log Query
 
@@ -190,15 +189,15 @@ This slice implements:
 | `GET` | `/api/contests` | Optional authentication; response is visibility-scoped |
 | `GET` | `/api/contests/{contestId}` | Optional authentication; inaccessible contests return 404 |
 | `POST` | `/api/contests` | Completed-password `SUPER_ADMIN` |
-| `PATCH` | `/api/contests/{contestId}` | `SUPER_ADMIN` or assigned `CONTEST_ADMIN` |
-| `DELETE` | `/api/contests/{contestId}` | `SUPER_ADMIN` or assigned `CONTEST_ADMIN` |
+| `PATCH` | `/api/contests/{contestId}` | `SUPER_ADMIN` or assigned `CONTEST_MANAGE` account |
+| `DELETE` | `/api/contests/{contestId}` | `SUPER_ADMIN` or assigned `CONTEST_MANAGE` account |
 
 Read visibility is intentionally evaluated in one database predicate:
 
 - anonymous users see non-deleted `PUBLIC` contests;
 - assigned teams see their contests plus public contests;
-- contest administrators see assigned contests plus public contests;
-- judge and operational read-all roles see every non-deleted contest;
+- contest managers see assigned contests plus public contests;
+- staff with operational permissions see every non-deleted contest;
 - only super administrators may set `includeDeleted=true`.
 
 Pagination is limited to 500 rows because the existing permission-management
@@ -413,7 +412,7 @@ staff can read their scoped assignments. The response uses a safe media type,
 `Content-Disposition: attachment`, and `X-Content-Type-Options: nosniff`.
 
 `DELETE /api/problems/{problemId}/attachments/{attachmentId}` uses the same
-all-assignment contest-admin rule as upload and is restricted to problems used
+all-assignment contest-manager rule as upload and is restricted to problems used
 only by `DRAFT` contests. It commits metadata deletion and audit first, then
 best-effort object cleanup so a failed storage request cannot leave a live
 database reference to a missing object. Cleanup failures are logged as orphan
@@ -638,14 +637,14 @@ pending/leased Outbox rows, failed Outbox rows, and the database check time in a
 single snapshot. `drained` is true only when all four counts are zero. Unlike the
 legacy dispatcher, Rust counts `PUBLISHING` leases in `outboxPending`, because a
 task without Publisher Confirm is not safely drained. Super administrators and
-assigned contest administrators can read the status; other contest IDs remain
+assigned contest managers can read the status; other contest IDs remain
 non-enumerable. The contest administration page displays these counts and
 refreshes them after a single rejudge.
 
 Contest managers can export submission metadata and active results as UTF-8 CSV from
 `GET /api/admin/contests/{contestId}/exports/submissions.csv`, or all source files plus a manifest
 from `GET /api/admin/contests/{contestId}/exports/submission-sources.zip`. Both endpoints reuse the
-contest administrator scope check and record an audit entry. CSV text is quoted and neutralizes
+contest management scope check and record an audit entry. CSV text is quoted and neutralizes
 spreadsheet formula prefixes. ZIP paths are generated only from numeric IDs and a restricted
 problem alias; stored source size and SHA-256 are verified before an entry is written. The
 synchronous ZIP compatibility endpoint rejects more than 10,000 files or 128 MiB. Larger exports
@@ -698,7 +697,7 @@ staff listing/detail, replying, and closing. Team identity comes exclusively fro
 and the contest roster. Questions are accepted only while a contest is `RUNNING` or `PAUSED`, use
 an advisory transaction lock to enforce one question per team every five minutes, and validate the
 `GENERAL`/`PROBLEM` shape against contest problem assignments. Staff access requires a Judge or
-contest-administrator role plus contest scope (or super administrator). Every mutation atomically
+`CONTEST_MANAGE` permission plus contest scope (or super administrator). Every mutation atomically
 writes audit and STAFF plus recipient-only TEAM events. `PUBLIC` describes whether a reply may be
 converted into an announcement; it does not expose the original question to other teams.
 
@@ -725,7 +724,7 @@ to one request per ten minutes and twenty per team per contest under an advisory
 PDF generation invokes `cupsfilter` without a shell, with a fixed generic PDF PPD and JCL disabled;
 the result must be a bounded pure `%PDF-` document before it is archived in object storage. Only
 then is the database task committed as `QUEUED`. Team PDF/list reads are owner-scoped, while queue
-actions require PRINTER or super-administrator authority. Audit and STAFF plus recipient TEAM
+actions require `PRINTING_MANAGE` or super-administrator authority. Audit and STAFF plus recipient TEAM
 events are transactional. The delivery runner submits archived PDFs through `lp`, persists the
 CUPS job ID, monitors active and completed queues through `lpstat`, supports cancellation, and
 advances requests through `PRINTING` to `COMPLETED` under recoverable database leases. Real printer

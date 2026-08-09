@@ -39,7 +39,7 @@ BEGIN
         'announcements', 'award_categories', 'award_certificate_rows',
         'award_host_scripts', 'award_presentation_states', 'award_recipients',
         'balloon_tasks', 'batch_rejudge_tasks', 'clarifications',
-        'contest_admin_assignments', 'contest_problems', 'contest_teams',
+        'contest_management_assignments', 'contest_problems', 'contest_teams',
         'presentation_configs', 'print_requests', 'resolver_runs',
         'scoreboard_snapshots', 'screen_groups', 'screen_playlists', 'submissions',
         'award_sets', 'contest_scoreboard_cells', 'contest_scoreboard_rows'

@@ -1055,13 +1055,13 @@ async fn require_problem_catalog_access(
     contest_id: Option<i64>,
     actor: &AuthUser,
 ) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") {
+    if actor.is_super_admin() {
         return Ok(());
     }
     let Some(contest_id) = contest_id else {
         return Err(AppError::forbidden(
             "FORBIDDEN",
-            "Contest administrators must provide a contest scope",
+            "Contest managers must provide a contest scope",
         ));
     };
     let manageable = sqlx::query_scalar::<_, bool>(
@@ -1069,7 +1069,7 @@ async fn require_problem_catalog_access(
         SELECT EXISTS (
             SELECT 1
             FROM contests c
-            JOIN contest_admin_assignments scope ON scope.contest_id = c.id
+            JOIN contest_management_assignments scope ON scope.contest_id = c.id
             WHERE c.id = $1 AND c.deleted_at IS NULL AND scope.user_id = $2
         )
         "#,
@@ -1249,7 +1249,7 @@ async fn require_problem_manage_pool(
     problem_id: i64,
     actor: &AuthUser,
 ) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") {
+    if actor.is_super_admin() {
         return Ok(());
     }
     let (total, managed) = sqlx::query_as::<_, (i64, i64)>(
@@ -1257,7 +1257,7 @@ async fn require_problem_manage_pool(
         SELECT
             count(*),
             count(*) FILTER (WHERE EXISTS (
-                SELECT 1 FROM contest_admin_assignments caa
+                SELECT 1 FROM contest_management_assignments caa
                 WHERE caa.user_id = $2 AND caa.contest_id = cp.contest_id
             ))
         FROM contest_problems cp
@@ -1278,7 +1278,7 @@ async fn require_problem_manage_transaction(
     problem_id: i64,
     actor: &AuthUser,
 ) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") {
+    if actor.is_super_admin() {
         return Ok(());
     }
     let (total, managed) = sqlx::query_as::<_, (i64, i64)>(
@@ -1286,7 +1286,7 @@ async fn require_problem_manage_transaction(
         SELECT
             count(*),
             count(*) FILTER (WHERE EXISTS (
-                SELECT 1 FROM contest_admin_assignments caa
+                SELECT 1 FROM contest_management_assignments caa
                 WHERE caa.user_id = $2 AND caa.contest_id = cp.contest_id
             ))
         FROM contest_problems cp
@@ -1339,13 +1339,13 @@ async fn require_problem_readable(
         .map_err(|error| AppError::internal("check team attachment access", error))?;
         return if readable { Ok(()) } else { Err(attachment_not_found()) };
     }
-    if actor.has_role("SUPER_ADMIN")
-        || actor.has_role("JUDGE")
-        || actor.has_role("BALLOON_STAFF")
-        || actor.has_role("RESOLVER_OPERATOR")
-        || actor.has_role("AWARD_OPERATOR")
-        || actor.has_role("SCREEN_OPERATOR")
-        || actor.has_role("LIVE_OPERATOR")
+    if actor.is_super_admin()
+        || actor.has_permission(crate::features::auth::permissions::CLARIFICATION_MANAGE)
+        || actor.has_permission(crate::features::auth::permissions::BALLOON_MANAGE)
+        || actor.has_permission(crate::features::auth::permissions::RESOLVER_MANAGE)
+        || actor.has_permission(crate::features::auth::permissions::AWARD_MANAGE)
+        || actor.has_permission(crate::features::auth::permissions::SCREEN_MANAGE)
+        || actor.has_permission(crate::features::auth::permissions::LIVE_MANAGE)
     {
         return Ok(());
     }
@@ -1355,7 +1355,7 @@ async fn require_problem_readable(
             SELECT 1
             FROM contest_problems cp
             JOIN contests c ON c.id = cp.contest_id AND c.deleted_at IS NULL
-            JOIN contest_admin_assignments caa ON caa.contest_id = cp.contest_id
+            JOIN contest_management_assignments caa ON caa.contest_id = cp.contest_id
             WHERE cp.problem_id = $1 AND caa.user_id = $2
         )
         "#,
@@ -1468,7 +1468,7 @@ mod tests {
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
-    async fn contest_admin_catalog_requires_an_assigned_contest_scope(pool: PgPool) {
+    async fn contest_manager_catalog_requires_an_assigned_contest_scope(pool: PgPool) {
         let creator_id = sqlx::query_scalar::<_, i64>(
             "INSERT INTO users (username, password_hash, display_name, user_type, enabled, password_reset_required) VALUES ('catalog-owner', 'test-hash', 'Owner', 'SUPER_ADMIN', true, false) RETURNING id",
         )
@@ -1476,7 +1476,7 @@ mod tests {
         .await
         .expect("insert catalog owner");
         let admin_id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO users (username, password_hash, display_name, user_type, enabled, password_reset_required) VALUES ('catalog-admin', 'test-hash', 'Contest Admin', 'CONTEST_ADMIN', true, false) RETURNING id",
+            "INSERT INTO users (username, password_hash, display_name, user_type, enabled, password_reset_required) VALUES ('catalog-admin', 'test-hash', 'Contest Admin', 'STAFF', true, false) RETURNING id",
         )
         .fetch_one(&pool)
         .await
@@ -1493,12 +1493,14 @@ mod tests {
         .fetch_one(&pool)
         .await
         .expect("insert other contest");
-        sqlx::query("INSERT INTO contest_admin_assignments (user_id, contest_id) VALUES ($1, $2)")
-            .bind(admin_id)
-            .bind(managed_contest_id)
-            .execute(&pool)
-            .await
-            .expect("assign contest scope");
+        sqlx::query(
+            "INSERT INTO contest_management_assignments (user_id, contest_id) VALUES ($1, $2)",
+        )
+        .bind(admin_id)
+        .bind(managed_contest_id)
+        .execute(&pool)
+        .await
+        .expect("assign contest scope");
         let problem_id = sqlx::query_scalar::<_, i64>(
             "INSERT INTO problems (slug, title, created_by) VALUES ('catalog-problem', 'Catalog Problem', $1) RETURNING id",
         )
@@ -1518,8 +1520,8 @@ mod tests {
             id: admin_id,
             username: "catalog-admin".into(),
             display_name: "Contest Admin".into(),
-            user_type: UserType::ContestAdmin,
-            roles: vec!["CONTEST_ADMIN".into()],
+            user_type: UserType::Staff,
+            permissions: vec!["CONTEST_MANAGE".into()],
             password_reset_required: false,
         };
         let service = ProblemService::new(pool.clone());
@@ -1620,7 +1622,7 @@ mod tests {
             username: "catalog-super".into(),
             display_name: "Super Admin".into(),
             user_type: UserType::SuperAdmin,
-            roles: vec!["SUPER_ADMIN".into()],
+            permissions: vec![],
             password_reset_required: false,
         };
         let service = ProblemService::new(pool.clone());
@@ -1744,7 +1746,7 @@ mod tests {
             username: "admin".into(),
             display_name: "Admin".into(),
             user_type: UserType::SuperAdmin,
-            roles: vec!["SUPER_ADMIN".into()],
+            permissions: vec![],
             password_reset_required: false,
         };
         let response = ProblemService::new(pool)
@@ -1791,7 +1793,7 @@ mod tests {
             username: "attachment-admin".into(),
             display_name: "Admin".into(),
             user_type: UserType::SuperAdmin,
-            roles: vec!["SUPER_ADMIN".into()],
+            permissions: vec![],
             password_reset_required: false,
         };
         let memory = Arc::new(MemoryStorage::default());
@@ -1947,7 +1949,7 @@ mod tests {
             username: "attachment-team".into(),
             display_name: "Attachment Team".into(),
             user_type: UserType::Team,
-            roles: vec!["TEAM_LEADER".into()],
+            permissions: vec![],
             password_reset_required: false,
         };
         assert!(
@@ -1982,13 +1984,13 @@ mod tests {
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
-    async fn contest_admin_must_manage_every_problem_assignment_before_upload(pool: PgPool) {
+    async fn contest_manager_must_manage_every_problem_assignment_before_upload(pool: PgPool) {
         let admin_id = sqlx::query_scalar::<_, i64>(
             r#"
             INSERT INTO users
                 (username, password_hash, display_name, user_type, enabled,
                  password_reset_required)
-            VALUES ('scoped-admin', 'test-hash', 'Scoped Admin', 'CONTEST_ADMIN', true, false)
+            VALUES ('scoped-admin', 'test-hash', 'Scoped Admin', 'STAFF', true, false)
             RETURNING id
             "#,
         )
@@ -2024,18 +2026,20 @@ mod tests {
             .await
             .expect("assign shared problem");
         }
-        sqlx::query("INSERT INTO contest_admin_assignments (user_id, contest_id) VALUES ($1, $2)")
-            .bind(admin_id)
-            .bind(first_contest_id)
-            .execute(&pool)
-            .await
-            .expect("assign first contest scope");
+        sqlx::query(
+            "INSERT INTO contest_management_assignments (user_id, contest_id) VALUES ($1, $2)",
+        )
+        .bind(admin_id)
+        .bind(first_contest_id)
+        .execute(&pool)
+        .await
+        .expect("assign first contest scope");
         let actor = AuthUser {
             id: admin_id,
             username: "scoped-admin".into(),
             display_name: "Scoped Admin".into(),
-            user_type: UserType::ContestAdmin,
-            roles: vec!["CONTEST_ADMIN".into()],
+            user_type: UserType::Staff,
+            permissions: vec!["CONTEST_MANAGE".into()],
             password_reset_required: false,
         };
         let memory = Arc::new(MemoryStorage::default());
@@ -2058,12 +2062,14 @@ mod tests {
         );
         assert!(memory.objects.lock().expect("memory storage lock").is_empty());
 
-        sqlx::query("INSERT INTO contest_admin_assignments (user_id, contest_id) VALUES ($1, $2)")
-            .bind(admin_id)
-            .bind(second_contest_id)
-            .execute(&pool)
-            .await
-            .expect("assign second contest scope");
+        sqlx::query(
+            "INSERT INTO contest_management_assignments (user_id, contest_id) VALUES ($1, $2)",
+        )
+        .bind(admin_id)
+        .bind(second_contest_id)
+        .execute(&pool)
+        .await
+        .expect("assign second contest scope");
         let attachment = service
             .upload_attachment(
                 problem_id,
@@ -2142,7 +2148,7 @@ mod tests {
             username: "testdata-admin".into(),
             display_name: "Testdata Admin".into(),
             user_type: UserType::SuperAdmin,
-            roles: vec!["SUPER_ADMIN".into()],
+            permissions: vec![],
             password_reset_required: false,
         };
         let memory = Arc::new(MemoryStorage::default());

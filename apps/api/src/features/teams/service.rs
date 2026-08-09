@@ -90,8 +90,9 @@ impl TeamService {
         if actor.user_type == UserType::Team {
             return Err(AppError::forbidden("FORBIDDEN", "Insufficient permissions"));
         }
-        let super_admin = actor.has_role("SUPER_ADMIN");
-        if !super_admin && actor.user_type != UserType::ContestAdmin {
+        let super_admin = actor.is_super_admin();
+        if !super_admin && !actor.has_permission(crate::features::auth::permissions::CONTEST_MANAGE)
+        {
             return Err(AppError::forbidden(
                 "FORBIDDEN",
                 "Only team administrators may list teams",
@@ -103,7 +104,7 @@ impl TeamService {
                 "Only super administrators may include deleted teams",
             ));
         }
-        let contest_admin_id = (actor.user_type == UserType::ContestAdmin).then_some(actor.id);
+        let contest_manager_id = (!super_admin).then_some(actor.id);
         let include_deleted = query.include_deleted && super_admin;
         let total_elements = sqlx::query_scalar::<_, i64>(
             r#"
@@ -117,7 +118,7 @@ impl TeamService {
                         FROM contest_teams ct
                         JOIN contests contest
                           ON contest.id = ct.contest_id AND contest.deleted_at IS NULL
-                        JOIN contest_admin_assignments caa
+                        JOIN contest_management_assignments caa
                           ON caa.contest_id = ct.contest_id
                         WHERE ct.team_id = t.id AND caa.user_id = $2
                     )
@@ -125,7 +126,7 @@ impl TeamService {
             "#,
         )
         .bind(include_deleted)
-        .bind(contest_admin_id)
+        .bind(contest_manager_id)
         .fetch_one(&self.database)
         .await
         .map_err(|error| AppError::internal("count visible teams", error))?;
@@ -143,7 +144,7 @@ impl TeamService {
                         FROM contest_teams ct
                         JOIN contests contest
                           ON contest.id = ct.contest_id AND contest.deleted_at IS NULL
-                        JOIN contest_admin_assignments caa
+                        JOIN contest_management_assignments caa
                           ON caa.contest_id = ct.contest_id
                         WHERE ct.team_id = t.id AND caa.user_id = $2
                     )
@@ -155,7 +156,7 @@ impl TeamService {
         );
         let rows = sqlx::query_as::<_, TeamRow>(sqlx::AssertSqlSafe(sql))
             .bind(include_deleted)
-            .bind(contest_admin_id)
+            .bind(contest_manager_id)
             .bind(i64::from(query.size))
             .bind(query.offset)
             .fetch_all(&self.database)
@@ -181,7 +182,10 @@ impl TeamService {
                     return Err(team_not_found());
                 }
             }
-            UserType::ContestAdmin if !actor.has_role("SUPER_ADMIN") => {
+            UserType::Staff
+                if actor.has_permission(crate::features::auth::permissions::CONTEST_MANAGE)
+                    && !actor.is_super_admin() =>
+            {
                 let managed = sqlx::query_scalar::<_, bool>(
                     r#"
                     SELECT EXISTS (
@@ -189,7 +193,7 @@ impl TeamService {
                         FROM contest_teams ct
                         JOIN contests contest
                           ON contest.id = ct.contest_id AND contest.deleted_at IS NULL
-                        JOIN contest_admin_assignments caa
+                        JOIN contest_management_assignments caa
                           ON caa.contest_id = ct.contest_id
                         WHERE ct.team_id = $1 AND caa.user_id = $2
                     )
@@ -730,10 +734,13 @@ impl TeamService {
         actor: &AuthUser,
         request_ip: IpAddr,
     ) -> Result<BatchImportResponse, AppError> {
-        if actor.user_type == UserType::ContestAdmin && request.contest_id.is_none() {
+        if !actor.is_super_admin()
+            && actor.has_permission(crate::features::auth::permissions::CONTEST_MANAGE)
+            && request.contest_id.is_none()
+        {
             return Err(AppError::bad_request(
                 "CONTEST_REQUIRED",
-                "Contest administrators must import into a managed contest",
+                "Contest managers must import into a managed contest",
             ));
         }
         let mut prepared = Vec::with_capacity(request.teams.len());
@@ -774,7 +781,7 @@ impl TeamService {
         if let Some(contest_id) = request.contest_id {
             require_manage_contest(&mut transaction, contest_id, actor).await?;
             lock_open_contest(&mut transaction, contest_id).await?;
-        } else if !actor.has_role("SUPER_ADMIN") {
+        } else if !actor.is_super_admin() {
             return Err(AppError::forbidden("FORBIDDEN", "Insufficient permissions"));
         }
         let batch_id = Uuid::new_v4().to_string();
@@ -948,23 +955,6 @@ async fn create_team_in_transaction(
             .fetch_one(&mut **transaction)
             .await
             .map_err(map_team_write_error)?;
-            let role_id =
-                sqlx::query_scalar::<_, i64>("SELECT id FROM roles WHERE code = 'TEAM_LEADER'")
-                    .fetch_optional(&mut **transaction)
-                    .await
-                    .map_err(|error| AppError::internal("load team leader role", error))?
-                    .ok_or_else(|| {
-                        AppError::conflict(
-                            "TEAM_ROLE_NOT_CONFIGURED",
-                            "The team leader role is not configured",
-                        )
-                    })?;
-            sqlx::query("INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)")
-                .bind(user_id)
-                .bind(role_id)
-                .execute(&mut **transaction)
-                .await
-                .map_err(|error| AppError::internal("assign team leader role", error))?;
             sqlx::query("INSERT INTO team_accounts (user_id, team_id) VALUES ($1, $2)")
                 .bind(user_id)
                 .bind(team_id)
@@ -995,10 +985,10 @@ async fn require_manage_team(
     if !exists {
         return Err(team_not_found());
     }
-    if actor.has_role("SUPER_ADMIN") {
+    if actor.is_super_admin() {
         return Ok(());
     }
-    if actor.user_type != UserType::ContestAdmin {
+    if !actor.has_permission(crate::features::auth::permissions::CONTEST_MANAGE) {
         return Err(team_not_found());
     }
     let (contest_count, unmanaged_count) = sqlx::query_as::<_, (i64, i64)>(
@@ -1008,7 +998,7 @@ async fn require_manage_team(
             count(*) FILTER (
                 WHERE NOT EXISTS (
                     SELECT 1
-                    FROM contest_admin_assignments caa
+                    FROM contest_management_assignments caa
                     WHERE caa.user_id = $2 AND caa.contest_id = ct.contest_id
                 )
             )
@@ -1034,17 +1024,17 @@ async fn require_manage_contest(
     if contest_id <= 0 {
         return Err(contest_not_found());
     }
-    if actor.has_role("SUPER_ADMIN") {
+    if actor.is_super_admin() {
         return Ok(());
     }
-    if actor.user_type != UserType::ContestAdmin {
+    if !actor.has_permission(crate::features::auth::permissions::CONTEST_MANAGE) {
         return Err(contest_not_found());
     }
     let assigned = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS (
             SELECT 1
-            FROM contest_admin_assignments
+            FROM contest_management_assignments
             WHERE user_id = $1 AND contest_id = $2
         )
         "#,

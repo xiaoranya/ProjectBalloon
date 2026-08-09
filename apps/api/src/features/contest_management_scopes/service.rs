@@ -4,19 +4,19 @@ use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::error::AppError;
 
-use super::model::ContestAdminScopeResponse;
+use super::model::ContestManagementScopeResponse;
 
-pub struct ContestAdminScopeService {
+pub struct ContestManagementScopeService {
     database: PgPool,
 }
 
-impl ContestAdminScopeService {
+impl ContestManagementScopeService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
         Self { database }
     }
 
-    pub async fn list(&self) -> Result<Vec<ContestAdminScopeResponse>, AppError> {
+    pub async fn list(&self) -> Result<Vec<ContestManagementScopeResponse>, AppError> {
         sqlx::query_as(
             r#"
             SELECT
@@ -30,15 +30,17 @@ impl ContestAdminScopeService {
                     ARRAY[]::bigint[]
                 ) AS contest_ids
             FROM users u
-            LEFT JOIN contest_admin_assignments caa ON caa.user_id = u.id
-            WHERE u.user_type = 'CONTEST_ADMIN'
+            JOIN user_permissions up ON up.user_id = u.id
+            JOIN permissions p ON p.id = up.permission_id AND p.code = 'CONTEST_MANAGE'
+            LEFT JOIN contest_management_assignments caa ON caa.user_id = u.id
+            WHERE u.user_type = 'STAFF'
             GROUP BY u.id
             ORDER BY u.username ASC, u.id ASC
             "#,
         )
         .fetch_all(&self.database)
         .await
-        .map_err(|error| AppError::internal("list contest administrator scopes", error))
+        .map_err(|error| AppError::internal("list contest manager scopes", error))
     }
 
     pub async fn replace(
@@ -47,9 +49,9 @@ impl ContestAdminScopeService {
         contest_ids: Vec<i64>,
         actor_user_id: i64,
         request_ip: IpAddr,
-    ) -> Result<ContestAdminScopeResponse, AppError> {
+    ) -> Result<ContestManagementScopeResponse, AppError> {
         if user_id <= 0 {
-            return Err(contest_admin_not_found());
+            return Err(contest_manager_not_found());
         }
         let mut transaction = self
             .database
@@ -59,16 +61,22 @@ impl ContestAdminScopeService {
         let admin = sqlx::query_as::<_, (String, String, bool)>(
             r#"
             SELECT username, display_name, enabled
-            FROM users
-            WHERE id = $1 AND user_type = 'CONTEST_ADMIN'
+            FROM users u
+            WHERE u.id = $1 AND u.user_type = 'STAFF'
+              AND EXISTS (
+                  SELECT 1
+                  FROM user_permissions up
+                  JOIN permissions p ON p.id = up.permission_id
+                  WHERE up.user_id = u.id AND p.code = 'CONTEST_MANAGE'
+              )
             FOR UPDATE
             "#,
         )
         .bind(user_id)
         .fetch_optional(&mut *transaction)
         .await
-        .map_err(|error| AppError::internal("lock contest administrator", error))?
-        .ok_or_else(contest_admin_not_found)?;
+        .map_err(|error| AppError::internal("lock contest manager", error))?
+        .ok_or_else(contest_manager_not_found)?;
 
         if !contest_ids.is_empty() {
             let found = sqlx::query_scalar::<_, i64>(
@@ -91,15 +99,15 @@ impl ContestAdminScopeService {
             }
         }
 
-        sqlx::query("DELETE FROM contest_admin_assignments WHERE user_id = $1")
+        sqlx::query("DELETE FROM contest_management_assignments WHERE user_id = $1")
             .bind(user_id)
             .execute(&mut *transaction)
             .await
-            .map_err(|error| AppError::internal("clear contest administrator scopes", error))?;
+            .map_err(|error| AppError::internal("clear contest manager scopes", error))?;
         if !contest_ids.is_empty() {
             sqlx::query(
                 r#"
-                INSERT INTO contest_admin_assignments
+                INSERT INTO contest_management_assignments
                     (user_id, contest_id, assigned_by_user_id)
                 SELECT $1, contest_id, $3
                 FROM unnest($2::bigint[]) AS contest_id
@@ -110,7 +118,7 @@ impl ContestAdminScopeService {
             .bind(actor_user_id)
             .execute(&mut *transaction)
             .await
-            .map_err(|error| AppError::internal("assign contest administrator scopes", error))?;
+            .map_err(|error| AppError::internal("assign contest manager scopes", error))?;
         }
         record_audit(&mut transaction, actor_user_id, user_id, request_ip).await?;
         transaction
@@ -118,7 +126,7 @@ impl ContestAdminScopeService {
             .await
             .map_err(|error| AppError::internal("commit contest admin scope update", error))?;
 
-        Ok(ContestAdminScopeResponse {
+        Ok(ContestManagementScopeResponse {
             user_id,
             username: admin.0,
             display_name: admin.1,
@@ -139,7 +147,7 @@ async fn record_audit(
         INSERT INTO audit_logs
             (actor_user_id, action, target_type, target_id, request_ip, result)
         VALUES
-            ($1, 'CONTEST_ADMIN_SCOPE_UPDATED', 'USER', $2, $3, 'success')
+            ($1, 'CONTEST_MANAGEMENT_SCOPE_UPDATED', 'USER', $2, $3, 'success')
         "#,
     )
     .bind(actor_user_id)
@@ -151,6 +159,6 @@ async fn record_audit(
     .map_err(|error| AppError::internal("record contest admin scope audit", error))
 }
 
-fn contest_admin_not_found() -> AppError {
-    AppError::not_found("CONTEST_ADMIN_NOT_FOUND", "Contest administrator was not found")
+fn contest_manager_not_found() -> AppError {
+    AppError::not_found("CONTEST_MANAGER_NOT_FOUND", "Contest manager was not found")
 }

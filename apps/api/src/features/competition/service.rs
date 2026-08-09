@@ -462,11 +462,11 @@ async fn require_manage_tx(
     contest_id: i64,
     actor: &AuthUser,
 ) -> Result<(), AppError> {
-    if actor.has_role("SUPER_ADMIN") {
+    if actor.is_super_admin() {
         return Ok(());
     }
     let allowed = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM contest_admin_assignments WHERE contest_id=$1 AND user_id=$2)",
+        "SELECT EXISTS(SELECT 1 FROM contest_management_assignments WHERE contest_id=$1 AND user_id=$2)",
     )
     .bind(contest_id)
     .bind(actor.id)
@@ -609,7 +609,7 @@ mod tests {
             username: "root".into(),
             display_name: "Root".into(),
             user_type: UserType::SuperAdmin,
-            roles: vec![],
+            permissions: vec![],
             password_reset_required: false,
         };
         let binding = service

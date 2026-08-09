@@ -37,24 +37,15 @@ pub async fn subscribe_staff(
     Path(contest_id): Path<i64>,
 ) -> Result<Response, AppError> {
     context.require_password_ready()?;
-    const STAFF_ROLES: [&str; 8] = [
-        "CONTEST_ADMIN",
-        "JUDGE",
-        "BALLOON_STAFF",
-        "PRINTER",
-        "SCREEN_OPERATOR",
-        "LIVE_OPERATOR",
-        "RESOLVER_OPERATOR",
-        "SUPER_ADMIN",
-    ];
-    if !STAFF_ROLES.iter().any(|role| context.user().has_role(role)) {
+    if !context.user().user_type.is_staff() {
         return Err(AppError::forbidden("FORBIDDEN", "Insufficient permissions"));
     }
     state.contests().get(contest_id, Some(context.user())).await?;
-    if context.user().user_type == UserType::ContestAdmin && !context.user().has_role("SUPER_ADMIN")
+    if context.user().has_permission(crate::features::auth::permissions::CONTEST_MANAGE)
+        && !context.user().is_super_admin()
     {
         let assigned = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS (SELECT 1 FROM contest_admin_assignments WHERE contest_id=$1 AND user_id=$2)",
+            "SELECT EXISTS (SELECT 1 FROM contest_management_assignments WHERE contest_id=$1 AND user_id=$2)",
         )
         .bind(contest_id)
         .bind(context.user().id)

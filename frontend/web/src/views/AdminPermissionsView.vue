@@ -2,7 +2,7 @@
   <el-container direction="vertical" class="admin-page permissions-page">
     <el-header height="auto" class="page-head">
       <div class="admin-page-header compact">
-        <h1>{{ t('比赛管理员授权') }}</h1>
+        <h1>{{ t('赛事管理范围') }}</h1>
         <ElButton :icon="Refresh" :loading="loading" @click="load">{{ t('刷新') }}</ElButton>
       </div>
     </el-header>
@@ -65,7 +65,7 @@
           </div>
         </ElCard>
 
-        <ElEmpty v-if="!loading && !admins.length" :description="t('当前没有比赛管理员账号')" />
+        <ElEmpty v-if="!loading && !admins.length" :description="t('当前没有赛事管理员账号')" />
       </div>
     </el-main>
   </el-container>
@@ -76,7 +76,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { adminApi } from '../api/admin';
 import { getErrorMessage } from '../api/client';
-import type { Contest, ContestAdminScope } from '../api/types';
+import type { Contest, ContestManagementScope } from '../api/types';
 import { contestStatusLabel } from '../utils/format';
 import { useI18n } from '../i18n';
 
@@ -85,7 +85,7 @@ const { t } = useI18n();
 const loading = ref(false);
 const savingUserId = ref<number | null>(null);
 const errorMessage = ref('');
-const admins = ref<ContestAdminScope[]>([]);
+const admins = ref<ContestManagementScope[]>([]);
 const contests = ref<Contest[]>([]);
 const draftScopes = reactive<Record<number, number[]>>({});
 
@@ -94,7 +94,7 @@ async function load() {
   errorMessage.value = '';
   try {
     const [adminRows, contestPage] = await Promise.all([
-      adminApi.listContestAdminScopes(),
+      adminApi.listContestManagementScopes(),
       adminApi.listContests(0, 500),
     ]);
     admins.value = adminRows;
@@ -113,18 +113,18 @@ function normalized(values: number[]) {
   return [...values].sort((left, right) => left - right);
 }
 
-function changed(admin: ContestAdminScope) {
+function changed(admin: ContestManagementScope) {
   return (
     JSON.stringify(normalized(draftScopes[admin.userId] ?? [])) !==
     JSON.stringify(normalized(admin.contestIds))
   );
 }
 
-async function save(admin: ContestAdminScope) {
+async function save(admin: ContestManagementScope) {
   savingUserId.value = admin.userId;
   errorMessage.value = '';
   try {
-    const updated = await adminApi.updateContestAdminScope(
+    const updated = await adminApi.updateContestManagementScope(
       admin.userId,
       normalized(draftScopes[admin.userId] ?? []),
     );

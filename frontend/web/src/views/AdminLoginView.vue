@@ -72,7 +72,7 @@ import { useRoute, useRouter } from 'vue-router';
 import type { FormInstance, FormRules } from 'element-plus';
 import { Lock, User } from '@element-plus/icons-vue';
 import { getErrorMessage } from '../api/client';
-import { homeForUserType } from '../auth/access';
+import { homeForUser } from '../auth/access';
 import { useSession } from '../auth/session';
 import { useI18n } from '../i18n';
 
@@ -103,17 +103,36 @@ async function submit() {
       return;
     }
     const requestedRedirect = typeof route.query.redirect === 'string' ? route.query.redirect : '';
-    const allowedPrefixes = new Set([String(homeForUserType(user.userType))]);
+    const allowedPrefixes = new Set([String(homeForUser(user))]);
     if (user.userType === 'SUPER_ADMIN')
-      ['/admin', '/judge', '/printer'].forEach((prefix) => allowedPrefixes.add(prefix));
-    if (user.userType === 'JUDGE' || user.roles.includes('JUDGE')) allowedPrefixes.add('/judge');
-    if (user.userType === 'PRINTER' || user.roles.includes('PRINTER'))
-      allowedPrefixes.add('/printer');
+      [
+        '/admin',
+        '/judge',
+        '/printer',
+        '/balloon',
+        '/resolver',
+        '/awards',
+        '/screen',
+        '/live',
+      ].forEach((prefix) => allowedPrefixes.add(prefix));
+    const permissionPrefixes = [
+      ['CONTEST_MANAGE', '/admin'],
+      ['CLARIFICATION_MANAGE', '/judge'],
+      ['PRINTING_MANAGE', '/printer'],
+      ['BALLOON_MANAGE', '/balloon'],
+      ['RESOLVER_MANAGE', '/resolver'],
+      ['AWARD_MANAGE', '/awards'],
+      ['SCREEN_MANAGE', '/screen'],
+      ['LIVE_MANAGE', '/live'],
+    ] as const;
+    permissionPrefixes.forEach(([permission, prefix]) => {
+      if (user.permissions.includes(permission)) allowedPrefixes.add(prefix);
+    });
     const redirect = [...allowedPrefixes].some(
       (prefix) => requestedRedirect === prefix || requestedRedirect.startsWith(`${prefix}/`),
     )
       ? requestedRedirect
-      : homeForUserType(user.userType);
+      : homeForUser(user);
     await router.replace(redirect);
   } catch (error) {
     errorMessage.value = getErrorMessage(error);

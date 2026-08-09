@@ -1,20 +1,22 @@
 import type { RouteLocationRaw } from 'vue-router';
-import type { UserType } from '../api/types';
+import type { PermissionCode, UserType } from '../api/types';
 
-export const staffHomeByUserType: Record<Exclude<UserType, 'TEAM' | 'INDIVIDUAL'>, string> = {
-  SUPER_ADMIN: '/admin',
-  CONTEST_ADMIN: '/admin',
-  JUDGE: '/judge',
-  PRINTER: '/printer',
-  BALLOON_STAFF: '/balloon',
-  AWARD_OPERATOR: '/awards',
-  RESOLVER_OPERATOR: '/resolver',
-  SCREEN_OPERATOR: '/screen/manage',
-  LIVE_OPERATOR: '/live/manage',
-};
+const permissionHomes: Array<[PermissionCode, string]> = [
+  ['CONTEST_MANAGE', '/admin'],
+  ['CLARIFICATION_MANAGE', '/judge'],
+  ['PRINTING_MANAGE', '/printer'],
+  ['BALLOON_MANAGE', '/balloon'],
+  ['RESOLVER_MANAGE', '/resolver'],
+  ['AWARD_MANAGE', '/awards'],
+  ['SCREEN_MANAGE', '/screen/manage'],
+  ['LIVE_MANAGE', '/live/manage'],
+];
 
-export function homeForUserType(userType: UserType | undefined): RouteLocationRaw {
-  if (!userType || userType === 'TEAM') return '/contests';
-  if (userType === 'INDIVIDUAL') return '/practice';
-  return staffHomeByUserType[userType];
+export function homeForUser(
+  user: { userType: UserType; permissions: readonly PermissionCode[] } | null | undefined,
+): RouteLocationRaw {
+  if (!user || user.userType === 'TEAM') return '/contests';
+  if (user.userType === 'INDIVIDUAL') return '/practice';
+  if (user.userType === 'SUPER_ADMIN') return '/admin';
+  return permissionHomes.find(([code]) => user.permissions.includes(code))?.[1] ?? '/admin';
 }

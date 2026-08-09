@@ -3,4 +3,4 @@ mod model;
 mod service;
 
 pub use handlers::{list, replace};
-pub use service::ContestAdminScopeService;
+pub use service::ContestManagementScopeService;

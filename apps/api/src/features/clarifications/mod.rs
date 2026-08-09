@@ -490,19 +490,19 @@ async fn require_staff_access(
     if !active {
         return Err(clarification_not_found());
     }
-    if actor.has_role("SUPER_ADMIN") {
+    if actor.is_super_admin() {
         return Ok(());
     }
-    // Judge workers are global staff operators; unlike contest administrators
-    // they are intentionally not present in contest_admin_assignments.
-    if actor.has_role("JUDGE") {
+    // Judge workers are global staff operators; unlike contest managers
+    // they are intentionally not present in contest_management_assignments.
+    if actor.has_permission(crate::features::auth::permissions::CLARIFICATION_MANAGE) {
         return Ok(());
     }
-    if !actor.has_role("CONTEST_ADMIN") {
+    if !actor.has_permission(crate::features::auth::permissions::CONTEST_MANAGE) {
         return Err(clarification_not_found());
     }
     let assigned = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM contest_admin_assignments WHERE contest_id = $1 AND user_id = $2)",
+        "SELECT EXISTS (SELECT 1 FROM contest_management_assignments WHERE contest_id = $1 AND user_id = $2)",
     ).bind(contest_id).bind(actor.id).fetch_one(&mut **tx).await
         .map_err(|error| AppError::internal("check clarification staff scope", error))?;
     if assigned { Ok(()) } else { Err(clarification_not_found()) }
@@ -743,7 +743,7 @@ mod tests {
             username: "clar-team".into(),
             display_name: "Clar Team".into(),
             user_type: UserType::Team,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         let other = AuthUser {
@@ -751,7 +751,7 @@ mod tests {
             username: "clar-other".into(),
             display_name: "Other Team".into(),
             user_type: UserType::Team,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         let admin = AuthUser {
@@ -759,7 +759,7 @@ mod tests {
             username: "clar-root".into(),
             display_name: "Clar Root".into(),
             user_type: UserType::SuperAdmin,
-            roles: Vec::new(),
+            permissions: Vec::new(),
             password_reset_required: false,
         };
         let service = ClarificationService::new(pool.clone());

@@ -65,7 +65,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/judge',
     component: () => import('./layouts/JudgeLayout.vue'),
-    meta: { requiresAuth: true, requiresStaff: true, requiresJudge: true },
+    meta: { requiresAuth: true, requiresStaff: true, requiredPermission: 'CLARIFICATION_MANAGE' },
     children: [
       {
         path: '',
@@ -77,7 +77,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/printer',
     component: () => import('./layouts/PrinterLayout.vue'),
-    meta: { requiresAuth: true, requiresStaff: true, requiresPrinter: true },
+    meta: { requiresAuth: true, requiresStaff: true, requiredPermission: 'PRINTING_MANAGE' },
     children: [
       {
         path: '',
@@ -89,7 +89,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/balloon',
     component: () => import('./layouts/BalloonLayout.vue'),
-    meta: { requiresAuth: true, requiresStaff: true, requiresBalloonStaff: true },
+    meta: { requiresAuth: true, requiresStaff: true, requiredPermission: 'BALLOON_MANAGE' },
     children: [
       { path: '', name: 'balloon-home', component: () => import('./views/BalloonTasksView.vue') },
     ],
@@ -97,7 +97,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/resolver',
     component: () => import('./layouts/ResolverLayout.vue'),
-    meta: { requiresAuth: true, requiresStaff: true, requiresResolverOperator: true },
+    meta: { requiresAuth: true, requiresStaff: true, requiredPermission: 'RESOLVER_MANAGE' },
     children: [
       {
         path: '',
@@ -109,7 +109,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/awards',
     component: () => import('./layouts/AwardsLayout.vue'),
-    meta: { requiresAuth: true, requiresStaff: true, requiresAwardOperator: true },
+    meta: { requiresAuth: true, requiresStaff: true, requiredPermission: 'AWARD_MANAGE' },
     children: [
       { path: '', name: 'awards-home', component: () => import('./views/AwardsManageView.vue') },
       {
@@ -138,7 +138,7 @@ export const routes: RouteRecordRaw[] = [
     path: '/screen/manage',
     name: 'screen-manage',
     component: () => import('./views/ScreenManageView.vue'),
-    meta: { requiresAuth: true, requiresStaff: true, requiresScreenOperator: true },
+    meta: { requiresAuth: true, requiresStaff: true, requiredPermission: 'SCREEN_MANAGE' },
   },
   {
     path: '/screen',
@@ -149,7 +149,7 @@ export const routes: RouteRecordRaw[] = [
     path: '/live/manage',
     name: 'live-manage',
     component: () => import('./views/LiveManageView.vue'),
-    meta: { requiresAuth: true, requiresStaff: true, requiresLiveOperator: true },
+    meta: { requiresAuth: true, requiresStaff: true, requiredPermission: 'LIVE_MANAGE' },
   },
   {
     path: '/live',
@@ -191,31 +191,31 @@ export const routes: RouteRecordRaw[] = [
         path: 'contests',
         name: 'admin-contests',
         component: () => import('./views/AdminContestListView.vue'),
-        meta: { requiresAdmin: true },
+        meta: { requiredPermission: 'CONTEST_MANAGE' },
       },
       {
         path: 'contests/:contestId',
         name: 'admin-contest-detail',
         component: () => import('./views/AdminContestDetailView.vue'),
-        meta: { requiresAdmin: true },
+        meta: { requiredPermission: 'CONTEST_MANAGE' },
       },
       {
         path: 'contests/:contestId/rejudge-tasks',
         name: 'admin-contest-rejudge-tasks',
         component: () => import('./views/AdminBulkRejudgeView.vue'),
-        meta: { requiresAdmin: true },
+        meta: { requiredPermission: 'CONTEST_MANAGE' },
       },
       {
         path: 'contests/:contestId/announcements',
         name: 'admin-contest-announcements',
         component: () => import('./views/AdminAnnouncementsView.vue'),
-        meta: { requiresAdmin: true },
+        meta: { requiredPermission: 'CONTEST_MANAGE' },
       },
       {
         path: 'team-import',
         name: 'admin-team-import',
         component: () => import('./views/AdminTeamImportView.vue'),
-        meta: { requiresAdmin: true },
+        meta: { requiredPermission: 'CONTEST_MANAGE' },
       },
       {
         path: 'problems',
@@ -233,7 +233,7 @@ export const routes: RouteRecordRaw[] = [
         path: 'competition',
         name: 'admin-competition',
         component: () => import('./views/AdminCompetitionView.vue'),
-        meta: { requiresAdmin: true, competitionOnly: true },
+        meta: { requiredPermission: 'CONTEST_MANAGE', competitionOnly: true },
       },
       {
         path: 'practice',
@@ -245,7 +245,7 @@ export const routes: RouteRecordRaw[] = [
         path: 'problems/:problemId',
         name: 'admin-problem-editor',
         component: () => import('./views/AdminProblemEditorView.vue'),
-        meta: { requiresAdmin: true },
+        meta: { requiredPermission: 'CONTEST_MANAGE' },
       },
       {
         path: 'staff-accounts',
