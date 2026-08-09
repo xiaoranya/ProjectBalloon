@@ -22,11 +22,21 @@
           <ElIcon><UploadFilled /></ElIcon>
           <span>队伍批量导入</span>
         </el-menu-item>
+        <el-menu-item
+          v-if="session.isAdmin.value && session.state.deployment.mode === 'competition'"
+          index="/admin/competition"
+        >
+          <ElIcon><Connection /></ElIcon>
+          <span>终端绑定</span>
+        </el-menu-item>
         <el-menu-item v-if="session.isSuperAdmin.value" index="/admin/problems">
           <ElIcon><Collection /></ElIcon>
           <span>题库管理</span>
         </el-menu-item>
-        <el-menu-item v-if="session.isSuperAdmin.value" index="/admin/practice">
+        <el-menu-item
+          v-if="session.isSuperAdmin.value && session.state.deployment.mode !== 'competition'"
+          index="/admin/practice"
+        >
           <ElIcon><EditPen /></ElIcon>
           <span>日常练习</span>
         </el-menu-item>
@@ -58,7 +68,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { EditPen, SwitchButton } from '@element-plus/icons-vue';
+import { Connection, EditPen, SwitchButton } from '@element-plus/icons-vue';
 import { useSession } from '../auth/session';
 
 const route = useRoute();

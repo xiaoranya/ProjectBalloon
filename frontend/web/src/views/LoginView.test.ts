@@ -2,10 +2,21 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import LoginView from './LoginView.vue';
 
-const mocks = vi.hoisted(() => ({ login: vi.fn(), logout: vi.fn(), replace: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  login: vi.fn(),
+  workstationLogin: vi.fn(),
+  logout: vi.fn(),
+  replace: vi.fn(),
+  state: { loading: false, deployment: { mode: 'standard', activeContest: null } },
+}));
 const route = { query: {} };
 vi.mock('../auth/session', () => ({
-  useSession: () => ({ state: { loading: false }, login: mocks.login, logout: mocks.logout }),
+  useSession: () => ({
+    state: mocks.state,
+    login: mocks.login,
+    workstationLogin: mocks.workstationLogin,
+    logout: mocks.logout,
+  }),
 }));
 vi.mock('vue-router', () => ({
   useRoute: () => route,
@@ -27,6 +38,27 @@ describe('LoginView', () => {
     route.query = {};
     mocks.login.mockResolvedValue(individual);
     mocks.logout.mockResolvedValue(undefined);
+    mocks.state.deployment.mode = 'standard';
+  });
+
+  it('offers pairing and account login in competition mode', async () => {
+    mocks.state.deployment.mode = 'competition';
+    mocks.workstationLogin.mockResolvedValue({
+      ...individual,
+      userType: 'TEAM',
+      competition: { contestId: 23, contestName: 'Final', workstationId: 5, seatNo: 'A01' },
+    });
+    const wrapper = mount(LoginView, { global: { stubs: { RouterLink: true } } });
+
+    expect(wrapper.text()).toContain('配对码');
+    expect(wrapper.text()).toContain('账号密码');
+    await wrapper.find('input[placeholder="请输入本机配对码"]').setValue('AB-CD23');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(mocks.workstationLogin).toHaveBeenCalledWith('AB-CD23');
+    expect(mocks.replace).toHaveBeenCalledWith('/contests/23');
+    expect(wrapper.text()).not.toContain('注册个人练习账号');
   });
 
   async function submit(
@@ -34,9 +66,8 @@ describe('LoginView', () => {
     username = 'alice',
     password = 'password',
   ) {
-    const inputs = wrapper.findAll('input');
-    await inputs[0].setValue(username);
-    await inputs[1].setValue(password);
+    await wrapper.find('input[placeholder="请输入用户名"]').setValue(username);
+    await wrapper.find('input[placeholder="请输入密码"]').setValue(password);
     await wrapper.find('form').trigger('submit');
     await flushPromises();
   }

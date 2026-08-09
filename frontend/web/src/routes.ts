@@ -6,24 +6,25 @@ export const routes: RouteRecordRaw[] = [
     path: '/problem-bank',
     name: 'problem-bank',
     component: () => import('./views/ProblemBankView.vue'),
+    meta: { dailyOnly: true },
   },
   {
     path: '/practice',
     name: 'practice',
     component: () => import('./views/PracticeView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, dailyOnly: true },
   },
   {
     path: '/practice/virtual',
     name: 'practice-virtual',
     component: () => import('./views/VirtualPracticeView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, dailyOnly: true },
   },
   {
     path: '/training',
     name: 'training',
     component: () => import('./views/TrainingView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, dailyOnly: true },
   },
   {
     path: '/login',
@@ -35,7 +36,7 @@ export const routes: RouteRecordRaw[] = [
     path: '/register',
     name: 'register',
     component: () => import('./views/RegisterView.vue'),
-    meta: { guestOnly: true },
+    meta: { guestOnly: true, dailyOnly: true },
   },
   {
     path: '/change-password',
@@ -229,10 +230,16 @@ export const routes: RouteRecordRaw[] = [
         meta: { requiresSuperAdmin: true },
       },
       {
+        path: 'competition',
+        name: 'admin-competition',
+        component: () => import('./views/AdminCompetitionView.vue'),
+        meta: { requiresAdmin: true, competitionOnly: true },
+      },
+      {
         path: 'practice',
         name: 'admin-practice',
         component: () => import('./views/AdminPracticeView.vue'),
-        meta: { requiresSuperAdmin: true },
+        meta: { requiresSuperAdmin: true, dailyOnly: true },
       },
       {
         path: 'problems/:problemId',

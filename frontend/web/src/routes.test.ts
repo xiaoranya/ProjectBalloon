@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { routes } from './routes';
 
 describe('clarification routing', () => {
+  it('marks daily pages and the competition terminal page for deployment guards', () => {
+    expect(routes.find((route) => route.path === '/register')?.meta?.dailyOnly).toBe(true);
+    expect(routes.find((route) => route.path === '/practice')?.meta?.dailyOnly).toBe(true);
+    const admin = routes.find((route) => route.path === '/admin');
+    expect(
+      admin?.children?.find((route) => route.name === 'admin-competition')?.meta,
+    ).toMatchObject({ requiresAdmin: true, competitionOnly: true });
+  });
+
   it('allows authenticated individual users to access public training', () => {
     const training = routes.find((route) => route.path === '/training');
     expect(training?.meta).toMatchObject({ requiresAuth: true });

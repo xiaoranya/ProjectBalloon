@@ -143,6 +143,7 @@ Important API environment variables:
 |---|---|---|
 | `DATABASE_URL` | unset | PostgreSQL connection; set an explicit URL with local credentials |
 | `PROJECT_BALLOON_API_BIND` | `127.0.0.1:8080` | API listening socket |
+| `PROJECT_BALLOON_DEPLOYMENT_MODE` | `standard` | Set `competition` to enable non-overlapping schedules and IP-bound workstation pairing while disabling daily features |
 | `PROJECT_BALLOON_DATABASE_MAX_CONNECTIONS` | `20` | PostgreSQL pool bound |
 | `PROJECT_BALLOON_DATABASE_ACQUIRE_TIMEOUT_SECONDS` | `5` | Pool backpressure timeout |
 | `PROJECT_BALLOON_READINESS_TIMEOUT_MILLISECONDS` | `1000` | Readiness probe timeout |

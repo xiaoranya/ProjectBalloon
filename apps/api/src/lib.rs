@@ -27,9 +27,10 @@ use axum::{
 
 use crate::{
     features::{
-        announcements, audit_logs, auth, awards, balloons, clarifications, contest_admin_scopes,
-        contest_problems, contests, presentation, printing, problems, realtime, resolver,
-        scoreboard, scoring, staff_accounts, submissions, teams, training, virtual_practice,
+        announcements, audit_logs, auth, awards, balloons, clarifications, competition,
+        contest_admin_scopes, contest_problems, contests, presentation, printing, problems,
+        realtime, resolver, scoreboard, scoring, staff_accounts, submissions, teams, training,
+        virtual_practice,
     },
     health::{liveness, readiness},
     state::AppState,
@@ -54,6 +55,31 @@ async fn apply_forwarded_client_ip(
     next.run(request).await
 }
 
+async fn enforce_deployment_mode(
+    State(state): State<AppState>,
+    request: Request<Body>,
+    next: middleware::Next,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let path = request.uri().path();
+    let daily = path == "/api/auth/register"
+        || path.starts_with("/api/public/problem-bank")
+        || path.starts_with("/api/practice")
+        || path.starts_with("/api/training")
+        || path.starts_with("/api/admin/practice")
+        || path.starts_with("/api/admin/training")
+        || (path.starts_with("/api/admin/problems/")
+            && (path.ends_with("/publication") || path.contains("/editorials/")));
+    if state.deployment_mode().is_competition() && daily {
+        return crate::error::AppError::not_found(
+            "DAILY_FEATURE_DISABLED",
+            "This feature is disabled in competition mode",
+        )
+        .into_response();
+    }
+    next.run(request).await
+}
+
 pub const SERVICE_NAME: &str = "ProjectBalloon";
 
 pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
@@ -61,6 +87,7 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         .merge(openapi::swagger_ui())
         .route("/livez", get(liveness))
         .route("/api/health", get(readiness))
+        .route("/api/deployment", get(competition::deployment))
         .route("/api/public/problem-bank", get(training::list_bank))
         .route("/api/public/problem-bank/{slug}", get(training::get_bank))
         .route("/api/admin/problems/{problem_id}/publication", put(training::update_publication))
@@ -77,10 +104,28 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         .route("/metrics", get(metrics::prometheus))
         .route("/api/auth/csrf", get(auth::csrf))
         .route("/api/auth/login", post(auth::login))
+        .route("/api/auth/workstation", post(auth::workstation_login))
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/logout", post(auth::logout))
         .route("/api/auth/me", get(auth::current_user))
         .route("/api/auth/profile", patch(auth::update_profile))
+        .route(
+            "/api/admin/competition/workstations",
+            get(competition::list_workstations).post(competition::create_workstation),
+        )
+        .route("/api/admin/competition/workstations/{id}", patch(competition::update_workstation))
+        .route(
+            "/api/admin/contests/{contest_id}/workstation-bindings",
+            get(competition::list_bindings).post(competition::bind),
+        )
+        .route(
+            "/api/admin/contests/{contest_id}/workstation-bindings/{binding_id}/rotate",
+            post(competition::rotate),
+        )
+        .route(
+            "/api/admin/contests/{contest_id}/workstation-bindings/{binding_id}",
+            delete(competition::revoke),
+        )
         .route(
             "/api/practice/submissions",
             get(submissions::list_practice)
@@ -416,5 +461,6 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         .route("/api/team/events/contests/{contest_id}", get(realtime::subscribe_team))
         .layer(middleware::from_fn_with_state(state.clone(), auth::protect_csrf))
         .layer(middleware::from_fn_with_state(trusted_proxy_cidrs, apply_forwarded_client_ip))
+        .layer(middleware::from_fn_with_state(state.clone(), enforce_deployment_mode))
         .with_state(state)
 }

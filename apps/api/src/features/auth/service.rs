@@ -4,8 +4,10 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
 use subtle::ConstantTimeEq;
+use time::OffsetDateTime;
 
 use crate::error::AppError;
+use crate::features::competition::model::{CompetitionSessionResponse, WorkstationLoginGrant};
 
 use super::{
     model::{
@@ -43,6 +45,9 @@ pub struct LoginOutcome {
 pub struct AuthenticatedSession {
     pub user: AuthUser,
     pub token_hash: String,
+    pub workstation_binding_id: Option<i64>,
+    pub bound_ip: Option<String>,
+    pub competition: Option<CompetitionSessionResponse>,
 }
 
 pub struct AuthService {
@@ -230,9 +235,9 @@ impl AuthService {
             return Err(not_authenticated());
         }
         let token_hash = digest(session_token);
-        let session = sqlx::query_as::<_, (i64, String)>(
+        let session = sqlx::query_as::<_, (i64, String, Option<i64>, Option<String>)>(
             r#"
-            SELECT user_id, access_fingerprint
+            SELECT user_id, access_fingerprint, workstation_binding_id, bound_ip
             FROM auth_sessions
             WHERE token_hash = $1 AND expires_at > now()
             "#,
@@ -241,7 +246,7 @@ impl AuthService {
         .fetch_optional(&self.database)
         .await
         .map_err(|error| AppError::internal("load authentication session", error))?;
-        let Some((user_id, stored_fingerprint)) = session else {
+        let Some((user_id, stored_fingerprint, workstation_binding_id, bound_ip)) = session else {
             return Err(not_authenticated());
         };
 
@@ -275,7 +280,66 @@ impl AuthService {
         .await
         .map_err(|error| AppError::internal("refresh authentication session", error))?;
 
-        Ok(AuthenticatedSession { user, token_hash })
+        Ok(AuthenticatedSession {
+            user,
+            token_hash,
+            workstation_binding_id,
+            bound_ip,
+            competition: None,
+        })
+    }
+
+    pub async fn create_workstation_session(
+        &self,
+        grant: WorkstationLoginGrant,
+    ) -> Result<(LoginOutcome, CompetitionSessionResponse), AppError> {
+        let Some(row) = self.load_user_by_id(grant.user_id).await? else {
+            return Err(not_authenticated());
+        };
+        if !row.enabled || row.user_type != "TEAM" {
+            return Err(not_authenticated());
+        }
+        let user = row.auth_user()?;
+        let session_token = random_token()?;
+        let token_hash = digest(&session_token);
+        let access_fingerprint = access_fingerprint(&user);
+        let ttl_seconds = i64::try_from(self.session_ttl.as_secs())
+            .map_err(|error| AppError::internal("session TTL is too large", error))?;
+        let expires_at = std::cmp::min(
+            grant.expires_at,
+            OffsetDateTime::now_utc() + time::Duration::seconds(ttl_seconds),
+        );
+        let mut transaction = self
+            .database
+            .begin()
+            .await
+            .map_err(|error| AppError::internal("begin workstation login", error))?;
+        sqlx::query("DELETE FROM auth_sessions WHERE workstation_binding_id=$1")
+            .bind(grant.binding_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| AppError::internal("replace workstation session", error))?;
+        sqlx::query(
+            r#"
+            INSERT INTO auth_sessions
+                (token_hash,user_id,access_fingerprint,expires_at,workstation_binding_id,bound_ip)
+            VALUES($1,$2,$3,$4,$5,$6)
+            "#,
+        )
+        .bind(&token_hash)
+        .bind(user.id)
+        .bind(access_fingerprint)
+        .bind(expires_at)
+        .bind(grant.binding_id)
+        .bind(grant.bound_ip)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| AppError::internal("create workstation session", error))?;
+        transaction
+            .commit()
+            .await
+            .map_err(|error| AppError::internal("commit workstation login", error))?;
+        Ok((LoginOutcome { user, session_token }, grant.competition))
     }
 
     pub async fn logout(&self, token_hash: &str) -> Result<(), AppError> {

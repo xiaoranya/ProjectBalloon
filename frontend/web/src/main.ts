@@ -50,6 +50,12 @@ setUnauthorizedHandler(() => {
 
 router.beforeEach(async (to) => {
   await session.initialize();
+  if (to.meta.dailyOnly && session.state.deployment.mode === 'competition') {
+    return session.isAuthenticated.value ? { name: 'contests' } : { name: 'login' };
+  }
+  if (to.meta.competitionOnly && session.state.deployment.mode !== 'competition') {
+    return { name: 'admin-home' };
+  }
   if (to.meta.requiresAuth && !session.isAuthenticated.value) {
     const staffRoute =
       to.meta.requiresStaff ||
