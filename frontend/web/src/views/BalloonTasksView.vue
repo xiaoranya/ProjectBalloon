@@ -26,251 +26,45 @@
         class="page-alert"
       />
 
-      <ElRow :gutter="14" class="balloon-stats-grid">
-        <ElCol
-          ><div class="balloon-stat">
-            <span>{{ t('全部任务') }}</span
-            ><strong>{{ stats?.total ?? 0 }}</strong>
-          </div></ElCol
-        >
-        <ElCol
-          ><div class="balloon-stat pending">
-            <span>{{ t('待领取') }}</span
-            ><strong>{{ stats?.pending ?? 0 }}</strong>
-          </div></ElCol
-        >
-        <ElCol
-          ><div class="balloon-stat active">
-            <span>{{ t('配送中') }}</span
-            ><strong>{{ stats?.claimed ?? 0 }}</strong>
-          </div></ElCol
-        >
-        <ElCol
-          ><div class="balloon-stat delivered">
-            <span>{{ t('已送达') }}</span
-            ><strong>{{ stats?.delivered ?? 0 }}</strong>
-          </div></ElCol
-        >
-        <ElCol
-          ><div class="balloon-stat first-blood">
-            <span>First Blood</span><strong>{{ stats?.firstBlood ?? 0 }}</strong>
-          </div></ElCol
-        >
-      </ElRow>
-
-      <ElCard shadow="never" class="clarification-filter-card">
-        <ElSpace wrap :size="12" class="balloon-toolbar">
-          <ElSelect
-            v-model="selectedContestId"
-            filterable
-            :placeholder="t('选择比赛')"
-            @change="changeContest"
-          >
-            <ElOption
-              v-for="contest in contests"
-              :key="contest.id"
-              :label="contest.name"
-              :value="contest.id"
-            />
-          </ElSelect>
-          <ElSelect v-model="statusFilter" :placeholder="t('状态')" @change="changeFilter">
-            <ElOption :label="t('全部状态')" value="ALL" />
-            <ElOption
-              v-for="status in balloonTaskStatuses"
-              :key="status"
-              :label="statusLabel(status)"
-              :value="status"
-            />
-          </ElSelect>
-          <ElSelect v-model="problemFilter" clearable :placeholder="t('全部题目')">
-            <ElOption
-              v-for="problem in problemOptions"
-              :key="problem"
-              :label="t('题目 {alias}', { alias: problem })"
-              :value="problem"
-            />
-          </ElSelect>
-          <ElInput
-            v-model="keyword"
-            clearable
-            :placeholder="t('搜索队伍或座位号')"
-            :prefix-icon="Search"
-          />
-          <ElButton
-            type="primary"
-            :loading="action === 'dispatch'"
-            :disabled="!selectedContestId"
-            @click="dispatchTasks"
-            >{{ t('智能领取') }}</ElButton
-          >
-          <ElButton
-            :icon="Refresh"
-            :loading="loading"
-            :disabled="!selectedContestId"
-            @click="loadData(false)"
-            >{{ t('刷新') }}</ElButton
-          >
-        </ElSpace>
-      </ElCard>
-
-      <ElCard shadow="never">
-        <ElTable
-          v-loading="loading"
-          :data="filteredTasks"
-          row-key="id"
-          :empty-text="loaded ? t('当前筛选下暂无气球任务') : t('气球任务加载失败，请重试')"
-          @row-click="openDetail"
-        >
-          <ElTableColumn :label="t('队伍与座位')" min-width="220">
-            <template #default="{ row }"
-              ><div class="admin-primary-cell">
-                <strong>{{ row.teamName }}</strong
-                ><small>{{
-                  t('座位 {seat} · 任务 #{id}', { seat: row.seatNo ?? '—', id: row.id })
-                }}</small>
-              </div></template
-            >
-          </ElTableColumn>
-          <ElTableColumn :label="t('题目与颜色')" width="180">
-            <template #default="{ row }"
-              ><div class="balloon-problem-cell">
-                <span class="balloon-color" :style="{ backgroundColor: row.color }" />
-                <div>
-                  <strong>{{ row.problemAlias }}</strong
-                  ><small>{{ row.color }}</small>
-                </div>
-              </div></template
-            >
-          </ElTableColumn>
-          <ElTableColumn :label="t('标记')" width="130">
-            <template #default="{ row }"
-              ><ElTag v-if="row.isFirstBlood" type="danger" effect="dark">First Blood</ElTag
-              ><span v-else class="muted-text">{{ t('普通任务') }}</span></template
-            >
-          </ElTableColumn>
-          <ElTableColumn :label="t('状态')" width="110">
-            <template #default="{ row }"
-              ><ElTag :type="statusType(row.status)">{{ statusLabel(row.status) }}</ElTag></template
-            >
-          </ElTableColumn>
-          <ElTableColumn :label="t('领取信息')" min-width="180">
-            <template #default="{ row }"
-              ><div class="admin-primary-cell">
-                <span>{{
-                  row.claimedByUserId
-                    ? t('工作人员 #{id}', { id: row.claimedByUserId })
-                    : t('尚未领取')
-                }}</span
-                ><small>{{ formatDateTime(row.claimedAt) }}</small>
-              </div></template
-            >
-          </ElTableColumn>
-          <ElTableColumn :label="t('生成时间')" min-width="170"
-            ><template #default="{ row }">{{
-              formatDateTime(row.createdAt)
-            }}</template></ElTableColumn
-          >
-        </ElTable>
-      </ElCard>
-
-      <ElDrawer
-        v-model="detailVisible"
-        :title="t('气球任务详情')"
-        size="min(650px, 95vw)"
-        @closed="selected = null"
-      >
-        <div v-if="selected" class="balloon-detail">
-          <div class="announcement-detail-tags">
-            <ElTag :type="statusType(selected.status)">{{ statusLabel(selected.status) }}</ElTag>
-            <ElTag v-if="selected.isFirstBlood" type="danger" effect="dark">First Blood</ElTag>
-            <ElTag effect="plain"
-              ><span class="balloon-color small" :style="{ backgroundColor: selected.color }" />
-              {{ selected.problemAlias }} · {{ selected.color }}</ElTag
-            >
-          </div>
-          <ElDescriptions :column="1" border>
-            <ElDescriptionsItem :label="t('队伍')">{{ selected.teamName }}</ElDescriptionsItem>
-            <ElDescriptionsItem :label="t('座位号')">{{
-              selected.seatNo ?? '—'
-            }}</ElDescriptionsItem>
-            <ElDescriptionsItem :label="t('关联提交')"
-              >#{{ selected.submissionId }}</ElDescriptionsItem
-            >
-            <ElDescriptionsItem :label="t('领取时间')">{{
-              formatDateTime(selected.claimedAt)
-            }}</ElDescriptionsItem>
-            <ElDescriptionsItem :label="t('送达时间')">{{
-              formatDateTime(selected.deliveredAt)
-            }}</ElDescriptionsItem>
-            <ElDescriptionsItem v-if="selected.cancelledReason" :label="t('取消原因')"
-              ><span class="danger-text">{{ selected.cancelledReason }}</span></ElDescriptionsItem
-            >
-            <ElDescriptionsItem v-if="selected.reopenedCount" :label="t('重新打开')">{{
-              t('{count} 次', { count: selected.reopenedCount })
-            }}</ElDescriptionsItem>
-          </ElDescriptions>
-          <div class="balloon-note-panel">
-            <div>
-              <strong>{{ t('配送备注') }}</strong
-              ><small>{{ t('入口、楼层、座位异常或交接信息，最多 1000 字') }}</small>
-            </div>
-            <ElInput v-model="note" type="textarea" :rows="4" maxlength="1000" show-word-limit />
-            <ElButton :loading="action === 'note'" @click="saveNote">{{ t('保存备注') }}</ElButton>
-          </div>
-          <div class="clarification-actions balloon-actions">
-            <ElButton
-              v-if="selected.status === 'PENDING'"
-              type="primary"
-              :loading="action === 'claim'"
-              @click="claimTask"
-              >{{ t('领取任务') }}</ElButton
-            >
-            <ElButton
-              v-if="canDeliver"
-              type="success"
-              :loading="action === 'deliver'"
-              @click="deliverTask"
-              >{{ t('标记已送达') }}</ElButton
-            >
-            <ElButton
-              v-if="selected.status === 'CANCELLED'"
-              type="warning"
-              :loading="action === 'reopen'"
-              @click="reopenTask"
-              >{{ t('重新打开') }}</ElButton
-            >
-            <ElButton
-              v-if="selected.status === 'PENDING' || selected.status === 'CLAIMED'"
-              type="danger"
-              plain
-              @click="openCancel"
-              >{{ t('取消任务') }}</ElButton
-            >
-          </div>
-        </div>
-      </ElDrawer>
-
-      <ElDialog v-model="cancelVisible" :title="t('取消气球任务')" width="min(540px, 92vw)">
-        <ElForm label-position="top"
-          ><ElFormItem :label="t('取消原因')" :error="cancelError || undefined"
-            ><ElInput
-              v-model="cancelReason"
-              type="textarea"
-              :rows="4"
-              maxlength="255"
-              show-word-limit /></ElFormItem
-        ></ElForm>
-        <template #footer
-          ><ElButton @click="cancelVisible = false">{{ t('返回') }}</ElButton
-          ><ElButton
-            type="danger"
-            :loading="action === 'cancel'"
-            :disabled="!!cancelError"
-            @click="cancelTask"
-            >{{ t('确认取消') }}</ElButton
-          ></template
-        >
-      </ElDialog>
+      <BalloonStatsRow :stats="stats" />
+      <BalloonToolbar
+        v-model:selected-contest-id="selectedContestId"
+        v-model:status-filter="statusFilter"
+        v-model:problem-filter="problemFilter"
+        v-model:keyword="keyword"
+        :contests="contests"
+        :problem-options="problemOptions"
+        :loading="loading"
+        :action="action"
+        @change-contest="changeContest"
+        @change-filter="changeFilter"
+        @dispatch="dispatchTasks"
+        @refresh="loadData(false)"
+      />
+      <BalloonTasksTable
+        :tasks="filteredTasks"
+        :loading="loading"
+        :loaded="loaded"
+        @open-detail="openDetail"
+      />
+      <BalloonDetailDrawer
+        v-model:selected="selected"
+        v-model:detail-visible="detailVisible"
+        v-model:note="note"
+        :action="action"
+        :can-deliver="canDeliver"
+        @claim="claimTask"
+        @deliver="deliverTask"
+        @reopen="reopenTask"
+        @open-cancel="openCancel"
+        @save-note="saveNote"
+      />
+      <BalloonCancelDialog
+        v-model:cancel-visible="cancelVisible"
+        v-model:cancel-reason="cancelReason"
+        :action="action"
+        @cancel="cancelTask"
+      />
     </el-main>
   </el-container>
 </template>
@@ -278,7 +72,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
-import { Refresh, Search } from '@element-plus/icons-vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useSession } from '../auth/session';
 import {
@@ -295,8 +88,12 @@ import {
   subscribeContestEvents,
   type ContestRealtimeSubscription,
 } from '../realtime/contest-events';
-import { formatDateTime } from '../utils/format';
 import { useI18n } from '../i18n';
+import BalloonStatsRow from '../components/balloon-tasks/BalloonStatsRow.vue';
+import BalloonToolbar from '../components/balloon-tasks/BalloonToolbar.vue';
+import BalloonTasksTable from '../components/balloon-tasks/BalloonTasksTable.vue';
+import BalloonDetailDrawer from '../components/balloon-tasks/BalloonDetailDrawer.vue';
+import BalloonCancelDialog from '../components/balloon-tasks/BalloonCancelDialog.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -340,16 +137,6 @@ const canDeliver = computed(
     selected.value?.status === 'CLAIMED' &&
     (session.isSuperAdmin.value || selected.value.claimedByUserId === session.state.user?.id),
 );
-const cancelError = computed(() => (cancelReason.value.trim() ? '' : t('请输入取消原因')));
-
-function statusLabel(status: BalloonTaskStatus) {
-  return t(
-    { PENDING: '待领取', CLAIMED: '配送中', DELIVERED: '已送达', CANCELLED: '已取消' }[status],
-  );
-}
-function statusType(status: BalloonTaskStatus): 'success' | 'warning' | 'info' | 'danger' {
-  return status === 'DELIVERED' ? 'success' : status === 'CANCELLED' ? 'danger' : 'warning';
-}
 
 async function loadData(showLoading = true): Promise<boolean> {
   if (!selectedContestId.value) return false;
@@ -509,7 +296,7 @@ function openCancel() {
   cancelVisible.value = true;
 }
 async function cancelTask() {
-  if (!selected.value || cancelError.value) return;
+  if (!selected.value || !cancelReason.value.trim()) return;
   if (
     await runMutation(
       'cancel',
@@ -582,16 +369,13 @@ onUnmounted(() => realtime?.stop());
   width: min(1440px, 100%);
   margin: 0 auto;
 }
-
 .page-head {
   height: auto;
   padding: clamp(28px, 5vw, 58px) clamp(28px, 5vw, 58px) 0;
 }
-
 .page-body {
   padding: 0 clamp(28px, 5vw, 58px) clamp(28px, 5vw, 58px);
 }
-
 .page-title-row {
   display: flex;
   align-items: flex-start;
@@ -599,19 +383,16 @@ onUnmounted(() => realtime?.stop());
   gap: 20px;
   margin-bottom: 32px;
 }
-
 .page-title-row h1 {
   margin-bottom: 8px;
   font-size: clamp(32px, 4vw, 48px);
   letter-spacing: -0.035em;
 }
-
 .page-title-row p {
   display: none;
   margin-bottom: 0;
   color: var(--muted);
 }
-
 .eyebrow {
   display: none;
   margin: 0 0 8px;
@@ -621,15 +402,9 @@ onUnmounted(() => realtime?.stop());
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
-
 .page-alert {
   margin-bottom: 20px;
 }
-
-.clarification-filter-card {
-  margin-bottom: 22px;
-}
-
 .clarification-live-state {
   display: flex;
   align-items: center;
@@ -641,213 +416,23 @@ onUnmounted(() => realtime?.stop());
   background: #e9eef5;
   font-size: 12px;
 }
-
 .clarification-live-state span {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: #94a3b8;
 }
-
 .clarification-live-state.connected {
   color: #166534;
   background: #dcfce7;
 }
-
 .clarification-live-state.connected span {
   background: #22c55e;
 }
-
-.balloon-stats-grid :deep(.el-col) {
-  flex: 0 0 20%;
-  max-width: 20%;
-}
-
-.balloon-stat {
-  display: grid;
-  gap: 8px;
-  border: 1px solid #e2e8f0;
-  border-radius: 0;
-  padding: 18px;
-  color: #64748b;
-  background: white;
-}
-
-.balloon-stat strong {
-  color: #0f172a;
-  font-size: 28px;
-}
-
-.balloon-stat.pending {
-  border-color: #fde68a;
-  background: #fffbeb;
-}
-
-.balloon-stat.active {
-  border-color: #bfdbfe;
-  background: #eff6ff;
-}
-
-.balloon-stat.delivered {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-}
-
-.balloon-stat.first-blood {
-  border-color: #fecaca;
-  background: #fef2f2;
-}
-
-.balloon-toolbar {
-  display: flex;
-  width: 100%;
-}
-
-.balloon-toolbar :deep(.el-space__item) {
-  display: flex;
-  align-items: center;
-}
-
-.balloon-toolbar :deep(.el-space__item .el-select),
-.balloon-toolbar :deep(.el-space__item .el-input) {
-  width: 100%;
-}
-
-.balloon-toolbar :deep(.el-space__item:nth-child(1)) {
-  flex: 1.4 1 260px;
-}
-
-.balloon-toolbar :deep(.el-space__item:nth-child(2)),
-.balloon-toolbar :deep(.el-space__item:nth-child(3)) {
-  flex: 0 0 150px;
-}
-
-.balloon-toolbar :deep(.el-space__item:nth-child(4)) {
-  flex: 1 1 210px;
-}
-
-.balloon-problem-cell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.balloon-problem-cell > div {
-  display: grid;
-  gap: 2px;
-}
-
-.balloon-problem-cell small {
-  color: #64748b;
-}
-
-.balloon-color {
-  display: inline-block;
-  flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
-  border: 2px solid rgb(255 255 255 / 85%);
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgb(15 23 42 / 18%);
-  vertical-align: middle;
-}
-
-.balloon-color.small {
-  width: 14px;
-  height: 14px;
-  margin-right: 5px;
-}
-
-.balloon-detail {
-  display: grid;
-  gap: 22px;
-}
-
-.balloon-note-panel {
-  display: grid;
-  gap: 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 0;
-  padding: 16px;
-  background: #f8fafc;
-}
-
-.balloon-note-panel > div {
-  display: grid;
-  gap: 3px;
-}
-
-.balloon-note-panel small {
-  color: #64748b;
-}
-
-.balloon-note-panel > :deep(.el-button) {
-  justify-self: end;
-}
-
-.balloon-actions {
-  flex-wrap: wrap;
-}
-
-.announcement-detail-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 18px;
-}
-
-.clarification-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 30px;
-  padding-top: 22px;
-  border-top: 1px solid #e5eaf2;
-}
-
-.admin-primary-cell strong,
-.admin-primary-cell small {
-  display: block;
-}
-
-.admin-primary-cell small {
-  margin-top: 4px;
-  color: var(--muted);
-}
-
-.muted-text {
-  color: var(--muted);
-}
-
-.danger-text {
-  color: #dc2626;
-}
-
-@media (max-width: 900px) {
-  .balloon-stats-grid :deep(.el-col) {
-    flex: 0 0 50%;
-    max-width: 50%;
-  }
-
-  .balloon-toolbar :deep(.el-space__item:nth-child(1)),
-  .balloon-toolbar :deep(.el-space__item:nth-child(4)) {
-    flex-basis: 100%;
-  }
-}
-
 @media (max-width: 640px) {
   .page-title-row {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .balloon-stats-grid :deep(.el-col) {
-    flex: 0 0 100%;
-    max-width: 100%;
-  }
-
-  .balloon-toolbar :deep(.el-space__item) {
-    flex: 1 1 100% !important;
   }
 }
 </style>
