@@ -82,7 +82,8 @@ Normal release:
 ```text
 develop
   -> release/X.Y.Z
-  -> validate migrations, tests, Compose compatibility, binary package
+  -> validate migrations, tests, binary package,
+     and optional compatibility Compose configuration
   -> merge to main
   -> tag vX.Y.Z
   -> merge back to develop

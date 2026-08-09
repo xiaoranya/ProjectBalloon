@@ -1,7 +1,9 @@
 # Local Development
 
-This document defines the target local-development shape for the Rust reset.
-Commands are run from the repository root unless stated otherwise.
+This document defines local development for the Rust workspace. Commands are
+run from the repository root unless stated otherwise. Production installation
+uses the binary package described in `docs/ops/install.md`; the Compose files in
+this section are development and rehearsal conveniences only.
 
 ## Required Toolchain
 
@@ -29,16 +31,9 @@ apps/judge-worker     Cargo binary or development container
 data services         local Compose project
 ```
 
-## Profiles
-
-Expected profiles:
-
-- `local`: developer machine with local Compose dependencies.
-- `test`: automated tests.
-- `offline`: packaged deployment configuration.
-- `contest`: official contest hardening profile.
-
-Local defaults must not be reused as official contest secrets.
+Local defaults must not be reused as official contest secrets. Production
+PostgreSQL, Redis, RabbitMQ, object storage, sandbox, proxy, printing, and
+observability services are provisioned and maintained by the deployer.
 
 ## Docker Integration Suite
 
@@ -86,22 +81,30 @@ Start local data services
   -> verify scoreboard update
 ```
 
-Current local dependency command:
+Create an ignored local Compose environment, replace every `CHANGE_ME` value,
+and start only the development data services:
 
-```text
-scripts/dev/start-local.sh
+```bash
+cp deploy/compose/.env.rust.example deploy/compose/.env.local
+$EDITOR deploy/compose/.env.local
+docker compose --env-file deploy/compose/.env.local \
+  -f deploy/compose/data.docker-compose.yml up -d
 ```
 
-This starts the API at `http://127.0.0.1:18080`. Start the frontend separately:
+Copy the application environment template to the ignored root `.env`, change
+the service URLs to their host-published `127.0.0.1` ports, then export it into
+the shell. The API creates its configured object-storage buckets on startup.
+Run the Rust processes directly:
 
-During the document-first reset this script may still reference the archived
-implementation. Before Rust application work is considered bootstrapped, it
-must be changed to start only data services and the Rust binaries.
+```bash
+cp .env.example .env
+$EDITOR .env
+set -a
+. ./.env
+set +a
+PROJECT_BALLOON_API_BIND=127.0.0.1:18080 cargo run -p project-balloon-api
 
-Target direct-development commands:
-
-```text
-cargo run -p project-balloon-api
+# In another shell, export .env as above before starting the Worker:
 cargo run -p project-balloon-judge-worker
 ```
 
@@ -217,14 +220,16 @@ XCPC_API_PROXY_TARGET=http://127.0.0.1:8080 npm run dev
 
 Stop local dependencies:
 
-```text
-scripts/dev/stop-local.sh
+```bash
+docker compose --env-file deploy/compose/.env.local \
+  -f deploy/compose/data.docker-compose.yml down
 ```
 
-Reset local dependency volumes:
+To deliberately reset all local dependency data, remove the Compose volumes:
 
-```text
-scripts/dev/reset-local.sh
+```bash
+docker compose --env-file deploy/compose/.env.local \
+  -f deploy/compose/data.docker-compose.yml down --volumes
 ```
 
 ## Configuration Rules

@@ -419,13 +419,14 @@ best-effort object cleanup so a failed storage request cannot leave a live
 database reference to a missing object. Cleanup failures are logged as orphan
 candidates.
 
-The current 20 MiB bounded upload and download paths buffer one object in
-memory. Failed cleanup is recorded in `object_storage_cleanup_tasks` and retried
+The 20 MiB attachment upload path is bounded in memory, while HTTP attachment
+downloads use a bounded S3 stream. Failed cleanup is recorded in
+`object_storage_cleanup_tasks` and retried
 with `FOR UPDATE SKIP LOCKED`, expiring leases, idempotent S3 deletes, and capped
 exponential backoff. Explicit attachment deletion records that task in the same
-transaction as metadata removal. True streaming transfer and full
-reconciliation between database metadata and bucket contents remain to be
-implemented.
+transaction as metadata removal. Periodic bidirectional reconciliation queues
+unreferenced owned objects after a grace period and persists missing-reference
+findings until the referenced objects reappear or the metadata is removed.
 
 ## Immutable Test Data
 
@@ -468,12 +469,12 @@ returned only when the `problems` compatibility pointer exactly matches the
 same version, object key, and SHA-256 in `problem_testdata_versions`, preventing
 an inconsistent or partially migrated pointer from being dispatched.
 
-Test-data endpoints still use bounded in-memory transfer because the API
-verifies the immutable SHA-256 before returning bytes. Attachment HTTP downloads
-use the S3 stream directly. Failed upload compensation deletes enter the durable
-object cleanup queue. Full bucket reconciliation and execution of the real
-RustFS integration tests remain before test data is production-ready. The Worker
-now performs bounded extraction using the same root-level case policy.
+Test-data downloads use a bounded S3 stream and verify the immutable SHA-256 as
+the response is consumed. Attachment HTTP downloads also use a bounded S3
+stream. Failed upload compensation deletes enter the durable object cleanup
+queue. Bucket reconciliation and real RustFS integration tests cover the
+storage boundary. The Worker performs bounded extraction using the same
+root-level case policy.
 
 ## Submission Creation Boundary
 

@@ -65,7 +65,7 @@ Judge Worker 集群
 | 缓存 | Redis 7 |
 | 消息队列 | RabbitMQ 3 |
 | 对象存储 | RustFS |
-| 判题沙箱 | isolate + cgroups |
+| 判题沙箱 | rootless Podman + gVisor (`runsc`) + cgroups |
 | 反向代理 | Nginx |
 | 部署 | systemd 管理 API/Worker + Docker/Podman 判题沙箱 |
 | 自动打印 | CUPS |
@@ -89,7 +89,7 @@ Judge Worker 集群
 - 前端字体、图标、代码编辑器、MathJax/KaTeX、代码高亮资源全部本地化。
 - Element Plus 组件库及其字体、图标资源随前端构建产物离线发布，不依赖任何 CDN。
 - 提供 API/Worker 二进制、前端静态文件、Judge Runtime 镜像 tar 包、systemd unit、Nginx 配置和恢复脚本。
-- PostgreSQL、Redis、RabbitMQ、RustFS 由部署方自行提供，发行包不负责创建或升级这些有状态服务。
+- PostgreSQL、Redis、RabbitMQ、RustFS、Nginx、CUPS 和观测组件由部署方自行提供和维护；发行包只提供应用二进制、静态文件及必要的配置模板，不负责创建或升级外部服务。
 - API 和 Judge Worker 由 systemd 管理；Judge Worker 通过 Docker/Podman socket 启动隔离的判题容器。
 - 服务安装和首轮配置通过发行包根目录的 `install.sh` 完成，运行状态通过 systemd 和健康接口检查。
 

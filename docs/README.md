@@ -1,8 +1,9 @@
 # ProjectBalloon Documentation
 
-This directory is the documentation root for the Rust reset of ProjectBalloon.
-The previous Java implementation remains temporarily under `ProjectBalloon/`
-as a behavioral reference; it is not the target source layout.
+This directory is the documentation root for the Rust implementation of
+ProjectBalloon. The previous Java implementation has been migrated and removed;
+the compatibility baseline remains in the reviewed contracts, migrations, and
+API migration matrix.
 
 ## Status
 
@@ -27,7 +28,7 @@ as a behavioral reference; it is not the target source layout.
 - `dev/`: Rust and frontend development rules.
 - `ops/`: offline installation, operation, pressure testing, and recovery.
 
-## Target Source Layout
+## Source Layout
 
 ```text
 apps/api/              Rust modular-monolith API
@@ -37,10 +38,10 @@ crates/contracts/      Versioned AMQP and event wire contracts
 crates/test-support/   Shared integration-test support
 migrations/            SQLx PostgreSQL migrations
 frontend/web/          Vue 3 frontend
-judge/runtimes/        Contestant language images
+deploy/judge/runtimes/ Contestant language images
 deploy/                Offline deployment definitions
 scripts/               Development and operations commands
-tests/                 End-to-end fixtures and acceptance tests
+apps/*/tests/          Application integration and acceptance tests
 ```
 
 ## Documentation Rules

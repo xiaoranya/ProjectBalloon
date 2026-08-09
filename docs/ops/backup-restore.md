@@ -6,11 +6,12 @@ RabbitMQ should be drained before a planned final backup.
 ## Create a backup
 
 ```text
-scripts/backup/backup.sh [output-directory]
+sudo /opt/project-balloon/scripts/backup/backup.sh /var/backups/project-balloon
 ```
 
-The default output is `backups/project-balloon-<UTC timestamp>`. A run is built
-in a temporary directory and renamed only after all steps succeed. It contains:
+The output contains a `project-balloon-<UTC timestamp>` directory. A run is
+built in a temporary directory and renamed only after all steps succeed. It
+contains:
 
 ```text
 postgres/database.sql.gz
@@ -27,7 +28,8 @@ PostgreSQL is dumped with `--clean --if-exists --no-owner`; every RustFS bucket
 returned by the S3 API is copied. Runtime secrets are excluded from the
 configuration archive.
 
-Set `BACKUP_OBJECT_STORAGE_ENDPOINT` in `.env.rust` when RustFS is not reachable
+Set `BACKUP_OBJECT_STORAGE_ENDPOINT` in
+`/etc/project-balloon/project-balloon.env` when object storage is not reachable
 from the host at `http://127.0.0.1:9000`.
 
 Required tools are gzip, sha256sum, tar, PostgreSQL client tools (`pg_dump` and
@@ -41,7 +43,8 @@ objects and mirrors every backed-up bucket with `aws s3 sync --delete`.
 
 ```text
 PROJECT_BALLOON_RESTORE_ACK=I_UNDERSTAND_THIS_REPLACES_CURRENT_DATA \
-  scripts/backup/restore.sh backups/project-balloon-<timestamp>
+  sudo -E /opt/project-balloon/scripts/backup/restore.sh \
+  /var/backups/project-balloon/project-balloon-<timestamp>
 ```
 
 Before modifying state, the script verifies every checksum, the backup format,
@@ -62,15 +65,17 @@ PostgreSQL container.
 
 ## Post-restore verification
 
-Run:
+Start the binary services and verify application health:
 
 ```text
-scripts/deploy/start.sh app
-scripts/deploy/start.sh monitor
-scripts/deploy/healthcheck.sh all
+sudo systemctl start project-balloon-api project-balloon-judge-worker
+curl --fail http://127.0.0.1:8080/livez
+curl --fail http://127.0.0.1:8080/api/health
 ```
 
-Then verify contest lifecycle, accounts, problems and test-data hashes,
+Use the deployer's own procedures to verify PostgreSQL, Redis, RabbitMQ, object
+storage, sandbox, proxy, printing, backup, and observability services. Then
+verify contest lifecycle, accounts, problems and test-data hashes,
 submission/judgement counts, public/admin scoreboards, Resolver snapshots,
 awards, printing, balloon tasks, and cleanup/export backlogs. Preserve the
 failed-state data and operator timeline separately before any live-contest

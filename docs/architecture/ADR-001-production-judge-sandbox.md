@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for the production Compose profile.
+Accepted for production binary deployments.
 
 ## Decision
 
@@ -17,8 +17,9 @@ the Worker container. This is required because the OCI daemon resolves the
 `/work` bind source in the host namespace. A named volume is not valid for this
 architecture.
 
-Sibling Docker remains a development-only exception in
-`local.docker-compose.yml`. It is not an official contest deployment profile.
+Sibling Docker through `deploy/compose/rust-app.docker-compose.yml` remains a
+development and single-host rehearsal exception. It is not an official contest
+deployment profile.
 
 ## Required Host Preparation
 
@@ -27,7 +28,8 @@ Sibling Docker remains a development-only exception in
 2. Install Podman and gVisor (`runsc`) from offline, checksummed packages.
 3. Configure rootless Podman for that account and verify `runsc` appears as an
    available OCI runtime.
-4. Create `XCPC_JUDGE_CACHE_DIR` owned by `10001:10001` with mode `0700`.
+4. Set `JUDGE_CACHE_DIR` to an absolute host path, create it with ownership
+   `10001:10001`, and set mode `0700`.
 5. Start the dedicated rootless Podman API service and set
    `XCPC_SANDBOX_SOCKET=/run/xcpc-judge/podman.sock`.
 6. Load the four runtime images (C, C++, Java, and Python) into the rootless

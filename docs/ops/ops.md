@@ -4,7 +4,7 @@ This document defines routine on-site operations for rehearsal and official cont
 
 ## Operator Principles
 
-- Prefer scripted operations over manual container commands.
+- Prefer reviewed service procedures over ad hoc process or container commands.
 - Preserve logs before restart or recovery.
 - Do not clear Redis, RabbitMQ, database, RustFS, or volumes during an official contest unless following an approved recovery procedure.
 - Record all manual changes in the contest operation log.
@@ -12,17 +12,23 @@ This document defines routine on-site operations for rehearsal and official cont
 
 ## Daily Commands
 
-Role-level commands (`data`, `app`, `monitor`, or `all`):
+The binary package installs the application services under systemd:
 
 ```text
-scripts/deploy/status.sh <role>
-scripts/deploy/healthcheck.sh <role>
-scripts/deploy/start.sh <role>
-scripts/deploy/stop.sh <role>
-scripts/deploy/restart.sh <role>
+sudo systemctl status project-balloon-api project-balloon-judge-worker
+sudo systemctl start project-balloon-api project-balloon-judge-worker
+sudo systemctl stop project-balloon-api project-balloon-judge-worker
+sudo systemctl restart project-balloon-api project-balloon-judge-worker
+sudo journalctl -u project-balloon-api -u project-balloon-judge-worker -f
+curl --fail http://127.0.0.1:8080/livez
+curl --fail http://127.0.0.1:8080/api/health
 ```
 
-During an official contest, prefer service-specific restart only when scripts support it. Full host role restart can interrupt contest flow.
+PostgreSQL, Redis, RabbitMQ, object storage, the sandbox service, Nginx, CUPS,
+and observability are user-managed external components. Inspect and control them
+with the commands and service names selected during host provisioning; the
+ProjectBalloon package does not assume ownership of their lifecycle. During an
+official contest, restart only the affected service after recording the action.
 
 ## Health Checklist
 
@@ -47,9 +53,7 @@ the retryable `FAILED` state instead of being reported as printed. Verify the
 queue directly with:
 
 ```text
-docker compose --env-file deploy/compose/.env.rust \
-  -f deploy/compose/rust-app.docker-compose.yml exec api \
-  lpstat -h <host>:631 -p <queue-name>
+lpstat -h <host>:631 -p <queue-name>
 ```
 
 The `objectCleanup` health component exposes pending and failed RustFS cleanup
@@ -105,7 +109,8 @@ Critical dashboard panels:
 
 ## Logs
 
-Logs should be collected by Promtail and queried through Loki.
+Logs should be collected by the user-selected logging stack. The repository
+includes optional Promtail/Loki examples under `deploy/observability/`.
 
 Important log streams:
 
@@ -141,8 +146,9 @@ Generate final scoreboard
 Backup and restore:
 
 ```text
-scripts/backup/backup.sh                    # dump postgres + sync rustfs + tar config
-scripts/backup/restore.sh <backup-run-dir>  # restore in order, then healthcheck + verify scoreboard
+sudo /opt/project-balloon/scripts/backup/backup.sh /var/backups/project-balloon
+PROJECT_BALLOON_RESTORE_ACK=I_UNDERSTAND_THIS_REPLACES_CURRENT_DATA \
+  sudo -E /opt/project-balloon/scripts/backup/restore.sh <backup-run-dir>
 ```
 
 See `docs/ops/backup-restore.md` for mandatory backup points, contents, retention, and post-restore verification. Take a backup before rehearsal, after data freeze, immediately before contest start, and after the judge queue drains.
