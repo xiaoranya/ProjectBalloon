@@ -13,7 +13,9 @@
         show-icon
         :closable="false"
         class="page-alert"
-        :title="t('比赛管理员只能导入到已授权比赛。下拉框已请求可管理比赛；后端权限校验始终是最终边界。')"
+        :title="
+          t('比赛管理员只能导入到已授权比赛。下拉框已请求可管理比赛；后端权限校验始终是最终边界。')
+        "
       />
       <ElAlert
         v-if="errorMessage"
@@ -25,7 +27,9 @@
       />
 
       <ElCard shadow="never">
-        <template #header><strong>{{ t('批次设置') }}</strong></template>
+        <template #header
+          ><strong>{{ t('批次设置') }}</strong></template
+        >
         <ElRow :gutter="16" align="bottom" class="team-import-options-grid">
           <ElCol :xs="24" :md="11">
             <ElFormItem :label="t('比赛')">
@@ -65,12 +69,18 @@
           </ElCol>
           <ElCol :xs="24" :md="11">
             <ElFormItem :label="t('账号策略')">
-              <ElCheckbox v-model="requirePasswordReset">{{ t('账号须在首次登录时修改密码') }}</ElCheckbox>
+              <ElCheckbox v-model="requirePasswordReset">{{
+                t('账号须在首次登录时修改密码')
+              }}</ElCheckbox>
             </ElFormItem>
           </ElCol>
         </ElRow>
         <p class="form-hint">
-          {{ t('超过 100 行会拆成独立原子批次；批间不具备原子性。每批使用“前缀-part-N-UUID”唯一键。成员不属于 Rust 批次契约，将在队伍创建成功后逐个添加，成员失败不会伪装成队伍行失败。取消勾选“账号须在首次登录时修改密码”仅应在初始密码由线下渠道交付时使用。') }}
+          {{
+            t(
+              '超过 100 行会拆成独立原子批次；批间不具备原子性。每批使用“前缀-part-N-UUID”唯一键。成员不属于 Rust 批次契约，将在队伍创建成功后逐个添加，成员失败不会伪装成队伍行失败。取消勾选“账号须在首次登录时修改密码”仅应在初始密码由线下渠道交付时使用。',
+            )
+          }}
         </p>
       </ElCard>
 
@@ -78,7 +88,12 @@
         <template #header>
           <div class="card-header">
             <strong>{{ t('粘贴 / 编辑 JSON') }}</strong
-            ><small>{{ t('{teams} 支队伍，预计 {batches} 个后台批次', { teams: drafts.length, batches: plannedBatchCount }) }}</small>
+            ><small>{{
+              t('{teams} 支队伍，预计 {batches} 个后台批次', {
+                teams: drafts.length,
+                batches: plannedBatchCount,
+              })
+            }}</small>
           </div>
         </template>
         <CodeEditor
@@ -90,12 +105,12 @@
         />
         <ElRow justify="end" class="team-import-source-actions-row">
           <ElSpace wrap>
-            <ElButton :disabled="importing || !source.trim()" @click="parseSource"
-              >{{ t('解析并编辑') }}</ElButton
-            >
-            <ElButton :disabled="importing || !drafts.length" @click="syncSource"
-              >{{ t('同步编辑到 JSON') }}</ElButton
-            >
+            <ElButton :disabled="importing || !source.trim()" @click="parseSource">{{
+              t('解析并编辑')
+            }}</ElButton>
+            <ElButton :disabled="importing || !drafts.length" @click="syncSource">{{
+              t('同步编辑到 JSON')
+            }}</ElButton>
             <ElButton
               type="primary"
               :loading="importing"
@@ -111,15 +126,19 @@
         <template #header>
           <div class="card-header">
             <strong>{{ t('队伍与成员') }}</strong
-            ><small>{{ invalidCount ? t('{count} 项待修正', { count: invalidCount }) : t('字段校验通过') }}</small>
+            ><small>{{
+              invalidCount ? t('{count} 项待修正', { count: invalidCount }) : t('字段校验通过')
+            }}</small>
           </div>
         </template>
         <div v-for="(team, index) in drafts" :key="team.clientId" class="team-import-editor">
           <div class="team-import-editor-heading">
-            <strong>{{ t('第 {index} 支：{name}', { index: index + 1, name: team.name || t('未命名') }) }}</strong>
-            <ElButton text type="danger" :disabled="importing" @click="removeTeam(index)"
-              >{{ t('删除') }}</ElButton
-            >
+            <strong>{{
+              t('第 {index} 支：{name}', { index: index + 1, name: team.name || t('未命名') })
+            }}</strong>
+            <ElButton text type="danger" :disabled="importing" @click="removeTeam(index)">{{
+              t('删除')
+            }}</ElButton>
           </div>
           <div class="team-import-grid">
             <ElInput v-model="team.name" :placeholder="t('队名 *')" />
@@ -143,9 +162,9 @@
               <ElInput v-model="member.email" :placeholder="t('邮箱')" />
               <ElInput v-model="member.phone" :placeholder="t('电话')" />
               <ElInput v-model="member.roleName" :placeholder="t('角色（如教练/队员）')" />
-              <ElButton text type="danger" @click="team.members.splice(memberIndex, 1)"
-                >{{ t('移除') }}</ElButton
-              >
+              <ElButton text type="danger" @click="team.members.splice(memberIndex, 1)">{{
+                t('移除')
+              }}</ElButton>
             </div>
             <ElButton text @click="addMember(team)">{{ t('添加成员') }}</ElButton>
           </div>
@@ -158,16 +177,23 @@
           <div class="card-header">
             <div>
               <strong>{{ t('后台批次结果') }}</strong
-              ><small>{{ t('成功 {success} / {total}', { success: successfulBatchCount, total: batchResults.length }) }}</small>
+              ><small>{{
+                t('成功 {success} / {total}', {
+                  success: successfulBatchCount,
+                  total: batchResults.length,
+                })
+              }}</small>
             </div>
             <div>
-              <ElButton v-if="credentials.length" @click="copyCredentials">{{ t('一次性复制账号') }}</ElButton>
-              <ElButton v-if="credentials.length" @click="downloadCredentials"
-                >{{ t('一次性下载 CSV') }}</ElButton
-              >
-              <ElButton v-if="credentials.length" type="danger" plain @click="clearCredentials"
-                >{{ t('清除密码') }}</ElButton
-              >
+              <ElButton v-if="credentials.length" @click="copyCredentials">{{
+                t('一次性复制账号')
+              }}</ElButton>
+              <ElButton v-if="credentials.length" @click="downloadCredentials">{{
+                t('一次性下载 CSV')
+              }}</ElButton>
+              <ElButton v-if="credentials.length" type="danger" plain @click="clearCredentials">{{
+                t('清除密码')
+              }}</ElButton>
             </div>
           </div>
         </template>
@@ -193,7 +219,11 @@
           type="warning"
           show-icon
           :closable="false"
-          :title="t('密码只保存在当前页面内存中；复制、下载或清除后即从结果中移除，不写入 localStorage/sessionStorage。')"
+          :title="
+            t(
+              '密码只保存在当前页面内存中；复制、下载或清除后即从结果中移除，不写入 localStorage/sessionStorage。',
+            )
+          "
         />
         <ElTable v-if="credentials.length" :data="credentials" row-key="inputIndex">
           <ElTableColumn prop="inputIndex" :label="t('原始行')" width="90"
@@ -430,7 +460,10 @@ async function submitImport() {
   }
   try {
     await ElMessageBox.confirm(
-      t('将 {teams} 支队伍拆为 {batches} 个独立原子批次。若后续批次失败，已成功批次不会回滚。', { teams: drafts.value.length, batches: plannedBatchCount.value }),
+      t('将 {teams} 支队伍拆为 {batches} 个独立原子批次。若后续批次失败，已成功批次不会回滚。', {
+        teams: drafts.value.length,
+        batches: plannedBatchCount.value,
+      }),
       t('确认批量导入'),
       { type: 'warning' },
     );
@@ -472,7 +505,10 @@ async function submitImport() {
         batchResults.value[later].status = 'SKIPPED';
         batchResults.value[later].message = t('前序批次失败，未提交');
       }
-      errorMessage.value = t('第 {batch} 批失败：{message}。输入已保留，可核对幂等键后重试。', { batch: index + 1, message: resultRow.message });
+      errorMessage.value = t('第 {batch} 批失败：{message}。输入已保留，可核对幂等键后重试。', {
+        batch: index + 1,
+        message: resultRow.message,
+      });
       break;
     }
     resultRow.status = 'SUCCESS';
@@ -505,10 +541,14 @@ async function submitImport() {
       }
     }
     if (memberErrors.length)
-      resultRow.message += t('；成员添加失败 {count} 项：{errors}', { count: memberErrors.length, errors: memberErrors.join('；') });
+      resultRow.message += t('；成员添加失败 {count} 项：{errors}', {
+        count: memberErrors.length,
+        errors: memberErrors.join('；'),
+      });
   }
   importing.value = false;
-  if (!errorMessage.value) ElMessage.success(t('导入完成，共创建 {count} 个账号', { count: credentials.value.length }));
+  if (!errorMessage.value)
+    ElMessage.success(t('导入完成，共创建 {count} 个账号', { count: credentials.value.length }));
 }
 
 function credentialCsv() {

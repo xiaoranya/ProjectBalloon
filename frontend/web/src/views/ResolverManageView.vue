@@ -3,22 +3,26 @@
     <el-header height="auto" class="resolver-page-heading">
       <div>
         <p class="eyebrow">Official Resolver</p>
-        <h1>Resolver 运行控制台</h1>
+        <h1>{{ t('Resolver 运行控制台') }}</h1>
       </div>
       <ElSpace wrap :size="10" class="resolver-heading-actions">
-        <ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"
+        <ElSelect
+          v-model="contestId"
+          filterable
+          :placeholder="t('选择比赛')"
+          @change="changeContest"
           ><ElOption
             v-for="contest in contests"
             :key="contest.id"
             :label="`${contest.name} · #${contest.id}`"
             :value="contest.id"
         /></ElSelect>
-        <ElButton :icon="Refresh" :loading="loading" @click="loadContext">刷新</ElButton>
+        <ElButton :icon="Refresh" :loading="loading" @click="loadContext">{{ t('刷新') }}</ElButton>
         <RouterLink
           v-if="run?.official && run.status !== 'READY'"
           :to="{ name: 'resolver-display', params: { runId: run.id } }"
           target="_blank"
-          ><ElButton :icon="Monitor">打开展示端</ElButton></RouterLink
+          ><ElButton :icon="Monitor">{{ t('打开展示端') }}</ElButton></RouterLink
         >
       </ElSpace>
     </el-header>
@@ -36,28 +40,28 @@
         <ElRow :gutter="14" class="resolver-metrics">
           <ElCol :xs="12" :md="6"
             ><div class="resolver-metric">
-              <span>运行状态</span
+              <span>{{ t('运行状态') }}</span
               ><strong :class="`status-${run?.status.toLowerCase() ?? 'none'}`">{{
-                run ? statusLabel(run.status) : '未选择'
+                run ? statusLabel(run.status) : t('未选择')
               }}</strong>
             </div></ElCol
           >
           <ElCol :xs="12" :md="6"
             ><div class="resolver-metric">
-              <span>揭晓进度</span
+              <span>{{ t('揭晓进度') }}</span
               ><strong>{{ run ? `${run.currentStep} / ${run.totalSteps}` : '—' }}</strong>
             </div></ElCol
           >
           <ElCol :xs="12" :md="6"
             ><div class="resolver-metric">
-              <span>运行类型</span
-              ><strong>{{ run ? (run.official ? '正式' : '预演') : '—' }}</strong>
+              <span>{{ t('运行类型') }}</span
+              ><strong>{{ run ? (run.official ? t('正式') : t('预演')) : '—' }}</strong>
             </div></ElCol
           >
           <ElCol :xs="12" :md="6"
             ><div class="resolver-metric">
-              <span>同步方式</span
-              ><strong>{{ realtimeConnected ? 'SSE 实时' : '轮询校准' }}</strong>
+              <span>{{ t('同步方式') }}</span
+              ><strong>{{ realtimeConnected ? t('SSE 实时') : t('轮询校准') }}</strong>
             </div></ElCol
           >
         </ElRow>
@@ -65,35 +69,41 @@
         <ElCard shadow="never" class="resolver-command-card">
           <div class="resolver-command-bar">
             <div>
-              <strong>运行与快照</strong
+              <strong>{{ t('运行与快照') }}</strong
               ><small v-if="sources"
                 >PUBLIC v{{ sources.publicSnapshot.version }} · ADMIN v{{
                   sources.finalSnapshot.version
                 }}</small
-              ><small v-else>尚未找到完整快照来源</small>
+              ><small v-else>{{ t('尚未找到完整快照来源') }}</small>
             </div>
             <div class="resolver-command-actions">
               <ElSelect
                 v-if="runs.length"
                 v-model="runId"
-                placeholder="选择已有运行"
+                :placeholder="t('选择已有运行')"
                 @change="selectRun"
                 ><ElOption
                   v-for="item in runs"
                   :key="item.id"
                   :value="item.id"
-                  :label="`#${item.id} · ${item.official ? '正式' : '预演'} · ${statusLabel(item.status)}`"
+                  :label="
+                    t('#{id} · {type} · {status}', {
+                      id: item.id,
+                      type: item.official ? t('正式') : t('预演'),
+                      status: statusLabel(item.status),
+                    })
+                  "
               /></ElSelect>
-              <ElButton :disabled="!sources" :loading="acting" @click="createRun(false)"
-                >创建预演</ElButton
-              >
+              <ElButton :disabled="!sources" :loading="acting" @click="createRun(false)">{{
+                t('创建预演')
+              }}</ElButton>
               <ElButton
                 type="danger"
                 plain
                 :disabled="!sources || hasOfficial"
                 :loading="acting"
                 @click="createRun(true)"
-                >创建正式运行</ElButton
+                >{{ t('创建正式运行') }}</ElButton
               >
             </div>
           </div>
@@ -102,8 +112,8 @@
         <ElCard v-if="run" shadow="never" class="resolver-command-card">
           <div class="resolver-command-bar">
             <div>
-              <strong>单步控制</strong
-              ><small>每次命令携带当前 version；完成前必须揭晓全部步骤。</small>
+              <strong>{{ t('单步控制') }}</strong
+              ><small>{{ t('每次命令携带当前 version；完成前必须揭晓全部步骤。') }}</small>
             </div>
             <div class="resolver-command-actions">
               <ElButton
@@ -111,27 +121,30 @@
                 type="primary"
                 :loading="acting"
                 @click="control('start')"
-                >开始</ElButton
+                >{{ t('开始') }}</ElButton
               >
-              <ElButton v-if="run.status === 'RUNNING'" :loading="acting" @click="control('pause')"
-                >暂停</ElButton
+              <ElButton
+                v-if="run.status === 'RUNNING'"
+                :loading="acting"
+                @click="control('pause')"
+                >{{ t('暂停') }}</ElButton
               >
               <ElButton
                 v-if="run.status === 'PAUSED'"
                 type="success"
                 :loading="acting"
                 @click="control('resume')"
-                >恢复</ElButton
+                >{{ t('恢复') }}</ElButton
               >
-              <ElButton :disabled="!canPrevious" :loading="acting" @click="control('previous')"
-                >回退一步</ElButton
-              >
+              <ElButton :disabled="!canPrevious" :loading="acting" @click="control('previous')">{{
+                t('回退一步')
+              }}</ElButton>
               <ElButton
                 type="primary"
                 :disabled="!canNext"
                 :loading="acting"
                 @click="control('next')"
-                >揭晓下一步</ElButton
+                >{{ t('揭晓下一步') }}</ElButton
               >
               <ElButton
                 type="danger"
@@ -139,14 +152,14 @@
                 :disabled="!canComplete"
                 :loading="acting"
                 @click="completeRun"
-                >完成 Resolver</ElButton
+                >{{ t('完成 Resolver') }}</ElButton
               >
             </div>
           </div>
           <div class="resolver-command-bar resolver-auto-play">
             <div>
-              <strong>自动播放</strong
-              ><small>间隔范围 500–60000 ms；暂停、完成或到达末尾会自动关闭。</small>
+              <strong>{{ t('自动播放') }}</strong
+              ><small>{{ t('间隔范围 500–60000 ms；暂停、完成或到达末尾会自动关闭。') }}</small>
             </div>
             <div class="resolver-command-actions">
               <ElInputNumber v-model="autoInterval" :min="500" :max="60000" :step="500" /><ElButton
@@ -154,7 +167,7 @@
                 :disabled="run.status !== 'RUNNING' || run.currentStep >= run.totalSteps"
                 :loading="acting"
                 @click="toggleAutoPlay"
-                >{{ run.autoPlayEnabled ? '停止自动播放' : '启动自动播放' }}</ElButton
+                >{{ run.autoPlayEnabled ? t('停止自动播放') : t('启动自动播放') }}</ElButton
               >
             </div>
           </div>
@@ -166,8 +179,13 @@
               <template #header
                 ><div class="card-header">
                   <div>
-                    <strong>最近揭晓</strong
-                    ><small>步骤 {{ run.currentStep }} / {{ run.totalSteps }}</small>
+                    <strong>{{ t('最近揭晓') }}</strong
+                    ><small>{{
+                      t('步骤 {current} / {total}', {
+                        current: run.currentStep,
+                        total: run.totalSteps,
+                      })
+                    }}</small>
                   </div>
                 </div></template
               >
@@ -176,29 +194,32 @@
                   <span class="resolver-rank">#{{ focusRow.rank }}</span>
                   <div>
                     <h2>{{ focusRow.teamName }}</h2>
-                    <p>{{ focusRow.school ?? '学校未填写' }}</p>
+                    <p>{{ focusRow.school ?? t('学校未填写') }}</p>
                   </div>
                 </div>
                 <div class="resolver-reveal-grid">
                   <div>
-                    <span>题目</span
+                    <span>{{ t('题目') }}</span
                     ><strong>{{ focusProblem?.alias ?? run.state.lastReveal.problemId }}</strong>
                   </div>
                   <div>
-                    <span>结果</span
+                    <span>{{ t('结果') }}</span
                     ><strong :class="run.state.lastReveal.after.solved ? 'accepted' : 'rejected'">{{
-                      run.state.lastReveal.after.solved ? 'ACCEPTED' : '未通过'
+                      run.state.lastReveal.after.solved ? 'ACCEPTED' : t('未通过')
                     }}</strong>
                   </div>
                   <div>
-                    <span>当前成绩</span
-                    ><strong
-                      >{{ focusRow.solvedCount }} 题 / {{ focusRow.penaltyMinutes }} 分钟</strong
-                    >
+                    <span>{{ t('当前成绩') }}</span
+                    ><strong>{{
+                      t('{solved} 题 / {minutes} 分钟', {
+                        solved: focusRow.solvedCount,
+                        minutes: focusRow.penaltyMinutes,
+                      })
+                    }}</strong>
                   </div>
                 </div>
               </div>
-              <ElEmpty v-else description="尚未揭晓步骤" />
+              <ElEmpty v-else :description="t('尚未揭晓步骤')" />
             </ElCard>
           </ElCol>
           <ElCol :xs="24" :md="9">
@@ -206,7 +227,8 @@
               <template #header
                 ><div class="card-header">
                   <div>
-                    <strong>操作历史</strong><small>最近 {{ events.length }} 条</small>
+                    <strong>{{ t('操作历史') }}</strong
+                    ><small>{{ t('最近 {count} 条', { count: events.length }) }}</small>
                   </div>
                 </div></template
               >
@@ -227,13 +249,14 @@
           <template #header
             ><div class="card-header">
               <div>
-                <strong>当前 Resolver 榜单</strong><small>状态数据由后端快照校验恢复</small>
+                <strong>{{ t('当前 Resolver 榜单') }}</strong
+                ><small>{{ t('状态数据由后端快照校验恢复') }}</small>
               </div>
             </div></template
           >
           <ElTable :data="run.state.board.rows" row-key="teamId" stripe max-height="560"
-            ><ElTableColumn prop="rank" label="排名" width="80" /><ElTableColumn
-              label="队伍"
+            ><ElTableColumn prop="rank" :label="t('排名')" width="80" /><ElTableColumn
+              :label="t('队伍')"
               min-width="220"
               ><template #default="{ row }"
                 ><div class="resolver-table-team">
@@ -241,11 +264,11 @@
                   ><span>{{ row.school ?? '—' }}</span>
                 </div></template
               ></ElTableColumn
-            ><ElTableColumn prop="solvedCount" label="解题" width="80" /><ElTableColumn
+            ><ElTableColumn prop="solvedCount" :label="t('解题')" width="80" /><ElTableColumn
               prop="penaltyMinutes"
-              label="罚时"
+              :label="t('罚时')"
               width="90"
-            /><ElTableColumn label="题目状态" min-width="300"
+            /><ElTableColumn :label="t('题目状态')" min-width="300"
               ><template #default="{ row }"
                 ><div class="resolver-cell-list">
                   <span
@@ -294,9 +317,11 @@ import {
   type ContestRealtimeSubscription,
 } from '../realtime/contest-events';
 import { formatDateTime } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const contests = ref<Contest[]>([]);
 const contestId = ref<number | null>(null);
 const runs = ref<ResolverRun[]>([]);
@@ -337,22 +362,22 @@ const focusProblem = computed(
     ) ?? null,
 );
 function statusLabel(status: ResolverRunStatus) {
-  return { READY: '就绪', RUNNING: '运行中', PAUSED: '已暂停', COMPLETED: '已完成' }[status];
+  return t({ READY: '就绪', RUNNING: '运行中', PAUSED: '已暂停', COMPLETED: '已完成' }[status]);
 }
 function eventLabel(type: string) {
-  return (
-    {
-      CREATED: '创建运行',
-      START: '开始',
-      NEXT: '揭晓下一步',
-      PREVIOUS: '回退',
-      PAUSE: '暂停',
-      RESUME: '恢复',
-      COMPLETE: '完成',
-      AUTO_PLAY: '自动播放设置',
-      AUTO_NEXT: '自动揭晓',
-    }[type] ?? type
-  );
+  const labels: Record<string, string> = {
+    CREATED: '创建运行',
+    START: '开始',
+    NEXT: '揭晓下一步',
+    PREVIOUS: '回退',
+    PAUSE: '暂停',
+    RESUME: '恢复',
+    COMPLETE: '完成',
+    AUTO_PLAY: '自动播放设置',
+    AUTO_NEXT: '自动揭晓',
+  };
+  const label = labels[type];
+  return label ? t(label) : type;
 }
 function problemAlias(id: number) {
   return (
@@ -442,9 +467,9 @@ async function createRun(official: boolean) {
   try {
     await ElMessageBox.confirm(
       official
-        ? '正式运行每场比赛只能创建一次，确认快照均已复核？'
-        : '确认使用当前最新快照创建预演运行？',
-      official ? '创建正式 Resolver' : '创建预演',
+        ? t('正式运行每场比赛只能创建一次，确认快照均已复核？')
+        : t('确认使用当前最新快照创建预演运行？'),
+      official ? t('创建正式 Resolver') : t('创建预演'),
       { type: 'warning' },
     );
   } catch {
@@ -463,7 +488,7 @@ async function createRun(official: boolean) {
     run.value = created;
     events.value = await resolverApi.events(created.id);
     await selectRun();
-    ElMessage.success(official ? '正式运行已创建' : '预演已创建');
+    ElMessage.success(official ? t('正式运行已创建') : t('预演已创建'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {
@@ -486,7 +511,7 @@ async function control(action: 'start' | 'next' | 'previous' | 'pause' | 'resume
 async function completeRun() {
   if (!run.value || !canComplete.value) return;
   try {
-    await ElMessageBox.confirm('确认所有步骤均已复核并完成 Resolver？', '完成 Resolver', {
+    await ElMessageBox.confirm(t('确认所有步骤均已复核并完成 Resolver？'), t('完成 Resolver'), {
       type: 'warning',
     });
   } catch {
@@ -495,7 +520,7 @@ async function completeRun() {
   acting.value = true;
   try {
     run.value = await resolverApi.complete(run.value.id, run.value.version);
-    ElMessage.success('Resolver 已完成');
+    ElMessage.success(t('Resolver 已完成'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {

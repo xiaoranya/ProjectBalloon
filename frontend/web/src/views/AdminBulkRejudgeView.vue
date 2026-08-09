@@ -9,9 +9,9 @@
           <h1>{{ t('批量重判工作台') }}</h1>
         </div>
         <div class="admin-page-actions">
-          <ElButton :icon="Refresh" :loading="tasksLoading" @click="loadTasks(false)"
-            >{{ t('刷新任务') }}</ElButton
-          >
+          <ElButton :icon="Refresh" :loading="tasksLoading" @click="loadTasks(false)">{{
+            t('刷新任务')
+          }}</ElButton>
         </div>
       </div>
     </el-header>
@@ -58,7 +58,12 @@
                 </ElCol>
                 <ElCol :xs="24" :sm="12" :md="6">
                   <ElFormItem :label="t('队伍')">
-                    <ElSelect v-model="filter.teamId" clearable filterable :placeholder="t('全部队伍')">
+                    <ElSelect
+                      v-model="filter.teamId"
+                      clearable
+                      filterable
+                      :placeholder="t('全部队伍')"
+                    >
                       <ElOption
                         v-for="team in contestTeams"
                         :key="team.teamId"
@@ -173,7 +178,11 @@
                     {{ t('需为 8–128 字节。网络重试时保留同一键；只在发起一项新操作时更换。') }}
                   </p>
                 </ElFormItem>
-                <ElFormItem :label="t('输入 {text} 以继续', { text: confirmationRequirement || t('确认文本') })">
+                <ElFormItem
+                  :label="
+                    t('输入 {text} 以继续', { text: confirmationRequirement || t('确认文本') })
+                  "
+                >
                   <ElInput
                     v-model="confirmationText"
                     autocomplete="off"
@@ -187,7 +196,9 @@
                 type="warning"
                 show-icon
                 :closable="false"
-                :title="t('重判会让匹配提交重新进入评测队列，并可能短暂改变榜单；任务不能整体撤销。')"
+                :title="
+                  t('重判会让匹配提交重新进入评测队列，并可能短暂改变榜单；任务不能整体撤销。')
+                "
               />
               <ElButton
                 type="danger"
@@ -231,7 +242,14 @@
                 :stroke-width="10"
               />
               <small class="rejudge-progress-copy">
-                {{ t('{processed} / {total} · 成功 {success} · 失败 {failed}', { processed: row.processedItems, total: row.totalItems, success: row.succeededItems, failed: row.failedItems }) }}
+                {{
+                  t('{processed} / {total} · 成功 {success} · 失败 {failed}', {
+                    processed: row.processedItems,
+                    total: row.totalItems,
+                    success: row.succeededItems,
+                    failed: row.failedItems,
+                  })
+                }}
               </small>
             </template>
           </ElTableColumn>
@@ -307,7 +325,11 @@
             type="warning"
             show-icon
             :closable="false"
-            :title="t('任务共有 {total} 条，明细仅返回按 ID 排序的前 1,000 条。聚合进度仍是完整数据。', { total: selectedTask.totalItems })"
+            :title="
+              t('任务共有 {total} 条，明细仅返回按 ID 排序的前 1,000 条。聚合进度仍是完整数据。', {
+                total: selectedTask.totalItems,
+              })
+            "
           />
 
           <ElTable :data="selectedTask.items" row-key="id" max-height="500">
@@ -395,17 +417,19 @@ const mutatingTaskId = ref<number | null>(null);
 const errorMessage = ref('');
 let pollTimer: number | undefined;
 
-const verdictOptions = computed(() => [
-  'ACCEPTED',
-  'WRONG_ANSWER',
-  'COMPILE_ERROR',
-  'RUNTIME_ERROR',
-  'TIME_LIMIT_EXCEEDED',
-  'MEMORY_LIMIT_EXCEEDED',
-  'OUTPUT_LIMIT_EXCEEDED',
-  'SYSTEM_ERROR',
-  'CANCELLED',
-].map((value) => ({ value: value as BatchRejudgeVerdict, label: submissionStatusLabel(value) })));
+const verdictOptions = computed(() =>
+  [
+    'ACCEPTED',
+    'WRONG_ANSWER',
+    'COMPILE_ERROR',
+    'RUNTIME_ERROR',
+    'TIME_LIMIT_EXCEEDED',
+    'MEMORY_LIMIT_EXCEEDED',
+    'OUTPUT_LIMIT_EXCEEDED',
+    'SYSTEM_ERROR',
+    'CANCELLED',
+  ].map((value) => ({ value: value as BatchRejudgeVerdict, label: submissionStatusLabel(value) })),
+);
 
 const filterRequest = computed<BatchRejudgeFilter>(() => ({
   problemId: filter.problemId,
@@ -608,45 +632,49 @@ function progressStatus(task: BatchRejudgeTask): '' | 'success' | 'exception' | 
 function taskStatusType(
   status: BatchRejudgeTaskStatus,
 ): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
-  return ({
+  return {
     PENDING: 'info',
     RUNNING: 'primary',
     PAUSED: 'warning',
     COMPLETED: 'success',
     CANCELLED: 'danger',
-  }[status] as 'success' | 'warning' | 'danger' | 'info' | 'primary');
+  }[status] as 'success' | 'warning' | 'danger' | 'info' | 'primary';
 }
 
 function taskStatusLabel(status: BatchRejudgeTaskStatus) {
-  return t({
-    PENDING: '等待执行',
-    RUNNING: '执行中',
-    PAUSED: '已暂停',
-    COMPLETED: '已完成',
-    CANCELLED: '已终止',
-  }[status]);
+  return t(
+    {
+      PENDING: '等待执行',
+      RUNNING: '执行中',
+      PAUSED: '已暂停',
+      COMPLETED: '已完成',
+      CANCELLED: '已终止',
+    }[status],
+  );
 }
 
 function itemStatusType(
   status: BatchRejudgeItemStatus,
 ): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
-  return ({
+  return {
     PENDING: 'info',
     PROCESSING: 'primary',
     SUCCEEDED: 'success',
     FAILED: 'danger',
     CANCELLED: 'warning',
-  }[status] as 'success' | 'warning' | 'danger' | 'info' | 'primary');
+  }[status] as 'success' | 'warning' | 'danger' | 'info' | 'primary';
 }
 
 function itemStatusLabel(status: BatchRejudgeItemStatus) {
-  return t({
-    PENDING: '等待',
-    PROCESSING: '处理中',
-    SUCCEEDED: '成功',
-    FAILED: '失败',
-    CANCELLED: '已终止',
-  }[status]);
+  return t(
+    {
+      PENDING: '等待',
+      PROCESSING: '处理中',
+      SUCCEEDED: '成功',
+      FAILED: '失败',
+      CANCELLED: '已终止',
+    }[status],
+  );
 }
 
 onMounted(async () => {

@@ -202,7 +202,7 @@ const form = reactive({
 });
 const templateForm = reactive({
   id: null as number | null,
-  name: '赛事主题',
+  name: t('赛事主题'),
   description: '',
   backgroundColor: '#07111f',
   foregroundColor: '#ffffff',

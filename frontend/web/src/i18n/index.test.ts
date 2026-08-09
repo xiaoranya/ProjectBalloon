@@ -34,4 +34,24 @@ describe('application i18n', () => {
     expect(localStorage.getItem('project-balloon-locale')).toBe('en');
     expect(useI18n().elementLocale.value.name).toBe('en');
   });
+
+  it('provides English resources for every literal Chinese translation call', () => {
+    const sources = import.meta.glob('../**/*.{ts,vue}', {
+      eager: true,
+      query: '?raw',
+      import: 'default',
+    }) as Record<string, string>;
+    const keys = new Set<string>();
+    for (const source of Object.values(sources)) {
+      for (const match of source.matchAll(/\bt\(\s*'((?:\\.|[^'])*)'/g)) {
+        keys.add(match[1].replaceAll("\\'", "'"));
+      }
+    }
+
+    setLocale('en');
+    const missing = [...keys].filter(
+      (key) => /[\u3400-\u9fff]/.test(key) && translate(key) === key,
+    );
+    expect(missing).toEqual([]);
+  });
 });

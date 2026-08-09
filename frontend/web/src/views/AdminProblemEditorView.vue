@@ -138,7 +138,12 @@
                 />
               </ElFormItem>
               <ElAlert v-if="problem" type="info" :closable="false" show-icon>
-                {{ t('当前并发版本为 {version}；保存时会通过 expectedVersion 防止覆盖其他管理员的修改。', { version: problem.version }) }}
+                {{
+                  t(
+                    '当前并发版本为 {version}；保存时会通过 expectedVersion 防止覆盖其他管理员的修改。',
+                    { version: problem.version },
+                  )
+                }}
               </ElAlert>
             </ElForm>
           </ElCard>
@@ -149,7 +154,8 @@
             <template #header>
               <ElSpace wrap :size="14" class="problem-card-heading">
                 <div>
-                  <strong>{{ t('题面编辑') }}</strong><small>{{ t('Rust 后端按语言代码 upsert Markdown 题面。') }}</small>
+                  <strong>{{ t('题面编辑') }}</strong
+                  ><small>{{ t('Rust 后端按语言代码 upsert Markdown 题面。') }}</small>
                 </div>
                 <ElButton :icon="Plus" @click="addStatementDraft">{{ t('添加语言') }}</ElButton>
               </ElSpace>
@@ -167,7 +173,9 @@
                   :placeholder="t('en 或 zh-CN')"
                   :disabled="statement.savedBody !== null"
                 />
-                <ElTag v-if="statement.savedBody === statement.body" type="success">{{ t('已保存') }}</ElTag>
+                <ElTag v-if="statement.savedBody === statement.body" type="success">{{
+                  t('已保存')
+                }}</ElTag>
                 <ElButton
                   v-if="statement.savedBody !== null"
                   link
@@ -203,7 +211,9 @@
 
         <ElTabPane :label="t('附件')" name="attachments" :disabled="isNew">
           <ElCard shadow="never" class="problem-editor-card">
-            <template #header><strong>{{ t('题目附件') }}</strong></template>
+            <template #header
+              ><strong>{{ t('题目附件') }}</strong></template
+            >
             <ElSpace wrap :size="14" class="file-upload-row">
               <ElSelect v-model="attachmentKind" :aria-label="t('附件类型')">
                 <ElOption :label="t('样例附件')" value="SAMPLE" />
@@ -232,7 +242,10 @@
                     @click="downloadAttachment(row as ProblemAttachment)"
                     >{{ t('下载') }}</ElButton
                   >
-                  <ElButton link type="danger" @click="removeAttachment(row as ProblemAttachment)"
+                  <ElButton
+                    link
+                    type="danger"
+                    @click="removeAttachment(row as ProblemAttachment)"
                     >{{ t('删除') }}</ElButton
                   >
                 </template>
@@ -244,9 +257,15 @@
 
         <ElTabPane :label="t('测试数据')" name="testdata" :disabled="isNew">
           <ElCard shadow="never" class="problem-editor-card">
-            <template #header><strong>{{ t('当前测试数据版本') }}</strong></template>
+            <template #header
+              ><strong>{{ t('当前测试数据版本') }}</strong></template
+            >
             <ElAlert
-              :title="t('每次上传都会生成不可变版本。可下载任意历史版本，或在题目尚未用于已冻结比赛时重新激活旧版本。')"
+              :title="
+                t(
+                  '每次上传都会生成不可变版本。可下载任意历史版本，或在题目尚未用于已冻结比赛时重新激活旧版本。',
+                )
+              "
               type="info"
               show-icon
               :closable="false"
@@ -266,9 +285,9 @@
                 </div>
               </ElCol>
               <ElCol :xs="24" :sm="8">
-                <ElButton :disabled="!problem?.testdataVersion" @click="downloadTestdata"
-                  >{{ t('下载当前 ZIP') }}</ElButton
-                >
+                <ElButton :disabled="!problem?.testdataVersion" @click="downloadTestdata">{{
+                  t('下载当前 ZIP')
+                }}</ElButton>
               </ElCol>
             </ElRow>
             <ElSpace wrap :size="14" class="file-upload-row">
@@ -302,7 +321,9 @@
               <ElTableColumn prop="sha256" label="SHA-256" min-width="300" show-overflow-tooltip />
               <ElTableColumn :label="t('操作')" width="180">
                 <template #default="{ row }">
-                  <ElButton link @click="downloadTestdataVersion(row.version)">{{ t('下载') }}</ElButton>
+                  <ElButton link @click="downloadTestdataVersion(row.version)">{{
+                    t('下载')
+                  }}</ElButton>
                   <ElButton
                     link
                     type="primary"
@@ -404,7 +425,13 @@ const rules = computed<FormRules>(() => ({
   ],
   title: [{ required: true, message: t('请输入题目标题'), trigger: 'blur' }],
   languages: [
-    { type: 'array', required: true, min: 1, message: t('至少选择一种提交语言'), trigger: 'change' },
+    {
+      type: 'array',
+      required: true,
+      min: 1,
+      message: t('至少选择一种提交语言'),
+      trigger: 'change',
+    },
   ],
   defaultLangCode: [
     { required: true, message: t('请输入默认题面语言'), trigger: 'blur' },
@@ -545,8 +572,9 @@ async function saveProblem() {
     errorMessage.value = getErrorMessage(error);
     if (error instanceof ApiError && error.code === 'PROBLEM_VERSION_STALE' && problem.value) {
       problem.value = await adminProblemApi.getProblem(problem.value.id);
-      errorMessage.value =
-        t('题目已被其他管理员修改。已刷新并发版本，但保留了你的表单内容，请核对后重新保存。');
+      errorMessage.value = t(
+        '题目已被其他管理员修改。已刷新并发版本，但保留了你的表单内容，请核对后重新保存。',
+      );
     }
   } finally {
     saving.value = false;
@@ -603,9 +631,13 @@ async function saveStatement(statement: StatementDraft) {
 async function deleteStatement(statement: StatementDraft) {
   if (!problem.value || statement.savedBody === null) return;
   try {
-    await ElMessageBox.confirm(t('确认删除 {lang} 题面？', { lang: statement.langCode }), t('删除题面'), {
-      type: 'warning',
-    });
+    await ElMessageBox.confirm(
+      t('确认删除 {lang} 题面？', { lang: statement.langCode }),
+      t('删除题面'),
+      {
+        type: 'warning',
+      },
+    );
     await adminProblemApi.deleteStatement(problem.value.id, statement.langCode);
     statementDrafts.value = statementDrafts.value.filter((item) => item.key !== statement.key);
     ElMessage.success(t('{lang} 题面已删除', { lang: statement.langCode }));
@@ -649,9 +681,13 @@ async function uploadAttachment() {
 async function removeAttachment(attachment: ProblemAttachment) {
   if (!problem.value) return;
   try {
-    await ElMessageBox.confirm(t('确认删除附件“{name}”？', { name: attachment.originalFilename }), t('删除附件'), {
-      type: 'warning',
-    });
+    await ElMessageBox.confirm(
+      t('确认删除附件“{name}”？', { name: attachment.originalFilename }),
+      t('删除附件'),
+      {
+        type: 'warning',
+      },
+    );
     const refreshed = await adminProblemApi.deleteAttachment(problem.value.id, attachment.id);
     applyRefreshedProblem(refreshed.problem);
     attachments.value = attachments.value.filter((item) => item.id !== attachment.id);

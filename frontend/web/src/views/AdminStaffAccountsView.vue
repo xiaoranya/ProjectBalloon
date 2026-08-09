@@ -208,7 +208,7 @@ const editForm = reactive({
 });
 const createRules = computed<FormRules>(() => ({
   username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
+    { required: true, message: t('请输入用户名'), trigger: 'blur' },
     {
       pattern: /^[A-Za-z0-9._-]{3,64}$/,
       message: t('请输入 3 至 64 位字母、数字或 ._-'),
