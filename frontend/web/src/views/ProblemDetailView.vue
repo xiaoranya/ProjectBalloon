@@ -104,13 +104,13 @@
                       :limit="1"
                       :on-change="onCodeFileChange"
                       :on-remove="onCodeFileRemove"
-                      :accept="sourceAccept"
+                      :accept="sourceAccept()"
                       drag
                     >
                       <ElIcon class="upload-icon"><UploadFilled /></ElIcon>
                       <div>拖放源码文件到这里，或点击选择</div>
                       <template #tip>
-                        <span>扩展名需匹配所选语言（{{ sourceAccept }}），最大 64 KiB</span>
+                        <span>扩展名需匹配所选语言（{{ sourceAccept() }}），最大 64 KiB</span>
                       </template>
                     </ElUpload>
                   </div>
