@@ -1,0 +1,487 @@
+use std::{env, time::Duration};
+
+use ipnet::IpNet;
+
+use super::*;
+
+impl AppConfig {
+    pub fn from_env() -> Result<Self, ConfigError> {
+        Self::from_lookup(|name| env::var(name).ok())
+    }
+
+    pub(super) fn from_lookup(
+        mut lookup: impl FnMut(&str) -> Option<String>,
+    ) -> Result<Self, ConfigError> {
+        let deployment_mode = match lookup("PROJECT_BALLOON_DEPLOYMENT_MODE")
+            .unwrap_or_else(|| "standard".to_owned())
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "standard" => DeploymentMode::Standard,
+            "competition" => DeploymentMode::Competition,
+            value => {
+                return Err(ConfigError::Invalid {
+                    name: "PROJECT_BALLOON_DEPLOYMENT_MODE",
+                    value: value.to_owned(),
+                    reason: "expected standard or competition",
+                });
+            }
+        };
+        let bind_address = parse(
+            "PROJECT_BALLOON_API_BIND",
+            lookup("PROJECT_BALLOON_API_BIND").unwrap_or_else(|| DEFAULT_BIND_ADDRESS.to_owned()),
+            "expected a socket address such as 127.0.0.1:8080",
+        )?;
+        let trusted_proxy_cidrs = parse_proxy_cidrs(
+            lookup("PROJECT_BALLOON_TRUSTED_PROXY_CIDRS")
+                .unwrap_or_else(|| DEFAULT_TRUSTED_PROXY_CIDRS.to_owned()),
+        )?;
+        let database_url =
+            lookup("DATABASE_URL").unwrap_or_else(|| DEFAULT_DATABASE_URL.to_owned());
+        if database_url.trim().is_empty() {
+            return Err(ConfigError::Invalid {
+                name: "DATABASE_URL",
+                value: database_url,
+                reason: "must not be empty",
+            });
+        }
+
+        let database_max_connections: u32 = parse(
+            "PROJECT_BALLOON_DATABASE_MAX_CONNECTIONS",
+            lookup("PROJECT_BALLOON_DATABASE_MAX_CONNECTIONS")
+                .unwrap_or_else(|| DEFAULT_DATABASE_MAX_CONNECTIONS.to_string()),
+            "expected a positive integer",
+        )?;
+        if database_max_connections == 0 {
+            return Err(ConfigError::Invalid {
+                name: "PROJECT_BALLOON_DATABASE_MAX_CONNECTIONS",
+                value: database_max_connections.to_string(),
+                reason: "must be greater than zero",
+            });
+        }
+
+        let acquire_timeout_seconds: u64 = parse(
+            "PROJECT_BALLOON_DATABASE_ACQUIRE_TIMEOUT_SECONDS",
+            lookup("PROJECT_BALLOON_DATABASE_ACQUIRE_TIMEOUT_SECONDS")
+                .unwrap_or_else(|| DEFAULT_DATABASE_ACQUIRE_TIMEOUT_SECONDS.to_string()),
+            "expected a positive integer number of seconds",
+        )?;
+        let readiness_timeout_milliseconds: u64 = parse(
+            "PROJECT_BALLOON_READINESS_TIMEOUT_MILLISECONDS",
+            lookup("PROJECT_BALLOON_READINESS_TIMEOUT_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_READINESS_TIMEOUT_MILLISECONDS.to_string()),
+            "expected a positive integer number of milliseconds",
+        )?;
+        if acquire_timeout_seconds == 0 || readiness_timeout_milliseconds == 0 {
+            let (name, value) = if acquire_timeout_seconds == 0 {
+                ("PROJECT_BALLOON_DATABASE_ACQUIRE_TIMEOUT_SECONDS", "0")
+            } else {
+                ("PROJECT_BALLOON_READINESS_TIMEOUT_MILLISECONDS", "0")
+            };
+            return Err(ConfigError::Invalid {
+                name,
+                value: value.to_owned(),
+                reason: "must be greater than zero",
+            });
+        }
+
+        let run_migrations = parse_bool(
+            "PROJECT_BALLOON_RUN_MIGRATIONS",
+            lookup("PROJECT_BALLOON_RUN_MIGRATIONS").unwrap_or_else(|| "true".to_owned()),
+        )?;
+        let session_ttl_seconds: u64 = parse(
+            "PROJECT_BALLOON_SESSION_TTL_SECONDS",
+            lookup("PROJECT_BALLOON_SESSION_TTL_SECONDS")
+                .unwrap_or_else(|| DEFAULT_SESSION_TTL_SECONDS.to_string()),
+            "expected a positive integer number of seconds",
+        )?;
+        if session_ttl_seconds == 0 {
+            return Err(ConfigError::Invalid {
+                name: "PROJECT_BALLOON_SESSION_TTL_SECONDS",
+                value: "0".to_owned(),
+                reason: "must be greater than zero",
+            });
+        }
+        let secure_cookies = parse_bool(
+            "PROJECT_BALLOON_SECURE_COOKIES",
+            lookup("PROJECT_BALLOON_SECURE_COOKIES").unwrap_or_else(|| "false".to_owned()),
+        )?;
+        let csrf_secret =
+            lookup("PROJECT_BALLOON_CSRF_SECRET").unwrap_or_else(|| DEFAULT_CSRF_SECRET.to_owned());
+        if csrf_secret.len() < 32 {
+            return Err(ConfigError::Invalid {
+                name: "PROJECT_BALLOON_CSRF_SECRET",
+                value: "[redacted]".to_owned(),
+                reason: "must contain at least 32 bytes",
+            });
+        }
+        let allow_development_csrf_secret = parse_bool(
+            "PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET",
+            lookup("PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET").unwrap_or_else(|| "false".to_owned()),
+        )?;
+        let uses_development_csrf_secret = csrf_secret == DEFAULT_CSRF_SECRET;
+        // The built-in secret is public knowledge, so anyone could forge CSRF
+        // tokens if a deployment keeps it. Only an explicit development
+        // opt-in may use it, and never together with secure cookies.
+        if uses_development_csrf_secret && !allow_development_csrf_secret {
+            return Err(ConfigError::Invalid {
+                name: "PROJECT_BALLOON_CSRF_SECRET",
+                value: "[redacted]".to_owned(),
+                reason: "must be explicitly set; the development secret is only permitted with PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET",
+            });
+        }
+        if secure_cookies && uses_development_csrf_secret {
+            return Err(ConfigError::Invalid {
+                name: "PROJECT_BALLOON_CSRF_SECRET",
+                value: "[redacted]".to_owned(),
+                reason: "must be explicitly changed when secure cookies are enabled",
+            });
+        }
+        let realtime_dispatcher_enabled = parse_bool(
+            "PROJECT_BALLOON_REALTIME_DISPATCHER_ENABLED",
+            lookup("PROJECT_BALLOON_REALTIME_DISPATCHER_ENABLED")
+                .unwrap_or_else(|| "true".to_owned()),
+        )?;
+        let realtime_channel_capacity = parse_positive(
+            "PROJECT_BALLOON_REALTIME_CHANNEL_CAPACITY",
+            lookup("PROJECT_BALLOON_REALTIME_CHANNEL_CAPACITY")
+                .unwrap_or_else(|| DEFAULT_REALTIME_CHANNEL_CAPACITY.to_string()),
+        )?;
+        let realtime_poll_milliseconds = parse_positive(
+            "PROJECT_BALLOON_REALTIME_POLL_MILLISECONDS",
+            lookup("PROJECT_BALLOON_REALTIME_POLL_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_REALTIME_POLL_MILLISECONDS.to_string()),
+        )?;
+        let realtime_lease_seconds = parse_positive(
+            "PROJECT_BALLOON_REALTIME_LEASE_SECONDS",
+            lookup("PROJECT_BALLOON_REALTIME_LEASE_SECONDS")
+                .unwrap_or_else(|| DEFAULT_REALTIME_LEASE_SECONDS.to_string()),
+        )?;
+        let realtime_retry_base_milliseconds = parse_positive(
+            "PROJECT_BALLOON_REALTIME_RETRY_BASE_MILLISECONDS",
+            lookup("PROJECT_BALLOON_REALTIME_RETRY_BASE_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_REALTIME_RETRY_BASE_MILLISECONDS.to_string()),
+        )?;
+        let realtime_batch_size = parse_positive(
+            "PROJECT_BALLOON_REALTIME_BATCH_SIZE",
+            lookup("PROJECT_BALLOON_REALTIME_BATCH_SIZE")
+                .unwrap_or_else(|| DEFAULT_REALTIME_BATCH_SIZE.to_string()),
+        )?;
+        let realtime_max_attempts = parse_positive(
+            "PROJECT_BALLOON_REALTIME_MAX_ATTEMPTS",
+            lookup("PROJECT_BALLOON_REALTIME_MAX_ATTEMPTS")
+                .unwrap_or_else(|| DEFAULT_REALTIME_MAX_ATTEMPTS.to_string()),
+        )?;
+        let realtime_redis_enabled = parse_bool(
+            "PROJECT_BALLOON_REALTIME_REDIS_ENABLED",
+            lookup("PROJECT_BALLOON_REALTIME_REDIS_ENABLED").unwrap_or_else(|| "false".to_owned()),
+        )?;
+        let scoreboard_cache_enabled = parse_bool(
+            "PROJECT_BALLOON_SCOREBOARD_CACHE_ENABLED",
+            lookup("PROJECT_BALLOON_SCOREBOARD_CACHE_ENABLED")
+                .unwrap_or_else(|| "false".to_owned()),
+        )?;
+        let scoreboard_cache_ttl_seconds = parse_positive(
+            "PROJECT_BALLOON_SCOREBOARD_CACHE_TTL_SECONDS",
+            lookup("PROJECT_BALLOON_SCOREBOARD_CACHE_TTL_SECONDS")
+                .unwrap_or_else(|| DEFAULT_SCOREBOARD_CACHE_TTL_SECONDS.to_string()),
+        )?;
+        let scoreboard_cache_timeout_milliseconds = parse_positive(
+            "PROJECT_BALLOON_SCOREBOARD_CACHE_TIMEOUT_MILLISECONDS",
+            lookup("PROJECT_BALLOON_SCOREBOARD_CACHE_TIMEOUT_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_SCOREBOARD_CACHE_TIMEOUT_MILLISECONDS.to_string()),
+        )?;
+        let redis_url = lookup("REDIS_URL").unwrap_or_default();
+        if (realtime_redis_enabled || scoreboard_cache_enabled) && redis_url.trim().is_empty() {
+            return Err(ConfigError::Invalid {
+                name: "REDIS_URL",
+                value: redis_url,
+                reason: "must not be empty when Redis realtime fanout is enabled",
+            });
+        }
+        let realtime_redis_channel = lookup("PROJECT_BALLOON_REALTIME_REDIS_CHANNEL")
+            .unwrap_or_else(|| DEFAULT_REALTIME_REDIS_CHANNEL.to_owned());
+        if realtime_redis_channel.trim().is_empty() {
+            return Err(ConfigError::Invalid {
+                name: "PROJECT_BALLOON_REALTIME_REDIS_CHANNEL",
+                value: realtime_redis_channel,
+                reason: "must not be empty",
+            });
+        }
+        let realtime_redis_reconnect_milliseconds = parse_positive(
+            "PROJECT_BALLOON_REALTIME_REDIS_RECONNECT_MILLISECONDS",
+            lookup("PROJECT_BALLOON_REALTIME_REDIS_RECONNECT_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_REALTIME_REDIS_RECONNECT_MILLISECONDS.to_string()),
+        )?;
+        let object_storage_enabled = parse_bool(
+            "PROJECT_BALLOON_OBJECT_STORAGE_ENABLED",
+            lookup("PROJECT_BALLOON_OBJECT_STORAGE_ENABLED").unwrap_or_else(|| "false".to_owned()),
+        )?;
+        let object_storage_endpoint = lookup("PROJECT_BALLOON_OBJECT_STORAGE_ENDPOINT")
+            .unwrap_or_else(|| DEFAULT_OBJECT_STORAGE_ENDPOINT.to_owned());
+        let object_storage_region = lookup("PROJECT_BALLOON_OBJECT_STORAGE_REGION")
+            .unwrap_or_else(|| DEFAULT_OBJECT_STORAGE_REGION.to_owned());
+        let object_storage_access_key =
+            lookup("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY").unwrap_or_default();
+        let object_storage_secret_key =
+            lookup("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY").unwrap_or_default();
+        let object_storage_problem_bucket = lookup("PROJECT_BALLOON_OBJECT_STORAGE_PROBLEM_BUCKET")
+            .unwrap_or_else(|| DEFAULT_OBJECT_STORAGE_PROBLEM_BUCKET.to_owned());
+        let object_storage_source_bucket = lookup("PROJECT_BALLOON_OBJECT_STORAGE_SOURCE_BUCKET")
+            .unwrap_or_else(|| DEFAULT_OBJECT_STORAGE_SOURCE_BUCKET.to_owned());
+        let object_storage_force_path_style = parse_bool(
+            "PROJECT_BALLOON_OBJECT_STORAGE_FORCE_PATH_STYLE",
+            lookup("PROJECT_BALLOON_OBJECT_STORAGE_FORCE_PATH_STYLE")
+                .unwrap_or_else(|| "true".to_owned()),
+        )?;
+        let object_storage_request_timeout_milliseconds = parse_positive(
+            "PROJECT_BALLOON_OBJECT_STORAGE_REQUEST_TIMEOUT_MILLISECONDS",
+            lookup("PROJECT_BALLOON_OBJECT_STORAGE_REQUEST_TIMEOUT_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_OBJECT_STORAGE_REQUEST_TIMEOUT_MILLISECONDS.to_string()),
+        )?;
+        let object_cleanup_poll_milliseconds = parse_positive(
+            "PROJECT_BALLOON_OBJECT_CLEANUP_POLL_MILLISECONDS",
+            lookup("PROJECT_BALLOON_OBJECT_CLEANUP_POLL_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_OBJECT_CLEANUP_POLL_MILLISECONDS.to_string()),
+        )?;
+        let object_cleanup_lease_seconds = parse_positive(
+            "PROJECT_BALLOON_OBJECT_CLEANUP_LEASE_SECONDS",
+            lookup("PROJECT_BALLOON_OBJECT_CLEANUP_LEASE_SECONDS")
+                .unwrap_or_else(|| DEFAULT_OBJECT_CLEANUP_LEASE_SECONDS.to_string()),
+        )?;
+        let object_cleanup_retry_base_milliseconds = parse_positive(
+            "PROJECT_BALLOON_OBJECT_CLEANUP_RETRY_BASE_MILLISECONDS",
+            lookup("PROJECT_BALLOON_OBJECT_CLEANUP_RETRY_BASE_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_OBJECT_CLEANUP_RETRY_BASE_MILLISECONDS.to_string()),
+        )?;
+        let object_cleanup_batch_size = parse_positive(
+            "PROJECT_BALLOON_OBJECT_CLEANUP_BATCH_SIZE",
+            lookup("PROJECT_BALLOON_OBJECT_CLEANUP_BATCH_SIZE")
+                .unwrap_or_else(|| DEFAULT_OBJECT_CLEANUP_BATCH_SIZE.to_string()),
+        )?;
+        let cups_enabled = parse_bool(
+            "PROJECT_BALLOON_CUPS_ENABLED",
+            lookup("PROJECT_BALLOON_CUPS_ENABLED").unwrap_or_else(|| "false".to_owned()),
+        )?;
+        let cups_printer = lookup("PROJECT_BALLOON_CUPS_PRINTER")
+            .unwrap_or_else(|| DEFAULT_CUPS_PRINTER.to_owned());
+        if cups_enabled && cups_printer.trim().is_empty() {
+            return Err(ConfigError::Invalid {
+                name: "PROJECT_BALLOON_CUPS_PRINTER",
+                value: cups_printer,
+                reason: "must not be empty when CUPS is enabled",
+            });
+        }
+        if cups_enabled && !object_storage_enabled {
+            return Err(ConfigError::Invalid {
+                name: "PROJECT_BALLOON_CUPS_ENABLED",
+                value: "true".to_owned(),
+                reason: "requires object storage to be enabled",
+            });
+        }
+        let cups_command_timeout_milliseconds = parse_positive(
+            "PROJECT_BALLOON_CUPS_COMMAND_TIMEOUT_MILLISECONDS",
+            lookup("PROJECT_BALLOON_CUPS_COMMAND_TIMEOUT_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_CUPS_COMMAND_TIMEOUT_MILLISECONDS.to_string()),
+        )?;
+        let rabbitmq_enabled = parse_bool(
+            "PROJECT_BALLOON_RABBITMQ_ENABLED",
+            lookup("PROJECT_BALLOON_RABBITMQ_ENABLED").unwrap_or_else(|| "false".to_owned()),
+        )?;
+        let rabbitmq_url = lookup("PROJECT_BALLOON_RABBITMQ_URL").unwrap_or_default();
+        if rabbitmq_enabled
+            && (!rabbitmq_url.starts_with("amqp://") && !rabbitmq_url.starts_with("amqps://"))
+        {
+            return Err(ConfigError::Invalid {
+                name: "PROJECT_BALLOON_RABBITMQ_URL",
+                value: "[redacted]".to_owned(),
+                reason: "must be an AMQP or AMQPS URL when RabbitMQ is enabled",
+            });
+        }
+        let rabbitmq_request_timeout_milliseconds = parse_positive(
+            "PROJECT_BALLOON_RABBITMQ_REQUEST_TIMEOUT_MILLISECONDS",
+            lookup("PROJECT_BALLOON_RABBITMQ_REQUEST_TIMEOUT_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_RABBITMQ_REQUEST_TIMEOUT_MILLISECONDS.to_string()),
+        )?;
+        let judge_dispatch_poll_milliseconds = parse_positive(
+            "PROJECT_BALLOON_JUDGE_DISPATCH_POLL_MILLISECONDS",
+            lookup("PROJECT_BALLOON_JUDGE_DISPATCH_POLL_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_JUDGE_DISPATCH_POLL_MILLISECONDS.to_string()),
+        )?;
+        let judge_dispatch_lease_seconds = parse_positive(
+            "PROJECT_BALLOON_JUDGE_DISPATCH_LEASE_SECONDS",
+            lookup("PROJECT_BALLOON_JUDGE_DISPATCH_LEASE_SECONDS")
+                .unwrap_or_else(|| DEFAULT_JUDGE_DISPATCH_LEASE_SECONDS.to_string()),
+        )?;
+        let judge_dispatch_retry_base_milliseconds = parse_positive(
+            "PROJECT_BALLOON_JUDGE_DISPATCH_RETRY_BASE_MILLISECONDS",
+            lookup("PROJECT_BALLOON_JUDGE_DISPATCH_RETRY_BASE_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_JUDGE_DISPATCH_RETRY_BASE_MILLISECONDS.to_string()),
+        )?;
+        let judge_dispatch_batch_size = parse_positive(
+            "PROJECT_BALLOON_JUDGE_DISPATCH_BATCH_SIZE",
+            lookup("PROJECT_BALLOON_JUDGE_DISPATCH_BATCH_SIZE")
+                .unwrap_or_else(|| DEFAULT_JUDGE_DISPATCH_BATCH_SIZE.to_string()),
+        )?;
+        let judge_dispatch_max_attempts = parse_positive(
+            "PROJECT_BALLOON_JUDGE_DISPATCH_MAX_ATTEMPTS",
+            lookup("PROJECT_BALLOON_JUDGE_DISPATCH_MAX_ATTEMPTS")
+                .unwrap_or_else(|| DEFAULT_JUDGE_DISPATCH_MAX_ATTEMPTS.to_string()),
+        )?;
+        let judge_result_prefetch = parse_positive(
+            "PROJECT_BALLOON_JUDGE_RESULT_PREFETCH",
+            lookup("PROJECT_BALLOON_JUDGE_RESULT_PREFETCH")
+                .unwrap_or_else(|| DEFAULT_JUDGE_RESULT_PREFETCH.to_string()),
+        )?;
+        let judge_result_reconnect_milliseconds = parse_positive(
+            "PROJECT_BALLOON_JUDGE_RESULT_RECONNECT_MILLISECONDS",
+            lookup("PROJECT_BALLOON_JUDGE_RESULT_RECONNECT_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_JUDGE_RESULT_RECONNECT_MILLISECONDS.to_string()),
+        )?;
+        if object_storage_enabled {
+            for (name, value) in [
+                ("PROJECT_BALLOON_OBJECT_STORAGE_ENDPOINT", &object_storage_endpoint),
+                ("PROJECT_BALLOON_OBJECT_STORAGE_REGION", &object_storage_region),
+                ("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY", &object_storage_access_key),
+                ("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY", &object_storage_secret_key),
+                ("PROJECT_BALLOON_OBJECT_STORAGE_PROBLEM_BUCKET", &object_storage_problem_bucket),
+                ("PROJECT_BALLOON_OBJECT_STORAGE_SOURCE_BUCKET", &object_storage_source_bucket),
+            ] {
+                if value.trim().is_empty() {
+                    return Err(ConfigError::Invalid {
+                        name,
+                        value: if name.ends_with("KEY") {
+                            "[redacted]".to_owned()
+                        } else {
+                            value.clone()
+                        },
+                        reason: "must not be empty when object storage is enabled",
+                    });
+                }
+            }
+            if !object_storage_endpoint.starts_with("http://")
+                && !object_storage_endpoint.starts_with("https://")
+            {
+                return Err(ConfigError::Invalid {
+                    name: "PROJECT_BALLOON_OBJECT_STORAGE_ENDPOINT",
+                    value: object_storage_endpoint,
+                    reason: "must be an HTTP or HTTPS URL",
+                });
+            }
+        }
+
+        Ok(Self {
+            deployment_mode,
+            bind_address,
+            trusted_proxy_cidrs,
+            database_url,
+            database_max_connections,
+            database_acquire_timeout: Duration::from_secs(acquire_timeout_seconds),
+            readiness_timeout: Duration::from_millis(readiness_timeout_milliseconds),
+            run_migrations,
+            session_ttl: Duration::from_secs(session_ttl_seconds),
+            secure_cookies,
+            csrf_secret: csrf_secret.into_bytes(),
+            uses_development_csrf_secret,
+            allow_development_csrf_secret,
+            realtime_dispatcher_enabled,
+            realtime_channel_capacity,
+            realtime_poll_interval: Duration::from_millis(realtime_poll_milliseconds),
+            realtime_lease: Duration::from_secs(realtime_lease_seconds),
+            realtime_retry_base: Duration::from_millis(realtime_retry_base_milliseconds),
+            realtime_batch_size,
+            realtime_max_attempts,
+            realtime_redis_enabled,
+            redis_url,
+            realtime_redis_channel,
+            realtime_redis_reconnect_delay: Duration::from_millis(
+                realtime_redis_reconnect_milliseconds,
+            ),
+            scoreboard_cache_enabled,
+            scoreboard_cache_ttl: Duration::from_secs(scoreboard_cache_ttl_seconds),
+            scoreboard_cache_timeout: Duration::from_millis(scoreboard_cache_timeout_milliseconds),
+            object_storage_enabled,
+            object_storage_endpoint,
+            object_storage_region,
+            object_storage_access_key,
+            object_storage_secret_key,
+            object_storage_problem_bucket,
+            object_storage_source_bucket,
+            object_storage_force_path_style,
+            object_storage_request_timeout: Duration::from_millis(
+                object_storage_request_timeout_milliseconds,
+            ),
+            object_cleanup_poll_interval: Duration::from_millis(object_cleanup_poll_milliseconds),
+            object_cleanup_lease: Duration::from_secs(object_cleanup_lease_seconds),
+            object_cleanup_retry_base: Duration::from_millis(
+                object_cleanup_retry_base_milliseconds,
+            ),
+            object_cleanup_batch_size,
+            rabbitmq_enabled,
+            rabbitmq_url,
+            rabbitmq_request_timeout: Duration::from_millis(rabbitmq_request_timeout_milliseconds),
+            judge_dispatch_poll_interval: Duration::from_millis(judge_dispatch_poll_milliseconds),
+            judge_dispatch_lease: Duration::from_secs(judge_dispatch_lease_seconds),
+            judge_dispatch_retry_base: Duration::from_millis(
+                judge_dispatch_retry_base_milliseconds,
+            ),
+            judge_dispatch_batch_size,
+            judge_dispatch_max_attempts,
+            judge_result_prefetch,
+            judge_result_reconnect_delay: Duration::from_millis(
+                judge_result_reconnect_milliseconds,
+            ),
+            cups_enabled,
+            cups_printer,
+            cups_command_timeout: Duration::from_millis(cups_command_timeout_milliseconds),
+        })
+    }
+}
+
+fn parse_proxy_cidrs(value: String) -> Result<Vec<IpNet>, ConfigError> {
+    let parsed: Result<Vec<_>, _> =
+        value.split(',').map(str::trim).filter(|item| !item.is_empty()).map(str::parse).collect();
+    let parsed = parsed.map_err(|_| ConfigError::Invalid {
+        name: "PROJECT_BALLOON_TRUSTED_PROXY_CIDRS",
+        value: value.clone(),
+        reason: "expected a comma-separated list of IP CIDRs",
+    })?;
+    if parsed.is_empty() {
+        return Err(ConfigError::Invalid {
+            name: "PROJECT_BALLOON_TRUSTED_PROXY_CIDRS",
+            value,
+            reason: "must contain at least one CIDR",
+        });
+    }
+    Ok(parsed)
+}
+
+fn parse<T>(name: &'static str, value: String, reason: &'static str) -> Result<T, ConfigError>
+where
+    T: std::str::FromStr,
+{
+    value.parse().map_err(|_| ConfigError::Invalid { name, value, reason })
+}
+
+fn parse_bool(name: &'static str, value: String) -> Result<bool, ConfigError> {
+    match value.as_str() {
+        "true" | "1" => Ok(true),
+        "false" | "0" => Ok(false),
+        _ => Err(ConfigError::Invalid { name, value, reason: "expected true, false, 1, or 0" }),
+    }
+}
+
+fn parse_positive<T>(name: &'static str, value: String) -> Result<T, ConfigError>
+where
+    T: std::str::FromStr + PartialOrd + From<u8>,
+{
+    let parsed = value.parse().map_err(|_| ConfigError::Invalid {
+        name,
+        value: value.clone(),
+        reason: "expected a positive integer",
+    })?;
+    if parsed <= T::from(0) {
+        return Err(ConfigError::Invalid { name, value, reason: "must be greater than zero" });
+    }
+    Ok(parsed)
+}

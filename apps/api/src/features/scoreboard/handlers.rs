@@ -16,10 +16,10 @@ use crate::{
     state::AppState,
 };
 
+use super::helpers::to_csv;
 use super::model::{
     ScoreboardQuery, ScoreboardResponse, ScoreboardSnapshotResponse, SnapshotSelector,
 };
-use super::service::to_csv;
 
 #[utoipa::path(
     get,

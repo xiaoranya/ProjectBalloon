@@ -6,7 +6,7 @@
           <ElButton link :icon="ArrowLeft" @click="backToList">{{ t('返回题库') }}</ElButton>
           <h1>{{ isNew ? t('创建题目') : (problem?.title ?? t('题目编辑')) }}</h1>
         </div>
-        <ElButton type="primary" :loading="saving" @click="saveProblem">{{
+        <ElButton type="primary" :loading="basicSaving" @click="basicTabRef?.save()">{{
           isNew ? t('创建题目') : t('保存基本信息')
         }}</ElButton>
       </div>
@@ -25,318 +25,38 @@
       <ElSkeleton v-if="loading" :rows="8" animated />
       <ElTabs v-else v-model="activeTab" class="admin-tabs">
         <ElTabPane :label="t('基本信息')" name="basic">
-          <ElCard shadow="never" class="problem-editor-card">
-            <ElForm ref="formRef" :model="form" :rules="rules" label-position="top">
-              <ElRow :gutter="12" class="admin-two-column">
-                <ElCol :xs="24" :md="12">
-                  <ElFormItem :label="t('题目标识')" prop="slug">
-                    <ElInput v-model="form.slug" maxlength="64" :placeholder="t('例如 two-sum')" />
-                  </ElFormItem>
-                </ElCol>
-                <ElCol :xs="24" :md="12">
-                  <ElFormItem :label="t('题目标题')" prop="title">
-                    <ElInput v-model="form.title" maxlength="255" />
-                  </ElFormItem>
-                </ElCol>
-              </ElRow>
-              <ElFormItem :label="t('允许的提交语言')" prop="languages">
-                <ElCheckboxGroup
-                  v-model="form.languages"
-                  :disabled="form.judgeMode === 'OUTPUT_ONLY'"
-                >
-                  <ElCheckboxButton
-                    v-for="option in languageOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </ElCheckboxButton>
-                </ElCheckboxGroup>
-              </ElFormItem>
-              <ElRow :gutter="12" class="admin-form-grid">
-                <ElCol :xs="24" :sm="8">
-                  <ElFormItem :label="t('判题模式')">
-                    <ElSelect v-model="form.judgeMode" @change="changeJudgeMode">
-                      <ElOption :label="t('标准输入输出')" value="STANDARD" />
-                      <ElOption :label="t('交互题')" value="INTERACTIVE" />
-                      <ElOption label="Output-only" value="OUTPUT_ONLY" />
-                    </ElSelect>
-                  </ElFormItem>
-                </ElCol>
-                <ElCol v-if="form.judgeMode === 'INTERACTIVE'" :xs="24" :sm="8">
-                  <ElFormItem :label="t('Interactor 对象键')">
-                    <ElInput v-model="form.interactorObjectKey" maxlength="512" />
-                  </ElFormItem>
-                </ElCol>
-                <ElCol v-if="form.judgeMode === 'INTERACTIVE'" :xs="24" :sm="8">
-                  <ElFormItem label="Interactor SHA-256">
-                    <ElInput v-model="form.interactorSha256" maxlength="64" />
-                  </ElFormItem>
-                </ElCol>
-              </ElRow>
-              <ElAlert
-                v-if="form.judgeMode === 'OUTPUT_ONLY'"
-                :title="t('参赛者需上传包含 1.out、2.out 等根目录输出文件的 ZIP。')"
-                type="info"
-                :closable="false"
-                show-icon
-              />
-              <ElSpace
-                v-if="problem && form.judgeMode === 'INTERACTIVE'"
-                wrap
-                :size="14"
-                class="file-upload-row"
-              >
-                <input type="file" @change="selectInteractor" />
-                <ElButton
-                  type="primary"
-                  :disabled="!interactorFile"
-                  :loading="uploadingInteractor"
-                  @click="uploadInteractor"
-                  >{{ t('上传 Interactor ELF') }}</ElButton
-                >
-                <code v-if="problem.interactorSha256">{{ problem.interactorSha256 }}</code>
-              </ElSpace>
-              <ElRow :gutter="12" class="admin-form-grid problem-limit-grid">
-                <ElCol :xs="24" :sm="8">
-                  <ElFormItem :label="t('时间限制（ms）')" prop="timeLimitMs">
-                    <ElInputNumber
-                      v-model="form.timeLimitMs"
-                      :min="1"
-                      :max="60000"
-                      controls-position="right"
-                    />
-                  </ElFormItem>
-                </ElCol>
-                <ElCol :xs="24" :sm="8">
-                  <ElFormItem :label="t('内存限制（MiB）')" prop="memoryLimitMb">
-                    <ElInputNumber
-                      v-model="form.memoryLimitMb"
-                      :min="16"
-                      :max="8192"
-                      controls-position="right"
-                    />
-                  </ElFormItem>
-                </ElCol>
-                <ElCol :xs="24" :sm="8">
-                  <ElFormItem :label="t('输出限制（KiB）')" prop="outputLimitKb">
-                    <ElInputNumber
-                      v-model="form.outputLimitKb"
-                      :min="1"
-                      :max="262144"
-                      controls-position="right"
-                    />
-                  </ElFormItem>
-                </ElCol>
-              </ElRow>
-              <ElFormItem :label="t('默认题面语言')" prop="defaultLangCode">
-                <ElInput
-                  v-model="form.defaultLangCode"
-                  maxlength="5"
-                  :placeholder="t('en 或 zh-CN')"
-                  class="problem-lang-code"
-                />
-              </ElFormItem>
-              <ElAlert v-if="problem" type="info" :closable="false" show-icon>
-                {{
-                  t(
-                    '当前并发版本为 {version}；保存时会通过 expectedVersion 防止覆盖其他管理员的修改。',
-                    { version: problem.version },
-                  )
-                }}
-              </ElAlert>
-            </ElForm>
-          </ElCard>
+          <BasicInfoTab
+            ref="basicTabRef"
+            :problem="problem"
+            :is-new="isNew"
+            @problem-refreshed="applyRefreshedProblem"
+            @error-message="errorMessage = $event"
+            @saving-changed="basicSaving = $event"
+          />
         </ElTabPane>
-
         <ElTabPane :label="t('多语言题面')" name="statements" :disabled="isNew">
-          <ElCard shadow="never" class="problem-editor-card">
-            <template #header>
-              <ElSpace wrap :size="14" class="problem-card-heading">
-                <div>
-                  <strong>{{ t('题面编辑') }}</strong
-                  ><small>{{ t('Rust 后端按语言代码 upsert Markdown 题面。') }}</small>
-                </div>
-                <ElButton :icon="Plus" @click="addStatementDraft">{{ t('添加语言') }}</ElButton>
-              </ElSpace>
-            </template>
-            <ElEmpty v-if="statementDrafts.length === 0" :description="t('尚未添加题面语言')" />
-            <div
-              v-for="(statement, index) in statementDrafts"
-              :key="statement.key"
-              class="statement-editor"
-            >
-              <ElSpace wrap :size="14" class="statement-editor-heading">
-                <ElInput
-                  v-model="statement.langCode"
-                  maxlength="5"
-                  :placeholder="t('en 或 zh-CN')"
-                  :disabled="statement.savedBody !== null"
-                />
-                <ElTag v-if="statement.savedBody === statement.body" type="success">{{
-                  t('已保存')
-                }}</ElTag>
-                <ElButton
-                  v-if="statement.savedBody !== null"
-                  link
-                  type="danger"
-                  @click="deleteStatement(statement)"
-                  >{{ t('删除题面') }}</ElButton
-                >
-                <ElButton
-                  v-if="statement.savedBody === null"
-                  link
-                  type="danger"
-                  @click="statementDrafts.splice(index, 1)"
-                  >{{ t('移除草稿') }}</ElButton
-                >
-              </ElSpace>
-              <CodeEditor
-                v-model="statement.body"
-                language="markdown"
-                height="360px"
-                :placeholder="t('Markdown 题面正文')"
-              />
-              <ElRow justify="end" class="problem-editor-actions">
-                <ElButton
-                  type="primary"
-                  :loading="statement.saving"
-                  @click="saveStatement(statement)"
-                  >{{ t('保存此语言题面') }}</ElButton
-                >
-              </ElRow>
-            </div>
-          </ElCard>
+          <StatementsTab
+            :problem="problem"
+            :statements="statements"
+            @problem-refreshed="applyRefreshedProblem"
+            @error-message="errorMessage = $event"
+          />
         </ElTabPane>
-
         <ElTabPane :label="t('附件')" name="attachments" :disabled="isNew">
-          <ElCard shadow="never" class="problem-editor-card">
-            <template #header
-              ><strong>{{ t('题目附件') }}</strong></template
-            >
-            <ElSpace wrap :size="14" class="file-upload-row">
-              <ElSelect v-model="attachmentKind" :aria-label="t('附件类型')">
-                <ElOption :label="t('样例附件')" value="SAMPLE" />
-                <ElOption :label="t('补充材料')" value="SUPPLEMENT" />
-              </ElSelect>
-              <input ref="attachmentInput" type="file" @change="selectAttachment" />
-              <ElButton
-                type="primary"
-                :disabled="!attachmentFile"
-                :loading="uploadingAttachment"
-                @click="uploadAttachment"
-                >{{ t('上传附件') }}</ElButton
-              >
-            </ElSpace>
-            <ElTable :data="attachments" row-key="id">
-              <ElTableColumn prop="originalFilename" :label="t('文件名')" min-width="240" />
-              <ElTableColumn prop="kind" :label="t('类型')" width="130" />
-              <ElTableColumn :label="t('大小')" width="130"
-                ><template #default="{ row }">{{ formatBytes(row.bytes) }}</template></ElTableColumn
-              >
-              <ElTableColumn :label="t('操作')" width="170">
-                <template #default="{ row }">
-                  <ElButton
-                    link
-                    type="primary"
-                    @click="downloadAttachment(row as ProblemAttachment)"
-                    >{{ t('下载') }}</ElButton
-                  >
-                  <ElButton
-                    link
-                    type="danger"
-                    @click="removeAttachment(row as ProblemAttachment)"
-                    >{{ t('删除') }}</ElButton
-                  >
-                </template>
-              </ElTableColumn>
-              <template #empty><ElEmpty :description="t('尚未上传附件')" /></template>
-            </ElTable>
-          </ElCard>
+          <AttachmentsTab
+            :problem="problem"
+            :initial-attachments="attachments"
+            @problem-refreshed="applyRefreshedProblem"
+            @error-message="errorMessage = $event"
+          />
         </ElTabPane>
-
         <ElTabPane :label="t('测试数据')" name="testdata" :disabled="isNew">
-          <ElCard shadow="never" class="problem-editor-card">
-            <template #header
-              ><strong>{{ t('当前测试数据版本') }}</strong></template
-            >
-            <ElAlert
-              :title="
-                t(
-                  '每次上传都会生成不可变版本。可下载任意历史版本，或在题目尚未用于已冻结比赛时重新激活旧版本。',
-                )
-              "
-              type="info"
-              show-icon
-              :closable="false"
-              class="form-alert"
-            />
-            <ElRow :gutter="14" justify="space-between" class="testdata-summary">
-              <ElCol :xs="24" :sm="7">
-                <div class="testdata-stat">
-                  <span>{{ t('当前版本') }}</span>
-                  <strong>v{{ problem?.testdataVersion ?? 0 }}</strong>
-                </div>
-              </ElCol>
-              <ElCol :xs="24" :sm="9">
-                <div class="testdata-stat">
-                  <span>SHA-256</span>
-                  <code>{{ problem?.testdataSha256 ?? t('尚未上传') }}</code>
-                </div>
-              </ElCol>
-              <ElCol :xs="24" :sm="8">
-                <ElButton :disabled="!problem?.testdataVersion" @click="downloadTestdata">{{
-                  t('下载当前 ZIP')
-                }}</ElButton>
-              </ElCol>
-            </ElRow>
-            <ElSpace wrap :size="14" class="file-upload-row">
-              <input
-                ref="testdataInput"
-                type="file"
-                accept=".zip,application/zip"
-                @change="selectTestdata"
-              />
-              <ElButton
-                type="primary"
-                :disabled="!testdataFile"
-                :loading="uploadingTestdata"
-                @click="uploadTestdata"
-                >{{ t('上传新版本') }}</ElButton
-              >
-            </ElSpace>
-            <ElTable :data="testdataVersions" row-key="version">
-              <ElTableColumn :label="t('版本')" width="130">
-                <template #default="{ row }">
-                  <strong>v{{ row.version }}</strong>
-                  <ElTag v-if="row.active" size="small" type="success">{{ t('当前') }}</ElTag>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn prop="caseCount" :label="t('用例数')" width="120" />
-              <ElTableColumn :label="t('压缩包大小')" width="150"
-                ><template #default="{ row }">{{
-                  row.bytes == null ? '—' : formatBytes(row.bytes)
-                }}</template></ElTableColumn
-              >
-              <ElTableColumn prop="sha256" label="SHA-256" min-width="300" show-overflow-tooltip />
-              <ElTableColumn :label="t('操作')" width="180">
-                <template #default="{ row }">
-                  <ElButton link @click="downloadTestdataVersion(row.version)">{{
-                    t('下载')
-                  }}</ElButton>
-                  <ElButton
-                    link
-                    type="primary"
-                    :disabled="row.active"
-                    :loading="activatingVersion === row.version"
-                    @click="activateTestdataVersion(row.version)"
-                    >{{ t('激活') }}</ElButton
-                  >
-                </template>
-              </ElTableColumn>
-              <template #empty><ElEmpty :description="t('尚未上传测试数据')" /></template>
-            </ElTable>
-          </ElCard>
+          <TestdataTab
+            :problem="problem"
+            :initial-testdata-versions="testdataVersions"
+            @problem-refreshed="applyRefreshedProblem"
+            @error-message="errorMessage = $event"
+          />
         </ElTabPane>
       </ElTabs>
     </el-main>
@@ -344,43 +64,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
-import { ArrowLeft, Plus } from '@element-plus/icons-vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
-import type { FormInstance, FormRules } from 'element-plus';
+import { computed, onMounted, ref } from 'vue';
+import { ArrowLeft } from '@element-plus/icons-vue';
 import { useRoute, useRouter } from 'vue-router';
+import AttachmentsTab from '../components/problem-editor/AttachmentsTab.vue';
+import BasicInfoTab from '../components/problem-editor/BasicInfoTab.vue';
+import StatementsTab from '../components/problem-editor/StatementsTab.vue';
+import TestdataTab from '../components/problem-editor/TestdataTab.vue';
 import { adminProblemApi } from '../api/admin-problems';
-import { ApiError, getErrorMessage } from '../api/client';
+import { getErrorMessage } from '../api/client';
 import type {
-  JudgeLanguage,
   Problem,
   ProblemAttachment,
-  ProblemAttachmentKind,
+  ProblemStatement,
   ProblemTestdataVersion,
 } from '../api/types';
-import { formatBytes } from '../utils/format';
 import { useI18n } from '../i18n';
-
-interface ProblemForm {
-  slug: string;
-  title: string;
-  timeLimitMs: number;
-  memoryLimitMb: number;
-  outputLimitKb: number;
-  languages: JudgeLanguage[];
-  defaultLangCode: string;
-  judgeMode: 'STANDARD' | 'INTERACTIVE' | 'OUTPUT_ONLY';
-  interactorObjectKey: string;
-  interactorSha256: string;
-}
-
-interface StatementDraft {
-  key: number;
-  langCode: string;
-  body: string;
-  savedBody: string | null;
-  saving: boolean;
-}
 
 const route = useRoute();
 const router = useRouter();
@@ -390,83 +89,14 @@ const isNew = computed(
 );
 const problemId = computed(() => Number(route.params.problemId));
 const problem = ref<Problem | null>(null);
-const activeTab = ref('basic');
-const loading = ref(false);
-const saving = ref(false);
-const errorMessage = ref('');
-const formRef = ref<FormInstance>();
-const form = reactive<ProblemForm>({
-  slug: '',
-  title: '',
-  timeLimitMs: 1000,
-  memoryLimitMb: 256,
-  outputLimitKb: 65536,
-  languages: ['c', 'cpp', 'java', 'python'],
-  defaultLangCode: 'en',
-  judgeMode: 'STANDARD',
-  interactorObjectKey: '',
-  interactorSha256: '',
-});
-const languageOptions: Array<{ value: JudgeLanguage; label: string }> = [
-  { value: 'c', label: 'C' },
-  { value: 'cpp', label: 'C++' },
-  { value: 'java', label: 'Java' },
-  { value: 'python', label: 'Python' },
-];
-const langCodePattern = /^[a-z]{2}(?:-[A-Z]{2})?$/;
-const rules = computed<FormRules>(() => ({
-  slug: [
-    { required: true, message: t('请输入题目标识'), trigger: 'blur' },
-    {
-      pattern: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
-      message: t('仅允许小写字母、数字和单连字符'),
-      trigger: 'blur',
-    },
-  ],
-  title: [{ required: true, message: t('请输入题目标题'), trigger: 'blur' }],
-  languages: [
-    {
-      type: 'array',
-      required: true,
-      min: 1,
-      message: t('至少选择一种提交语言'),
-      trigger: 'change',
-    },
-  ],
-  defaultLangCode: [
-    { required: true, message: t('请输入默认题面语言'), trigger: 'blur' },
-    { pattern: langCodePattern, message: t('请输入 en 或 zh-CN 格式'), trigger: 'blur' },
-  ],
-}));
-
-let statementKey = 0;
-const statementDrafts = ref<StatementDraft[]>([]);
+const statements = ref<ProblemStatement[]>([]);
 const attachments = ref<ProblemAttachment[]>([]);
 const testdataVersions = ref<ProblemTestdataVersion[]>([]);
-const attachmentKind = ref<ProblemAttachmentKind>('SAMPLE');
-const attachmentFile = ref<File | null>(null);
-const attachmentInput = ref<HTMLInputElement>();
-const uploadingAttachment = ref(false);
-const testdataFile = ref<File | null>(null);
-const testdataInput = ref<HTMLInputElement>();
-const uploadingTestdata = ref(false);
-const activatingVersion = ref<number | null>(null);
-const interactorFile = ref<File | null>(null);
-const uploadingInteractor = ref(false);
-
-function applyProblem(value: Problem) {
-  problem.value = value;
-  form.slug = value.slug;
-  form.title = value.title;
-  form.timeLimitMs = value.timeLimitMs;
-  form.memoryLimitMb = value.memoryLimitMb;
-  form.outputLimitKb = value.outputLimitKb;
-  form.languages = [...value.languages];
-  form.defaultLangCode = value.defaultLangCode;
-  form.judgeMode = value.judgeMode;
-  form.interactorObjectKey = value.interactorObjectKey ?? '';
-  form.interactorSha256 = value.interactorSha256 ?? '';
-}
+const activeTab = ref('basic');
+const loading = ref(false);
+const basicSaving = ref(false);
+const errorMessage = ref('');
+const basicTabRef = ref<{ save: () => Promise<void> }>();
 
 function applyRefreshedProblem(value: Problem | null) {
   if (value) {
@@ -494,322 +124,15 @@ async function loadProblem() {
       adminProblemApi.listAttachments(problemId.value),
       adminProblemApi.listStatements(problemId.value),
     ]);
-    applyProblem(loadedProblem);
+    problem.value = loadedProblem;
     testdataVersions.value = versions;
     attachments.value = loadedAttachments;
-    statementDrafts.value = loadedStatements.map((statement) => ({
-      key: ++statementKey,
-      langCode: statement.langCode,
-      body: statement.body,
-      savedBody: statement.body,
-      saving: false,
-    }));
+    statements.value = loadedStatements;
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   } finally {
     loading.value = false;
   }
-}
-
-function payload() {
-  return {
-    slug: form.slug.trim().toLowerCase(),
-    title: form.title.trim(),
-    timeLimitMs: form.timeLimitMs,
-    memoryLimitMb: form.memoryLimitMb,
-    outputLimitKb: form.outputLimitKb,
-    languages: [...form.languages],
-    defaultLangCode: form.defaultLangCode.trim(),
-    judgeMode: form.judgeMode,
-    interactorObjectKey: form.judgeMode === 'INTERACTIVE' ? form.interactorObjectKey.trim() : null,
-    interactorSha256: form.judgeMode === 'INTERACTIVE' ? form.interactorSha256.trim() : null,
-  };
-}
-
-function changeJudgeMode(mode: string) {
-  if (mode === 'OUTPUT_ONLY') form.languages = ['output'];
-  else if (form.languages.includes('output')) form.languages = ['c', 'cpp', 'java', 'python'];
-}
-
-function selectInteractor(event: Event) {
-  interactorFile.value = (event.target as HTMLInputElement).files?.[0] ?? null;
-}
-
-async function uploadInteractor() {
-  if (!problem.value || !interactorFile.value) return;
-  uploadingInteractor.value = true;
-  try {
-    const updated = await adminProblemApi.uploadInteractor(problem.value.id, interactorFile.value);
-    applyProblem(updated);
-    interactorFile.value = null;
-    ElMessage.success(t('Interactor 已上传并启用交互题模式'));
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  } finally {
-    uploadingInteractor.value = false;
-  }
-}
-
-async function saveProblem() {
-  if (!(await formRef.value?.validate().catch(() => false))) return;
-  saving.value = true;
-  errorMessage.value = '';
-  try {
-    if (isNew.value) {
-      const created = await adminProblemApi.createProblem(payload());
-      ElMessage.success(t('题目已创建'));
-      await router.replace(`/admin/problems/${created.id}`);
-      applyProblem(created);
-    } else if (problem.value) {
-      const updated = await adminProblemApi.updateProblem(problem.value.id, {
-        ...payload(),
-        expectedVersion: problem.value.version,
-      });
-      applyProblem(updated);
-      ElMessage.success(t('基本信息已保存'));
-    }
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error);
-    if (error instanceof ApiError && error.code === 'PROBLEM_VERSION_STALE' && problem.value) {
-      problem.value = await adminProblemApi.getProblem(problem.value.id);
-      errorMessage.value = t(
-        '题目已被其他管理员修改。已刷新并发版本，但保留了你的表单内容，请核对后重新保存。',
-      );
-    }
-  } finally {
-    saving.value = false;
-  }
-}
-
-function addStatementDraft() {
-  const preferred = problem.value?.defaultLangCode ?? 'en';
-  const existingCodes = new Set(statementDrafts.value.map((statement) => statement.langCode));
-  const langCode = existingCodes.has(preferred) ? '' : preferred;
-  statementDrafts.value.push({
-    key: ++statementKey,
-    langCode,
-    body: '',
-    savedBody: null,
-    saving: false,
-  });
-}
-
-async function saveStatement(statement: StatementDraft) {
-  if (!problem.value || !langCodePattern.test(statement.langCode)) {
-    ElMessage.error(t('题面语言代码应为 en 或 zh-CN 格式'));
-    return;
-  }
-  if (!statement.body.trim()) {
-    ElMessage.error(t('请输入题面正文'));
-    return;
-  }
-  if (
-    statementDrafts.value.some(
-      (item) => item.key !== statement.key && item.langCode === statement.langCode,
-    )
-  ) {
-    ElMessage.error(t('同一语言只能保留一个题面编辑器'));
-    return;
-  }
-  statement.saving = true;
-  try {
-    const refreshed = await adminProblemApi.upsertStatement(
-      problem.value.id,
-      statement.langCode,
-      statement.body,
-    );
-    applyRefreshedProblem(refreshed.problem);
-    statement.savedBody = statement.body;
-    ElMessage.success(t('{lang} 题面已保存', { lang: statement.langCode }));
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  } finally {
-    statement.saving = false;
-  }
-}
-
-async function deleteStatement(statement: StatementDraft) {
-  if (!problem.value || statement.savedBody === null) return;
-  try {
-    await ElMessageBox.confirm(
-      t('确认删除 {lang} 题面？', { lang: statement.langCode }),
-      t('删除题面'),
-      {
-        type: 'warning',
-      },
-    );
-    await adminProblemApi.deleteStatement(problem.value.id, statement.langCode);
-    statementDrafts.value = statementDrafts.value.filter((item) => item.key !== statement.key);
-    ElMessage.success(t('{lang} 题面已删除', { lang: statement.langCode }));
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') ElMessage.error(getErrorMessage(error));
-  }
-}
-
-function selectAttachment(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0] ?? null;
-  if (file && (file.size === 0 || file.size > 20 * 1024 * 1024)) {
-    ElMessage.error(t('附件必须大于 0 字节且不能超过 20 MiB'));
-    attachmentFile.value = null;
-    (event.target as HTMLInputElement).value = '';
-    return;
-  }
-  attachmentFile.value = file;
-}
-
-async function uploadAttachment() {
-  if (!problem.value || !attachmentFile.value) return;
-  uploadingAttachment.value = true;
-  try {
-    const refreshed = await adminProblemApi.uploadAttachment(
-      problem.value.id,
-      attachmentKind.value,
-      attachmentFile.value,
-    );
-    attachments.value.push(refreshed.result);
-    applyRefreshedProblem(refreshed.problem);
-    attachmentFile.value = null;
-    if (attachmentInput.value) attachmentInput.value.value = '';
-    ElMessage.success(t('附件已上传'));
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  } finally {
-    uploadingAttachment.value = false;
-  }
-}
-
-async function removeAttachment(attachment: ProblemAttachment) {
-  if (!problem.value) return;
-  try {
-    await ElMessageBox.confirm(
-      t('确认删除附件“{name}”？', { name: attachment.originalFilename }),
-      t('删除附件'),
-      {
-        type: 'warning',
-      },
-    );
-    const refreshed = await adminProblemApi.deleteAttachment(problem.value.id, attachment.id);
-    applyRefreshedProblem(refreshed.problem);
-    attachments.value = attachments.value.filter((item) => item.id !== attachment.id);
-    ElMessage.success(t('附件已删除'));
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') ElMessage.error(getErrorMessage(error));
-  }
-}
-
-async function downloadAttachment(attachment: ProblemAttachment) {
-  if (!problem.value) return;
-  try {
-    downloadBlob(
-      await adminProblemApi.downloadAttachment(problem.value.id, attachment.id),
-      attachment.originalFilename,
-    );
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
-}
-
-function selectTestdata(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0] ?? null;
-  if (
-    file &&
-    (!file.name.toLowerCase().endsWith('.zip') || file.size === 0 || file.size > 256 * 1024 * 1024)
-  ) {
-    ElMessage.error(t('测试数据必须是大于 0 字节且不超过 256 MiB 的 ZIP 文件'));
-    testdataFile.value = null;
-    (event.target as HTMLInputElement).value = '';
-    return;
-  }
-  testdataFile.value = file;
-}
-
-async function uploadTestdata() {
-  if (!problem.value || !testdataFile.value) return;
-  const id = problem.value.id;
-  try {
-    await ElMessageBox.confirm(
-      t('确认上传“{name}”并创建新的当前测试数据版本？', { name: testdataFile.value.name }),
-      t('上传测试数据'),
-      { type: 'warning', confirmButtonText: t('确认上传') },
-    );
-  } catch {
-    return;
-  }
-  uploadingTestdata.value = true;
-  try {
-    const refreshed = await adminProblemApi.uploadTestdata(id, testdataFile.value);
-    applyRefreshedProblem(refreshed.problem);
-    testdataVersions.value = await adminProblemApi.listTestdataVersions(id);
-    testdataFile.value = null;
-    if (testdataInput.value) testdataInput.value.value = '';
-    ElMessage.success(t('测试数据 v{version} 已上传', { version: refreshed.result.version }));
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  } finally {
-    uploadingTestdata.value = false;
-  }
-}
-
-async function downloadTestdata() {
-  if (!problem.value || problem.value.testdataVersion === 0) return;
-  try {
-    const blob = await adminProblemApi.downloadTestdata(problem.value.id);
-    downloadBlob(
-      blob,
-      `problem-${problem.value.id}-testdata-v${problem.value.testdataVersion}.zip`,
-    );
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
-}
-
-async function downloadTestdataVersion(version: number) {
-  if (!problem.value) return;
-  try {
-    const blob = await adminProblemApi.downloadTestdataVersion(problem.value.id, version);
-    downloadBlob(blob, `problem-${problem.value.id}-testdata-v${version}.zip`);
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
-}
-
-async function activateTestdataVersion(version: number) {
-  if (!problem.value || version === problem.value.testdataVersion) return;
-  const id = problem.value.id;
-  const expectedCurrentVersion = problem.value.testdataVersion;
-  try {
-    await ElMessageBox.confirm(
-      t('确认将测试数据 v{version} 设为当前版本？后续提交将使用该版本。', { version }),
-      t('激活历史版本'),
-      { type: 'warning', confirmButtonText: t('确认激活') },
-    );
-  } catch {
-    return;
-  }
-  activatingVersion.value = version;
-  try {
-    const refreshed = await adminProblemApi.activateTestdataVersion(
-      id,
-      version,
-      expectedCurrentVersion,
-    );
-    applyRefreshedProblem(refreshed.problem);
-    testdataVersions.value = await adminProblemApi.listTestdataVersions(id);
-    ElMessage.success(t('测试数据 v{version} 已激活', { version }));
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  } finally {
-    activatingVersion.value = null;
-  }
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
 }
 
 function backToList() {
@@ -820,6 +143,7 @@ function backToList() {
       : '/admin/problems',
   );
 }
+
 onMounted(loadProblem);
 </script>
 
@@ -852,8 +176,7 @@ onMounted(loadProblem);
   font-size: clamp(28px, 4vw, 40px);
   color: #13213b;
 }
-.page-alert,
-.form-alert {
+.page-alert {
   margin-bottom: 20px;
 }
 .admin-tabs :deep(.el-tabs__header) {
@@ -863,88 +186,11 @@ onMounted(loadProblem);
   height: 48px;
   font-size: 15px;
 }
-.problem-editor-card {
-  margin-bottom: 20px;
-}
-.problem-editor-card :deep(.el-input-number),
-.problem-limit-grid :deep(.el-input-number) {
-  width: 100%;
-}
-.problem-lang-code {
-  width: min(240px, 100%);
-}
-.problem-card-heading,
-.statement-editor-heading {
-  width: 100%;
-  justify-content: space-between;
-}
-.problem-card-heading strong,
-.problem-card-heading small {
-  display: block;
-}
-.problem-card-heading small {
-  margin-top: 4px;
-  color: var(--muted);
-}
-.statement-editor-heading :deep(.el-input) {
-  width: 180px;
-}
-.statement-editor {
-  display: grid;
-  gap: 14px;
-  padding: 20px 0;
-  border-top: 1px solid var(--border);
-}
-.statement-editor:first-of-type {
-  border-top: 0;
-}
-.file-upload-row {
-  width: 100%;
-  flex-wrap: wrap;
-  margin-bottom: 24px;
-}
-.file-upload-row :deep(.el-select) {
-  width: 160px;
-}
-.testdata-summary {
-  margin-bottom: 24px;
-}
-.testdata-summary .el-col {
-  margin-bottom: 14px;
-}
-.testdata-summary .testdata-stat {
-  display: grid;
-  min-width: 140px;
-  gap: 5px;
-}
-.testdata-summary .el-col:last-child {
-  display: flex;
-  justify-content: flex-end;
-}
-.testdata-summary span {
-  color: var(--muted);
-  font-size: 13px;
-}
-.testdata-summary code {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 @media (max-width: 680px) {
   .admin-page-header {
     align-items: stretch;
     flex-direction: column;
     gap: 14px;
-  }
-  .problem-card-heading,
-  .statement-editor-heading,
-  .file-upload-row {
-    align-items: stretch;
-    flex-direction: column;
-  }
-  .statement-editor-heading :deep(.el-input),
-  .file-upload-row :deep(.el-select) {
-    width: 100%;
   }
 }
 </style>
