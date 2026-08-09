@@ -2,7 +2,7 @@
   <main class="resolver-display">
     <header class="resolver-display-header">
       <div>
-        <span>PROJECT BALLOON · OFFICIAL RESOLVER</span><strong>{{ contestTitle }}</strong>
+        <span>ProjectBalloon · OFFICIAL RESOLVER</span><strong>{{ contestTitle }}</strong>
       </div>
       <div class="resolver-display-status">
         <span :class="run?.status.toLowerCase()">{{ statusLabel }}</span

@@ -107,7 +107,7 @@
         ></ElCard>
         <article class="host-script-print">
           <header>
-            <p>PROJECT BALLOON · HOST CUE SHEET</p>
+            <p>ProjectBalloon · HOST CUE SHEET</p>
             <h1>{{ script.contestName }}颁奖主持人提词稿</h1>
           </header>
           <section>

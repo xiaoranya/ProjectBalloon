@@ -17,7 +17,7 @@ describe('Rust admin API contract', () => {
 
   it('reads degraded readiness from the public Rust health route', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
-      jsonResponse({ status: 'down', service: 'xcpc-platform' }, 503),
+      jsonResponse({ status: 'down', service: 'ProjectBalloon' }, 503),
     );
 
     await expect(adminApi.getHealth()).resolves.toMatchObject({ status: 'down' });

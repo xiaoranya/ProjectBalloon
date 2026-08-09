@@ -6,7 +6,7 @@ Accepted for the ProjectBalloon reset.
 
 ## Context
 
-The previous implementation is a Java/Spring modular monolith with an embedded
+The previous implementation was a Java/Spring modular monolith with an embedded
 judge scheduler and a separately deployed judge worker. Its externally visible
 behavior includes a large HTTP API, PostgreSQL schema, SSE channels, RabbitMQ
 messages, S3-compatible objects, and operator workflows.
@@ -84,7 +84,7 @@ path is established.
   transactions and operational overhead.
 - The judge worker remains isolated because its resource use and threat model
   differ from the business API.
-- Contract fixtures and integration tests are required before the previous
-  implementation can be removed.
+- Contract fixtures and integration tests preserve the reviewed behavior after
+  removal of the previous implementation.
 - Build and dependency artifacts must be cached and packaged for fully offline
   installation.

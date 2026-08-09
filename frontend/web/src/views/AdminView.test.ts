@@ -19,7 +19,7 @@ describe('AdminView', () => {
   beforeEach(() => {
     getHealth.mockResolvedValue({
       status: 'down',
-      service: 'xcpc-platform',
+      service: 'ProjectBalloon',
       time: '2026-07-20T06:00:00Z',
       realtimeOutbox: { pending: 3, failed: 1, redisConnected: false },
       judgeDispatch: {

@@ -12,7 +12,7 @@ for new Rust behavior. Every operation moves through one of these states:
 
 ## Reviewed Route Inventory
 
-Snapshot date: 2026-08-01. Path-parameter names such as `{id}` and
+Snapshot date: 2026-08-09. Path-parameter names such as `{id}` and
 `{contest_id}` are treated as equivalent.
 
 | Inventory | Operations |

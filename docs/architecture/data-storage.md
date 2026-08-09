@@ -213,8 +213,10 @@ Official contest backups must include:
 
 - PostgreSQL dump or base backup.
 - RustFS object data and metadata.
-- Deployment configuration.
-- Compose files and image version manifest.
+- ProjectBalloon binary deployment configuration, package version, and checksums.
+- User-managed service configuration and version manifests required to rebuild
+  PostgreSQL, Redis, RabbitMQ, object storage, proxy, printing, sandbox, and
+  observability services.
 - Generated exports if needed.
 
 Redis backup is optional for recovery because Redis state should be rebuildable. RabbitMQ queue state matters during a live contest; backup strategy should focus on graceful stop or drain before maintenance.

@@ -2,7 +2,7 @@
   <main class="live-page" :class="templateClass" :style="liveStyle">
     <header>
       <div>
-        <small v-if="showBrand">PROJECT BALLOON · LIVE</small>
+        <small v-if="showBrand">ProjectBalloon · LIVE</small>
         <h1>{{ presentation?.config.title || presentation?.contestName || 'LIVE' }}</h1>
         <p>{{ presentation?.config.subtitle }}</p>
       </div>

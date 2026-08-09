@@ -27,7 +27,12 @@ Only required ports should be exposed between zones. Database and queue ports sh
 
 ## Service Placement
 
-The production target should avoid co-locating judge workers with the database. Judge workload is CPU, memory, process, and disk intensive, and also has the highest security risk. The active Rust Compose file is a single-host rehearsal topology and intentionally mounts the Docker socket.
+The production target should avoid co-locating judge workers with the database.
+Judge workload is CPU, memory, process, and disk intensive, and also has the
+highest security risk. Production application processes come from the binary
+package; every external component is provisioned and operated by the deployer.
+The repository Compose application stack is a single-host rehearsal topology
+and intentionally mounts the Docker socket.
 
 Acceptable development or rehearsal deployments may use fewer machines, but production documentation and scripts should keep role separation clear.
 
@@ -80,25 +85,26 @@ packages without the Linux installer or Judge Runtime archives. Only Linux
 x86_64 is currently tested end to end; the other targets are build/package
 outputs until their runtime and installation flows are validated.
 
-## Compose Files
+## Development And Rehearsal Compose
 
-The active Rust workspace currently has three Compose projects:
+The repository retains three optional Compose projects:
 
 - `rust-app.docker-compose.yml` (API, Worker, and web)
 - `data.docker-compose.yml`
 - `../observability/compose.yml`
 
-The five-role layout below remains the production separation target; its
-rootless Podman/runsc and gateway packaging are not yet accepted.
-
-Compose images must use fixed version tags. `latest` is not allowed for official releases.
+They are used for local development, integration tests, and single-host
+rehearsal only. They do not install or manage an official deployment. When used
+for a rehearsal, image tags must remain fixed; `latest` is not allowed.
 
 ## Configuration Rules
 
 - Commit only `.env.example` files and non-secret templates.
 - Real `.env` files are generated or copied during deployment and must not be committed.
 - Service passwords, tokens, RustFS keys, database credentials, and live tokens are secrets.
-- Nginx, Prometheus, Grafana, Loki, RabbitMQ, and RustFS templates live under `deploy/config/`.
+- Binary service and Nginx templates live under `deploy/binary/`.
+- Optional repository observability examples live under `deploy/observability/`;
+  production service configuration remains the deployer's responsibility.
 
 ## Binary Deployment Flow
 
@@ -114,8 +120,9 @@ Copy binary release archive and matching judge-images archive to target host
   -> run health checks and verify backups
 ```
 
-The binary model keeps stateful services outside the application package. API
-and Worker processes can run on separate hosts, while Judge Workers retain
-access to their local Docker/Podman sandbox socket and runtime images.
+The binary model keeps all external and stateful services outside the
+application package. API and Worker processes can run on separate hosts, while
+Judge Workers retain access to their user-provisioned local Docker/Podman
+sandbox socket and imported runtime images.
 
 The flow must be repeatable. Scripts should fail fast and print the failed step clearly.

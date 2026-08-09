@@ -1,7 +1,7 @@
 # ProjectBalloon
 
-ProjectBalloon is being reset as an idiomatic Rust workspace for an offline
-XCPC/ICPC contest platform.
+ProjectBalloon is an idiomatic Rust workspace for an offline XCPC/ICPC contest
+platform.
 
 The active target layout starts at this workspace root:
 
@@ -17,6 +17,17 @@ docs/                 Requirements, architecture, API, and operations
 The previous implementation was fully migrated and removed; the contracts and
 migration-compatibility tests under `crates/` and `docs/api/migration-matrix.md`
 preserve the behavioral baseline.
+
+## Deployment
+
+Official deployments use the published binary package. PostgreSQL, Redis,
+RabbitMQ, S3-compatible object storage, the Judge sandbox runtime, and optional
+Nginx/CUPS/observability services are installed and operated by the deployer;
+they are not bundled or managed as an application Compose stack. See
+`docs/ops/install.md` for package contents, prerequisites, and installation.
+
+The Compose files under `deploy/compose/` are retained only for local
+development, integration testing, and single-host rehearsal.
 
 ## Bootstrap Checks
 

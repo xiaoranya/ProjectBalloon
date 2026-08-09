@@ -1,13 +1,19 @@
 # Rust Application Compose
 
+This is a compatibility stack for local development, integration testing, and
+single-host rehearsal. Official deployments use the binary package and
+user-managed external services described in `docs/ops/install.md`; this Compose
+stack is not a production deployment method.
+
 `rust-app.docker-compose.yml` builds and runs the Rust API, Rust Judge Worker,
 and Vue frontend. PostgreSQL, Redis, RabbitMQ, RustFS, and the monitoring
 stack are expected to be on the existing external `project-balloon` network.
 
 The API and Judge images use release binaries built with `--locked`. The Judge
 container receives the Docker socket because sandbox execution is an explicit
-host capability; restrict access to this Compose project and do not expose the
-socket through TCP.
+host capability; restrict access to this rehearsal stack and do not expose the
+socket through TCP. This sibling-Docker setup does not satisfy the production
+sandbox requirements in `docs/architecture/ADR-001-production-judge-sandbox.md`.
 
 Required variables include `DATABASE_URL`, CSRF secret, RabbitMQ URL, object
 storage endpoint/credentials, and matching worker/runtime image configuration.
