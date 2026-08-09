@@ -4,14 +4,14 @@
       <div class="page-title-row">
         <div>
           <p class="eyebrow">Clarifications</p>
-          <h1>赛中答疑</h1>
+          <h1>{{ t('赛中答疑') }}</h1>
         </div>
         <div
           class="clarification-live-state"
           :class="{ connected: realtimeConnected }"
           aria-live="polite"
         >
-          <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
+          <span />{{ t(realtimeConnected ? '实时更新' : '轮询更新') }}
         </div>
       </div>
     </el-header>
@@ -31,21 +31,24 @@
           <ElCard shadow="never" class="clarification-compose-card">
             <template #header>
               <div class="card-header">
-                <div><strong>提交新问题</strong><small>每队每 5 分钟最多提问一次。</small></div>
+                <div>
+                  <strong>{{ t('提交新问题') }}</strong
+                  ><small>{{ t('每队每 5 分钟最多提问一次。') }}</small>
+                </div>
               </div>
             </template>
             <ElForm label-position="top" @submit.prevent="submitQuestion">
-              <ElFormItem label="问题范围">
+              <ElFormItem :label="t('问题范围')">
                 <ElRadioGroup v-model="form.scope">
-                  <ElRadioButton value="GENERAL">通用问题</ElRadioButton>
-                  <ElRadioButton value="PROBLEM">题目相关</ElRadioButton>
+                  <ElRadioButton value="GENERAL">{{ t('通用问题') }}</ElRadioButton>
+                  <ElRadioButton value="PROBLEM">{{ t('题目相关') }}</ElRadioButton>
                 </ElRadioGroup>
               </ElFormItem>
-              <ElFormItem v-if="form.scope === 'PROBLEM'" label="题目">
+              <ElFormItem v-if="form.scope === 'PROBLEM'" :label="t('题目')">
                 <ElSelect
                   v-model="form.problemId"
                   filterable
-                  placeholder="请选择题目"
+                  :placeholder="t('请选择题目')"
                   class="wide-control"
                 >
                   <ElOption
@@ -56,14 +59,14 @@
                   />
                 </ElSelect>
               </ElFormItem>
-              <ElFormItem label="问题内容">
+              <ElFormItem :label="t('问题内容')">
                 <ElInput
                   v-model="form.question"
                   type="textarea"
                   :rows="7"
                   maxlength="4000"
                   show-word-limit
-                  placeholder="请清晰描述需要裁判确认的内容"
+                  :placeholder="t('请清晰描述需要裁判确认的内容')"
                 />
               </ElFormItem>
               <ElButton
@@ -73,7 +76,7 @@
                 :loading="submitting"
                 :disabled="!canSubmit"
               >
-                提交问题
+                {{ t('提交问题') }}
               </ElButton>
             </ElForm>
           </ElCard>
@@ -82,38 +85,40 @@
           <div class="clarification-list-column">
             <div class="clarification-list-heading">
               <div>
-                <h2>我的问题</h2>
-                <p>仅显示本队问题和裁判回复。</p>
+                <h2>{{ t('我的问题') }}</h2>
+                <p>{{ t('仅显示本队问题和裁判回复。') }}</p>
               </div>
-              <ElButton :icon="Refresh" :loading="loading" @click="loadClarifications(false)"
-                >刷新</ElButton
-              >
+              <ElButton :icon="Refresh" :loading="loading" @click="loadClarifications(false)">{{
+                t('刷新')
+              }}</ElButton>
             </div>
             <ElSkeleton v-if="loading && clarifications.length === 0" :rows="5" animated />
-            <ElEmpty v-else-if="clarifications.length === 0" description="本队尚未提交问题" />
+            <ElEmpty v-else-if="clarifications.length === 0" :description="t('本队尚未提交问题')" />
             <div v-else class="clarification-cards">
               <article v-for="item in clarifications" :key="item.id" class="clarification-card">
                 <div class="clarification-card-meta">
                   <div>
                     <ElTag :type="statusType(item.status)">{{ statusLabel(item.status) }}</ElTag>
-                    <ElTag v-if="item.problemAlias" type="info" effect="plain"
-                      >题目 {{ item.problemAlias }}</ElTag
-                    >
-                    <ElTag v-else type="info" effect="plain">通用</ElTag>
+                    <ElTag v-if="item.problemAlias" type="info" effect="plain">{{
+                      t('题目 {alias}', { alias: item.problemAlias ?? '' })
+                    }}</ElTag>
+                    <ElTag v-else type="info" effect="plain">{{ t('通用') }}</ElTag>
                   </div>
                   <time>{{ formatDateTime(item.createdAt) }}</time>
                 </div>
                 <h3>{{ item.question }}</h3>
                 <div v-if="item.reply" class="clarification-reply">
-                  <strong>裁判回复</strong>
+                  <strong>{{ t('裁判回复') }}</strong>
                   <p>{{ item.reply }}</p>
                   <small>
-                    {{ item.replyVisibility === 'PUBLIC' ? '公开回复' : '仅本队可见' }} ·
+                    {{ t(item.replyVisibility === 'PUBLIC' ? '公开回复' : '仅本队可见') }} ·
                     {{ formatDateTime(item.repliedAt) }}
                   </small>
                 </div>
                 <p v-else class="clarification-pending-copy">
-                  {{ item.status === 'CLOSED' ? '该问题已关闭，未提供回复。' : '裁判尚未回复。' }}
+                  {{
+                    t(item.status === 'CLOSED' ? '该问题已关闭，未提供回复。' : '裁判尚未回复。')
+                  }}
                 </p>
               </article>
             </div>
@@ -143,9 +148,11 @@ import {
   type ContestRealtimeSubscription,
 } from '../realtime/contest-events';
 import { formatDateTime } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const route = useRoute();
 const contestId = Number(route.params.contestId);
+const { t } = useI18n();
 const problems = ref<ContestProblem[]>([]);
 const clarifications = ref<Clarification[]>([]);
 const loading = ref(false);
@@ -164,7 +171,7 @@ const canSubmit = computed(
 );
 
 function statusLabel(status: ClarificationStatus) {
-  return { PENDING: '待回复', ANSWERED: '已回复', CLOSED: '已关闭' }[status];
+  return t({ PENDING: '待回复', ANSWERED: '已回复', CLOSED: '已关闭' }[status] ?? status);
 }
 
 function statusType(status: ClarificationStatus): 'warning' | 'success' | 'info' {
@@ -201,7 +208,7 @@ async function submitQuestion() {
     form.problemId = null;
     form.scope = 'GENERAL';
     errorMessage.value = '';
-    ElMessage.success('问题已提交');
+    ElMessage.success(t('问题已提交'));
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   } finally {

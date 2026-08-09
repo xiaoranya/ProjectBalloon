@@ -3,18 +3,22 @@
     <el-header height="auto" class="awards-page-header">
       <div>
         <p class="eyebrow">Ceremony Control</p>
-        <h1>颁奖控制台</h1>
+        <h1>{{ t('颁奖控制台') }}</h1>
       </div>
       <ElSpace wrap :size="10" class="awards-header-actions">
-        <ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"
+        <ElSelect
+          v-model="contestId"
+          filterable
+          :placeholder="t('选择比赛')"
+          @change="changeContest"
           ><ElOption
             v-for="contest in contests"
             :key="contest.id"
             :label="contest.name"
             :value="contest.id"
         /></ElSelect>
-        <ElButton :icon="Refresh" :loading="loading" @click="load">刷新</ElButton>
-        <ElButton :disabled="!contestId" @click="openDisplay">打开展示页</ElButton>
+        <ElButton :icon="Refresh" :loading="loading" @click="load">{{ t('刷新') }}</ElButton>
+        <ElButton :disabled="!contestId" @click="openDisplay">{{ t('打开展示页') }}</ElButton>
       </ElSpace>
     </el-header>
     <el-main class="page-body">
@@ -29,17 +33,20 @@
         <ElRow :gutter="20" class="award-presentation-control-grid">
           <ElCol :xs="24" :md="6"
             ><div class="award-presentation-status">
-              <span>典礼状态</span><ElTag>{{ statusLabel }}</ElTag>
+              <span>{{ t('典礼状态') }}</span
+              ><ElTag>{{ statusLabel }}</ElTag>
               <div>
-                <ElButton @click="setStatus('WAITING')">等待</ElButton
-                ><ElButton type="success" @click="setStatus('PRESENTING')">开始/继续</ElButton
-                ><ElButton type="danger" @click="setStatus('COMPLETED')">结束</ElButton>
+                <ElButton @click="setStatus('WAITING')">{{ t('等待') }}</ElButton
+                ><ElButton type="success" @click="setStatus('PRESENTING')">{{
+                  t('开始/继续')
+                }}</ElButton
+                ><ElButton type="danger" @click="setStatus('COMPLETED')">{{ t('结束') }}</ElButton>
               </div>
             </div></ElCol
           >
           <ElCol :xs="24" :md="12"
             ><div class="award-presentation-category-control">
-              <span>当前奖项</span
+              <span>{{ t('当前奖项') }}</span
               ><ElSelect v-model="draft.currentCategoryId"
                 ><ElOption
                   v-for="category in presentation.categories"
@@ -48,29 +55,35 @@
                   :value="category.id"
               /></ElSelect>
               <div>
-                <ElButton :disabled="currentIndex <= 0" @click="move(-1)">上一项</ElButton
+                <ElButton :disabled="currentIndex <= 0" @click="move(-1)">{{
+                  t('上一项')
+                }}</ElButton
                 ><ElButton
                   type="primary"
                   :disabled="currentIndex >= presentation.categories.length - 1"
                   @click="move(1)"
-                  >下一项</ElButton
+                  >{{ t('下一项') }}</ElButton
                 >
               </div>
             </div></ElCol
           >
           <ElCol :xs="24" :md="6"
             ><div class="award-presentation-rotation">
-              <span>自动轮播</span><ElSwitch v-model="draft.autoRotate" /><ElInputNumber
+              <span>{{ t('自动轮播') }}</span
+              ><ElSwitch v-model="draft.autoRotate" /><ElInputNumber
                 v-model="draft.intervalSeconds"
                 :min="5"
                 :max="120"
-              /><small>秒/页</small>
+              /><small>{{ t('秒/页') }}</small>
             </div></ElCol
           >
         </ElRow>
-        <ElButton type="primary" :loading="saving" @click="save">应用到大屏</ElButton>
+        <ElButton type="primary" :loading="saving" @click="save">{{ t('应用到大屏') }}</ElButton>
       </ElCard>
-      <ElEmpty v-else-if="!loading && !errorMessage" description="锁定获奖名单后即可控制颁奖展示" />
+      <ElEmpty
+        v-else-if="!loading && !errorMessage"
+        :description="t('锁定获奖名单后即可控制颁奖展示')"
+      />
     </el-main>
   </el-container>
 </template>
@@ -83,6 +96,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { contestApi } from '../api/contest';
 import { awardsApi, type AwardPresentation, type AwardPresentationStatus } from '../api/awards';
 import { getErrorMessage } from '../api/client';
+import { useI18n } from '../i18n';
+const { t } = useI18n();
 import type { Contest } from '../api/types';
 import {
   subscribeContestEvents,
@@ -109,8 +124,8 @@ const currentIndex = computed(
   () =>
     presentation.value?.categories.findIndex((item) => item.id === draft.currentCategoryId) ?? -1,
 );
-const statusLabel = computed(
-  () => ({ WAITING: '等待开始', PRESENTING: '进行中', COMPLETED: '已结束' })[draft.status],
+const statusLabel = computed(() =>
+  t({ WAITING: '等待开始', PRESENTING: '进行中', COMPLETED: '已结束' }[draft.status]),
 );
 
 function apply(value: AwardPresentation) {
@@ -164,7 +179,7 @@ async function save() {
   try {
     apply(await awardsApi.updatePresentation(contestId.value, { ...draft }));
     errorMessage.value = '';
-    ElMessage.success('颁奖展示已更新');
+    ElMessage.success(t('颁奖展示已更新'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
     await load();

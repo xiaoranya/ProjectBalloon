@@ -11,7 +11,7 @@
       <p>{{ viewLabel(currentView) }}</p>
       <h1>{{ currentView }}</h1>
       <span v-if="errorMessage">{{ errorMessage }}</span
-      ><span v-else>等待控制台下发画面切换命令</span>
+      ><span v-else>{{ t('等待控制台下发画面切换命令') }}</span>
     </section>
   </main>
 </template>
@@ -21,6 +21,8 @@ import { useRoute } from 'vue-router';
 import { ApiError, getErrorMessage } from '../api/client';
 import { screenApi, type ScreenRegistration, type ScreenViewTarget } from '../api/screen';
 import { resolveScreenPlayback } from '../composables/screenPlayback';
+import { useI18n } from '../i18n';
+const { t } = useI18n();
 const route = useRoute();
 const contestId = Number(route.query.contestId) || null;
 const screenName = String(route.query.name || 'ProjectBalloon Screen');
@@ -36,15 +38,17 @@ let heartbeatInFlight = false;
 let stopped = false;
 
 function viewLabel(value: ScreenViewTarget) {
-  return {
-    SCOREBOARD: '实时榜单',
-    FIRST_BLOOD: 'First Blood',
-    BALLOONS: '气球状态',
-    FREEZE_COUNTDOWN: '封榜倒计时',
-    STATISTICS: '比赛统计',
-    RESOLVER: '滚榜仪式',
-    AWARDS: '颁奖典礼',
-  }[value];
+  return t(
+    {
+      SCOREBOARD: '实时榜单',
+      FIRST_BLOOD: 'First Blood',
+      BALLOONS: '气球状态',
+      FREEZE_COUNTDOWN: '封榜倒计时',
+      STATISTICS: '比赛统计',
+      RESOLVER: '滚榜仪式',
+      AWARDS: '颁奖典礼',
+    }[value],
+  );
 }
 
 function scheduleHeartbeat() {
@@ -101,7 +105,7 @@ async function heartbeat() {
 
 onMounted(async () => {
   if (!contestId) {
-    errorMessage.value = '请使用 ?contestId= 指定比赛';
+    errorMessage.value = t('请使用 ?contestId= 指定比赛');
     return;
   }
   try {

@@ -4,10 +4,10 @@
       <header class="dashboard-header">
         <div>
           <p class="eyebrow">Contestant Dashboard</p>
-          <h1>选择比赛</h1>
-          <p>欢迎回来，{{ session.state.user?.displayName }}</p>
+          <h1>{{ t('选择比赛') }}</h1>
+          <p>{{ t('欢迎回来，{name}', { name: session.state.user?.displayName ?? '' }) }}</p>
         </div>
-        <ElButton plain @click="logout">退出登录</ElButton>
+        <ElButton plain @click="logout">{{ t('退出登录') }}</ElButton>
       </header>
     </el-header>
 
@@ -21,37 +21,40 @@
         class="page-alert"
       >
         <template #default>
-          <ElButton link type="primary" @click="loadContests">重新加载</ElButton>
+          <ElButton link type="primary" @click="loadContests">{{ t('重新加载') }}</ElButton>
         </template>
       </ElAlert>
 
       <div v-loading="loading" class="contest-grid">
-        <ElEmpty v-if="!loading && page.content.length === 0" description="当前没有可访问的比赛" />
+        <ElEmpty
+          v-if="!loading && page.content.length === 0"
+          :description="t('当前没有可访问的比赛')"
+        />
         <article v-for="contest in page.content" :key="contest.id" class="contest-card">
           <div class="contest-card-top">
             <ElTag :type="contest.status === 'RUNNING' ? 'success' : 'info'" effect="light">
               {{ contestStatusLabel(contest.status) }}
             </ElTag>
-            <span>{{ contest.visibility === 'PRIVATE' ? '私有比赛' : '公开比赛' }}</span>
+            <span>{{ t(contest.visibility === 'PRIVATE' ? '私有比赛' : '公开比赛') }}</span>
           </div>
           <h2>{{ contest.name }}</h2>
           <dl class="contest-times">
             <div>
-              <dt>开始</dt>
+              <dt>{{ t('开始') }}</dt>
               <dd>{{ formatDateTime(contest.startAt) }}</dd>
             </div>
             <div>
-              <dt>封榜</dt>
+              <dt>{{ t('封榜') }}</dt>
               <dd>{{ formatDateTime(contest.freezeAt) }}</dd>
             </div>
             <div>
-              <dt>结束</dt>
+              <dt>{{ t('结束') }}</dt>
               <dd>{{ formatDateTime(contest.endAt) }}</dd>
             </div>
           </dl>
-          <ElButton type="primary" size="large" @click="enterContest(contest.id)"
-            >进入比赛</ElButton
-          >
+          <ElButton type="primary" size="large" @click="enterContest(contest.id)">{{
+            t('进入比赛')
+          }}</ElButton>
         </article>
       </div>
       <ElRow v-if="page.totalPages > 1" justify="end" class="pagination-row">
@@ -75,9 +78,11 @@ import { getErrorMessage } from '../api/client';
 import type { Contest, PageResponse } from '../api/types';
 import { useSession } from '../auth/session';
 import { contestStatusLabel, formatDateTime } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const router = useRouter();
 const session = useSession();
+const { t } = useI18n();
 const page = ref<PageResponse<Contest>>({
   content: [],
   page: 0,

@@ -5,48 +5,48 @@
         <span>PB</span>
         <div>
           <strong>ProjectBalloon</strong>
-          <small>赛事管理控制台</small>
+          <small>{{ t('赛事管理控制台') }}</small>
         </div>
       </RouterLink>
 
       <el-menu router class="admin-nav-menu" :default-active="route.path">
         <el-menu-item index="/admin">
           <ElIcon><Monitor /></ElIcon>
-          <span>健康与审计</span>
+          <span>{{ t('健康与审计') }}</span>
         </el-menu-item>
         <el-menu-item v-if="session.isAdmin.value" index="/admin/contests">
           <ElIcon><Trophy /></ElIcon>
-          <span>比赛管理</span>
+          <span>{{ t('比赛管理') }}</span>
         </el-menu-item>
         <el-menu-item v-if="session.isAdmin.value" index="/admin/team-import">
           <ElIcon><UploadFilled /></ElIcon>
-          <span>队伍批量导入</span>
+          <span>{{ t('队伍批量导入') }}</span>
         </el-menu-item>
         <el-menu-item
           v-if="session.isAdmin.value && session.state.deployment.mode === 'competition'"
           index="/admin/competition"
         >
           <ElIcon><Connection /></ElIcon>
-          <span>终端绑定</span>
+          <span>{{ t('终端绑定') }}</span>
         </el-menu-item>
         <el-menu-item v-if="session.isSuperAdmin.value" index="/admin/problems">
           <ElIcon><Collection /></ElIcon>
-          <span>题库管理</span>
+          <span>{{ t('题库管理') }}</span>
         </el-menu-item>
         <el-menu-item
           v-if="session.isSuperAdmin.value && session.state.deployment.mode !== 'competition'"
           index="/admin/practice"
         >
           <ElIcon><EditPen /></ElIcon>
-          <span>日常练习</span>
+          <span>{{ t('日常练习') }}</span>
         </el-menu-item>
         <el-menu-item v-if="session.isSuperAdmin.value" index="/admin/staff-accounts">
           <ElIcon><UserFilled /></ElIcon>
-          <span>工作人员账号</span>
+          <span>{{ t('工作人员账号') }}</span>
         </el-menu-item>
         <el-menu-item v-if="session.isSuperAdmin.value" index="/admin/permissions">
           <ElIcon><Lock /></ElIcon>
-          <span>比赛管理员权限</span>
+          <span>{{ t('比赛管理员权限') }}</span>
         </el-menu-item>
       </el-menu>
 
@@ -55,7 +55,7 @@
           <strong>{{ session.state.user?.displayName }}</strong>
           <small>{{ roleLabel }}</small>
         </div>
-        <ElButton text :icon="SwitchButton" aria-label="退出登录" @click="logout" />
+        <ElButton text :icon="SwitchButton" :aria-label="t('退出登录')" @click="logout" />
       </div>
     </el-aside>
 
@@ -70,10 +70,12 @@ import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Connection, EditPen, SwitchButton } from '@element-plus/icons-vue';
 import { useSession } from '../auth/session';
+import { useI18n } from '../i18n';
 
 const route = useRoute();
 const router = useRouter();
 const session = useSession();
+const { t } = useI18n();
 const roleLabels: Record<string, string> = {
   SUPER_ADMIN: '超级管理员',
   CONTEST_ADMIN: '比赛管理员',
@@ -87,7 +89,7 @@ const roleLabels: Record<string, string> = {
 };
 const roleLabel = computed(() => {
   const userType = session.state.user?.userType ?? '';
-  return roleLabels[userType] ?? userType;
+  return t(roleLabels[userType] ?? userType);
 });
 
 async function logout() {

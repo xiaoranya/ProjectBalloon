@@ -3,71 +3,77 @@
     ><template #header
       ><div class="card-header">
         <div>
-          <strong>播放列表与同步分组</strong
-          ><small>同组大屏按服务器时间轴同步播放，锁屏会覆盖播放列表。</small>
+          <strong>{{ t('播放列表与同步分组') }}</strong
+          ><small>{{ t('同组大屏按服务器时间轴同步播放，锁屏会覆盖播放列表。') }}</small>
         </div>
-        <ElButton :loading="loading" @click="load">刷新</ElButton>
+        <ElButton :loading="loading" @click="load">{{ t('刷新') }}</ElButton>
       </div></template
     >
     <ElTabs>
-      <ElTabPane label="播放列表"
+      <ElTabPane :label="t('播放列表')"
         ><div class="toolbar">
-          <ElButton type="primary" @click="editPlaylist()">新建播放列表</ElButton>
+          <ElButton type="primary" @click="editPlaylist()">{{ t('新建播放列表') }}</ElButton>
         </div>
         <ElTable :data="playlists" row-key="id"
-          ><ElTableColumn prop="name" label="名称" /><ElTableColumn label="内容" min-width="260"
+          ><ElTableColumn prop="name" :label="t('名称')" /><ElTableColumn
+            :label="t('内容')"
+            min-width="260"
             ><template #default="{ row }"
               ><ElTag v-for="item in row.items" :key="item.id"
                 >{{ label(item.targetView) }} · {{ item.durationSeconds }}s</ElTag
               ></template
             ></ElTableColumn
-          ><ElTableColumn label="循环" width="80"
+          ><ElTableColumn :label="t('循环')" width="80"
             ><template #default="{ row }">{{
-              row.loopEnabled ? '是' : '否'
+              row.loopEnabled ? t('是') : t('否')
             }}</template></ElTableColumn
-          ><ElTableColumn label="操作" width="150"
+          ><ElTableColumn :label="t('操作')" width="150"
             ><template #default="{ row }"
-              ><ElButton link @click="editPlaylist(row)">编辑</ElButton
-              ><ElButton link type="danger" @click="removePlaylist(row)">删除</ElButton></template
+              ><ElButton link @click="editPlaylist(row)">{{ t('编辑') }}</ElButton
+              ><ElButton link type="danger" @click="removePlaylist(row)">{{
+                t('删除')
+              }}</ElButton></template
             ></ElTableColumn
           ></ElTable
         ></ElTabPane
       >
-      <ElTabPane label="同步分组"
+      <ElTabPane :label="t('同步分组')"
         ><div class="toolbar">
-          <ElButton type="primary" @click="editGroup()">新建分组</ElButton>
+          <ElButton type="primary" @click="editGroup()">{{ t('新建分组') }}</ElButton>
         </div>
         <ElTable :data="groups" row-key="id"
-          ><ElTableColumn prop="name" label="分组" /><ElTableColumn label="成员"
+          ><ElTableColumn prop="name" :label="t('分组')" /><ElTableColumn :label="t('成员')"
             ><template #default="{ row }">{{
-              row.instanceIds.map(instanceName).join('、') || '无成员'
+              row.instanceIds.map(instanceName).join('、') || t('无成员')
             }}</template></ElTableColumn
-          ><ElTableColumn label="状态" width="140"
+          ><ElTableColumn :label="t('状态')" width="140"
             ><template #default="{ row }"
               ><ElTag>{{ row.playbackStatus }}</ElTag
-              ><ElTag v-if="row.lockedView" type="danger"
-                >锁定 {{ label(row.lockedView) }}</ElTag
-              ></template
+              ><ElTag v-if="row.lockedView" type="danger">{{
+                t('锁定 {view}', { view: label(row.lockedView) })
+              }}</ElTag></template
             ></ElTableColumn
-          ><ElTableColumn label="控制" min-width="420"
+          ><ElTableColumn :label="t('控制')" min-width="420"
             ><template #default="{ row }"
               ><ElSelect
                 v-model="selectedPlaylist[row.id]"
-                placeholder="播放列表"
+                :placeholder="t('播放列表')"
                 style="width: 150px"
                 ><ElOption
                   v-for="item in playlists"
                   :key="item.id"
                   :label="item.name"
                   :value="item.id" /></ElSelect
-              ><ElButton @click="control(row, 'PLAY')">播放</ElButton
-              ><ElButton v-if="row.playbackStatus === 'PLAYING'" @click="control(row, 'PAUSE')"
-                >暂停</ElButton
-              ><ElButton v-if="row.playbackStatus === 'PAUSED'" @click="control(row, 'RESUME')"
-                >继续</ElButton
-              ><ElButton @click="control(row, 'STOP')">停止</ElButton
+              ><ElButton @click="control(row, 'PLAY')">{{ t('播放') }}</ElButton
+              ><ElButton v-if="row.playbackStatus === 'PLAYING'" @click="control(row, 'PAUSE')">{{
+                t('暂停')
+              }}</ElButton
+              ><ElButton v-if="row.playbackStatus === 'PAUSED'" @click="control(row, 'RESUME')">{{
+                t('继续')
+              }}</ElButton
+              ><ElButton @click="control(row, 'STOP')">{{ t('停止') }}</ElButton
               ><ElDropdown @command="(value) => control(row, 'LOCK', value)"
-                ><ElButton>锁屏</ElButton
+                ><ElButton>{{ t('锁屏') }}</ElButton
                 ><template #dropdown
                   ><ElDropdownMenu
                     ><ElDropdownItem v-for="target in targets" :key="target" :command="target">{{
@@ -75,14 +81,16 @@
                     }}</ElDropdownItem></ElDropdownMenu
                   ></template
                 ></ElDropdown
-              ><ElButton v-if="row.lockedView" @click="control(row, 'UNLOCK')"
-                >解锁</ElButton
-              ></template
+              ><ElButton v-if="row.lockedView" @click="control(row, 'UNLOCK')">{{
+                t('解锁')
+              }}</ElButton></template
             ></ElTableColumn
-          ><ElTableColumn label="管理" width="130"
+          ><ElTableColumn :label="t('管理')" width="130"
             ><template #default="{ row }"
-              ><ElButton link @click="editGroup(row)">编辑</ElButton
-              ><ElButton link type="danger" @click="removeGroup(row)">删除</ElButton></template
+              ><ElButton link @click="editGroup(row)">{{ t('编辑') }}</ElButton
+              ><ElButton link type="danger" @click="removeGroup(row)">{{
+                t('删除')
+              }}</ElButton></template
             ></ElTableColumn
           ></ElTable
         ></ElTabPane
@@ -90,12 +98,12 @@
     </ElTabs>
     <ElDialog
       v-model="playlistDialog"
-      :title="playlistEditing ? '编辑播放列表' : '新建播放列表'"
+      :title="playlistEditing ? t('编辑播放列表') : t('新建播放列表')"
       width="620"
       ><ElForm label-position="top"
-        ><ElFormItem label="名称"
+        ><ElFormItem :label="t('名称')"
           ><ElInput v-model="playlistForm.name" maxlength="120" /></ElFormItem
-        ><ElCheckbox v-model="playlistForm.loopEnabled">循环播放</ElCheckbox>
+        ><ElCheckbox v-model="playlistForm.loopEnabled">{{ t('循环播放') }}</ElCheckbox>
         <div v-for="(item, index) in playlistForm.items" :key="index" class="item-row">
           <ElSelect v-model="item.targetView"
             ><ElOption
@@ -106,23 +114,27 @@
           ><ElInputNumber v-model="item.durationSeconds" :min="5" :max="3600" /><ElButton
             :disabled="playlistForm.items.length === 1"
             @click="playlistForm.items.splice(index, 1)"
-            >移除</ElButton
+            >{{ t('移除') }}</ElButton
           >
         </div>
         <ElButton
           :disabled="playlistForm.items.length >= 20"
           @click="playlistForm.items.push({ targetView: 'SCOREBOARD', durationSeconds: 15 })"
-          >添加画面</ElButton
+          >{{ t('添加画面') }}</ElButton
         ></ElForm
       ><template #footer
-        ><ElButton @click="playlistDialog = false">取消</ElButton
-        ><ElButton type="primary" @click="savePlaylist">保存</ElButton></template
+        ><ElButton @click="playlistDialog = false">{{ t('取消') }}</ElButton
+        ><ElButton type="primary" @click="savePlaylist">{{ t('保存') }}</ElButton></template
       ></ElDialog
     >
-    <ElDialog v-model="groupDialog" :title="groupEditing ? '编辑分组' : '新建分组'" width="520"
+    <ElDialog
+      v-model="groupDialog"
+      :title="groupEditing ? t('编辑分组') : t('新建分组')"
+      width="520"
       ><ElForm label-position="top"
-        ><ElFormItem label="名称"><ElInput v-model="groupForm.name" maxlength="120" /></ElFormItem
-        ><ElFormItem label="大屏成员"
+        ><ElFormItem :label="t('名称')"
+          ><ElInput v-model="groupForm.name" maxlength="120" /></ElFormItem
+        ><ElFormItem :label="t('大屏成员')"
           ><ElSelect v-model="groupForm.instanceIds" multiple style="width: 100%"
             ><ElOption
               v-for="item in activeInstances"
@@ -130,8 +142,8 @@
               :value="item.id"
               :label="item.name" /></ElSelect></ElFormItem></ElForm
       ><template #footer
-        ><ElButton @click="groupDialog = false">取消</ElButton
-        ><ElButton type="primary" @click="saveGroup">保存</ElButton></template
+        ><ElButton @click="groupDialog = false">{{ t('取消') }}</ElButton
+        ><ElButton type="primary" @click="saveGroup">{{ t('保存') }}</ElButton></template
       ></ElDialog
     >
   </ElCard>
@@ -148,6 +160,8 @@ import {
   type ScreenPlaylist,
   type ScreenViewTarget,
 } from '../api/screen';
+import { useI18n } from '../i18n';
+const { t } = useI18n();
 const props = defineProps<{ contestId: number; instances: ScreenInstance[] }>();
 const playlists = ref<ScreenPlaylist[]>([]);
 const groups = ref<ScreenGroup[]>([]);
@@ -174,15 +188,17 @@ const playlistForm = reactive({
 const groupForm = reactive({ name: '', instanceIds: [] as number[] });
 const activeInstances = computed(() => props.instances.filter((item) => !item.revokedAt));
 function label(value: ScreenViewTarget) {
-  return {
-    SCOREBOARD: '榜单',
-    FIRST_BLOOD: '首杀',
-    BALLOONS: '气球',
-    FREEZE_COUNTDOWN: '封榜倒计时',
-    STATISTICS: '统计',
-    RESOLVER: 'Resolver',
-    AWARDS: '颁奖',
-  }[value];
+  return t(
+    {
+      SCOREBOARD: '榜单',
+      FIRST_BLOOD: '首杀',
+      BALLOONS: '气球',
+      FREEZE_COUNTDOWN: '封榜倒计时',
+      STATISTICS: '统计',
+      RESOLVER: 'Resolver',
+      AWARDS: '颁奖',
+    }[value],
+  );
 }
 function instanceName(id: number) {
   return props.instances.find((item) => item.id === id)?.name ?? `#${id}`;
@@ -235,7 +251,7 @@ async function savePlaylist() {
 async function removePlaylist(value: unknown) {
   const row = value as ScreenPlaylist;
   try {
-    await ElMessageBox.confirm(`删除播放列表“${row.name}”？`, '确认删除');
+    await ElMessageBox.confirm(t('删除播放列表“{name}”？', { name: row.name }), t('确认删除'));
     await screenApi.deletePlaylist(row.id);
     await load();
   } catch (error) {
@@ -267,7 +283,7 @@ async function saveGroup() {
 async function removeGroup(value: unknown) {
   const row = value as ScreenGroup;
   try {
-    await ElMessageBox.confirm(`删除同步分组“${row.name}”？`, '确认删除');
+    await ElMessageBox.confirm(t('删除同步分组“{name}”？', { name: row.name }), t('确认删除'));
     await screenApi.deleteGroup(row.id);
     await load();
   } catch (error) {
@@ -284,7 +300,7 @@ async function control(value: unknown, action: ScreenGroupAction, target?: Scree
           ? { targetView: target }
           : {};
     if (action === 'PLAY' && !options.playlistId) {
-      ElMessage.warning('请先选择播放列表');
+      ElMessage.warning(t('请先选择播放列表'));
       return;
     }
     await screenApi.controlGroup(row.id, action, row.version, options);

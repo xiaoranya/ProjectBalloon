@@ -2,8 +2,8 @@
   <el-container direction="vertical" class="admin-page permissions-page">
     <el-header height="auto" class="page-head">
       <div class="admin-page-header compact">
-        <h1>比赛管理员授权</h1>
-        <ElButton :icon="Refresh" :loading="loading" @click="load">刷新</ElButton>
+        <h1>{{ t('比赛管理员授权') }}</h1>
+        <ElButton :icon="Refresh" :loading="loading" @click="load">{{ t('刷新') }}</ElButton>
       </div>
     </el-header>
     <el-main class="page-body">
@@ -25,7 +25,7 @@
                 <span>@{{ admin.username }} · #{{ admin.userId }}</span>
               </div>
               <ElTag :type="admin.enabled ? 'success' : 'info'">
-                {{ admin.enabled ? '已启用' : '已停用' }}
+                {{ admin.enabled ? t('已启用') : t('已停用') }}
               </ElTag>
             </div>
           </template>
@@ -48,22 +48,24 @@
             </ElRow>
           </ElCheckboxGroup>
 
-          <ElEmpty v-if="!contests.length" description="尚无可分配比赛" />
+          <ElEmpty v-if="!contests.length" :description="t('尚无可分配比赛')" />
 
           <div class="permission-admin-actions">
-            <span>已选择 {{ draftScopes[admin.userId]?.length ?? 0 }} 场比赛</span>
+            <span>{{
+              t('已选择 {count} 场比赛', { count: draftScopes[admin.userId]?.length ?? 0 })
+            }}</span>
             <ElButton
               type="primary"
               :loading="savingUserId === admin.userId"
               :disabled="!changed(admin)"
               @click="save(admin)"
             >
-              保存授权
+              {{ t('保存授权') }}
             </ElButton>
           </div>
         </ElCard>
 
-        <ElEmpty v-if="!loading && !admins.length" description="当前没有比赛管理员账号" />
+        <ElEmpty v-if="!loading && !admins.length" :description="t('当前没有比赛管理员账号')" />
       </div>
     </el-main>
   </el-container>
@@ -76,6 +78,9 @@ import { adminApi } from '../api/admin';
 import { getErrorMessage } from '../api/client';
 import type { Contest, ContestAdminScope } from '../api/types';
 import { contestStatusLabel } from '../utils/format';
+import { useI18n } from '../i18n';
+
+const { t } = useI18n();
 
 const loading = ref(false);
 const savingUserId = ref<number | null>(null);

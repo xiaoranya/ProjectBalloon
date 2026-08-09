@@ -4,17 +4,17 @@
       <div class="brand" @click="router.push('/contests')">
         <span class="brand-mark">PB</span>
         <div>
-          <strong>{{ contest?.name ?? '比赛工作台' }}</strong>
+          <strong>{{ contest?.name ?? t('比赛工作台') }}</strong>
           <small v-if="contest">{{ contestStatusLabel(contest.status) }} · {{ timeHint }}</small>
         </div>
       </div>
 
-      <nav class="contest-nav" aria-label="比赛导航">
-        <RouterLink :to="contestRoute('problems')">题目</RouterLink>
-        <RouterLink :to="contestRoute('submissions')">提交记录</RouterLink>
-        <RouterLink :to="contestRoute('clarifications')">答疑</RouterLink>
-        <RouterLink :to="contestRoute('printing')">打印</RouterLink>
-        <RouterLink :to="contestRoute('scoreboard')">榜单</RouterLink>
+      <nav class="contest-nav" :aria-label="t('比赛导航')">
+        <RouterLink :to="contestRoute('problems')">{{ t('题目') }}</RouterLink>
+        <RouterLink :to="contestRoute('submissions')">{{ t('提交记录') }}</RouterLink>
+        <RouterLink :to="contestRoute('clarifications')">{{ t('答疑') }}</RouterLink>
+        <RouterLink :to="contestRoute('printing')">{{ t('打印') }}</RouterLink>
+        <RouterLink :to="contestRoute('scoreboard')">{{ t('榜单') }}</RouterLink>
       </nav>
 
       <ElDropdown trigger="click" @command="handleCommand">
@@ -25,8 +25,8 @@
         </button>
         <template #dropdown>
           <ElDropdownMenu>
-            <ElDropdownItem command="contests">切换比赛</ElDropdownItem>
-            <ElDropdownItem command="logout" divided>退出登录</ElDropdownItem>
+            <ElDropdownItem command="contests">{{ t('切换比赛') }}</ElDropdownItem>
+            <ElDropdownItem command="logout" divided>{{ t('退出登录') }}</ElDropdownItem>
           </ElDropdownMenu>
         </template>
       </ElDropdown>
@@ -55,10 +55,12 @@ import { getErrorMessage } from '../api/client';
 import type { Contest } from '../api/types';
 import { useSession } from '../auth/session';
 import { contestStatusLabel } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const route = useRoute();
 const router = useRouter();
 const session = useSession();
+const { t } = useI18n();
 const contest = ref<Contest | null>(null);
 const loadError = ref('');
 const now = ref(Date.now());
@@ -69,12 +71,16 @@ const timeHint = computed(() => {
   if (!contest.value) return '';
   const afterStart = ['RUNNING', 'PAUSED', 'ENDED', 'ARCHIVED'].includes(contest.value.status);
   const target = afterStart ? contest.value.endAt : contest.value.startAt;
-  if (!target) return '未设置时间';
+  if (!target) return t('未设置时间');
   const seconds = Math.max(0, Math.floor((new Date(target).getTime() - now.value) / 1000));
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  if (contest.value.status === 'ENDED' || contest.value.status === 'ARCHIVED') return '比赛已结束';
-  return `${hours} 小时 ${minutes} 分钟${afterStart ? '后结束' : '后开始'}`;
+  if (contest.value.status === 'ENDED' || contest.value.status === 'ARCHIVED')
+    return t('比赛已结束');
+  return t(afterStart ? '{hours} 小时 {minutes} 分钟后结束' : '{hours} 小时 {minutes} 分钟后开始', {
+    hours,
+    minutes,
+  });
 });
 
 function contestRoute(child: string) {
@@ -98,7 +104,7 @@ async function handleCommand(command: string) {
   }
   if (command === 'logout') {
     await session.logout();
-    ElMessage.success('已退出登录');
+    ElMessage.success(t('已退出登录'));
     await router.push('/login');
   }
 }

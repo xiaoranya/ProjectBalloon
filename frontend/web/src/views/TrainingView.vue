@@ -2,10 +2,10 @@
   <el-container direction="vertical" class="training-page">
     <el-header height="auto" class="page-head">
       <div>
-        <h1>训练计划</h1>
+        <h1>{{ t('训练计划') }}</h1>
       </div>
       <RouterLink to="/problem-bank">
-        <ElButton>公开题库</ElButton>
+        <ElButton>{{ t('公开题库') }}</ElButton>
       </RouterLink>
     </el-header>
     <el-main class="page-body">
@@ -15,7 +15,7 @@
             <ElMenuItem v-for="item in sets" :key="item.id" :index="String(item.id)">
               <div class="set-item">
                 <strong>{{ item.title }}</strong>
-                <span>{{ item.itemCount }} 题</span>
+                <span>{{ t('{count} 题', { count: item.itemCount }) }}</span>
               </div>
             </ElMenuItem>
           </ElMenu>
@@ -27,23 +27,23 @@
                 <h2>{{ selected.setInfo.title }}</h2>
                 <p>{{ selected.setInfo.description }}</p>
               </div>
-              <ElButton type="primary" @click="enroll">加入训练</ElButton>
+              <ElButton type="primary" @click="enroll">{{ t('加入训练') }}</ElButton>
             </div>
             <ElTable :data="selected.items" row-key="problemId">
               <ElTableColumn prop="position" label="#" width="64" />
-              <ElTableColumn prop="title" label="题目" />
-              <ElTableColumn label="要求" width="90">
+              <ElTableColumn prop="title" :label="t('题目')" />
+              <ElTableColumn :label="t('要求')" width="90">
                 <template #default="{ row }">
-                  <ElTag v-if="row.required" type="danger" size="small">必做</ElTag>
-                  <span v-else>选做</span>
+                  <ElTag v-if="row.required" type="danger" size="small">{{ t('必做') }}</ElTag>
+                  <span v-else>{{ t('选做') }}</span>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="难度" width="80">
+              <ElTableColumn :label="t('难度')" width="80">
                 <template #default="{ row }">{{ row.difficulty ?? '-' }}</template>
               </ElTableColumn>
             </ElTable>
           </template>
-          <ElEmpty v-else description="暂无公开训练集" />
+          <ElEmpty v-else :description="t('暂无公开训练集')" />
         </section>
       </div>
     </el-main>
@@ -54,6 +54,8 @@ import { onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { trainingApi, type TrainingSet, type TrainingSetDetail } from '../api/training';
 import { getErrorMessage } from '../api/client';
+import { useI18n } from '../i18n';
+const { t } = useI18n();
 const sets = ref<TrainingSet[]>([]);
 const selected = ref<TrainingSetDetail>();
 const loading = ref(false);
@@ -84,7 +86,7 @@ async function enroll() {
   if (!selected.value) return;
   try {
     await trainingApi.enroll(selected.value.setInfo.id);
-    ElMessage.success('已加入训练计划');
+    ElMessage.success(t('已加入训练计划'));
   } catch (e) {
     ElMessage.error(getErrorMessage(e));
   }

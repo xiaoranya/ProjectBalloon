@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import LoginView from './LoginView.vue';
+import { setLocale } from '../i18n';
 
 const mocks = vi.hoisted(() => ({
   login: vi.fn(),
@@ -34,11 +35,21 @@ const individual = {
 
 describe('LoginView', () => {
   beforeEach(() => {
+    setLocale('zh-CN');
     vi.clearAllMocks();
     route.query = {};
     mocks.login.mockResolvedValue(individual);
     mocks.logout.mockResolvedValue(undefined);
     mocks.state.deployment.mode = 'standard';
+  });
+
+  it('renders the team login in English when the locale changes', () => {
+    setLocale('en');
+    const wrapper = mount(LoginView, { global: { stubs: { RouterLink: true } } });
+
+    expect(wrapper.text()).toContain('Team Sign In');
+    expect(wrapper.text()).toContain('Username');
+    expect(wrapper.text()).toContain('Sign in');
   });
 
   it('offers pairing and account login in competition mode', async () => {

@@ -10,13 +10,18 @@
         :closable="false"
       >
         <template #default
-          ><ElButton link type="primary" @click="loadProblem">重新加载</ElButton></template
+          ><ElButton link type="primary" @click="loadProblem">{{
+            t('重新加载')
+          }}</ElButton></template
         >
       </ElAlert>
       <template v-else-if="problem">
         <div class="problem-heading">
-          <ElButton link :icon="ArrowLeft" @click="router.push(`/contests/${contestId}/problems`)"
-            >返回题目列表</ElButton
+          <ElButton
+            link
+            :icon="ArrowLeft"
+            @click="router.push(`/contests/${contestId}/problems`)"
+            >{{ t('返回题目列表') }}</ElButton
           >
           <div class="problem-title-line">
             <span class="large-alias" :style="{ '--problem-color': problem.color || '#2563eb' }">
@@ -25,7 +30,7 @@
             <div>
               <h1>{{ problem.title }}</h1>
               <p>
-                {{ problem.timeLimitMs }} ms · {{ problem.memoryLimitMb }} MB · 输出限制
+                {{ problem.timeLimitMs }} ms · {{ problem.memoryLimitMb }} MB · {{ t('输出限制') }}
                 {{ problem.outputLimitKb }} KiB
               </p>
             </div>
@@ -43,25 +48,25 @@
                 class="markdown-body"
                 v-html="problem.statement.renderedHtml"
               ></div>
-              <ElEmpty v-else description="暂无已发布题面" />
+              <ElEmpty v-else :description="t('暂无已发布题面')" />
             </article>
           </ElCol>
           <ElCol :xs="24" :md="9">
             <aside class="submit-card">
               <div>
                 <p class="eyebrow">Submit</p>
-                <h2>{{ language === 'output' ? '提交输出' : '提交代码' }}</h2>
+                <h2>{{ t(language === 'output' ? '提交输出' : '提交代码') }}</h2>
               </div>
               <ElAlert
                 v-if="contest?.status !== 'RUNNING'"
-                title="比赛当前不接受提交"
+                :title="t('比赛当前不接受提交')"
                 type="warning"
                 show-icon
                 :closable="false"
               />
               <ElForm label-position="top" @submit.prevent="submit">
-                <ElFormItem label="语言">
-                  <ElSelect v-model="language" class="wide-control" placeholder="选择语言">
+                <ElFormItem :label="t('语言')">
+                  <ElSelect v-model="language" class="wide-control" :placeholder="t('选择语言')">
                     <ElOption
                       v-for="item in problem.languages"
                       :key="item"
@@ -70,7 +75,7 @@
                     />
                   </ElSelect>
                 </ElFormItem>
-                <ElFormItem v-if="language === 'output'" :label="'输出 ZIP'">
+                <ElFormItem v-if="language === 'output'" :label="t('输出 ZIP')">
                   <ElUpload
                     ref="uploadRef"
                     :auto-upload="false"
@@ -81,13 +86,13 @@
                     drag
                   >
                     <ElIcon class="upload-icon"><UploadFilled /></ElIcon>
-                    <div>拖放输出 ZIP 到这里，或点击选择</div>
+                    <div>{{ t('拖放输出 ZIP 到这里，或点击选择') }}</div>
                     <template #tip>
-                      <span>最大 64 KiB</span>
+                      <span>{{ t('最大 64 KiB') }}</span>
                     </template>
                   </ElUpload>
                 </ElFormItem>
-                <ElFormItem v-else label="源码">
+                <ElFormItem v-else :label="t('源码')">
                   <div class="code-input">
                     <ElSegmented v-model="codeMode" :options="codeModeOptions" size="small" />
                     <CodeEditor
@@ -108,9 +113,13 @@
                       drag
                     >
                       <ElIcon class="upload-icon"><UploadFilled /></ElIcon>
-                      <div>拖放源码文件到这里，或点击选择</div>
+                      <div>{{ t('拖放源码文件到这里，或点击选择') }}</div>
                       <template #tip>
-                        <span>扩展名需匹配所选语言（{{ sourceAccept() }}），最大 64 KiB</span>
+                        <span>{{
+                          t('扩展名需匹配所选语言（{extensions}），最大 64 KiB', {
+                            extensions: sourceAccept(),
+                          })
+                        }}</span>
                       </template>
                     </ElUpload>
                   </div>
@@ -139,7 +148,7 @@
                         : !source.trim())
                   "
                 >
-                  {{ language === 'output' ? '提交输出' : '提交代码' }}
+                  {{ t(language === 'output' ? '提交输出' : '提交代码') }}
                 </ElButton>
               </ElForm>
             </aside>
@@ -161,10 +170,12 @@ import { contestApi } from '../api/contest';
 import { getErrorMessage } from '../api/client';
 import type { Contest, ContestProblem } from '../api/types';
 import { languageLabel } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const props = defineProps<{ contest: Contest | null }>();
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const contestId = computed(() => Number(route.params.contestId));
 const problemId = computed(() => Number(route.params.problemId));
 const problem = ref<ContestProblem | null>(null);
@@ -173,10 +184,12 @@ const errorMessage = ref('');
 const language = ref('');
 const source = ref('');
 const codeMode = ref<'editor' | 'file'>('editor');
-const codeModeOptions = [
-  { label: '编辑器', value: 'editor' },
-  { label: '上传文件', value: 'file' },
-];
+const codeModeOptions = computed(() =>
+  [
+    { label: '编辑器', value: 'editor' },
+    { label: '上传文件', value: 'file' },
+  ].map((item) => ({ ...item, label: t(item.label) })),
+);
 const sourceFile = ref<File | null>(null);
 const codeFile = ref<File | null>(null);
 const uploadRef = ref<UploadInstance>();
@@ -209,7 +222,7 @@ async function loadProblem() {
     const problems = await contestApi.listProblems(contestId.value);
     problem.value = problems.find((item) => item.problemId === problemId.value) ?? null;
     if (!problem.value) {
-      errorMessage.value = '题目不存在或不可访问';
+      errorMessage.value = t('题目不存在或不可访问');
       return;
     }
     if (!problem.value.languages.includes(language.value)) {
@@ -226,7 +239,7 @@ function onFileChange(uploadFile: UploadFile) {
   const file = uploadFile.raw ?? null;
   submitError.value = '';
   if (file && file.size > 65_536) {
-    submitError.value = '提交文件不能超过 64 KiB';
+    submitError.value = t('提交文件不能超过 64 KiB');
     sourceFile.value = null;
     uploadRef.value?.clearFiles();
     return;
@@ -243,7 +256,7 @@ function onCodeFileChange(uploadFile: UploadFile) {
   submitError.value = '';
   if (!file) return;
   if (file.size > 65_536) {
-    submitError.value = '提交文件不能超过 64 KiB';
+    submitError.value = t('提交文件不能超过 64 KiB');
     codeFile.value = null;
     codeUploadRef.value?.clearFiles();
     return;
@@ -251,7 +264,9 @@ function onCodeFileChange(uploadFile: UploadFile) {
   const lowerName = file.name.toLowerCase();
   const extensions = sourceAccept().split(',');
   if (!extensions.some((extension) => lowerName.endsWith(extension))) {
-    submitError.value = `源码文件扩展名需匹配所选语言（${sourceAccept()}）`;
+    submitError.value = t('源码文件扩展名需匹配所选语言（{extensions}）', {
+      extensions: sourceAccept(),
+    });
     codeFile.value = null;
     codeUploadRef.value?.clearFiles();
     return;
@@ -275,7 +290,7 @@ async function submit() {
   } else {
     if (!source.value.trim()) return;
     if (new Blob([source.value]).size > 65_536) {
-      submitError.value = '提交内容不能超过 64 KiB';
+      submitError.value = t('提交内容不能超过 64 KiB');
       return;
     }
     file = new File([source.value], sourceFileName(), { type: 'text/plain' });
@@ -284,7 +299,7 @@ async function submit() {
   submitError.value = '';
   try {
     const result = await contestApi.submit(contestId.value, problemId.value, language.value, file);
-    ElMessage.success('提交成功，正在等待判题');
+    ElMessage.success(t('提交成功，正在等待判题'));
     await router.push(`/contests/${contestId.value}/submissions/${result.submissionId}`);
   } catch (error) {
     submitError.value = getErrorMessage(error);

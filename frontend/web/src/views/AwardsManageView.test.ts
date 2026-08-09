@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AwardsManageView from './AwardsManageView.vue';
 import { awardsApi } from '../api/awards';
 import { contestApi } from '../api/contest';
+import { setLocale } from '../i18n';
 
 const replace = vi.fn();
 vi.mock('vue-router', () => ({
@@ -82,6 +83,7 @@ const set = {
 
 describe('AwardsManageView', () => {
   beforeEach(() => {
+    setLocale('zh-CN');
     vi.mocked(contestApi.listContests).mockResolvedValue({
       content: [{ id: 7, name: 'Contest 7' }],
     } as Awaited<ReturnType<typeof contestApi.listContests>>);
@@ -117,6 +119,16 @@ describe('AwardsManageView', () => {
     expect(awardsApi.candidates).toHaveBeenCalledWith(7);
     expect(wrapper.text()).toContain('Team Eight');
     expect(wrapper.text()).toContain('金奖');
+  });
+
+  it('renders management controls in English', async () => {
+    setLocale('en');
+    const wrapper = mount(AwardsManageView);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Award Recipients');
+    expect(wrapper.text()).toContain('Generate Recipients');
+    expect(wrapper.text()).not.toContain('奖项名单管理');
   });
 
   it('freezes using the displayed award-set version', async () => {

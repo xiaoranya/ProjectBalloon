@@ -3,18 +3,22 @@
     <el-header height="auto" class="awards-page-header"
       ><div>
         <p class="eyebrow">Awards Operations</p>
-        <h1>奖项名单管理</h1>
+        <h1>{{ t('奖项名单管理') }}</h1>
       </div>
       <ElSpace wrap :size="10" class="awards-header-actions"
-        ><ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"
+        ><ElSelect
+          v-model="contestId"
+          filterable
+          :placeholder="t('选择比赛')"
+          @change="changeContest"
           ><ElOption
             v-for="contest in contests"
             :key="contest.id"
             :value="contest.id"
             :label="contest.name" /></ElSelect
-        ><ElButton :icon="Refresh" :loading="loading" @click="loadWorkspace"
-          >刷新</ElButton
-        ></ElSpace
+        ><ElButton :icon="Refresh" :loading="loading" @click="loadWorkspace">{{
+          t('刷新')
+        }}</ElButton></ElSpace
       ></el-header
     >
     <el-main class="page-body">
@@ -29,21 +33,24 @@
       <ElRow :gutter="14" class="award-metrics"
         ><ElCol :xs="12" :md="6"
           ><div class="award-metric">
-            <span>奖项类别</span><strong>{{ categories.length }}</strong>
+            <span>{{ t('奖项类别') }}</span
+            ><strong>{{ categories.length }}</strong>
           </div></ElCol
         ><ElCol :xs="12" :md="6"
           ><div class="award-metric">
-            <span>获奖记录</span><strong>{{ awardSet?.recipients.length ?? 0 }}</strong>
+            <span>{{ t('获奖记录') }}</span
+            ><strong>{{ awardSet?.recipients.length ?? 0 }}</strong>
           </div></ElCol
         ><ElCol :xs="12" :md="6"
           ><div class="award-metric">
-            <span>获奖队伍</span><strong>{{ uniqueTeams }}</strong>
+            <span>{{ t('获奖队伍') }}</span
+            ><strong>{{ uniqueTeams }}</strong>
           </div></ElCol
         ><ElCol :xs="12" :md="6"
           ><div class="award-metric">
-            <span>名单状态</span
+            <span>{{ t('名单状态') }}</span
             ><strong :class="{ locked: awardSet?.status === 'FROZEN' }">{{
-              awardSet ? (awardSet.status === 'FROZEN' ? '已锁定' : '草稿') : '未生成'
+              awardSet ? (awardSet.status === 'FROZEN' ? t('已锁定') : t('草稿')) : t('未生成')
             }}</strong>
           </div></ElCol
         ></ElRow
@@ -51,47 +58,50 @@
       <ElCard shadow="never" class="award-command-card"
         ><div class="award-command-bar">
           <div>
-            <strong>名单操作</strong><small>只有已完成的正式 Resolver 可以生成奖项名单。</small>
+            <strong>{{ t('名单操作') }}</strong
+            ><small>{{ t('只有已完成的正式 Resolver 可以生成奖项名单。') }}</small>
           </div>
           <ElSpace wrap :size="10"
-            ><ElSelect v-model="resolverRunId" placeholder="选择正式 Resolver"
+            ><ElSelect v-model="resolverRunId" :placeholder="t('选择正式 Resolver')"
               ><ElOption
                 v-for="item in completedRuns"
                 :key="item.id"
                 :value="item.id"
-                :label="`运行 #${item.id} · ${formatDateTime(item.completedAt)}`" /></ElSelect
+                :label="
+                  t('运行 #{id} · {time}', { id: item.id, time: formatDateTime(item.completedAt) })
+                " /></ElSelect
             ><ElButton
               type="primary"
               :icon="MagicStick"
               :disabled="!resolverRunId || !categories.length || awardSet?.status === 'FROZEN'"
               :loading="mutating"
               @click="generateAwards"
-              >生成名单</ElButton
+              >{{ t('生成名单') }}</ElButton
             ><ElButton
               v-if="awardSet?.status === 'DRAFT'"
               type="warning"
               :icon="Lock"
               :loading="mutating"
               @click="freezeAwards"
-              >锁定名单</ElButton
+              >{{ t('锁定名单') }}</ElButton
             ><ElButton
               v-if="awardSet?.status === 'FROZEN'"
               :icon="Unlock"
               :loading="mutating"
               @click="unfreezeAwards"
-              >解除锁定</ElButton
+              >{{ t('解除锁定') }}</ElButton
             ><ElButton
               :icon="Download"
               :disabled="!awardSet"
               :loading="exporting"
               @click="downloadCsv"
-              >导出名单</ElButton
+              >{{ t('导出名单') }}</ElButton
             ><ElButton
               :icon="Download"
               :disabled="awardSet?.status !== 'FROZEN'"
               :loading="exporting"
               @click="downloadCertificates"
-              >导出证书数据</ElButton
+              >{{ t('导出证书数据') }}</ElButton
             ></ElSpace
           >
         </div></ElCard
@@ -103,7 +113,12 @@
           type="warning"
           show-icon
           :closable="false"
-          :title="`${conflict.teamName} 同时出现在 ${conflict.categoryCodes.join('、')}`"
+          :title="
+            t('{team} 同时出现在 {categories}', {
+              team: conflict.teamName,
+              categories: conflict.categoryCodes.join('、'),
+            })
+          "
         />
       </div>
       <ElRow :gutter="18" class="awards-workspace">
@@ -111,16 +126,19 @@
           <ElCard shadow="never" class="award-categories-card"
             ><template #header
               ><div class="card-header">
-                <div><strong>奖项类别</strong><small>显示顺序必须唯一</small></div>
+                <div>
+                  <strong>{{ t('奖项类别') }}</strong
+                  ><small>{{ t('显示顺序必须唯一') }}</small>
+                </div>
                 <ElButton
                   type="primary"
                   :icon="Plus"
                   :disabled="awardSet?.status === 'FROZEN'"
                   @click="openCreate"
-                  >新增类别</ElButton
+                  >{{ t('新增类别') }}</ElButton
                 >
               </div></template
-            ><ElEmpty v-if="!categories.length" description="尚未配置奖项类别" />
+            ><ElEmpty v-if="!categories.length" :description="t('尚未配置奖项类别')" />
             <div v-else class="award-category-list">
               <article
                 v-for="category in categories"
@@ -138,8 +156,8 @@
                   <p>{{ ruleLabel(category) }}</p>
                   <div class="award-category-tags">
                     <ElTag v-if="category.firstBlood" type="danger">First Blood</ElTag
-                    ><ElTag v-if="category.includeStar" type="warning">含打星队</ElTag
-                    ><span>{{ recipientCount(category.id) }} 支队伍</span>
+                    ><ElTag v-if="category.includeStar" type="warning">{{ t('含打星队') }}</ElTag
+                    ><span>{{ t('{count} 支队伍', { count: recipientCount(category.id) }) }}</span>
                   </div>
                 </div>
                 <div class="award-category-actions">
@@ -148,13 +166,13 @@
                     type="primary"
                     :disabled="awardSet?.status === 'FROZEN'"
                     @click="openEdit(category)"
-                    >编辑</ElButton
+                    >{{ t('编辑') }}</ElButton
                   ><ElButton
                     link
                     type="danger"
                     :disabled="awardSet?.status === 'FROZEN'"
                     @click="deleteCategory(category)"
-                    >删除</ElButton
+                    >{{ t('删除') }}</ElButton
                   >
                 </div>
               </article>
@@ -166,38 +184,42 @@
             ><template #header
               ><div class="card-header">
                 <div>
-                  <strong>获奖名单</strong
-                  ><small>{{ awardSet?.recipients.length ?? 0 }} 条记录</small>
+                  <strong>{{ t('获奖名单') }}</strong
+                  ><small>{{
+                    t('{count} 条记录', { count: awardSet?.recipients.length ?? 0 })
+                  }}</small>
                 </div>
                 <ElButton
                   :icon="Plus"
                   :disabled="!awardSet || awardSet.status === 'FROZEN'"
                   @click="openManual"
-                  >手工添加</ElButton
+                  >{{ t('手工添加') }}</ElButton
                 >
               </div></template
             ><ElTable :data="awardSet?.recipients ?? []" row-key="id"
-              ><ElTableColumn label="奖项" min-width="150"
+              ><ElTableColumn :label="t('奖项')" min-width="150"
                 ><template #default="{ row }"
                   ><ElTag effect="plain">{{ row.categoryCode }}</ElTag
                   ><span> {{ row.categoryName }}</span></template
                 ></ElTableColumn
-              ><ElTableColumn label="队伍" min-width="220"
+              ><ElTableColumn :label="t('队伍')" min-width="220"
                 ><template #default="{ row }"
                   ><div class="award-team-cell">
                     <strong
                       >{{ row.teamName
-                      }}<ElTag v-if="row.isManual" size="small" type="warning">手工</ElTag></strong
+                      }}<ElTag v-if="row.isManual" size="small" type="warning">{{
+                        t('手工')
+                      }}</ElTag></strong
                     ><span>{{ row.school ?? '—' }} · Team #{{ row.teamId }}</span>
                   </div></template
                 ></ElTableColumn
-              ><ElTableColumn prop="rank" label="排名" width="80" /><ElTableColumn
+              ><ElTableColumn prop="rank" :label="t('排名')" width="80" /><ElTableColumn
                 prop="solved"
-                label="解题"
+                :label="t('解题')"
                 width="80" /><ElTableColumn
                 prop="penaltyMinutes"
-                label="罚时"
-                width="90" /><ElTableColumn label="操作" width="90"
+                :label="t('罚时')"
+                width="90" /><ElTableColumn :label="t('操作')" width="90"
                 ><template #default="{ row }"
                   ><ElButton
                     v-if="row.isManual"
@@ -205,62 +227,62 @@
                     type="danger"
                     :disabled="awardSet?.status === 'FROZEN'"
                     @click="removeRecipient(row)"
-                    >移除</ElButton
+                    >{{ t('移除') }}</ElButton
                   ></template
                 ></ElTableColumn
-              ><template #empty><ElEmpty description="尚未生成奖项名单" /></template></ElTable
+              ><template #empty><ElEmpty :description="t('尚未生成奖项名单')" /></template></ElTable
           ></ElCard>
         </ElCol>
       </ElRow>
       <ElDialog
         v-model="categoryVisible"
-        :title="editing ? '编辑奖项类别' : '新增奖项类别'"
+        :title="editing ? t('编辑奖项类别') : t('新增奖项类别')"
         width="min(720px, 94vw)"
         ><ElForm label-position="top"
           ><ElRow :gutter="16" class="award-form-grid"
             ><ElCol :xs="12" :sm="12"
-              ><ElFormItem label="代码"
+              ><ElFormItem :label="t('代码')"
                 ><ElInput v-model="categoryForm.code" maxlength="64" /></ElFormItem></ElCol
             ><ElCol :xs="12" :sm="12"
-              ><ElFormItem label="名称"
+              ><ElFormItem :label="t('名称')"
                 ><ElInput v-model="categoryForm.name" maxlength="128" /></ElFormItem></ElCol
             ><ElCol :xs="12" :sm="12"
-              ><ElFormItem label="显示顺序"
+              ><ElFormItem :label="t('显示顺序')"
                 ><ElInputNumber
                   v-model="categoryForm.displayOrder"
                   :min="1"
                   :max="1000" /></ElFormItem></ElCol
             ><ElCol :xs="12" :sm="12"
-              ><ElFormItem label="参赛类型"
+              ><ElFormItem :label="t('参赛类型')"
                 ><ElSelect v-model="categoryForm.participationType" clearable
-                  ><ElOption label="正式" value="OFFICIAL" /><ElOption
-                    label="打星"
+                  ><ElOption :label="t('正式')" value="OFFICIAL" /><ElOption
+                    :label="t('打星')"
                     value="STAR" /><ElOption
-                    label="练习"
+                    :label="t('练习')"
                     value="PRACTICE" /></ElSelect></ElFormItem></ElCol
             ><ElCol :xs="12" :sm="12"
-              ><ElFormItem label="组别"
+              ><ElFormItem :label="t('组别')"
                 ><ElInput v-model="categoryForm.groupName" clearable /></ElFormItem></ElCol
             ><ElCol :xs="12" :sm="12"
-              ><ElFormItem label="选项"
-                ><ElCheckbox v-model="categoryForm.includeStar">允许打星队</ElCheckbox
-                ><ElCheckbox v-model="categoryForm.firstBlood"
-                  >First Blood 类别</ElCheckbox
-                ></ElFormItem
+              ><ElFormItem :label="t('选项')"
+                ><ElCheckbox v-model="categoryForm.includeStar">{{ t('允许打星队') }}</ElCheckbox
+                ><ElCheckbox v-model="categoryForm.firstBlood">{{
+                  t('First Blood 类别')
+                }}</ElCheckbox></ElFormItem
               ></ElCol
             ></ElRow
           >
           <div class="award-rules-heading">
             <div>
-              <strong>获奖规则</strong
-              ><small>First Blood 类别会选择最终快照中的 First Blood 队伍。</small>
+              <strong>{{ t('获奖规则') }}</strong
+              ><small>{{ t('First Blood 类别会选择最终快照中的 First Blood 队伍。') }}</small>
             </div>
           </div>
           <div class="award-rule-row">
             <ElSelect v-model="categoryForm.ruleType"
-              ><ElOption label="固定数量" value="FIXED_COUNT" /><ElOption
-                label="排名比例"
-                value="RATIO" /><ElOption label="名次范围" value="RANK_RANGE" /></ElSelect
+              ><ElOption :label="t('固定数量')" value="FIXED_COUNT" /><ElOption
+                :label="t('排名比例')"
+                value="RATIO" /><ElOption :label="t('名次范围')" value="RANK_RANGE" /></ElSelect
             ><ElInputNumber
               v-if="categoryForm.ruleType === 'FIXED_COUNT'"
               v-model="categoryForm.fixedCount"
@@ -272,26 +294,26 @@
               :max="1"
               :step="0.05"
             /><template v-if="categoryForm.ruleType === 'RANK_RANGE'"
-              ><ElInputNumber v-model="categoryForm.rankFrom" :min="1" /><span>至</span
+              ><ElInputNumber v-model="categoryForm.rankFrom" :min="1" /><span>{{ t('至') }}</span
               ><ElInputNumber v-model="categoryForm.rankTo" :min="categoryForm.rankFrom"
             /></template></div></ElForm
         ><template #footer
-          ><ElButton @click="categoryVisible = false">取消</ElButton
-          ><ElButton type="primary" :loading="mutating" @click="saveCategory"
-            >保存</ElButton
-          ></template
+          ><ElButton @click="categoryVisible = false">{{ t('取消') }}</ElButton
+          ><ElButton type="primary" :loading="mutating" @click="saveCategory">{{
+            t('保存')
+          }}</ElButton></template
         ></ElDialog
       >
-      <ElDialog v-model="manualVisible" title="手工添加获奖队伍" width="min(580px, 92vw)"
+      <ElDialog v-model="manualVisible" :title="t('手工添加获奖队伍')" width="min(580px, 92vw)"
         ><ElForm label-position="top"
-          ><ElFormItem label="奖项类别"
+          ><ElFormItem :label="t('奖项类别')"
             ><ElSelect v-model="manualCategoryId" filterable
               ><ElOption
                 v-for="category in categories"
                 :key="category.id"
                 :value="category.id"
                 :label="category.name" /></ElSelect></ElFormItem
-          ><ElFormItem label="队伍"
+          ><ElFormItem :label="t('队伍')"
             ><ElSelect v-model="manualTeamId" filterable
               ><ElOption
                 v-for="candidate in availableCandidates"
@@ -299,13 +321,13 @@
                 :value="candidate.teamId"
                 :label="`#${candidate.rank} · ${candidate.teamName}`" /></ElSelect></ElFormItem></ElForm
         ><template #footer
-          ><ElButton @click="manualVisible = false">取消</ElButton
+          ><ElButton @click="manualVisible = false">{{ t('取消') }}</ElButton
           ><ElButton
             type="primary"
             :disabled="!manualCategoryId || !manualTeamId"
             :loading="mutating"
             @click="addRecipient"
-            >确认添加</ElButton
+            >{{ t('确认添加') }}</ElButton
           ></template
         ></ElDialog
       >
@@ -330,8 +352,10 @@ import { ApiError, getErrorMessage } from '../api/client';
 import { contestApi } from '../api/contest';
 import type { Contest } from '../api/types';
 import { formatDateTime } from '../utils/format';
+import { useI18n } from '../i18n';
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const contests = ref<Contest[]>([]);
 const contestId = ref<number | null>(null);
 const categories = ref<AwardCategory[]>([]);
@@ -379,10 +403,12 @@ function recipientCount(id: number) {
   return awardSet.value?.recipients.filter((item) => item.categoryId === id).length ?? 0;
 }
 function ruleLabel(category: AwardCategory) {
-  if (category.firstBlood) return '所有 First Blood 队伍';
-  if (category.ruleType === 'FIXED_COUNT') return `前 ${category.fixedCount} 支符合条件的队伍`;
-  if (category.ruleType === 'RATIO') return `前 ${Math.round((category.ratio ?? 0) * 100)}%`;
-  return `第 ${category.rankFrom}–${category.rankTo} 名`;
+  if (category.firstBlood) return t('所有 First Blood 队伍');
+  if (category.ruleType === 'FIXED_COUNT')
+    return t('前 {count} 支符合条件的队伍', { count: category.fixedCount ?? 0 });
+  if (category.ruleType === 'RATIO')
+    return t('前 {ratio}%', { ratio: Math.round((category.ratio ?? 0) * 100) });
+  return t('第 {from}–{to} 名', { from: category.rankFrom ?? 0, to: category.rankTo ?? 0 });
 }
 async function loadWorkspace() {
   if (!contestId.value) return;
@@ -487,7 +513,7 @@ function payload(): AwardCategoryPayload {
 async function saveCategory() {
   const data = payload();
   if (!contestId.value || !data.code || !data.name) {
-    ElMessage.warning('请填写奖项代码和名称');
+    ElMessage.warning(t('请填写奖项代码和名称'));
     return;
   }
   mutating.value = true;
@@ -499,7 +525,7 @@ async function saveCategory() {
       (a, b) => a.displayOrder - b.displayOrder,
     );
     categoryVisible.value = false;
-    ElMessage.success('奖项类别已保存');
+    ElMessage.success(t('奖项类别已保存'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {
@@ -509,8 +535,8 @@ async function saveCategory() {
 async function deleteCategory(category: AwardCategory) {
   try {
     await ElMessageBox.confirm(
-      `删除“${category.name}”会同时移除该类别的获奖记录，是否继续？`,
-      '删除奖项类别',
+      t('删除“{name}”会同时移除该类别的获奖记录，是否继续？', { name: category.name }),
+      t('删除奖项类别'),
       { type: 'warning' },
     );
   } catch {
@@ -520,7 +546,7 @@ async function deleteCategory(category: AwardCategory) {
   try {
     await awardsApi.deleteCategory(category.id, category.version);
     await loadWorkspace();
-    ElMessage.success('奖项类别已删除');
+    ElMessage.success(t('奖项类别已删除'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {
@@ -531,8 +557,8 @@ async function generateAwards() {
   if (!contestId.value || !resolverRunId.value) return;
   try {
     await ElMessageBox.confirm(
-      '重新生成会替换自动生成的名单，但保留手工添加项。是否继续？',
-      '生成奖项名单',
+      t('重新生成会替换自动生成的名单，但保留手工添加项。是否继续？'),
+      t('生成奖项名单'),
       { type: 'warning' },
     );
   } catch {
@@ -542,7 +568,7 @@ async function generateAwards() {
   try {
     awardSet.value = await awardsApi.generate(contestId.value, resolverRunId.value);
     candidates.value = await awardsApi.candidates(contestId.value);
-    ElMessage.success('奖项名单已生成');
+    ElMessage.success(t('奖项名单已生成'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {
@@ -552,13 +578,13 @@ async function generateAwards() {
 async function freezeAwards() {
   if (!contestId.value || !awardSet.value) return;
   if (awardSet.value.conflicts.length) {
-    ElMessage.warning('名单仍有重复获奖冲突，请复核后再锁定');
+    ElMessage.warning(t('名单仍有重复获奖冲突，请复核后再锁定'));
     return;
   }
   mutating.value = true;
   try {
     awardSet.value = await awardsApi.freeze(contestId.value, awardSet.value.version);
-    ElMessage.success('奖项名单已锁定');
+    ElMessage.success(t('奖项名单已锁定'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {

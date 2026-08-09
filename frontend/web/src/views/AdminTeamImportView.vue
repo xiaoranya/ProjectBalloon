@@ -2,8 +2,8 @@
   <el-container direction="vertical" class="admin-page team-import-page">
     <el-header height="auto" class="page-head">
       <div class="admin-page-header compact">
-        <h1>队伍批量导入</h1>
-        <ElButton @click="fillExample">填入示例</ElButton>
+        <h1>{{ t('队伍批量导入') }}</h1>
+        <ElButton @click="fillExample">{{ t('填入示例') }}</ElButton>
       </div>
     </el-header>
     <el-main class="page-body">
@@ -13,7 +13,9 @@
         show-icon
         :closable="false"
         class="page-alert"
-        title="比赛管理员只能导入到已授权比赛。下拉框已请求可管理比赛；后端权限校验始终是最终边界。"
+        :title="
+          t('比赛管理员只能导入到已授权比赛。下拉框已请求可管理比赛；后端权限校验始终是最终边界。')
+        "
       />
       <ElAlert
         v-if="errorMessage"
@@ -25,15 +27,17 @@
       />
 
       <ElCard shadow="never">
-        <template #header><strong>批次设置</strong></template>
+        <template #header
+          ><strong>{{ t('批次设置') }}</strong></template
+        >
         <ElRow :gutter="16" align="bottom" class="team-import-options-grid">
           <ElCol :xs="24" :md="11">
-            <ElFormItem label="比赛">
+            <ElFormItem :label="t('比赛')">
               <ElSelect
                 v-model="contestId"
                 :clearable="!session.isContestAdmin.value"
                 filterable
-                placeholder="超级管理员可不分配比赛"
+                :placeholder="t('超级管理员可不分配比赛')"
               >
                 <ElOption
                   v-for="contest in contests"
@@ -45,42 +49,51 @@
             </ElFormItem>
           </ElCol>
           <ElCol :xs="24" :md="5">
-            <ElFormItem label="参赛类型">
+            <ElFormItem :label="t('参赛类型')">
               <ElSelect v-model="participationType" :disabled="contestId === null">
-                <ElOption label="正式队" value="OFFICIAL" />
-                <ElOption label="打星队" value="STAR" />
-                <ElOption label="练习队" value="PRACTICE" />
+                <ElOption :label="t('正式队')" value="OFFICIAL" />
+                <ElOption :label="t('打星队')" value="STAR" />
+                <ElOption :label="t('练习队')" value="PRACTICE" />
               </ElSelect>
             </ElFormItem>
           </ElCol>
           <ElCol :xs="24" :md="8">
-            <ElFormItem label="幂等键前缀">
+            <ElFormItem :label="t('幂等键前缀')">
               <ElInput
                 v-model="idempotencyKey"
                 maxlength="96"
                 show-word-limit
-                placeholder="留空时生成 UUID"
+                :placeholder="t('留空时生成 UUID')"
               />
             </ElFormItem>
           </ElCol>
           <ElCol :xs="24" :md="11">
-            <ElFormItem label="账号策略">
-              <ElCheckbox v-model="requirePasswordReset">账号须在首次登录时修改密码</ElCheckbox>
+            <ElFormItem :label="t('账号策略')">
+              <ElCheckbox v-model="requirePasswordReset">{{
+                t('账号须在首次登录时修改密码')
+              }}</ElCheckbox>
             </ElFormItem>
           </ElCol>
         </ElRow>
         <p class="form-hint">
-          超过 100
-          行会拆成独立原子批次；批间不具备原子性。每批使用“前缀-part-N-UUID”唯一键。成员不属于 Rust
-          批次契约，将在队伍创建成功后逐个添加，成员失败不会伪装成队伍行失败。取消勾选“账号须在首次登录时修改密码”仅应在初始密码由线下渠道交付时使用。
+          {{
+            t(
+              '超过 100 行会拆成独立原子批次；批间不具备原子性。每批使用“前缀-part-N-UUID”唯一键。成员不属于 Rust 批次契约，将在队伍创建成功后逐个添加，成员失败不会伪装成队伍行失败。取消勾选“账号须在首次登录时修改密码”仅应在初始密码由线下渠道交付时使用。',
+            )
+          }}
         </p>
       </ElCard>
 
       <ElCard shadow="never">
         <template #header>
           <div class="card-header">
-            <strong>粘贴 / 编辑 JSON</strong
-            ><small>{{ drafts.length }} 支队伍，预计 {{ plannedBatchCount }} 个后台批次</small>
+            <strong>{{ t('粘贴 / 编辑 JSON') }}</strong
+            ><small>{{
+              t('{teams} 支队伍，预计 {batches} 个后台批次', {
+                teams: drafts.length,
+                batches: plannedBatchCount,
+              })
+            }}</small>
           </div>
         </template>
         <CodeEditor
@@ -88,22 +101,22 @@
           language="json"
           height="360px"
           :readonly="importing"
-          placeholder="粘贴 JSON 数组"
+          :placeholder="t('粘贴 JSON 数组')"
         />
         <ElRow justify="end" class="team-import-source-actions-row">
           <ElSpace wrap>
-            <ElButton :disabled="importing || !source.trim()" @click="parseSource"
-              >解析并编辑</ElButton
-            >
-            <ElButton :disabled="importing || !drafts.length" @click="syncSource"
-              >同步编辑到 JSON</ElButton
-            >
+            <ElButton :disabled="importing || !source.trim()" @click="parseSource">{{
+              t('解析并编辑')
+            }}</ElButton>
+            <ElButton :disabled="importing || !drafts.length" @click="syncSource">{{
+              t('同步编辑到 JSON')
+            }}</ElButton>
             <ElButton
               type="primary"
               :loading="importing"
               :disabled="invalidCount > 0 || drafts.length === 0"
               @click="submitImport"
-              >开始导入</ElButton
+              >{{ t('开始导入') }}</ElButton
             >
           </ElSpace>
         </ElRow>
@@ -112,25 +125,29 @@
       <ElCard v-if="drafts.length" shadow="never">
         <template #header>
           <div class="card-header">
-            <strong>队伍与成员</strong
-            ><small>{{ invalidCount ? `${invalidCount} 项待修正` : '字段校验通过' }}</small>
+            <strong>{{ t('队伍与成员') }}</strong
+            ><small>{{
+              invalidCount ? t('{count} 项待修正', { count: invalidCount }) : t('字段校验通过')
+            }}</small>
           </div>
         </template>
         <div v-for="(team, index) in drafts" :key="team.clientId" class="team-import-editor">
           <div class="team-import-editor-heading">
-            <strong>第 {{ index + 1 }} 支：{{ team.name || '未命名' }}</strong>
-            <ElButton text type="danger" :disabled="importing" @click="removeTeam(index)"
-              >删除</ElButton
-            >
+            <strong>{{
+              t('第 {index} 支：{name}', { index: index + 1, name: team.name || t('未命名') })
+            }}</strong>
+            <ElButton text type="danger" :disabled="importing" @click="removeTeam(index)">{{
+              t('删除')
+            }}</ElButton>
           </div>
           <div class="team-import-grid">
-            <ElInput v-model="team.name" placeholder="队名 *" />
-            <ElInput v-model="team.school" placeholder="学校" />
-            <ElInput v-model="team.seatNo" placeholder="座位号" />
-            <ElInput v-model="team.groupName" placeholder="分组" />
-            <ElInput v-model="team.username" placeholder="登录名 *" />
-            <ElInput v-model="team.initialPassword" placeholder="初始密码 *" show-password />
-            <ElCheckbox v-model="team.star">该队强制按打星队导入</ElCheckbox>
+            <ElInput v-model="team.name" :placeholder="t('队名 *')" />
+            <ElInput v-model="team.school" :placeholder="t('学校')" />
+            <ElInput v-model="team.seatNo" :placeholder="t('座位号')" />
+            <ElInput v-model="team.groupName" :placeholder="t('分组')" />
+            <ElInput v-model="team.username" :placeholder="t('登录名 *')" />
+            <ElInput v-model="team.initialPassword" :placeholder="t('初始密码 *')" show-password />
+            <ElCheckbox v-model="team.star">{{ t('该队强制按打星队导入') }}</ElCheckbox>
           </div>
           <div v-if="teamErrors(team).length" class="field-error">
             {{ teamErrors(team).join('；') }}
@@ -141,44 +158,51 @@
               :key="member.clientId"
               class="team-import-member-row"
             >
-              <ElInput v-model="member.name" placeholder="成员姓名 *" />
-              <ElInput v-model="member.email" placeholder="邮箱" />
-              <ElInput v-model="member.phone" placeholder="电话" />
-              <ElInput v-model="member.roleName" placeholder="角色（如教练/队员）" />
-              <ElButton text type="danger" @click="team.members.splice(memberIndex, 1)"
-                >移除</ElButton
-              >
+              <ElInput v-model="member.name" :placeholder="t('成员姓名 *')" />
+              <ElInput v-model="member.email" :placeholder="t('邮箱')" />
+              <ElInput v-model="member.phone" :placeholder="t('电话')" />
+              <ElInput v-model="member.roleName" :placeholder="t('角色（如教练/队员）')" />
+              <ElButton text type="danger" @click="team.members.splice(memberIndex, 1)">{{
+                t('移除')
+              }}</ElButton>
             </div>
-            <ElButton text @click="addMember(team)">添加成员</ElButton>
+            <ElButton text @click="addMember(team)">{{ t('添加成员') }}</ElButton>
           </div>
         </div>
-        <ElButton @click="addTeam">添加队伍</ElButton>
+        <ElButton @click="addTeam">{{ t('添加队伍') }}</ElButton>
       </ElCard>
 
       <ElCard v-if="batchResults.length" shadow="never">
         <template #header>
           <div class="card-header">
             <div>
-              <strong>后台批次结果</strong
-              ><small>成功 {{ successfulBatchCount }} / {{ batchResults.length }}</small>
+              <strong>{{ t('后台批次结果') }}</strong
+              ><small>{{
+                t('成功 {success} / {total}', {
+                  success: successfulBatchCount,
+                  total: batchResults.length,
+                })
+              }}</small>
             </div>
             <div>
-              <ElButton v-if="credentials.length" @click="copyCredentials">一次性复制账号</ElButton>
-              <ElButton v-if="credentials.length" @click="downloadCredentials"
-                >一次性下载 CSV</ElButton
-              >
-              <ElButton v-if="credentials.length" type="danger" plain @click="clearCredentials"
-                >清除密码</ElButton
-              >
+              <ElButton v-if="credentials.length" @click="copyCredentials">{{
+                t('一次性复制账号')
+              }}</ElButton>
+              <ElButton v-if="credentials.length" @click="downloadCredentials">{{
+                t('一次性下载 CSV')
+              }}</ElButton>
+              <ElButton v-if="credentials.length" type="danger" plain @click="clearCredentials">{{
+                t('清除密码')
+              }}</ElButton>
             </div>
           </div>
         </template>
         <ElTable :data="batchResults" row-key="number">
-          <ElTableColumn prop="number" label="批次" width="70" />
-          <ElTableColumn prop="range" label="输入范围" width="120" />
-          <ElTableColumn prop="idempotencyKey" label="幂等键" min-width="300" />
-          <ElTableColumn prop="batchId" label="后台 batchId" min-width="220" />
-          <ElTableColumn label="状态" width="130"
+          <ElTableColumn prop="number" :label="t('批次')" width="70" />
+          <ElTableColumn prop="range" :label="t('输入范围')" width="120" />
+          <ElTableColumn prop="idempotencyKey" :label="t('幂等键')" min-width="300" />
+          <ElTableColumn prop="batchId" :label="t('后台 batchId')" min-width="220" />
+          <ElTableColumn :label="t('状态')" width="130"
             ><template #default="{ row }"
               ><ElTag
                 :type="
@@ -188,22 +212,26 @@
               ></template
             ></ElTableColumn
           >
-          <ElTableColumn prop="message" label="结果" min-width="260" />
+          <ElTableColumn prop="message" :label="t('结果')" min-width="260" />
         </ElTable>
         <ElAlert
           v-if="credentials.length"
           type="warning"
           show-icon
           :closable="false"
-          title="密码只保存在当前页面内存中；复制、下载或清除后即从结果中移除，不写入 localStorage/sessionStorage。"
+          :title="
+            t(
+              '密码只保存在当前页面内存中；复制、下载或清除后即从结果中移除，不写入 localStorage/sessionStorage。',
+            )
+          "
         />
         <ElTable v-if="credentials.length" :data="credentials" row-key="inputIndex">
-          <ElTableColumn prop="inputIndex" label="原始行" width="90"
+          <ElTableColumn prop="inputIndex" :label="t('原始行')" width="90"
             ><template #default="{ row }">{{ row.inputIndex + 1 }}</template></ElTableColumn
           >
-          <ElTableColumn prop="teamName" label="队伍" />
-          <ElTableColumn prop="username" label="账号" />
-          <ElTableColumn prop="initialPassword" label="初始密码" />
+          <ElTableColumn prop="teamName" :label="t('队伍')" />
+          <ElTableColumn prop="username" :label="t('账号')" />
+          <ElTableColumn prop="initialPassword" :label="t('初始密码')" />
         </ElTable>
       </ElCard>
     </el-main>
@@ -224,6 +252,7 @@ import type {
   TeamMemberRequest,
 } from '../api/team-import';
 import { useSession } from '../auth/session';
+import { useI18n } from '../i18n';
 
 interface MemberDraft extends TeamMemberRequest {
   clientId: string;
@@ -257,6 +286,7 @@ interface CredentialResult {
 }
 
 const session = useSession();
+const { t } = useI18n();
 const contests = ref<Contest[]>([]);
 const contestId = ref<number | null>(null);
 const participationType = ref<ParticipationType>('OFFICIAL');
@@ -345,7 +375,7 @@ function parseSource() {
   try {
     const parsed: unknown = JSON.parse(source.value);
     if (!Array.isArray(parsed) || parsed.length === 0)
-      throw new Error('请输入至少一支队伍的 JSON 数组');
+      throw new Error(t('请输入至少一支队伍的 JSON 数组'));
     drafts.value = parsed.map(normalizeTeam);
     batchResults.value = [];
     credentials.value = [];
@@ -376,7 +406,7 @@ function fillExample() {
         star: false,
         username: 'alpha-team',
         initialPassword: 'ChangeMe123!',
-        members: [{ name: 'Alice', email: 'alice@example.com', phone: '', roleName: '队员' }],
+        members: [{ name: 'Alice', email: 'alice@example.com', phone: '', roleName: t('队员') }],
       },
     ],
     null,
@@ -401,13 +431,13 @@ function nullable(value: string) {
 }
 function teamErrors(team: TeamDraft) {
   const errors: string[] = [];
-  if (!team.name.trim()) errors.push('队名必填');
-  if (team.name.trim().length > 255) errors.push('队名最多 255 字符');
+  if (!team.name.trim()) errors.push(t('队名必填'));
+  if (team.name.trim().length > 255) errors.push(t('队名最多 255 字符'));
   if (!/^[A-Za-z0-9._-]{3,64}$/.test(team.username.trim()))
-    errors.push('登录名需为 3–64 位字母、数字、点、下划线或横线');
+    errors.push(t('登录名需为 3–64 位字母、数字、点、下划线或横线'));
   if (team.initialPassword.length < 8 || team.initialPassword.length > 128)
-    errors.push('初始密码需为 8–128 字符');
-  if (team.groupName.trim().length > 128) errors.push('分组最多 128 字符');
+    errors.push(t('初始密码需为 8–128 字符'));
+  if (team.groupName.trim().length > 128) errors.push(t('分组最多 128 字符'));
   return errors;
 }
 
@@ -425,13 +455,16 @@ function requestRows(chunk: TeamDraft[]): TeamBatchImportRequest['teams'] {
 
 async function submitImport() {
   if (session.isContestAdmin.value && contestId.value === null) {
-    errorMessage.value = '比赛管理员必须选择一个可管理比赛';
+    errorMessage.value = t('比赛管理员必须选择一个可管理比赛');
     return;
   }
   try {
     await ElMessageBox.confirm(
-      `将 ${drafts.value.length} 支队伍拆为 ${plannedBatchCount.value} 个独立原子批次。若后续批次失败，已成功批次不会回滚。`,
-      '确认批量导入',
+      t('将 {teams} 支队伍拆为 {batches} 个独立原子批次。若后续批次失败，已成功批次不会回滚。', {
+        teams: drafts.value.length,
+        batches: plannedBatchCount.value,
+      }),
+      t('确认批量导入'),
       { type: 'warning' },
     );
   } catch {
@@ -451,7 +484,7 @@ async function submitImport() {
     idempotencyKey: makeBatchKey(prefix, index + 1),
     status: 'PENDING',
     batchId: '',
-    message: '等待提交',
+    message: t('等待提交'),
   }));
   for (let index = 0; index < chunks.length; index++) {
     const chunk = chunks[index];
@@ -470,14 +503,17 @@ async function submitImport() {
       resultRow.message = getErrorMessage(error);
       for (let later = index + 1; later < batchResults.value.length; later++) {
         batchResults.value[later].status = 'SKIPPED';
-        batchResults.value[later].message = '前序批次失败，未提交';
+        batchResults.value[later].message = t('前序批次失败，未提交');
       }
-      errorMessage.value = `第 ${index + 1} 批失败：${resultRow.message}。输入已保留，可核对幂等键后重试。`;
+      errorMessage.value = t('第 {batch} 批失败：{message}。输入已保留，可核对幂等键后重试。', {
+        batch: index + 1,
+        message: resultRow.message,
+      });
       break;
     }
     resultRow.status = 'SUCCESS';
     resultRow.batchId = response.batchId;
-    resultRow.message = `已创建 ${response.created.length} 支队伍`;
+    resultRow.message = t('已创建 {count} 支队伍', { count: response.created.length });
     const memberErrors: string[] = [];
     for (const created of response.created) {
       const inputIndex = index * 100 + created.index;
@@ -505,10 +541,14 @@ async function submitImport() {
       }
     }
     if (memberErrors.length)
-      resultRow.message += `；成员添加失败 ${memberErrors.length} 项：${memberErrors.join('；')}`;
+      resultRow.message += t('；成员添加失败 {count} 项：{errors}', {
+        count: memberErrors.length,
+        errors: memberErrors.join('；'),
+      });
   }
   importing.value = false;
-  if (!errorMessage.value) ElMessage.success(`导入完成，共创建 ${credentials.value.length} 个账号`);
+  if (!errorMessage.value)
+    ElMessage.success(t('导入完成，共创建 {count} 个账号', { count: credentials.value.length }));
 }
 
 function credentialCsv() {
@@ -527,7 +567,7 @@ function credentialCsv() {
 async function copyCredentials() {
   await navigator.clipboard.writeText(credentialCsv());
   clearCredentials();
-  ElMessage.success('账号已复制，页面中的密码已清除');
+  ElMessage.success(t('账号已复制，页面中的密码已清除'));
 }
 function downloadCredentials() {
   const url = URL.createObjectURL(
@@ -539,7 +579,7 @@ function downloadCredentials() {
   link.click();
   URL.revokeObjectURL(url);
   clearCredentials();
-  ElMessage.success('CSV 已下载，页面中的密码已清除');
+  ElMessage.success(t('CSV 已下载，页面中的密码已清除'));
 }
 function clearCredentials() {
   credentials.value = [];
@@ -549,7 +589,7 @@ function makeBatchKey(prefix: string, batchNumber: number) {
   return `${prefix.slice(0, 128 - suffix.length)}${suffix}`;
 }
 function resultStatusLabel(status: BatchResult['status']) {
-  return { PENDING: '等待', SUCCESS: '成功', FAILED: '失败', SKIPPED: '未提交' }[status];
+  return t({ PENDING: '等待', SUCCESS: '成功', FAILED: '失败', SKIPPED: '未提交' }[status]);
 }
 </script>
 

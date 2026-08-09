@@ -4,14 +4,14 @@
       <div class="page-title-row">
         <div>
           <p class="eyebrow">Print Request Desk</p>
-          <h1>打印请求</h1>
+          <h1>{{ t('打印请求') }}</h1>
         </div>
         <div
           class="clarification-live-state"
           :class="{ connected: realtimeConnected }"
           aria-live="polite"
         >
-          <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
+          <span />{{ realtimeConnected ? t('实时更新') : t('轮询更新') }}
         </div>
       </div>
     </el-header>
@@ -39,7 +39,7 @@
           <ElSelect
             v-model="selectedContestId"
             filterable
-            placeholder="选择比赛"
+            :placeholder="t('选择比赛')"
             @change="changeContest"
           >
             <ElOption
@@ -49,8 +49,8 @@
               :value="contest.id"
             />
           </ElSelect>
-          <ElSelect v-model="statusFilter" placeholder="状态" @change="loadRequests(false)">
-            <ElOption label="全部状态" value="ALL" />
+          <ElSelect v-model="statusFilter" :placeholder="t('状态')" @change="loadRequests(false)">
+            <ElOption :label="t('全部状态')" value="ALL" />
             <ElOption
               v-for="status in printRequestStatuses"
               :key="status"
@@ -63,7 +63,7 @@
             :loading="loading"
             :disabled="!selectedContestId"
             @click="refreshRequests"
-            >刷新</ElButton
+            >{{ t('刷新') }}</ElButton
           >
         </ElSpace>
       </ElCard>
@@ -77,37 +77,40 @@
           @row-click="openDetail"
         >
           <ElTableColumn prop="id" label="#" width="76" />
-          <ElTableColumn label="状态" width="110">
+          <ElTableColumn :label="t('状态')" width="110">
             <template #default="{ row }"
               ><ElTag :type="printStatusType(row.status)">{{
                 printStatusLabel(row.status)
               }}</ElTag></template
             >
           </ElTableColumn>
-          <ElTableColumn label="队伍" min-width="190">
+          <ElTableColumn :label="t('队伍')" min-width="190">
             <template #default="{ row }">
               <div class="admin-primary-cell">
-                <strong>{{ row.teamName ?? `队伍 #${row.teamId}` }}</strong
-                ><small>座位 {{ row.seatNo ?? '—' }}</small>
+                <strong>{{ row.teamName ?? t('队伍 #{id}', { id: row.teamId }) }}</strong
+                ><small>{{ t('座位 {seat}', { seat: row.seatNo ?? '—' }) }}</small>
               </div>
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="pageCount" label="页数" width="80" />
-          <ElTableColumn label="打印信息" min-width="180">
+          <ElTableColumn prop="pageCount" :label="t('页数')" width="80" />
+          <ElTableColumn :label="t('打印信息')" min-width="180">
             <template #default="{ row }"
               ><span>{{ row.printerId ?? '—' }}</span
               ><small v-if="row.cupsJobId"> · CUPS {{ row.cupsJobId }}</small></template
             >
           </ElTableColumn>
-          <ElTableColumn label="申请时间" min-width="170"
+          <ElTableColumn :label="t('申请时间')" min-width="170"
             ><template #default="{ row }">{{
               formatDateTime(row.createdAt)
             }}</template></ElTableColumn
           >
-          <ElTableColumn label="操作" width="110" fixed="right">
+          <ElTableColumn :label="t('操作')" width="110" fixed="right">
             <template #default="{ row }"
-              ><ElButton link type="primary" @click.stop="openDetail(row as PrintRequestResponse)"
-                >查看详情</ElButton
+              ><ElButton
+                link
+                type="primary"
+                @click.stop="openDetail(row as PrintRequestResponse)"
+                >{{ t('查看详情') }}</ElButton
               ></template
             >
           </ElTableColumn>
@@ -116,7 +119,7 @@
 
       <ElDrawer
         v-model="detailVisible"
-        title="打印请求详情"
+        :title="t('打印请求详情')"
         size="min(620px, 94vw)"
         @closed="selected = null"
       >
@@ -126,27 +129,35 @@
               <ElTag :type="printStatusType(selected.status)">{{
                 printStatusLabel(selected.status)
               }}</ElTag
-              ><ElTag type="info" effect="plain">{{ selected.pageCount }} 页</ElTag>
+              ><ElTag type="info" effect="plain">{{
+                t('{pages} 页', { pages: selected.pageCount })
+              }}</ElTag>
             </div>
-            <span>请求 #{{ selected.id }}</span>
+            <span>{{ t('请求 #{id}', { id: selected.id }) }}</span>
           </div>
           <div class="admin-primary-cell">
-            <strong>{{ selected.teamName ?? `队伍 #${selected.teamId}` }}</strong
-            ><small>座位 {{ selected.seatNo ?? '—' }} · 队伍 ID {{ selected.teamId }}</small>
+            <strong>{{ selected.teamName ?? t('队伍 #{id}', { id: selected.teamId }) }}</strong
+            ><small>{{
+              t('座位 {seat} · 队伍 ID {id}', { seat: selected.seatNo ?? '—', id: selected.teamId })
+            }}</small>
           </div>
           <ElDescriptions :column="1" border>
-            <ElDescriptionsItem label="申请时间">{{
+            <ElDescriptionsItem :label="t('申请时间')">{{
               formatDateTime(selected.createdAt)
             }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="完成时间">{{
+            <ElDescriptionsItem :label="t('完成时间')">{{
               formatDateTime(selected.completedAt)
             }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="打印机">{{ selected.printerId ?? '—' }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="CUPS 任务">{{
+            <ElDescriptionsItem :label="t('打印机')">{{
+              selected.printerId ?? '—'
+            }}</ElDescriptionsItem>
+            <ElDescriptionsItem :label="t('CUPS 任务')">{{
               selected.cupsJobId ?? '—'
             }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="内容校验值">{{ selected.contentHash }}</ElDescriptionsItem>
-            <ElDescriptionsItem v-if="selected.failedReason" label="失败/拒绝原因"
+            <ElDescriptionsItem :label="t('内容校验值')">{{
+              selected.contentHash
+            }}</ElDescriptionsItem>
+            <ElDescriptionsItem v-if="selected.failedReason" :label="t('失败/拒绝原因')"
               ><span class="danger-text">{{ selected.failedReason }}</span></ElDescriptionsItem
             >
           </ElDescriptions>
@@ -155,16 +166,16 @@
               v-if="isPdfReady(selected)"
               :loading="downloading"
               @click="downloadPdf(selected)"
-              >下载 PDF</ElButton
+              >{{ t('下载 PDF') }}</ElButton
             >
-            <span v-else class="muted-text">PDF 正在生成</span>
+            <span v-else class="muted-text">{{ t('PDF 正在生成') }}</span>
             <ElButton
               v-if="canRetry(selected.status)"
               type="primary"
               plain
               :loading="mutating"
               @click="retryRequest(selected)"
-              >重试</ElButton
+              >{{ t('重试') }}</ElButton
             >
             <ElButton
               v-if="canCancel(selected.status)"
@@ -172,34 +183,36 @@
               plain
               :loading="mutating"
               @click="cancelRequest(selected)"
-              >取消</ElButton
+              >{{ t('取消') }}</ElButton
             >
             <ElButton
               v-if="canReject(selected.status)"
               type="danger"
               plain
               @click="openReject(selected)"
-              >拒绝</ElButton
+              >{{ t('拒绝') }}</ElButton
             >
           </div>
         </div>
       </ElDrawer>
 
-      <ElDialog v-model="rejectVisible" title="拒绝打印请求" width="min(520px, 92vw)">
+      <ElDialog v-model="rejectVisible" :title="t('拒绝打印请求')" width="min(520px, 92vw)">
         <ElForm label-position="top">
-          <ElFormItem label="拒绝原因" :error="rejectError || undefined">
+          <ElFormItem :label="t('拒绝原因')" :error="rejectError || undefined">
             <ElInput v-model="rejectReason" type="textarea" :rows="4" />
-            <small>{{ rejectReasonLength(rejectReason) }} / 255 个字符</small>
+            <small>{{
+              t('{count} / 255 个字符', { count: rejectReasonLength(rejectReason) })
+            }}</small>
           </ElFormItem>
         </ElForm>
         <template #footer>
-          <ElButton @click="rejectVisible = false">取消</ElButton>
+          <ElButton @click="rejectVisible = false">{{ t('取消') }}</ElButton>
           <ElButton
             type="danger"
             :loading="mutating"
             :disabled="!!rejectError"
             @click="rejectRequest"
-            >确认拒绝</ElButton
+            >{{ t('确认拒绝') }}</ElButton
           >
         </template>
       </ElDialog>
@@ -229,9 +242,11 @@ import {
   type ContestRealtimeSubscription,
 } from '../realtime/contest-events';
 import { formatDateTime } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const contests = ref<Contest[]>([]);
 const selectedContestId = ref<number | null>(null);
 const statusFilter = ref<PrintRequestStatus | 'ALL'>('ALL');
@@ -254,31 +269,33 @@ let loadGeneration = 0;
 
 const rejectError = computed(() => {
   const length = rejectReasonLength(rejectReason.value);
-  if (length === 0) return '请输入拒绝原因';
-  return length > 255 ? '拒绝原因不能超过 255 个字符' : '';
+  if (length === 0) return t('请输入拒绝原因');
+  return length > 255 ? t('拒绝原因不能超过 255 个字符') : '';
 });
 const cupsHealthText = computed(() =>
   health.value?.cups
-    ? `CUPS 连接${health.value.cups.status === 'up' ? '正常' : '不可用'}`
-    : 'CUPS 未配置或连接状态未知',
+    ? t(health.value.cups.status === 'up' ? 'CUPS 连接正常' : 'CUPS 连接不可用')
+    : t('CUPS 未配置或连接状态未知'),
 );
 const cupsHealthType = computed<'success' | 'warning'>(() =>
   health.value?.cups?.status === 'up' ? 'success' : 'warning',
 );
 const queueEmptyText = computed(() =>
-  queueLoaded.value ? '当前筛选下没有打印请求' : '打印队列加载失败，请重试',
+  queueLoaded.value ? t('当前筛选下没有打印请求') : t('打印队列加载失败，请重试'),
 );
 
 function printStatusLabel(status: PrintRequestStatus) {
-  return {
-    REQUESTED: '已申请',
-    QUEUED: '排队中',
-    PRINTING: '打印中',
-    COMPLETED: '已完成',
-    FAILED: '打印失败',
-    CANCELLED: '已取消',
-    REJECTED: '已拒绝',
-  }[status];
+  return t(
+    {
+      REQUESTED: '已申请',
+      QUEUED: '排队中',
+      PRINTING: '打印中',
+      COMPLETED: '已完成',
+      FAILED: '打印失败',
+      CANCELLED: '已取消',
+      REJECTED: '已拒绝',
+    }[status],
+  );
 }
 function printStatusType(
   status: PrintRequestStatus,
@@ -390,12 +407,12 @@ async function refreshAfterMutation(updated: PrintRequestResponse, message: stri
   requests.value = [updated, ...requests.value.filter((item) => item.id !== updated.id)];
   const refreshed = await loadRequests(true, true);
   if (refreshed) ElMessage.success(message);
-  else ElMessage.warning(`${message}，但刷新队列失败，请手动重试`);
+  else ElMessage.warning(t('{message}，但刷新队列失败，请手动重试', { message }));
 }
 async function retryRequest(item: PrintRequestResponse) {
   mutating.value = true;
   try {
-    await refreshAfterMutation(await printingApi.retry(item.id), '打印请求已重试');
+    await refreshAfterMutation(await printingApi.retry(item.id), t('打印请求已重试'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {
@@ -404,13 +421,13 @@ async function retryRequest(item: PrintRequestResponse) {
 }
 async function cancelRequest(item: PrintRequestResponse) {
   try {
-    await ElMessageBox.confirm('确定取消该打印请求吗？', '取消打印', { type: 'warning' });
+    await ElMessageBox.confirm(t('确定取消该打印请求吗？'), t('取消打印'), { type: 'warning' });
   } catch {
     return;
   }
   mutating.value = true;
   try {
-    await refreshAfterMutation(await printingApi.cancel(item.id), '打印请求已取消');
+    await refreshAfterMutation(await printingApi.cancel(item.id), t('打印请求已取消'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {
@@ -431,7 +448,7 @@ async function rejectRequest() {
       normalizeRejectReason(rejectReason.value),
     );
     rejectVisible.value = false;
-    await refreshAfterMutation(updated, '打印请求已拒绝');
+    await refreshAfterMutation(updated, t('打印请求已拒绝'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {

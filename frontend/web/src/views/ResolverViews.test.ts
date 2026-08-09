@@ -5,6 +5,7 @@ import ResolverManageView from './ResolverManageView.vue';
 import { contestApi } from '../api/contest';
 import { resolverApi } from '../api/resolver';
 import { subscribeContestEvents } from '../realtime/contest-events';
+import { setLocale } from '../i18n';
 
 const replace = vi.fn();
 let route = { params: { runId: '9' }, query: { contestId: '7', runId: '9' } };
@@ -101,6 +102,7 @@ const run = {
 
 describe('Resolver views', () => {
   beforeEach(() => {
+    setLocale('zh-CN');
     route = { params: { runId: '9' }, query: { contestId: '7', runId: '9' } };
     replace.mockReset();
     vi.mocked(contestApi.listContests).mockResolvedValue({
@@ -129,6 +131,17 @@ describe('Resolver views', () => {
     await next.trigger('click');
     await flushPromises();
     expect(resolverApi.next).toHaveBeenCalledWith(9, 2);
+    wrapper.unmount();
+  });
+
+  it('renders run controls in English', async () => {
+    setLocale('en');
+    const wrapper = mount(ResolverManageView);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Resolver Run Console');
+    expect(wrapper.text()).toContain('Reveal Next Step');
+    expect(wrapper.text()).not.toContain('运行控制台');
     wrapper.unmount();
   });
 

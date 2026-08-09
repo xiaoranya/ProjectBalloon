@@ -1,4 +1,5 @@
 import type { ApiErrorBody } from './types';
+import { currentLocale, translate } from '../i18n';
 
 interface CsrfResponse {
   headerName: string;
@@ -82,7 +83,7 @@ function defaultMessage(status: number): string {
     429: '操作过于频繁，请稍后重试',
     500: '服务器处理请求时发生错误',
   };
-  return messages[status] ?? `请求失败（${status}）`;
+  return translate(messages[status] ?? '请求失败（{status}）', { status });
 }
 
 export interface RequestOptions extends Omit<RequestInit, 'body'> {
@@ -313,10 +314,11 @@ const businessMessages: Record<string, string> = {
 
 export function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    if (currentLocale() === 'en') return error.message;
     return businessMessages[error.code] ?? businessMessages[error.message] ?? error.message;
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return '发生未知错误';
+  return translate('发生未知错误');
 }

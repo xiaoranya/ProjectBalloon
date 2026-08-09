@@ -4,14 +4,14 @@
       <div class="page-title-row">
         <div>
           <p class="eyebrow">Printing</p>
-          <h1>赛中打印</h1>
+          <h1>{{ t('赛中打印') }}</h1>
         </div>
         <div
           class="clarification-live-state"
           :class="{ connected: realtimeConnected }"
           aria-live="polite"
         >
-          <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
+          <span />{{ t(realtimeConnected ? '实时更新' : '轮询更新') }}
         </div>
       </div>
     </el-header>
@@ -32,23 +32,24 @@
             <template #header>
               <div class="card-header">
                 <div>
-                  <strong>新建打印请求</strong><small>最多 20 KiB、5 页；仅支持纯文本。</small>
+                  <strong>{{ t('新建打印请求') }}</strong
+                  ><small>{{ t('最多 20 KiB、5 页；仅支持纯文本。') }}</small>
                 </div>
               </div>
             </template>
             <ElForm label-position="top" @submit.prevent="submitPrintRequest">
-              <ElFormItem label="打印内容" :error="validation.error ?? undefined">
+              <ElFormItem :label="t('打印内容')" :error="validation.error ?? undefined">
                 <ElInput
                   v-model="content"
                   type="textarea"
                   :rows="14"
                   resize="vertical"
-                  placeholder="粘贴需要打印的纯文本内容"
+                  :placeholder="t('粘贴需要打印的纯文本内容')"
                 />
               </ElFormItem>
               <div class="printing-estimate" aria-live="polite">
                 <span>{{ formatBytes(validation.bytes) }} / 20 KiB</span>
-                <span>预计 {{ validation.pageCount }} / 5 页</span>
+                <span>{{ t('预计 {pages} / 5 页', { pages: validation.pageCount }) }}</span>
               </div>
               <ElButton
                 type="primary"
@@ -57,7 +58,7 @@
                 :loading="submitting"
                 :disabled="validation.error !== null"
               >
-                提交打印
+                {{ t('提交打印') }}
               </ElButton>
             </ElForm>
           </ElCard>
@@ -66,15 +67,15 @@
           <div class="clarification-list-column">
             <div class="clarification-list-heading">
               <div>
-                <h2>我的打印</h2>
-                <p>打印内容不会在历史记录中返回。</p>
+                <h2>{{ t('我的打印') }}</h2>
+                <p>{{ t('打印内容不会在历史记录中返回。') }}</p>
               </div>
-              <ElButton :icon="Refresh" :loading="loading" @click="loadRequests(false)"
-                >刷新</ElButton
-              >
+              <ElButton :icon="Refresh" :loading="loading" @click="loadRequests(false)">{{
+                t('刷新')
+              }}</ElButton>
             </div>
             <ElSkeleton v-if="loading && requests.length === 0" :rows="5" animated />
-            <ElEmpty v-else-if="requests.length === 0" description="本队尚未提交打印请求" />
+            <ElEmpty v-else-if="requests.length === 0" :description="t('本队尚未提交打印请求')" />
             <div v-else class="clarification-cards">
               <article v-for="item in requests" :key="item.id" class="clarification-card">
                 <div class="clarification-card-meta">
@@ -82,13 +83,15 @@
                     <ElTag :type="printStatusType(item.status)">{{
                       printStatusLabel(item.status)
                     }}</ElTag>
-                    <ElTag type="info" effect="plain">{{ item.pageCount }} 页</ElTag>
+                    <ElTag type="info" effect="plain">{{
+                      t('{pages} 页', { pages: item.pageCount })
+                    }}</ElTag>
                   </div>
                   <time>{{ formatDateTime(item.createdAt) }}</time>
                 </div>
-                <h3>打印请求 #{{ item.id }}</h3>
+                <h3>{{ t('打印请求 #{id}', { id: item.id }) }}</h3>
                 <p v-if="item.failedReason" class="printing-failure">{{ item.failedReason }}</p>
-                <small>内容校验值：{{ item.contentHash }}</small>
+                <small>{{ t('内容校验值：{hash}', { hash: item.contentHash }) }}</small>
                 <div class="clarification-actions print-actions">
                   <ElButton
                     v-if="isPdfReady(item)"
@@ -97,9 +100,9 @@
                     :loading="downloadingId === item.id"
                     @click="downloadPdf(item)"
                   >
-                    下载 PDF
+                    {{ t('下载 PDF') }}
                   </ElButton>
-                  <span v-else class="muted-text">PDF 正在生成</span>
+                  <span v-else class="muted-text">{{ t('PDF 正在生成') }}</span>
                 </div>
               </article>
             </div>
@@ -127,8 +130,10 @@ import {
   type ContestRealtimeSubscription,
 } from '../realtime/contest-events';
 import { formatBytes, formatDateTime } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const route = useRoute();
+const { t } = useI18n();
 const contestId = computed(() => Number(route.params.contestId));
 const content = ref('');
 const requests = ref<PrintRequestResponse[]>([]);
@@ -143,15 +148,17 @@ let loadGeneration = 0;
 const validation = computed(() => validatePrintContent(content.value));
 
 function printStatusLabel(status: PrintRequestStatus) {
-  return {
-    REQUESTED: '已申请',
-    QUEUED: '排队中',
-    PRINTING: '打印中',
-    COMPLETED: '已完成',
-    FAILED: '打印失败',
-    CANCELLED: '已取消',
-    REJECTED: '已拒绝',
-  }[status];
+  return t(
+    {
+      REQUESTED: '已申请',
+      QUEUED: '排队中',
+      PRINTING: '打印中',
+      COMPLETED: '已完成',
+      FAILED: '打印失败',
+      CANCELLED: '已取消',
+      REJECTED: '已拒绝',
+    }[status],
+  );
 }
 
 function printStatusType(
@@ -196,7 +203,7 @@ async function submitPrintRequest() {
     requests.value = [created, ...requests.value.filter((item) => item.id !== created.id)];
     content.value = '';
     errorMessage.value = '';
-    ElMessage.success('打印请求已提交');
+    ElMessage.success(t('打印请求已提交'));
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   } finally {
@@ -234,7 +241,7 @@ async function activateContest() {
   errorMessage.value = '';
   const activeContestId = contestId.value;
   if (!Number.isSafeInteger(activeContestId) || activeContestId <= 0) {
-    errorMessage.value = '比赛 ID 不正确';
+    errorMessage.value = t('比赛 ID 不正确');
     return;
   }
   await loadRequests(false);

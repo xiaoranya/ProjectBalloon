@@ -3,18 +3,18 @@
     <el-main class="login-page-main">
       <section class="login-copy">
         <p class="eyebrow">ProjectBalloon Admin</p>
-        <h1>让比赛运行得更稳、更清晰。</h1>
+        <h1>{{ t('让比赛运行得更稳、更清晰。') }}</h1>
         <div class="login-feature">
           <ElIcon><DataAnalysis /></ElIcon>
-          <span>比赛生命周期 · 裁判答疑 · 打印与气球配送</span>
+          <span>{{ t('比赛生命周期 · 裁判答疑 · 打印与气球配送') }}</span>
         </div>
       </section>
 
       <ElCard class="login-card" shadow="never">
         <template #header>
           <div>
-            <h2>工作人员登录</h2>
-            <p>使用管理员、裁判、打印员、气球或颁奖工作人员账号</p>
+            <h2>{{ t('工作人员登录') }}</h2>
+            <p>{{ t('使用管理员、裁判、打印员、气球或颁奖工作人员账号') }}</p>
           </div>
         </template>
         <ElForm
@@ -24,7 +24,7 @@
           label-position="top"
           @submit.prevent="submit"
         >
-          <ElFormItem label="用户名" prop="username">
+          <ElFormItem :label="t('用户名')" prop="username">
             <ElInput
               v-model="form.username"
               size="large"
@@ -32,7 +32,7 @@
               :prefix-icon="User"
             />
           </ElFormItem>
-          <ElFormItem label="密码" prop="password">
+          <ElFormItem :label="t('密码')" prop="password">
             <ElInput
               v-model="form.password"
               size="large"
@@ -58,7 +58,7 @@
             :loading="session.state.loading"
             class="wide-button"
           >
-            进入工作台
+            {{ t('进入工作台') }}
           </ElButton>
         </ElForm>
       </ElCard>
@@ -74,16 +74,18 @@ import { Lock, User } from '@element-plus/icons-vue';
 import { getErrorMessage } from '../api/client';
 import { homeForUserType } from '../auth/access';
 import { useSession } from '../auth/session';
+import { useI18n } from '../i18n';
 
 const route = useRoute();
 const router = useRouter();
 const session = useSession();
+const { t } = useI18n();
 const formRef = ref<FormInstance>();
 const errorMessage = ref('');
 const form = reactive({ username: '', password: '' });
 const rules: FormRules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  username: [{ required: true, message: t('请输入用户名'), trigger: 'blur' }],
+  password: [{ required: true, message: t('请输入密码'), trigger: 'blur' }],
 };
 
 async function submit() {
@@ -92,7 +94,7 @@ async function submit() {
   try {
     const user = await session.login(form.username.trim(), form.password);
     if (user.userType === 'TEAM') {
-      errorMessage.value = '该账号是参赛队账号，请使用参赛队登录入口';
+      errorMessage.value = t('该账号是参赛队账号，请使用参赛队登录入口');
       await session.logout();
       return;
     }

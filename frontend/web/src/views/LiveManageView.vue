@@ -3,7 +3,7 @@
     <el-header height="auto" class="page-head"
       ><div>
         <p class="eyebrow">Live / OBS</p>
-        <h1>直播展示控制台</h1>
+        <h1>{{ t('直播展示控制台') }}</h1>
       </div>
       <ElSelect v-model="contestId" filterable
         ><ElOption
@@ -17,128 +17,136 @@
       <ElCard v-if="contestId" shadow="never">
         <template #header
           ><div class="card-header">
-            <strong>展示配置</strong
-            ><ElButton type="primary" :loading="saving" @click="save">保存</ElButton>
+            <strong>{{ t('展示配置') }}</strong
+            ><ElButton type="primary" :loading="saving" @click="save">{{ t('保存') }}</ElButton>
           </div></template
         >
         <ElForm label-position="top"
           ><ElRow :gutter="18" class="grid"
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="发布状态"
-                ><ElSwitch v-model="form.enabled" active-text="已发布" /></ElFormItem></ElCol
+              ><ElFormItem :label="t('发布状态')"
+                ><ElSwitch v-model="form.enabled" :active-text="t('已发布')" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="主标题"
+              ><ElFormItem :label="t('主标题')"
                 ><ElInput v-model="form.title" maxlength="160" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="副标题"
+              ><ElFormItem :label="t('副标题')"
                 ><ElInput v-model="form.subtitle" maxlength="240" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="强调色"
+              ><ElFormItem :label="t('强调色')"
                 ><ElInput v-model="form.accentColor" maxlength="7" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="榜单行数"
+              ><ElFormItem :label="t('榜单行数')"
                 ><ElInputNumber v-model="form.rowLimit" :min="5" :max="30" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="公告间隔"
+              ><ElFormItem :label="t('公告间隔')"
                 ><ElInputNumber
                   v-model="form.announcementIntervalSeconds"
                   :min="5"
                   :max="60" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="视觉模板"
+              ><ElFormItem :label="t('视觉模板')"
                 ><ElSelect v-model="form.template"
-                  ><ElOption label="默认" value="DEFAULT" /><ElOption
-                    label="电影感"
-                    value="CINEMATIC" /><ElOption label="极简" value="MINIMAL" /><ElOption
-                    label="分栏"
+                  ><ElOption :label="t('默认')" value="DEFAULT" /><ElOption
+                    :label="t('电影感')"
+                    value="CINEMATIC" /><ElOption :label="t('极简')" value="MINIMAL" /><ElOption
+                    :label="t('分栏')"
                     value="SPLIT" /><ElOption
                     v-for="item in templates"
                     :key="item.id"
-                    :label="`自定义：${item.name}`"
+                    :label="t('自定义：{name}', { name: item.name })"
                     value="CUSTOM" /></ElSelect></ElFormItem></ElCol
             ><ElCol v-if="form.template === 'CUSTOM'" :xs="24" :md="8"
-              ><ElFormItem label="自定义模板"
+              ><ElFormItem :label="t('自定义模板')"
                 ><ElSelect v-model="form.customTemplateId"
                   ><ElOption
                     v-for="item in templates"
                     :key="item.id"
                     :label="item.name"
                     :value="item.id" /></ElSelect></ElFormItem></ElCol></ElRow
-          ><ElCheckbox v-model="form.showAnnouncements">展示公告</ElCheckbox></ElForm
+          ><ElCheckbox v-model="form.showAnnouncements">{{ t('展示公告') }}</ElCheckbox></ElForm
         >
       </ElCard>
       <ElCard v-if="contestId" shadow="never">
         <template #header
           ><div class="card-header">
-            <strong>自定义模板</strong
-            ><ElButton type="primary" :loading="templateSaving" @click="saveTemplate"
-              >保存模板</ElButton
-            >
+            <strong>{{ t('自定义模板') }}</strong
+            ><ElButton type="primary" :loading="templateSaving" @click="saveTemplate">{{
+              t('保存模板')
+            }}</ElButton>
           </div></template
         >
         <ElForm label-position="top"
           ><ElRow :gutter="18" class="grid"
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="名称"
+              ><ElFormItem :label="t('名称')"
                 ><ElInput v-model="templateForm.name" maxlength="120" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="字体"
+              ><ElFormItem :label="t('字体')"
                 ><ElInput v-model="templateForm.fontFamily" maxlength="120" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="背景色"
+              ><ElFormItem :label="t('背景色')"
                 ><ElColorPicker v-model="templateForm.backgroundColor" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="前景色"
+              ><ElFormItem :label="t('前景色')"
                 ><ElColorPicker v-model="templateForm.foregroundColor" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="强调色"
+              ><ElFormItem :label="t('强调色')"
                 ><ElColorPicker v-model="templateForm.accentColor" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="密度"
+              ><ElFormItem :label="t('密度')"
                 ><ElSelect v-model="templateForm.density"
-                  ><ElOption label="紧凑" value="COMPACT" /><ElOption
-                    label="舒适"
+                  ><ElOption :label="t('紧凑')" value="COMPACT" /><ElOption
+                    :label="t('舒适')"
                     value="COMFORTABLE" /><ElOption
-                    label="宽松"
+                    :label="t('宽松')"
                     value="SPACIOUS" /></ElSelect></ElFormItem></ElCol></ElRow
-          ><ElCheckbox v-model="templateForm.showClock">显示时钟</ElCheckbox
-          ><ElCheckbox v-model="templateForm.showLogo">显示品牌标识</ElCheckbox></ElForm
+          ><ElCheckbox v-model="templateForm.showClock">{{ t('显示时钟') }}</ElCheckbox
+          ><ElCheckbox v-model="templateForm.showLogo">{{ t('显示品牌标识') }}</ElCheckbox></ElForm
         >
       </ElCard>
       <ElCard v-if="contestId" shadow="never">
         <template #header
           ><div class="card-header">
             <div>
-              <strong>广播 Token</strong><small>原始 Token 只显示一次，数据库仅保存摘要</small>
+              <strong>{{ t('广播 Token') }}</strong
+              ><small>{{ t('原始 Token 只显示一次，数据库仅保存摘要') }}</small>
             </div>
-            <ElButton :loading="loading" @click="loadTokens">刷新</ElButton>
+            <ElButton :loading="loading" @click="loadTokens">{{ t('刷新') }}</ElButton>
           </div></template
         >
         <ElForm inline
-          ><ElFormItem label="用途"
-            ><ElInput v-model="label" maxlength="120" placeholder="OBS 主直播流" /></ElFormItem
-          ><ElFormItem label="有效期"
+          ><ElFormItem :label="t('用途')"
+            ><ElInput
+              v-model="label"
+              maxlength="120"
+              :placeholder="t('OBS 主直播流')" /></ElFormItem
+          ><ElFormItem :label="t('有效期')"
             ><ElInput v-model="expiresAt" type="datetime-local" /></ElFormItem
-          ><ElButton type="primary" @click="createToken">生成链接</ElButton></ElForm
+          ><ElButton type="primary" @click="createToken">{{ t('生成链接') }}</ElButton></ElForm
         >
-        <ElAlert v-if="links.length" type="success" :closable="false" title="请立即复制这些链接"
+        <ElAlert
+          v-if="links.length"
+          type="success"
+          :closable="false"
+          :title="t('请立即复制这些链接')"
           ><div v-for="item in links" :key="item.url" class="link">
             <span>{{ item.label }}</span
-            ><ElInput :model-value="item.url" readonly /><ElButton @click="copy(item.url)"
-              >复制</ElButton
-            >
+            ><ElInput :model-value="item.url" readonly /><ElButton @click="copy(item.url)">{{
+              t('复制')
+            }}</ElButton>
           </div></ElAlert
         >
         <ElTable :data="tokens"
-          ><ElTableColumn prop="label" label="用途" /><ElTableColumn
+          ><ElTableColumn prop="label" :label="t('用途')" /><ElTableColumn
             prop="expiresAt"
-            label="有效期"
-          /><ElTableColumn prop="lastUsedAt" label="最近使用" /><ElTableColumn
-            label="状态"
+            :label="t('有效期')"
+          /><ElTableColumn prop="lastUsedAt" :label="t('最近使用')" /><ElTableColumn
+            :label="t('状态')"
             width="100"
             ><template #default="{ row }"
               ><ElTag :type="active(row.revokedAt, row.expiresAt) ? 'success' : 'info'">{{
-                active(row.revokedAt, row.expiresAt) ? '有效' : '失效'
+                active(row.revokedAt, row.expiresAt) ? t('有效') : t('失效')
               }}</ElTag></template
             ></ElTableColumn
           ><ElTableColumn width="90"
@@ -148,7 +156,7 @@
                 type="danger"
                 :disabled="!active(row.revokedAt, row.expiresAt)"
                 @click="revoke(row.id)"
-                >撤销</ElButton
+                >{{ t('撤销') }}</ElButton
               ></template
             ></ElTableColumn
           ></ElTable
@@ -168,6 +176,8 @@ import {
   type BroadcastToken,
   type PresentationTemplate,
 } from '../api/presentation';
+import { useI18n } from '../i18n';
+const { t } = useI18n();
 const contests = ref<Contest[]>([]);
 const contestId = ref<number | null>(null);
 const tokens = ref<BroadcastToken[]>([]);
@@ -192,7 +202,7 @@ const form = reactive({
 });
 const templateForm = reactive({
   id: null as number | null,
-  name: '赛事主题',
+  name: t('赛事主题'),
   description: '',
   backgroundColor: '#07111f',
   foregroundColor: '#ffffff',
@@ -242,7 +252,7 @@ async function save() {
       title: form.title.trim() || null,
       subtitle: form.subtitle.trim() || null,
     });
-    ElMessage.success('直播配置已保存');
+    ElMessage.success(t('直播配置已保存'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {
@@ -251,7 +261,7 @@ async function save() {
 }
 async function createToken() {
   if (!contestId.value || !label.value.trim()) {
-    ElMessage.warning('请填写用途');
+    ElMessage.warning(t('请填写用途'));
     return;
   }
   try {
@@ -261,11 +271,11 @@ async function createToken() {
     });
     const fragment = new URLSearchParams({ token: value.token }).toString();
     links.value = [
-      ['主榜', '/live'],
-      ['首杀', '/live/first-blood'],
-      ['气球', '/live/balloons'],
-      ['封榜倒计时', '/live/freeze-countdown'],
-      ['赛事统计', '/live/statistics'],
+      [t('主榜'), '/live'],
+      [t('首杀'), '/live/first-blood'],
+      [t('气球'), '/live/balloons'],
+      [t('封榜倒计时'), '/live/freeze-countdown'],
+      [t('赛事统计'), '/live/statistics'],
     ].map(([name, path]) => ({
       label: name,
       url: `${location.origin}${path}?contestId=${contestId.value}#${fragment}`,
@@ -282,7 +292,10 @@ function active(revokedAt: unknown, expires: unknown) {
 async function revoke(id: number) {
   if (!contestId.value) return;
   try {
-    await ElMessageBox.confirm('撤销后所有使用该 Token 的 OBS 页面会立即失效。', '撤销 Token');
+    await ElMessageBox.confirm(
+      t('撤销后所有使用该 Token 的 OBS 页面会立即失效。'),
+      t('撤销 Token'),
+    );
     await presentationApi.revokeToken(contestId.value, id);
     links.value = [];
     await loadTokens();
@@ -292,7 +305,7 @@ async function revoke(id: number) {
 }
 async function copy(value: string) {
   await navigator.clipboard.writeText(value);
-  ElMessage.success('已复制');
+  ElMessage.success(t('已复制'));
 }
 watch(contestId, () => {
   links.value = [];
@@ -309,7 +322,7 @@ async function saveTemplate() {
     templates.value = [value, ...templates.value.filter((item) => item.id !== value.id)];
     form.template = 'CUSTOM';
     form.customTemplateId = value.id;
-    ElMessage.success('自定义模板已保存');
+    ElMessage.success(t('自定义模板已保存'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {

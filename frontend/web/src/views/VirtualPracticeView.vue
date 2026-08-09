@@ -2,9 +2,9 @@
   <el-container direction="vertical" class="virtual-page">
     <el-header height="auto" class="page-head">
       <div>
-        <h1>虚拟比赛</h1>
+        <h1>{{ t('虚拟比赛') }}</h1>
       </div>
-      <ElButton type="primary" @click="dialog = true">新建虚拟赛</ElButton>
+      <ElButton type="primary" @click="dialog = true">{{ t('新建虚拟赛') }}</ElButton>
     </el-header>
     <el-main class="page-body">
       <div class="layout">
@@ -24,7 +24,9 @@
           <div class="session-head">
             <div>
               <h2>{{ selected.session.title }}</h2>
-              <ElTag v-if="selected.session.status === 'ARCHIVED'" type="info">已归档</ElTag>
+              <ElTag v-if="selected.session.status === 'ARCHIVED'" type="info">{{
+                t('已归档')
+              }}</ElTag>
             </div>
             <div class="session-actions">
               <strong>{{ countdown }}</strong>
@@ -33,18 +35,18 @@
                 link
                 type="danger"
                 @click="archive"
-                >归档</ElButton
+                >{{ t('归档') }}</ElButton
               >
             </div>
           </div>
           <ElTable :data="selected.problems" row-key="problemId">
             <ElTableColumn prop="position" label="#" width="60" />
-            <ElTableColumn prop="title" label="题目" />
-            <ElTableColumn prop="attempts" label="尝试" width="80" />
-            <ElTableColumn label="状态" width="90">
+            <ElTableColumn prop="title" :label="t('题目')" />
+            <ElTableColumn prop="attempts" :label="t('尝试')" width="80" />
+            <ElTableColumn :label="t('状态')" width="90">
               <template #default="{ row }">
                 <ElTag :type="row.solved ? 'success' : 'info'">{{
-                  row.solved ? '已通过' : '未通过'
+                  row.solved ? t('已通过') : t('未通过')
                 }}</ElTag>
               </template>
             </ElTableColumn>
@@ -53,25 +55,25 @@
                 <RouterLink
                   v-if="selected?.session.status === 'RUNNING'"
                   :to="`/practice?virtualSessionId=${selected?.session.id}&problemId=${row.problemId}`"
-                  >作答</RouterLink
+                  >{{ t('作答') }}</RouterLink
                 >
-                <span v-else>只读</span>
+                <span v-else>{{ t('只读') }}</span>
               </template>
             </ElTableColumn>
           </ElTable>
         </section>
-        <ElEmpty v-else description="暂无虚拟赛" />
+        <ElEmpty v-else :description="t('暂无虚拟赛')" />
       </div>
     </el-main>
-    <ElDialog v-model="dialog" title="新建虚拟赛" width="min(620px, 92vw)">
+    <ElDialog v-model="dialog" :title="t('新建虚拟赛')" width="min(620px, 92vw)">
       <ElForm label-position="top">
-        <ElFormItem label="名称">
+        <ElFormItem :label="t('名称')">
           <ElInput v-model="form.title" maxlength="255" />
         </ElFormItem>
-        <ElFormItem label="时长（分钟）">
+        <ElFormItem :label="t('时长（分钟）')">
           <ElInputNumber v-model="form.durationMinutes" :min="15" :max="10080" />
         </ElFormItem>
-        <ElFormItem label="题目">
+        <ElFormItem :label="t('题目')">
           <ElSelect v-model="form.problemIds" multiple filterable style="width: 100%">
             <ElOption
               v-for="item in problems"
@@ -83,8 +85,8 @@
         </ElFormItem>
       </ElForm>
       <template #footer>
-        <ElButton @click="dialog = false">取消</ElButton>
-        <ElButton type="primary" @click="create">开始</ElButton>
+        <ElButton @click="dialog = false">{{ t('取消') }}</ElButton>
+        <ElButton type="primary" @click="create">{{ t('开始') }}</ElButton>
       </template>
     </ElDialog>
   </el-container>
@@ -93,23 +95,25 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { getErrorMessage } from '../api/client';
+import { useI18n } from '../i18n';
 import {
   trainingApi,
   type BankProblem,
   type VirtualSession,
   type VirtualSessionDetail,
 } from '../api/training';
+const { t } = useI18n();
 const sessions = ref<VirtualSession[]>([]),
   selected = ref<VirtualSessionDetail>(),
   problems = ref<BankProblem[]>([]),
   dialog = ref(false),
   now = ref(Date.now()),
-  form = reactive({ title: '个人虚拟赛', durationMinutes: 300, problemIds: [] as number[] }),
+  form = reactive({ title: t('个人虚拟赛'), durationMinutes: 300, problemIds: [] as number[] }),
   activeId = ref('');
 let timer: number | undefined;
 const countdown = computed(() => {
   if (!selected.value || selected.value.session.status !== 'RUNNING')
-    return selected.value?.session.status === 'ARCHIVED' ? '已归档' : '已结束';
+    return selected.value?.session.status === 'ARCHIVED' ? t('已归档') : t('已结束');
   const seconds = Math.max(
     0,
     Math.floor((new Date(selected.value.session.endAt).getTime() - now.value) / 1000),
@@ -145,14 +149,14 @@ async function load() {
 async function archive() {
   if (!selected.value) return;
   try {
-    await ElMessageBox.confirm('归档后将不能继续提交，只保留查看结果。', '归档虚拟赛', {
+    await ElMessageBox.confirm(t('归档后将不能继续提交，只保留查看结果。'), t('归档虚拟赛'), {
       type: 'warning',
-      confirmButtonText: '归档',
+      confirmButtonText: t('归档'),
     });
     await trainingApi.archiveVirtualSession(selected.value.session.id);
     await load();
     await open(selected.value.session.id);
-    ElMessage.success('虚拟赛已归档');
+    ElMessage.success(t('虚拟赛已归档'));
   } catch (e) {
     if (e !== 'cancel' && e !== 'close') ElMessage.error(getErrorMessage(e));
   }

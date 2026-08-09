@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminContestDetailView from './AdminContestDetailView.vue';
+import { setLocale } from '../i18n';
 
 const api = vi.hoisted(() => ({
   getContest: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('vue-router', () => ({
 
 describe('AdminContestDetailView', () => {
   beforeEach(() => {
+    setLocale('zh-CN');
     api.isSuperAdmin.value = false;
     api.getContest.mockResolvedValue({
       id: 42,
@@ -109,6 +111,16 @@ describe('AdminContestDetailView', () => {
     expect(api.getJudgeQueueStatus).toHaveBeenCalledWith(42);
     expect(wrapper.text()).toContain('Rust Regional');
     expect(wrapper.text()).toContain('延长比赛');
+  });
+
+  it('renders contest administration in English', async () => {
+    setLocale('en');
+    const wrapper = mount(AdminContestDetailView);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Overview & Lifecycle');
+    expect(wrapper.text()).toContain('Extend Contest');
+    expect(wrapper.text()).not.toContain('概览与生命周期');
   });
 
   it('links contest managers to the contest-scoped bulk rejudge workbench', async () => {

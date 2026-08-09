@@ -3,9 +3,9 @@
     <el-header height="auto" class="page-head"
       ><div>
         <p class="eyebrow">Screen Operations</p>
-        <h1>现场大屏控制</h1>
+        <h1>{{ t('现场大屏控制') }}</h1>
       </div>
-      <ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"
+      <ElSelect v-model="contestId" filterable :placeholder="t('选择比赛')" @change="changeContest"
         ><ElOption
           v-for="contest in contests"
           :key="contest.id"
@@ -17,71 +17,81 @@
       <ElCard v-if="contestId" shadow="never"
         ><template #header
           ><div class="card-header">
-            <div><strong>发布配置</strong><small>启用后大屏客户端才能注册</small></div>
-            <ElButton type="primary" :loading="saving" @click="saveConfig">保存配置</ElButton>
+            <div>
+              <strong>{{ t('发布配置') }}</strong
+              ><small>{{ t('启用后大屏客户端才能注册') }}</small>
+            </div>
+            <ElButton type="primary" :loading="saving" @click="saveConfig">{{
+              t('保存配置')
+            }}</ElButton>
           </div></template
         ><ElForm label-position="top"
           ><ElRow :gutter="18" class="screen-config-grid"
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="发布状态"
+              ><ElFormItem :label="t('发布状态')"
                 ><ElSwitch
                   v-model="form.enabled"
-                  active-text="已发布"
-                  inactive-text="未发布" /></ElFormItem></ElCol
+                  :active-text="t('已发布')"
+                  :inactive-text="t('未发布')" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="主标题"
+              ><ElFormItem :label="t('主标题')"
                 ><ElInput v-model="form.title" maxlength="160" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="副标题"
+              ><ElFormItem :label="t('副标题')"
                 ><ElInput v-model="form.subtitle" maxlength="240" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="强调色"
+              ><ElFormItem :label="t('强调色')"
                 ><ElInput v-model="form.accentColor" maxlength="7" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="榜单行数"
+              ><ElFormItem :label="t('榜单行数')"
                 ><ElInputNumber v-model="form.rowLimit" :min="5" :max="30" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="公告间隔"
+              ><ElFormItem :label="t('公告间隔')"
                 ><ElInputNumber
                   v-model="form.announcementIntervalSeconds"
                   :min="5"
                   :max="60" /></ElFormItem></ElCol
             ><ElCol :xs="24" :md="8"
-              ><ElFormItem label="视觉模板"
+              ><ElFormItem :label="t('视觉模板')"
                 ><ElSelect v-model="form.template"
-                  ><ElOption label="默认" value="DEFAULT" /><ElOption
-                    label="电影感"
-                    value="CINEMATIC" /><ElOption label="极简" value="MINIMAL" /><ElOption
-                    label="分栏"
+                  ><ElOption :label="t('默认')" value="DEFAULT" /><ElOption
+                    :label="t('电影感')"
+                    value="CINEMATIC" /><ElOption :label="t('极简')" value="MINIMAL" /><ElOption
+                    :label="t('分栏')"
                     value="SPLIT" /></ElSelect></ElFormItem></ElCol></ElRow
-          ><ElCheckbox v-model="form.showAnnouncements">显示公告</ElCheckbox></ElForm
+          ><ElCheckbox v-model="form.showAnnouncements">{{ t('显示公告') }}</ElCheckbox></ElForm
         ></ElCard
       >
       <ElCard v-if="contestId" shadow="never" class="presentation-control-card"
         ><template #header
           ><div class="card-header">
-            <div><strong>大屏实例</strong><small>45 秒内有心跳视为在线</small></div>
             <div>
-              <ElButton :loading="loading" @click="loadInstances">刷新</ElButton
-              ><ElButton :disabled="!form.enabled" @click="openClient">打开新大屏</ElButton>
+              <strong>{{ t('大屏实例') }}</strong
+              ><small>{{ t('45 秒内有心跳视为在线') }}</small>
+            </div>
+            <div>
+              <ElButton :loading="loading" @click="loadInstances">{{ t('刷新') }}</ElButton
+              ><ElButton :disabled="!form.enabled" @click="openClient">{{
+                t('打开新大屏')
+              }}</ElButton>
             </div>
           </div></template
         ><ElTable :data="instances" row-key="id"
-          ><ElTableColumn label="实例" min-width="180"
+          ><ElTableColumn :label="t('实例')" min-width="180"
             ><template #default="{ row }"
               ><strong>{{ row.name }}</strong
               ><small class="instance-meta"
-                >#{{ row.id }} · {{ row.lastIp || '无地址' }}</small
+                >#{{ row.id }} · {{ row.lastIp || t('无地址') }}</small
               ></template
             ></ElTableColumn
-          ><ElTableColumn label="状态" width="100"
+          ><ElTableColumn :label="t('状态')" width="100"
             ><template #default="{ row }"
               ><ElTag :type="row.revokedAt ? 'info' : row.online ? 'success' : 'warning'">{{
-                row.revokedAt ? '已撤销' : row.online ? '在线' : '离线'
+                row.revokedAt ? t('已撤销') : row.online ? t('在线') : t('离线')
               }}</ElTag></template
             ></ElTableColumn
-          ><ElTableColumn prop="currentView" label="当前画面" width="150" /><ElTableColumn
-            label="远程切换"
+          ><ElTableColumn prop="currentView" :label="t('当前画面')" width="150" /><ElTableColumn
+            :label="t('远程切换')"
             min-width="420"
             ><template #default="{ row }"
               ><ElSelect
@@ -93,17 +103,18 @@
                   :key="target"
                   :label="viewLabel(target)"
                   :value="target" /></ElSelect
-              ><ElButton type="primary" :disabled="Boolean(row.revokedAt)" @click="send(row.id)"
-                >发送</ElButton
+              ><ElButton type="primary" :disabled="Boolean(row.revokedAt)" @click="send(row.id)">{{
+                t('发送')
+              }}</ElButton
               ><ElButton
                 link
                 type="danger"
                 :disabled="Boolean(row.revokedAt)"
                 @click="revoke(row.id)"
-                >撤销</ElButton
+                >{{ t('撤销') }}</ElButton
               ></template
             ></ElTableColumn
-          ><template #empty><ElEmpty description="尚无大屏实例" /></template></ElTable
+          ><template #empty><ElEmpty :description="t('尚无大屏实例')" /></template></ElTable
       ></ElCard>
       <ScreenOrchestrationControl
         v-if="contestId"
@@ -124,6 +135,8 @@ import { getErrorMessage } from '../api/client';
 import { presentationApi } from '../api/presentation';
 import { screenApi, type ScreenInstance, type ScreenViewTarget } from '../api/screen';
 import ScreenOrchestrationControl from '../components/ScreenOrchestrationControl.vue';
+import { useI18n } from '../i18n';
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const contests = ref<Contest[]>([]);
@@ -155,15 +168,17 @@ const form = reactive({
   template: 'DEFAULT' as 'DEFAULT' | 'CINEMATIC' | 'MINIMAL' | 'SPLIT',
 });
 function viewLabel(value: ScreenViewTarget) {
-  return {
-    SCOREBOARD: '榜单',
-    FIRST_BLOOD: '首杀',
-    BALLOONS: '气球',
-    FREEZE_COUNTDOWN: '封榜倒计时',
-    STATISTICS: '统计',
-    RESOLVER: 'Resolver',
-    AWARDS: '颁奖',
-  }[value];
+  return t(
+    {
+      SCOREBOARD: '榜单',
+      FIRST_BLOOD: '首杀',
+      BALLOONS: '气球',
+      FREEZE_COUNTDOWN: '封榜倒计时',
+      STATISTICS: '统计',
+      RESOLVER: 'Resolver',
+      AWARDS: '颁奖',
+    }[value],
+  );
 }
 async function loadConfig() {
   if (!contestId.value) return;
@@ -210,7 +225,7 @@ async function saveConfig() {
       title: form.title.trim() || null,
       subtitle: form.subtitle.trim() || null,
     });
-    ElMessage.success('大屏配置已保存');
+    ElMessage.success(t('大屏配置已保存'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {
@@ -221,7 +236,7 @@ async function send(instanceId: number) {
   if (!contestId.value) return;
   try {
     await screenApi.command(contestId.value, instanceId, targets[instanceId] ?? 'SCOREBOARD');
-    ElMessage.success('切换命令已发送');
+    ElMessage.success(t('切换命令已发送'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   }
@@ -229,7 +244,7 @@ async function send(instanceId: number) {
 async function revoke(instanceId: number) {
   if (!contestId.value) return;
   try {
-    await ElMessageBox.confirm('撤销后该客户端令牌立即失效，是否继续？', '撤销大屏', {
+    await ElMessageBox.confirm(t('撤销后该客户端令牌立即失效，是否继续？'), t('撤销大屏'), {
       type: 'warning',
     });
     await screenApi.revoke(contestId.value, instanceId);

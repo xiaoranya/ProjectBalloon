@@ -3,28 +3,30 @@
     <el-header height="auto" class="page-head"
       ><div>
         <p class="eyebrow">Account</p>
-        <h1>账户设置</h1>
+        <h1>{{ t('账户设置') }}</h1>
       </div>
-      <RouterLink to="/practice">返回练习</RouterLink></el-header
+      <RouterLink to="/practice">{{ t('返回练习') }}</RouterLink></el-header
     >
     <el-main class="page-body">
       <ElCard shadow="never" class="profile-card">
         <ElForm label-position="top" @submit.prevent="saveProfile">
-          <ElFormItem label="用户名"
+          <ElFormItem :label="t('用户名')"
             ><ElInput :model-value="session.state.user?.username" disabled
           /></ElFormItem>
-          <ElFormItem label="显示名称"
+          <ElFormItem :label="t('显示名称')"
             ><ElInput v-model="displayName" maxlength="128" show-word-limit
           /></ElFormItem>
-          <ElButton type="primary" :loading="saving" @click="saveProfile">保存显示名称</ElButton>
+          <ElButton type="primary" :loading="saving" @click="saveProfile">{{
+            t('保存显示名称')
+          }}</ElButton>
         </ElForm>
         <ElDivider />
         <div class="password-row">
           <div>
-            <h2>登录密码</h2>
-            <p>定期更新密码可以减少账户风险。</p>
+            <h2>{{ t('登录密码') }}</h2>
+            <p>{{ t('定期更新密码可以减少账户风险。') }}</p>
           </div>
-          <ElButton @click="router.push('/change-password')">修改密码</ElButton>
+          <ElButton @click="router.push('/change-password')">{{ t('修改密码') }}</ElButton>
         </div>
       </ElCard>
       <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" />
@@ -37,6 +39,8 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useSession } from '../auth/session';
 import { getErrorMessage } from '../api/client';
+import { useI18n } from '../i18n';
+const { t } = useI18n();
 const router = useRouter(),
   session = useSession(),
   displayName = ref(session.state.user?.displayName ?? ''),
@@ -48,7 +52,7 @@ async function saveProfile() {
   errorMessage.value = '';
   try {
     await session.updateProfile(displayName.value);
-    ElMessage.success('账户信息已保存');
+    ElMessage.success(t('账户信息已保存'));
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   } finally {
