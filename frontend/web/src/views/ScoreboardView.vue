@@ -4,13 +4,17 @@
       <div class="page-title-row">
         <div>
           <p class="eyebrow">Scoreboard</p>
-          <h1>比赛榜单</h1>
+          <h1>{{ t('比赛榜单') }}</h1>
           <p>
-            {{ scoreboard?.frozen ? '榜单已封榜，显示公开数据。' : '榜单自动刷新。' }}
-            <span v-if="scoreboard">更新于 {{ formatDateTime(scoreboard.generatedAt) }}</span>
+            {{ t(scoreboard?.frozen ? '榜单已封榜，显示公开数据。' : '榜单自动刷新。') }}
+            <span v-if="scoreboard">{{
+              t('更新于 {time}', { time: formatDateTime(scoreboard.generatedAt) })
+            }}</span>
           </p>
         </div>
-        <ElButton :icon="Refresh" :loading="loading" @click="loadScoreboard()">刷新</ElButton>
+        <ElButton :icon="Refresh" :loading="loading" @click="loadScoreboard()">{{
+          t('刷新')
+        }}</ElButton>
       </div>
     </el-header>
 
@@ -28,10 +32,10 @@
         <table v-if="scoreboard" class="scoreboard-table">
           <thead>
             <tr>
-              <th>排名</th>
-              <th class="team-column">队伍</th>
-              <th>{{ scoreboard.scoringMode === 'ICPC' ? '解题' : '总分' }}</th>
-              <th v-if="scoreboard.scoringMode === 'ICPC'">罚时</th>
+              <th>{{ t('排名') }}</th>
+              <th class="team-column">{{ t('队伍') }}</th>
+              <th>{{ t(scoreboard.scoringMode === 'ICPC' ? '解题' : '总分') }}</th>
+              <th v-if="scoreboard.scoringMode === 'ICPC'">{{ t('罚时') }}</th>
               <th v-for="problem in scoreboard.problems" :key="problem.problemId">
                 {{ problem.alias }}
               </th>
@@ -43,7 +47,9 @@
               <td class="team-column">
                 <strong
                   >{{ row.teamName }}
-                  <ElTag v-if="row.isStar" size="small" type="warning">打星</ElTag></strong
+                  <ElTag v-if="row.isStar" size="small" type="warning">{{
+                    t('打星')
+                  }}</ElTag></strong
                 >
                 <small v-if="row.school">{{ row.school }}</small>
               </td>
@@ -74,7 +80,7 @@
             </tr>
           </tbody>
         </table>
-        <ElEmpty v-else-if="!loading" description="暂无榜单数据" />
+        <ElEmpty v-else-if="!loading" :description="t('暂无榜单数据')" />
       </div>
     </el-main>
   </el-container>
@@ -88,8 +94,10 @@ import { contestApi } from '../api/contest';
 import { getErrorMessage } from '../api/client';
 import type { Scoreboard, ScoreboardCell } from '../api/types';
 import { formatDateTime } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const route = useRoute();
+const { t } = useI18n();
 const contestId = computed(() => Number(route.params.contestId));
 const scoreboard = ref<Scoreboard | null>(null);
 const loading = ref(false);

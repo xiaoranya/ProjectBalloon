@@ -2,10 +2,10 @@
   <el-container direction="vertical" class="admin-page staff-accounts-page">
     <el-header height="auto" class="page-head">
       <div class="admin-page-header compact">
-        <h1>工作人员账号</h1>
+        <h1>{{ t('工作人员账号') }}</h1>
         <div class="admin-page-actions">
-          <ElButton :icon="Refresh" :loading="loading" @click="load">刷新</ElButton>
-          <ElButton type="primary" :icon="Plus" @click="openCreate">新建账号</ElButton>
+          <ElButton :icon="Refresh" :loading="loading" @click="load">{{ t('刷新') }}</ElButton>
+          <ElButton type="primary" :icon="Plus" @click="openCreate">{{ t('新建账号') }}</ElButton>
         </div>
       </div>
     </el-header>
@@ -21,7 +21,7 @@
 
       <ElCard shadow="never">
         <ElTable v-loading="loading" :data="accounts" row-key="id">
-          <ElTableColumn label="账号" min-width="190">
+          <ElTableColumn :label="t('账号')" min-width="190">
             <template #default="{ row }">
               <div class="staff-account-identity">
                 <strong>{{ row.displayName }}</strong>
@@ -29,44 +29,44 @@
               </div>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="角色" width="150">
+          <ElTableColumn :label="t('角色')" width="150">
             <template #default="{ row }">{{ roleLabel(row.userType) }}</template>
           </ElTableColumn>
-          <ElTableColumn label="状态" width="130">
+          <ElTableColumn :label="t('状态')" width="130">
             <template #default="{ row }">
               <ElTag :type="row.enabled ? 'success' : 'info'">
-                {{ row.enabled ? '已启用' : '已停用' }}
+                {{ row.enabled ? t('已启用') : t('已停用') }}
               </ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="密码状态" width="140">
+          <ElTableColumn :label="t('密码状态')" width="140">
             <template #default="{ row }">
-              <ElTag v-if="row.passwordResetRequired" type="warning">等待首次改密</ElTag>
-              <span v-else>正常</span>
+              <ElTag v-if="row.passwordResetRequired" type="warning">{{ t('等待首次改密') }}</ElTag>
+              <span v-else>{{ t('正常') }}</span>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="最近登录" min-width="180">
+          <ElTableColumn :label="t('最近登录')" min-width="180">
             <template #default="{ row }">{{ formatDateTime(row.lastLoginAt) }}</template>
           </ElTableColumn>
-          <ElTableColumn label="操作" width="190" fixed="right">
+          <ElTableColumn :label="t('操作')" width="190" fixed="right">
             <template #default="{ row }">
-              <ElButton link type="primary" @click="openEdit(row)">编辑</ElButton>
-              <ElButton link type="warning" @click="openReset(row)">重置密码</ElButton>
+              <ElButton link type="primary" @click="openEdit(row)">{{ t('编辑') }}</ElButton>
+              <ElButton link type="warning" @click="openReset(row)">{{ t('重置密码') }}</ElButton>
             </template>
           </ElTableColumn>
         </ElTable>
-        <ElEmpty v-if="!loading && !accounts.length" description="暂无工作人员账号" />
+        <ElEmpty v-if="!loading && !accounts.length" :description="t('暂无工作人员账号')" />
       </ElCard>
 
-      <ElDialog v-model="createVisible" title="新建工作人员账号" width="520px">
+      <ElDialog v-model="createVisible" :title="t('新建工作人员账号')" width="520px">
         <ElForm ref="createFormRef" :model="createForm" :rules="createRules" label-position="top">
-          <ElFormItem label="用户名" prop="username">
-            <ElInput v-model="createForm.username" placeholder="例如 judge-01" />
+          <ElFormItem :label="t('用户名')" prop="username">
+            <ElInput v-model="createForm.username" :placeholder="t('例如 judge-01')" />
           </ElFormItem>
-          <ElFormItem label="显示名称" prop="displayName">
-            <ElInput v-model="createForm.displayName" placeholder="例如 裁判一号" />
+          <ElFormItem :label="t('显示名称')" prop="displayName">
+            <ElInput v-model="createForm.displayName" :placeholder="t('例如 裁判一号')" />
           </ElFormItem>
-          <ElFormItem label="角色" prop="userType">
+          <ElFormItem :label="t('角色')" prop="userType">
             <ElSelect v-model="createForm.userType" class="wide-control">
               <ElOption
                 v-for="option in roleOptions"
@@ -76,31 +76,33 @@
               />
             </ElSelect>
           </ElFormItem>
-          <ElFormItem label="初始密码" prop="initialPassword">
+          <ElFormItem :label="t('初始密码')" prop="initialPassword">
             <ElInput v-model="createForm.initialPassword" type="password" show-password />
-            <small class="form-help">长度 8 至 128 位。</small>
+            <small class="form-help">{{ t('长度 8 至 128 位。') }}</small>
           </ElFormItem>
-          <ElFormItem label="账号策略">
-            <ElCheckbox v-model="createForm.requirePasswordReset"
-              >须在首次登录时修改密码</ElCheckbox
-            >
+          <ElFormItem :label="t('账号策略')">
+            <ElCheckbox v-model="createForm.requirePasswordReset">{{
+              t('须在首次登录时修改密码')
+            }}</ElCheckbox>
           </ElFormItem>
         </ElForm>
         <template #footer>
-          <ElButton @click="createVisible = false">取消</ElButton>
-          <ElButton type="primary" :loading="saving" @click="createAccount">创建</ElButton>
+          <ElButton @click="createVisible = false">{{ t('取消') }}</ElButton>
+          <ElButton type="primary" :loading="saving" @click="createAccount">{{
+            t('创建')
+          }}</ElButton>
         </template>
       </ElDialog>
 
-      <ElDialog v-model="editVisible" title="编辑工作人员账号" width="520px">
+      <ElDialog v-model="editVisible" :title="t('编辑工作人员账号')" width="520px">
         <ElForm :model="editForm" label-position="top">
-          <ElFormItem label="用户名">
+          <ElFormItem :label="t('用户名')">
             <ElInput :model-value="selected?.username" disabled />
           </ElFormItem>
-          <ElFormItem label="显示名称">
+          <ElFormItem :label="t('显示名称')">
             <ElInput v-model="editForm.displayName" />
           </ElFormItem>
-          <ElFormItem label="角色">
+          <ElFormItem :label="t('角色')">
             <ElSelect v-model="editForm.userType" class="wide-control">
               <ElOption
                 v-for="option in roleOptions"
@@ -110,38 +112,45 @@
               />
             </ElSelect>
           </ElFormItem>
-          <ElFormItem label="账号状态">
-            <ElSwitch v-model="editForm.enabled" active-text="启用" inactive-text="停用" />
+          <ElFormItem :label="t('账号状态')">
+            <ElSwitch
+              v-model="editForm.enabled"
+              :active-text="t('启用')"
+              :inactive-text="t('停用')"
+            />
           </ElFormItem>
         </ElForm>
         <template #footer>
-          <ElButton @click="editVisible = false">取消</ElButton>
-          <ElButton type="primary" :loading="saving" @click="saveAccount">保存</ElButton>
+          <ElButton @click="editVisible = false">{{ t('取消') }}</ElButton>
+          <ElButton type="primary" :loading="saving" @click="saveAccount">{{ t('保存') }}</ElButton>
         </template>
       </ElDialog>
 
-      <ElDialog v-model="resetVisible" title="重置工作人员密码" width="460px">
+      <ElDialog v-model="resetVisible" :title="t('重置工作人员密码')" width="460px">
         <p>
-          正在重置 <strong>{{ selected?.displayName }}</strong
-          >（@{{ selected?.username }}）的密码。
+          {{ t('正在重置') }} <strong>{{ selected?.displayName }}</strong> (@{{
+            selected?.username
+          }}) {{ t('的密码。') }}
         </p>
         <ElForm label-position="top" class="reset-password-form">
-          <ElFormItem label="新初始密码">
+          <ElFormItem :label="t('新初始密码')">
             <ElInput v-model="resetPassword" type="password" show-password />
           </ElFormItem>
-          <ElFormItem label="账号策略">
-            <ElCheckbox v-model="resetRequirePasswordReset">须在下次登录时修改密码</ElCheckbox>
+          <ElFormItem :label="t('账号策略')">
+            <ElCheckbox v-model="resetRequirePasswordReset">{{
+              t('须在下次登录时修改密码')
+            }}</ElCheckbox>
           </ElFormItem>
         </ElForm>
         <template #footer>
-          <ElButton @click="resetVisible = false">取消</ElButton>
+          <ElButton @click="resetVisible = false">{{ t('取消') }}</ElButton>
           <ElButton
             type="warning"
             :disabled="resetPassword.length < 8 || resetPassword.length > 128"
             :loading="saving"
             @click="saveResetPassword"
           >
-            确认重置
+            {{ t('确认重置') }}
           </ElButton>
         </template>
       </ElDialog>
@@ -150,27 +159,29 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type { FormInstance, FormRules } from 'element-plus';
 import { adminApi } from '../api/admin';
 import { getErrorMessage } from '../api/client';
 import type { StaffAccount } from '../api/types';
 import { formatDateTime } from '../utils/format';
+import { useI18n } from '../i18n';
 
 type StaffType = StaffAccount['userType'];
 
-const roleOptions: Array<{ value: StaffType; label: string }> = [
-  { value: 'SUPER_ADMIN', label: '超级管理员' },
-  { value: 'CONTEST_ADMIN', label: '比赛管理员' },
-  { value: 'JUDGE', label: '裁判' },
-  { value: 'PRINTER', label: '打印员' },
-  { value: 'BALLOON_STAFF', label: '气球工作人员' },
-  { value: 'RESOLVER_OPERATOR', label: '滚榜操作员' },
-  { value: 'AWARD_OPERATOR', label: '颁奖操作员' },
-  { value: 'SCREEN_OPERATOR', label: '大屏操作员' },
-  { value: 'LIVE_OPERATOR', label: '直播操作员' },
-];
+const { t } = useI18n();
+const roleOptions = computed((): Array<{ value: StaffType; label: string }> => [
+  { value: 'SUPER_ADMIN', label: t('超级管理员') },
+  { value: 'CONTEST_ADMIN', label: t('比赛管理员') },
+  { value: 'JUDGE', label: t('裁判') },
+  { value: 'PRINTER', label: t('打印员') },
+  { value: 'BALLOON_STAFF', label: t('气球工作人员') },
+  { value: 'RESOLVER_OPERATOR', label: t('滚榜操作员') },
+  { value: 'AWARD_OPERATOR', label: t('颁奖操作员') },
+  { value: 'SCREEN_OPERATOR', label: t('大屏操作员') },
+  { value: 'LIVE_OPERATOR', label: t('直播操作员') },
+]);
 
 const accounts = ref<StaffAccount[]>([]);
 const loading = ref(false);
@@ -195,25 +206,25 @@ const editForm = reactive({
   userType: 'CONTEST_ADMIN' as StaffType,
   enabled: true,
 });
-const createRules: FormRules = {
+const createRules = computed<FormRules>(() => ({
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
     {
       pattern: /^[A-Za-z0-9._-]{3,64}$/,
-      message: '请输入 3 至 64 位字母、数字或 ._-',
+      message: t('请输入 3 至 64 位字母、数字或 ._-'),
       trigger: 'blur',
     },
   ],
-  displayName: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
-  userType: [{ required: true, message: '请选择角色', trigger: 'change' }],
+  displayName: [{ required: true, message: t('请输入显示名称'), trigger: 'blur' }],
+  userType: [{ required: true, message: t('请选择角色'), trigger: 'change' }],
   initialPassword: [
-    { required: true, message: '请输入初始密码', trigger: 'blur' },
-    { min: 8, max: 128, message: '密码长度需为 8 至 128 位', trigger: 'blur' },
+    { required: true, message: t('请输入初始密码'), trigger: 'blur' },
+    { min: 8, max: 128, message: t('密码长度需为 8 至 128 位'), trigger: 'blur' },
   ],
-};
+}));
 
 function roleLabel(userType: StaffType) {
-  return roleOptions.find((option) => option.value === userType)?.label ?? userType;
+  return roleOptions.value.find((option) => option.value === userType)?.label ?? userType;
 }
 
 async function load() {

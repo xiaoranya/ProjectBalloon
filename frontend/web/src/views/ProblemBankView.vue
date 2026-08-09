@@ -1,35 +1,40 @@
 <template>
   <el-container direction="vertical" class="bank-page">
     <el-header height="auto" class="page-head"
-      ><div><h1>公开题库</h1></div>
-      <RouterLink to="/training">训练计划</RouterLink></el-header
+      ><div>
+        <h1>{{ t('公开题库') }}</h1>
+      </div>
+      <RouterLink to="/training">{{ t('训练计划') }}</RouterLink></el-header
     >
     <el-main class="page-body">
       <div class="filters">
         <ElSpace wrap :size="10"
-          ><ElInput v-model="tag" clearable placeholder="标签" @change="applyFilters" /><ElSelect
-            v-model="difficulty"
+          ><ElInput
+            v-model="tag"
             clearable
-            placeholder="难度"
+            :placeholder="t('标签')"
             @change="applyFilters"
+          /><ElSelect v-model="difficulty" clearable :placeholder="t('难度')" @change="applyFilters"
             ><ElOption
               v-for="value in 11"
               :key="value - 1"
               :label="value - 1"
               :value="value - 1" /></ElSelect
-          ><ElButton :loading="loading" @click="load">刷新</ElButton></ElSpace
+          ><ElButton :loading="loading" @click="load">{{ t('刷新') }}</ElButton></ElSpace
         >
       </div>
       <ElTable :data="page.content" v-loading="loading" row-key="id" @row-click="open">
-        <ElTableColumn prop="slug" label="编号" width="150" /><ElTableColumn
+        <ElTableColumn prop="slug" :label="t('编号')" width="150" /><ElTableColumn
           prop="title"
-          label="题目"
+          :label="t('题目')"
           min-width="260"
         />
-        <ElTableColumn label="难度" width="90"
-          ><template #default="{ row }">{{ row.difficulty ?? '未标注' }}</template></ElTableColumn
+        <ElTableColumn :label="t('难度')" width="90"
+          ><template #default="{ row }">{{
+            row.difficulty ?? t('未标注')
+          }}</template></ElTableColumn
         >
-        <ElTableColumn label="标签"
+        <ElTableColumn :label="t('标签')"
           ><template #default="{ row }"
             ><ElTag v-for="item in row.tags" :key="item" size="small">{{ item }}</ElTag></template
           ></ElTableColumn
@@ -45,7 +50,10 @@
         />
       </ElRow>
       <ElDrawer v-model="drawer" :title="selected?.title" size="min(760px, 92vw)"
-        ><div v-if="selected" class="statement" v-html="selected.statement || '<p>暂无题面</p>'"
+        ><div
+          v-if="selected"
+          class="statement"
+          v-html="selected.statement || `<p>${t('暂无题面')}</p>`"
       /></ElDrawer>
     </el-main>
   </el-container>
@@ -55,6 +63,8 @@ import { onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { trainingApi, type BankProblem } from '../api/training';
 import { getErrorMessage } from '../api/client';
+import { useI18n } from '../i18n';
+const { t } = useI18n();
 const page = ref({
   content: [] as BankProblem[],
   page: 0,

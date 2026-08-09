@@ -1,9 +1,9 @@
 <template>
   <el-container direction="vertical" class="page-section narrow-section">
     <el-main class="page-body">
-      <ElButton link :icon="ArrowLeft" @click="router.push(`/contests/${contestId}/submissions`)"
-        >返回提交记录</ElButton
-      >
+      <ElButton link :icon="ArrowLeft" @click="router.push(`/contests/${contestId}/submissions`)">{{
+        t('返回提交记录')
+      }}</ElButton>
       <ElSkeleton v-if="loading && !submission" :rows="6" animated />
       <ElAlert
         v-else-if="errorMessage && !submission"
@@ -18,7 +18,7 @@
             <p class="eyebrow">Submission #{{ submission.id }}</p>
             <h1>{{ submissionStatusLabel(submission.status) }}</h1>
             <p v-if="!isFinalSubmissionStatus(submission.status)" class="polling-hint">
-              <span class="pulse-dot"></span> 正在等待判题结果，页面将自动刷新
+              <span class="pulse-dot"></span> {{ t('正在等待判题结果，页面将自动刷新') }}
             </p>
           </div>
           <ElTag :type="statusTagType(submission.status)" size="large" effect="dark">
@@ -27,14 +27,14 @@
         </div>
 
         <ElDescriptions :column="2" border class="result-details">
-          <ElDescriptionsItem label="题目">{{ submission.problemAlias }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="语言">{{
+          <ElDescriptionsItem :label="t('题目')">{{ submission.problemAlias }}</ElDescriptionsItem>
+          <ElDescriptionsItem :label="t('语言')">{{
             languageLabel(submission.language)
           }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="提交时间">{{
+          <ElDescriptionsItem :label="t('提交时间')">{{
             formatDateTime(submission.submittedAt)
           }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="判题完成">{{
+          <ElDescriptionsItem :label="t('判题完成')">{{
             formatDateTime(submission.judgedAt)
           }}</ElDescriptionsItem>
         </ElDescriptions>
@@ -42,51 +42,51 @@
         <ElCard v-if="activeJudgement" shadow="never" class="judgement-card">
           <template #header>
             <div class="card-header">
-              <strong>判题详情</strong>
+              <strong>{{ t('判题详情') }}</strong>
               <span class="muted-note">Judgement {{ activeJudgement.id }}</span>
             </div>
           </template>
           <div class="metric-grid">
             <div>
-              <small>总时间</small>
+              <small>{{ t('总时间') }}</small>
               <strong>{{ formatMetric(activeJudgement.totalTimeMs, 'ms') }}</strong>
             </div>
             <div>
-              <small>峰值内存</small>
+              <small>{{ t('峰值内存') }}</small>
               <strong>{{ formatMemory(activeJudgement.peakMemoryKb) }}</strong>
             </div>
             <div>
-              <small>开始判题</small>
+              <small>{{ t('开始判题') }}</small>
               <strong>{{ formatDateTime(activeJudgement.startedAt) }}</strong>
             </div>
             <div>
-              <small>完成判题</small>
+              <small>{{ t('完成判题') }}</small>
               <strong>{{ formatDateTime(activeJudgement.completedAt) }}</strong>
             </div>
           </div>
 
           <template v-if="activeJudgement.compileLog">
-            <h3>编译日志</h3>
+            <h3>{{ t('编译日志') }}</h3>
             <pre><code>{{ activeJudgement.compileLog }}</code></pre>
           </template>
 
           <template v-if="activeJudgement.runs.length">
-            <h3>测试点</h3>
+            <h3>{{ t('测试点') }}</h3>
             <ElTable :data="activeJudgement.runs" size="small" border>
               <ElTableColumn prop="testIndex" label="#" width="70" />
-              <ElTableColumn label="结果" width="170">
+              <ElTableColumn :label="t('结果')" width="170">
                 <template #default="{ row }">{{
                   submissionStatusLabel(row.verdict ?? '')
                 }}</template>
               </ElTableColumn>
-              <ElTableColumn label="时间" width="110">
+              <ElTableColumn :label="t('时间')" width="110">
                 <template #default="{ row }">{{ formatMetric(row.timeMs, 'ms') }}</template>
               </ElTableColumn>
-              <ElTableColumn label="内存" width="130">
+              <ElTableColumn :label="t('内存')" width="130">
                 <template #default="{ row }">{{ formatMemory(row.memoryKb) }}</template>
               </ElTableColumn>
-              <ElTableColumn prop="exitCode" label="退出码" width="90" />
-              <ElTableColumn label="标准错误">
+              <ElTableColumn prop="exitCode" :label="t('退出码')" width="90" />
+              <ElTableColumn :label="t('标准错误')">
                 <template #default="{ row }">{{ row.stderrTail || '—' }}</template>
               </ElTableColumn>
             </ElTable>
@@ -94,7 +94,9 @@
         </ElCard>
 
         <ElCard v-if="submission.judgements.length > 1" shadow="never" class="history-card">
-          <template #header><strong>重判历史</strong></template>
+          <template #header
+            ><strong>{{ t('重判历史') }}</strong></template
+          >
           <ElTimeline>
             <ElTimelineItem
               v-for="judgement in submission.judgements"
@@ -102,7 +104,7 @@
               :timestamp="formatDateTime(judgement.createdAt)"
               placement="top"
             >
-              {{ judgement.active ? '当前判题' : '已被后续重判替代' }}
+              {{ t(judgement.active ? '当前判题' : '已被后续重判替代') }}
               <ElTag v-if="judgement.verdict" size="small" :type="statusTagType(judgement.verdict)">
                 {{ submissionStatusLabel(judgement.verdict) }}
               </ElTag>
@@ -113,13 +115,13 @@
         <ElCard shadow="never" class="source-card">
           <template #header>
             <div class="card-header">
-              <strong>提交源码</strong>
+              <strong>{{ t('提交源码') }}</strong>
               <span class="muted-note">SHA-256 {{ submission.sourceSha256 ?? '—' }}</span>
             </div>
           </template>
           <ElEmpty
             v-if="submission.language === 'output'"
-            description="输出题提交为 ZIP 归档，不支持在线查看"
+            :description="t('输出题提交为 ZIP 归档，不支持在线查看')"
           /><CodeEditor
             v-else
             v-model="submission.source"
@@ -142,6 +144,7 @@ import CodeEditor from '../components/CodeEditor.vue';
 import { contestApi } from '../api/contest';
 import { getErrorMessage } from '../api/client';
 import type { SubmissionDetail } from '../api/types';
+import { useI18n } from '../i18n';
 import {
   formatDateTime,
   isFinalSubmissionStatus,
@@ -152,6 +155,7 @@ import {
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const contestId = computed(() => Number(route.params.contestId));
 const submissionId = computed(() => Number(route.params.submissionId));
 const submission = ref<SubmissionDetail | null>(null);

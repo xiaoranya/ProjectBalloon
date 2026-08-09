@@ -14,9 +14,9 @@
         <thead>
           <tr>
             <th>#</th>
-            <th>队伍</th>
-            <th>{{ presentation.scoreboard.scoringMode === 'ICPC' ? '解题' : '总分' }}</th>
-            <th v-if="presentation.scoreboard.scoringMode === 'ICPC'">罚时</th>
+            <th>{{ t('队伍') }}</th>
+            <th>{{ presentation.scoreboard.scoringMode === 'ICPC' ? t('解题') : t('总分') }}</th>
+            <th v-if="presentation.scoreboard.scoringMode === 'ICPC'">{{ t('罚时') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -47,7 +47,7 @@
     </section>
     <section v-else-if="presentation && view === 'first-blood'" class="hero">
       <p>FIRST BLOOD</p>
-      <h2>{{ firstBlood?.teamName || '等待首杀' }}</h2>
+      <h2>{{ firstBlood?.teamName || t('等待首杀') }}</h2>
       <strong>{{ firstBloodProblem }}</strong>
     </section>
     <section v-else-if="presentation && view === 'freeze'" class="hero">
@@ -56,31 +56,38 @@
     </section>
     <section v-else-if="metrics && view === 'balloons'" class="metrics">
       <article>
-        <span>气球总数</span><strong>{{ metrics.balloons.total }}</strong>
+        <span>{{ t('气球总数') }}</span
+        ><strong>{{ metrics.balloons.total }}</strong>
       </article>
       <article>
-        <span>已送达</span><strong>{{ metrics.balloons.delivered }}</strong>
+        <span>{{ t('已送达') }}</span
+        ><strong>{{ metrics.balloons.delivered }}</strong>
       </article>
       <article>
-        <span>配送中</span
+        <span>{{ t('配送中') }}</span
         ><strong>{{ metrics.balloons.preparing + metrics.balloons.delivering }}</strong>
       </article>
       <article>
-        <span>首杀</span><strong>{{ metrics.balloons.firstBlood }}</strong>
+        <span>{{ t('首杀') }}</span
+        ><strong>{{ metrics.balloons.firstBlood }}</strong>
       </article>
     </section>
     <section v-else-if="metrics" class="metrics">
       <article>
-        <span>提交</span><strong>{{ metrics.submissions.total }}</strong>
+        <span>{{ t('提交') }}</span
+        ><strong>{{ metrics.submissions.total }}</strong>
       </article>
       <article>
-        <span>通过</span><strong>{{ metrics.submissions.accepted }}</strong>
+        <span>{{ t('通过') }}</span
+        ><strong>{{ metrics.submissions.accepted }}</strong>
       </article>
       <article>
-        <span>通过率</span><strong>{{ acceptance }}%</strong>
+        <span>{{ t('通过率') }}</span
+        ><strong>{{ acceptance }}%</strong>
       </article>
       <article>
-        <span>评测中</span><strong>{{ metrics.submissions.pending }}</strong>
+        <span>{{ t('评测中') }}</span
+        ><strong>{{ metrics.submissions.pending }}</strong>
       </article>
     </section>
   </main>
@@ -95,6 +102,8 @@ import {
   type PresentationMetrics,
   type PublishedPresentation,
 } from '../api/presentation';
+import { useI18n } from '../i18n';
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{ view?: 'scoreboard' | 'first-blood' | 'balloons' | 'freeze' | 'statistics' }>(),
@@ -172,7 +181,7 @@ async function load() {
 }
 onMounted(async () => {
   if (!contestId || !token) {
-    errorMessage.value = '缺少 contestId 或广播 Token';
+    errorMessage.value = t('缺少 contestId 或广播 Token');
     return;
   }
   await load();

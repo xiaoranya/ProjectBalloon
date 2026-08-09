@@ -4,9 +4,11 @@
       <div class="page-title-row">
         <div>
           <p class="eyebrow">Submissions</p>
-          <h1>提交记录</h1>
+          <h1>{{ t('提交记录') }}</h1>
         </div>
-        <ElButton :icon="Refresh" :loading="loading" @click="loadSubmissions()">刷新</ElButton>
+        <ElButton :icon="Refresh" :loading="loading" @click="loadSubmissions()">{{
+          t('刷新')
+        }}</ElButton>
       </div>
     </el-header>
 
@@ -24,25 +26,25 @@
         v-loading="loading"
         :data="submissions"
         class="data-table"
-        empty-text="暂无提交记录"
+        :empty-text="t('暂无提交记录')"
         @row-click="openSubmission"
       >
         <ElTableColumn prop="id" label="#" width="90" />
-        <ElTableColumn prop="problemAlias" label="题目" width="100" />
-        <ElTableColumn label="语言" width="120">
+        <ElTableColumn prop="problemAlias" :label="t('题目')" width="100" />
+        <ElTableColumn :label="t('语言')" width="120">
           <template #default="{ row }">{{ languageLabel(row.language) }}</template>
         </ElTableColumn>
-        <ElTableColumn label="状态" min-width="170">
+        <ElTableColumn :label="t('状态')" min-width="170">
           <template #default="{ row }">
             <ElTag :type="statusTagType(row.status)" effect="light">
               {{ submissionStatusLabel(row.status) }}
             </ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn label="提交时间" min-width="180">
+        <ElTableColumn :label="t('提交时间')" min-width="180">
           <template #default="{ row }">{{ formatDateTime(row.submittedAt) }}</template>
         </ElTableColumn>
-        <ElTableColumn label="判题完成" min-width="180">
+        <ElTableColumn :label="t('判题完成')" min-width="180">
           <template #default="{ row }">{{ formatDateTime(row.judgedAt) }}</template>
         </ElTableColumn>
       </ElTable>
@@ -74,9 +76,11 @@ import {
   statusTagType,
   submissionStatusLabel,
 } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const contestId = computed(() => Number(route.params.contestId));
 const submissions = ref<SubmissionSummary[]>([]);
 const loading = ref(false);

@@ -4,8 +4,8 @@
       <ElCard class="login-card" shadow="never">
         <template #header>
           <div>
-            <h2>参赛队登录</h2>
-            <p>{{ competitionMode ? '选择本机登录方式' : '请输入比赛账号和密码' }}</p>
+            <h2>{{ t('参赛队登录') }}</h2>
+            <p>{{ t(competitionMode ? '选择本机登录方式' : '请输入比赛账号和密码') }}</p>
           </div>
         </template>
         <ElSegmented
@@ -22,23 +22,23 @@
           label-position="top"
           @submit.prevent="submit"
         >
-          <ElFormItem label="用户名" prop="username">
+          <ElFormItem :label="t('用户名')" prop="username">
             <ElInput
               v-model="form.username"
               size="large"
               autocomplete="username"
-              placeholder="请输入用户名"
+              :placeholder="t('请输入用户名')"
               :prefix-icon="User"
             />
           </ElFormItem>
-          <ElFormItem label="密码" prop="password">
+          <ElFormItem :label="t('密码')" prop="password">
             <ElInput
               v-model="form.password"
               size="large"
               type="password"
               autocomplete="current-password"
               show-password
-              placeholder="请输入密码"
+              :placeholder="t('请输入密码')"
               :prefix-icon="Lock"
               @keyup.enter="submit"
             />
@@ -58,19 +58,19 @@
             :loading="session.state.loading"
             class="wide-button"
           >
-            登录
+            {{ t('登录') }}
           </ElButton>
-          <RouterLink v-if="!competitionMode" class="register-link" to="/register"
-            >注册个人练习账号</RouterLink
-          >
+          <RouterLink v-if="!competitionMode" class="register-link" to="/register">{{
+            t('注册个人练习账号')
+          }}</RouterLink>
         </ElForm>
         <ElForm v-else label-position="top" @submit.prevent="submitPairing">
-          <ElFormItem label="配对码">
+          <ElFormItem :label="t('配对码')">
             <ElInput
               v-model="pairingCode"
               size="large"
               autocomplete="one-time-code"
-              placeholder="请输入本机配对码"
+              :placeholder="t('请输入本机配对码')"
               :prefix-icon="Key"
               maxlength="32"
               @keyup.enter="submitPairing"
@@ -92,7 +92,7 @@
             :disabled="!pairingCode.trim()"
             class="wide-button"
           >
-            进入比赛
+            {{ t('进入比赛') }}
           </ElButton>
         </ElForm>
       </ElCard>
@@ -107,22 +107,24 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { Key, Lock, User } from '@element-plus/icons-vue';
 import { getErrorMessage } from '../api/client';
 import { useSession } from '../auth/session';
+import { useI18n } from '../i18n';
 const route = useRoute();
 const router = useRouter();
 const session = useSession();
+const { t } = useI18n();
 const formRef = ref<FormInstance>();
 const errorMessage = ref('');
 const pairingCode = ref('');
 const competitionMode = computed(() => session.state.deployment.mode === 'competition');
 const loginMode = ref<'pairing' | 'account'>(competitionMode.value ? 'pairing' : 'account');
-const loginOptions = [
-  { label: '配对码', value: 'pairing' },
-  { label: '账号密码', value: 'account' },
-];
+const loginOptions = computed(() => [
+  { label: t('配对码'), value: 'pairing' },
+  { label: t('账号密码'), value: 'account' },
+]);
 const form = reactive({ username: '', password: '' });
 const rules: FormRules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  username: [{ required: true, message: t('请输入用户名'), trigger: 'blur' }],
+  password: [{ required: true, message: t('请输入密码'), trigger: 'blur' }],
 };
 
 async function submit() {
@@ -134,7 +136,7 @@ async function submit() {
       ? user.userType === 'TEAM'
       : ['TEAM', 'INDIVIDUAL'].includes(user.userType);
     if (!accepted) {
-      errorMessage.value = '该账号不是参赛队账号，请使用对应的管理入口';
+      errorMessage.value = t('该账号不是参赛队账号，请使用对应的管理入口');
       await session.logout();
       return;
     }

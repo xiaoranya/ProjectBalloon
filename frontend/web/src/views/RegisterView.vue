@@ -1,13 +1,14 @@
 <template>
   <main class="register-page">
     <ElCard shadow="never"
-      ><template #header><h1>注册练习账号</h1></template
+      ><template #header
+        ><h1>{{ t('注册练习账号') }}</h1></template
       ><ElForm :model="form" label-position="top" @submit.prevent="submit"
-        ><ElFormItem label="用户名"
+        ><ElFormItem :label="t('用户名')"
           ><ElInput v-model="form.username" autocomplete="username" /></ElFormItem
-        ><ElFormItem label="显示名称"
+        ><ElFormItem :label="t('显示名称')"
           ><ElInput v-model="form.displayName" maxlength="128" /></ElFormItem
-        ><ElFormItem label="密码"
+        ><ElFormItem :label="t('密码')"
           ><ElInput
             v-model="form.password"
             type="password"
@@ -19,8 +20,8 @@
           native-type="submit"
           :loading="session.state.loading"
           class="wide"
-          >注册并开始练习</ElButton
-        ><RouterLink to="/login">已有账号，返回登录</RouterLink></ElForm
+          >{{ t('注册并开始练习') }}</ElButton
+        ><RouterLink to="/login">{{ t('已有账号，返回登录') }}</RouterLink></ElForm
       ></ElCard
     >
   </main>
@@ -30,8 +31,10 @@ import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { getErrorMessage } from '../api/client';
 import { useSession } from '../auth/session';
+import { useI18n } from '../i18n';
 const router = useRouter();
 const session = useSession();
+const { t } = useI18n();
 const form = reactive({ username: '', displayName: '', password: '' });
 const error = ref('');
 async function submit() {

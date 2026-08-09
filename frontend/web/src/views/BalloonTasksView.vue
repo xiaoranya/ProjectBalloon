@@ -4,14 +4,14 @@
       <div class="page-title-row">
         <div>
           <p class="eyebrow">Balloon Delivery Desk</p>
-          <h1>气球配送工作台</h1>
+          <h1>{{ t('气球配送工作台') }}</h1>
         </div>
         <div
           class="clarification-live-state"
           :class="{ connected: realtimeConnected }"
           aria-live="polite"
         >
-          <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
+          <span />{{ realtimeConnected ? t('实时更新') : t('轮询更新') }}
         </div>
       </div>
     </el-header>
@@ -29,22 +29,26 @@
       <ElRow :gutter="14" class="balloon-stats-grid">
         <ElCol
           ><div class="balloon-stat">
-            <span>全部任务</span><strong>{{ stats?.total ?? 0 }}</strong>
+            <span>{{ t('全部任务') }}</span
+            ><strong>{{ stats?.total ?? 0 }}</strong>
           </div></ElCol
         >
         <ElCol
           ><div class="balloon-stat pending">
-            <span>待领取</span><strong>{{ stats?.pending ?? 0 }}</strong>
+            <span>{{ t('待领取') }}</span
+            ><strong>{{ stats?.pending ?? 0 }}</strong>
           </div></ElCol
         >
         <ElCol
           ><div class="balloon-stat active">
-            <span>配送中</span><strong>{{ stats?.claimed ?? 0 }}</strong>
+            <span>{{ t('配送中') }}</span
+            ><strong>{{ stats?.claimed ?? 0 }}</strong>
           </div></ElCol
         >
         <ElCol
           ><div class="balloon-stat delivered">
-            <span>已送达</span><strong>{{ stats?.delivered ?? 0 }}</strong>
+            <span>{{ t('已送达') }}</span
+            ><strong>{{ stats?.delivered ?? 0 }}</strong>
           </div></ElCol
         >
         <ElCol
@@ -59,7 +63,7 @@
           <ElSelect
             v-model="selectedContestId"
             filterable
-            placeholder="选择比赛"
+            :placeholder="t('选择比赛')"
             @change="changeContest"
           >
             <ElOption
@@ -69,8 +73,8 @@
               :value="contest.id"
             />
           </ElSelect>
-          <ElSelect v-model="statusFilter" placeholder="状态" @change="changeFilter">
-            <ElOption label="全部状态" value="ALL" />
+          <ElSelect v-model="statusFilter" :placeholder="t('状态')" @change="changeFilter">
+            <ElOption :label="t('全部状态')" value="ALL" />
             <ElOption
               v-for="status in balloonTaskStatuses"
               :key="status"
@@ -78,18 +82,18 @@
               :value="status"
             />
           </ElSelect>
-          <ElSelect v-model="problemFilter" clearable placeholder="全部题目">
+          <ElSelect v-model="problemFilter" clearable :placeholder="t('全部题目')">
             <ElOption
               v-for="problem in problemOptions"
               :key="problem"
-              :label="`题目 ${problem}`"
+              :label="t('题目 {alias}', { alias: problem })"
               :value="problem"
             />
           </ElSelect>
           <ElInput
             v-model="keyword"
             clearable
-            placeholder="搜索队伍或座位号"
+            :placeholder="t('搜索队伍或座位号')"
             :prefix-icon="Search"
           />
           <ElButton
@@ -97,14 +101,14 @@
             :loading="action === 'dispatch'"
             :disabled="!selectedContestId"
             @click="dispatchTasks"
-            >智能领取</ElButton
+            >{{ t('智能领取') }}</ElButton
           >
           <ElButton
             :icon="Refresh"
             :loading="loading"
             :disabled="!selectedContestId"
             @click="loadData(false)"
-            >刷新</ElButton
+            >{{ t('刷新') }}</ElButton
           >
         </ElSpace>
       </ElCard>
@@ -114,18 +118,20 @@
           v-loading="loading"
           :data="filteredTasks"
           row-key="id"
-          :empty-text="loaded ? '当前筛选下暂无气球任务' : '气球任务加载失败，请重试'"
+          :empty-text="loaded ? t('当前筛选下暂无气球任务') : t('气球任务加载失败，请重试')"
           @row-click="openDetail"
         >
-          <ElTableColumn label="队伍与座位" min-width="220">
+          <ElTableColumn :label="t('队伍与座位')" min-width="220">
             <template #default="{ row }"
               ><div class="admin-primary-cell">
                 <strong>{{ row.teamName }}</strong
-                ><small>座位 {{ row.seatNo ?? '—' }} · 任务 #{{ row.id }}</small>
+                ><small>{{
+                  t('座位 {seat} · 任务 #{id}', { seat: row.seatNo ?? '—', id: row.id })
+                }}</small>
               </div></template
             >
           </ElTableColumn>
-          <ElTableColumn label="题目与颜色" width="180">
+          <ElTableColumn :label="t('题目与颜色')" width="180">
             <template #default="{ row }"
               ><div class="balloon-problem-cell">
                 <span class="balloon-color" :style="{ backgroundColor: row.color }" />
@@ -136,28 +142,30 @@
               </div></template
             >
           </ElTableColumn>
-          <ElTableColumn label="标记" width="130">
+          <ElTableColumn :label="t('标记')" width="130">
             <template #default="{ row }"
               ><ElTag v-if="row.isFirstBlood" type="danger" effect="dark">First Blood</ElTag
-              ><span v-else class="muted-text">普通任务</span></template
+              ><span v-else class="muted-text">{{ t('普通任务') }}</span></template
             >
           </ElTableColumn>
-          <ElTableColumn label="状态" width="110">
+          <ElTableColumn :label="t('状态')" width="110">
             <template #default="{ row }"
               ><ElTag :type="statusType(row.status)">{{ statusLabel(row.status) }}</ElTag></template
             >
           </ElTableColumn>
-          <ElTableColumn label="领取信息" min-width="180">
+          <ElTableColumn :label="t('领取信息')" min-width="180">
             <template #default="{ row }"
               ><div class="admin-primary-cell">
                 <span>{{
-                  row.claimedByUserId ? `工作人员 #${row.claimedByUserId}` : '尚未领取'
+                  row.claimedByUserId
+                    ? t('工作人员 #{id}', { id: row.claimedByUserId })
+                    : t('尚未领取')
                 }}</span
                 ><small>{{ formatDateTime(row.claimedAt) }}</small>
               </div></template
             >
           </ElTableColumn>
-          <ElTableColumn label="生成时间" min-width="170"
+          <ElTableColumn :label="t('生成时间')" min-width="170"
             ><template #default="{ row }">{{
               formatDateTime(row.createdAt)
             }}</template></ElTableColumn
@@ -167,7 +175,7 @@
 
       <ElDrawer
         v-model="detailVisible"
-        title="气球任务详情"
+        :title="t('气球任务详情')"
         size="min(650px, 95vw)"
         @closed="selected = null"
       >
@@ -181,28 +189,33 @@
             >
           </div>
           <ElDescriptions :column="1" border>
-            <ElDescriptionsItem label="队伍">{{ selected.teamName }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="座位号">{{ selected.seatNo ?? '—' }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="关联提交">#{{ selected.submissionId }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="领取时间">{{
+            <ElDescriptionsItem :label="t('队伍')">{{ selected.teamName }}</ElDescriptionsItem>
+            <ElDescriptionsItem :label="t('座位号')">{{
+              selected.seatNo ?? '—'
+            }}</ElDescriptionsItem>
+            <ElDescriptionsItem :label="t('关联提交')"
+              >#{{ selected.submissionId }}</ElDescriptionsItem
+            >
+            <ElDescriptionsItem :label="t('领取时间')">{{
               formatDateTime(selected.claimedAt)
             }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="送达时间">{{
+            <ElDescriptionsItem :label="t('送达时间')">{{
               formatDateTime(selected.deliveredAt)
             }}</ElDescriptionsItem>
-            <ElDescriptionsItem v-if="selected.cancelledReason" label="取消原因"
+            <ElDescriptionsItem v-if="selected.cancelledReason" :label="t('取消原因')"
               ><span class="danger-text">{{ selected.cancelledReason }}</span></ElDescriptionsItem
             >
-            <ElDescriptionsItem v-if="selected.reopenedCount" label="重新打开"
-              >{{ selected.reopenedCount }} 次</ElDescriptionsItem
-            >
+            <ElDescriptionsItem v-if="selected.reopenedCount" :label="t('重新打开')">{{
+              t('{count} 次', { count: selected.reopenedCount })
+            }}</ElDescriptionsItem>
           </ElDescriptions>
           <div class="balloon-note-panel">
             <div>
-              <strong>配送备注</strong><small>入口、楼层、座位异常或交接信息，最多 1000 字</small>
+              <strong>{{ t('配送备注') }}</strong
+              ><small>{{ t('入口、楼层、座位异常或交接信息，最多 1000 字') }}</small>
             </div>
             <ElInput v-model="note" type="textarea" :rows="4" maxlength="1000" show-word-limit />
-            <ElButton :loading="action === 'note'" @click="saveNote">保存备注</ElButton>
+            <ElButton :loading="action === 'note'" @click="saveNote">{{ t('保存备注') }}</ElButton>
           </div>
           <div class="clarification-actions balloon-actions">
             <ElButton
@@ -210,36 +223,36 @@
               type="primary"
               :loading="action === 'claim'"
               @click="claimTask"
-              >领取任务</ElButton
+              >{{ t('领取任务') }}</ElButton
             >
             <ElButton
               v-if="canDeliver"
               type="success"
               :loading="action === 'deliver'"
               @click="deliverTask"
-              >标记已送达</ElButton
+              >{{ t('标记已送达') }}</ElButton
             >
             <ElButton
               v-if="selected.status === 'CANCELLED'"
               type="warning"
               :loading="action === 'reopen'"
               @click="reopenTask"
-              >重新打开</ElButton
+              >{{ t('重新打开') }}</ElButton
             >
             <ElButton
               v-if="selected.status === 'PENDING' || selected.status === 'CLAIMED'"
               type="danger"
               plain
               @click="openCancel"
-              >取消任务</ElButton
+              >{{ t('取消任务') }}</ElButton
             >
           </div>
         </div>
       </ElDrawer>
 
-      <ElDialog v-model="cancelVisible" title="取消气球任务" width="min(540px, 92vw)">
+      <ElDialog v-model="cancelVisible" :title="t('取消气球任务')" width="min(540px, 92vw)">
         <ElForm label-position="top"
-          ><ElFormItem label="取消原因" :error="cancelError || undefined"
+          ><ElFormItem :label="t('取消原因')" :error="cancelError || undefined"
             ><ElInput
               v-model="cancelReason"
               type="textarea"
@@ -248,13 +261,13 @@
               show-word-limit /></ElFormItem
         ></ElForm>
         <template #footer
-          ><ElButton @click="cancelVisible = false">返回</ElButton
+          ><ElButton @click="cancelVisible = false">{{ t('返回') }}</ElButton
           ><ElButton
             type="danger"
             :loading="action === 'cancel'"
             :disabled="!!cancelError"
             @click="cancelTask"
-            >确认取消</ElButton
+            >{{ t('确认取消') }}</ElButton
           ></template
         >
       </ElDialog>
@@ -283,10 +296,12 @@ import {
   type ContestRealtimeSubscription,
 } from '../realtime/contest-events';
 import { formatDateTime } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const route = useRoute();
 const router = useRouter();
 const session = useSession();
+const { t } = useI18n();
 const contests = ref<Contest[]>([]);
 const selectedContestId = ref<number | null>(null);
 const statusFilter = ref<BalloonTaskStatus | 'ALL'>('ALL');
@@ -325,10 +340,12 @@ const canDeliver = computed(
     selected.value?.status === 'CLAIMED' &&
     (session.isSuperAdmin.value || selected.value.claimedByUserId === session.state.user?.id),
 );
-const cancelError = computed(() => (cancelReason.value.trim() ? '' : '请输入取消原因'));
+const cancelError = computed(() => (cancelReason.value.trim() ? '' : t('请输入取消原因')));
 
 function statusLabel(status: BalloonTaskStatus) {
-  return { PENDING: '待领取', CLAIMED: '配送中', DELIVERED: '已送达', CANCELLED: '已取消' }[status];
+  return t(
+    { PENDING: '待领取', CLAIMED: '配送中', DELIVERED: '已送达', CANCELLED: '已取消' }[status],
+  );
 }
 function statusType(status: BalloonTaskStatus): 'success' | 'warning' | 'info' | 'danger' {
   return status === 'DELIVERED' ? 'success' : status === 'CANCELLED' ? 'danger' : 'warning';
@@ -350,7 +367,7 @@ async function loadData(showLoading = true): Promise<boolean> {
       !showLoading &&
       nextTasks.some((task) => task.status === 'PENDING' && !previous.has(task.id))
     ) {
-      ElNotification.warning({ title: '收到新气球任务', message: '有新的气球等待领取。' });
+      ElNotification.warning({ title: t('收到新气球任务'), message: t('有新的气球等待领取。') });
     }
     tasks.value = nextTasks;
     stats.value = nextStats;
@@ -449,7 +466,7 @@ async function runMutation(
     if (refreshed) {
       ElMessage.success(success);
     } else {
-      ElMessage.warning(`${success}，但刷新任务列表失败`);
+      ElMessage.warning(t('{message}，但刷新任务列表失败', { message: success }));
     }
     return true;
   } catch (error) {
@@ -464,15 +481,18 @@ async function claimTask() {
     await runMutation(
       'claim',
       () => balloonApi.claim(selected.value!.id, selected.value!.version),
-      '任务已领取',
+      t('任务已领取'),
     );
 }
 async function deliverTask() {
   if (!selected.value) return;
   try {
     await ElMessageBox.confirm(
-      `确认气球已送达 ${selected.value.teamName}（座位 ${selected.value.seatNo ?? '—'}）？`,
-      '确认送达',
+      t('确认气球已送达 {team}（座位 {seat}）？', {
+        team: selected.value.teamName,
+        seat: selected.value.seatNo ?? '—',
+      }),
+      t('确认送达'),
       { type: 'success' },
     );
   } catch {
@@ -481,7 +501,7 @@ async function deliverTask() {
   await runMutation(
     'deliver',
     () => balloonApi.deliver(selected.value!.id, selected.value!.version),
-    '任务已标记为送达',
+    t('任务已标记为送达'),
   );
 }
 function openCancel() {
@@ -495,7 +515,7 @@ async function cancelTask() {
       'cancel',
       () =>
         balloonApi.cancel(selected.value!.id, selected.value!.version, cancelReason.value.trim()),
-      '任务已取消',
+      t('任务已取消'),
     )
   )
     cancelVisible.value = false;
@@ -505,7 +525,7 @@ async function reopenTask() {
     await runMutation(
       'reopen',
       () => balloonApi.reopen(selected.value!.id, selected.value!.version),
-      '任务已重新打开',
+      t('任务已重新打开'),
     );
 }
 async function saveNote() {
@@ -513,7 +533,7 @@ async function saveNote() {
     await runMutation(
       'note',
       () => balloonApi.note(selected.value!.id, selected.value!.version, note.value.trim() || null),
-      '配送备注已保存',
+      t('配送备注已保存'),
     );
 }
 async function dispatchTasks() {
@@ -522,8 +542,9 @@ async function dispatchTasks() {
   try {
     const claimed = await balloonApi.dispatch(selectedContestId.value);
     await loadData(false);
-    if (claimed.length) ElMessage.success(`已按调度策略领取 ${claimed.length} 个任务`);
-    else ElMessage.info('当前没有可调度任务');
+    if (claimed.length)
+      ElMessage.success(t('已按调度策略领取 {count} 个任务', { count: claimed.length }));
+    else ElMessage.info(t('当前没有可调度任务'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {

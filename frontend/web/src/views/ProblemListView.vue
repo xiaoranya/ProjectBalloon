@@ -4,9 +4,11 @@
       <div class="page-title-row">
         <div>
           <p class="eyebrow">Problems</p>
-          <h1>题目列表</h1>
+          <h1>{{ t('题目列表') }}</h1>
         </div>
-        <ElButton :icon="Refresh" :loading="loading" @click="loadProblems">刷新</ElButton>
+        <ElButton :icon="Refresh" :loading="loading" @click="loadProblems">{{
+          t('刷新')
+        }}</ElButton>
       </div>
     </el-header>
 
@@ -21,7 +23,7 @@
       />
 
       <div v-loading="loading" class="problem-grid">
-        <ElEmpty v-if="!loading && problems.length === 0" description="当前比赛还没有题目" />
+        <ElEmpty v-if="!loading && problems.length === 0" :description="t('当前比赛还没有题目')" />
         <article
           v-for="entry in problems"
           :key="entry.problemId"
@@ -55,9 +57,11 @@ import { contestApi } from '../api/contest';
 import { getErrorMessage } from '../api/client';
 import type { ContestProblem } from '../api/types';
 import { languageLabel } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const problems = ref<ContestProblem[]>([]);
 const loading = ref(false);
 const errorMessage = ref('');

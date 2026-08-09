@@ -2,67 +2,67 @@
   <section class="competition-admin">
     <header>
       <div>
-        <h1>比赛终端绑定</h1>
-        <p>按静态 IP 登记终端，并为每场比赛绑定参赛队。</p>
+        <h1>{{ t('比赛终端绑定') }}</h1>
+        <p>{{ t('按静态 IP 登记终端，并为每场比赛绑定参赛队。') }}</p>
       </div>
-      <ElButton :icon="Refresh" :loading="loading" @click="load">刷新</ElButton>
+      <ElButton :icon="Refresh" :loading="loading" @click="load">{{ t('刷新') }}</ElButton>
     </header>
 
     <ElAlert v-if="errorMessage" :title="errorMessage" type="error" show-icon />
 
     <div class="toolbar">
       <ElInputNumber v-model="contestId" :min="1" controls-position="right" />
-      <ElButton type="primary" @click="loadBindings">加载比赛绑定</ElButton>
-      <ElInput v-model="workstationForm.ipAddress" placeholder="终端 IP" />
-      <ElInput v-model="workstationForm.seatNo" placeholder="机位号" />
-      <ElInput v-model="workstationForm.label" placeholder="备注（可选）" />
-      <ElButton :icon="Plus" @click="createWorkstation">登记终端</ElButton>
+      <ElButton type="primary" @click="loadBindings">{{ t('加载比赛绑定') }}</ElButton>
+      <ElInput v-model="workstationForm.ipAddress" :placeholder="t('终端 IP')" />
+      <ElInput v-model="workstationForm.seatNo" :placeholder="t('机位号')" />
+      <ElInput v-model="workstationForm.label" :placeholder="t('备注（可选）')" />
+      <ElButton :icon="Plus" @click="createWorkstation">{{ t('登记终端') }}</ElButton>
     </div>
 
     <ElTable :data="workstations" border>
-      <ElTableColumn prop="seatNo" label="机位" width="120" />
-      <ElTableColumn prop="ipAddress" label="IP 地址" width="180" />
-      <ElTableColumn prop="label" label="备注" />
-      <ElTableColumn label="状态" width="100">
-        <template #default="scope">{{ scope.row.enabled ? '启用' : '停用' }}</template>
+      <ElTableColumn prop="seatNo" :label="t('机位')" width="120" />
+      <ElTableColumn prop="ipAddress" :label="t('IP 地址')" width="180" />
+      <ElTableColumn prop="label" :label="t('备注')" />
+      <ElTableColumn :label="t('状态')" width="100">
+        <template #default="scope">{{ t(scope.row.enabled ? '启用' : '停用') }}</template>
       </ElTableColumn>
-      <ElTableColumn label="绑定队伍" min-width="260">
+      <ElTableColumn :label="t('绑定队伍')" min-width="260">
         <template #default="scope">
           <div class="bind-control">
-            <ElInputNumber v-model="teamIds[scope.row.id]" :min="1" placeholder="队伍 ID" />
-            <ElButton size="small" @click="bind(scope.row.id)">绑定</ElButton>
+            <ElInputNumber v-model="teamIds[scope.row.id]" :min="1" :placeholder="t('队伍 ID')" />
+            <ElButton size="small" @click="bind(scope.row.id)">{{ t('绑定') }}</ElButton>
           </div>
         </template>
       </ElTableColumn>
     </ElTable>
 
-    <h2>当前比赛绑定</h2>
+    <h2>{{ t('当前比赛绑定') }}</h2>
     <ElTable :data="bindings" border>
-      <ElTableColumn prop="seatNo" label="机位" width="120" />
-      <ElTableColumn prop="ipAddress" label="IP 地址" width="180" />
-      <ElTableColumn prop="teamName" label="队伍" />
-      <ElTableColumn label="状态" width="100">
-        <template #default="scope">{{ scope.row.revokedAt ? '已撤销' : '有效' }}</template>
+      <ElTableColumn prop="seatNo" :label="t('机位')" width="120" />
+      <ElTableColumn prop="ipAddress" :label="t('IP 地址')" width="180" />
+      <ElTableColumn prop="teamName" :label="t('队伍')" />
+      <ElTableColumn :label="t('状态')" width="100">
+        <template #default="scope">{{ t(scope.row.revokedAt ? '已撤销' : '有效') }}</template>
       </ElTableColumn>
-      <ElTableColumn label="操作" width="180">
+      <ElTableColumn :label="t('操作')" width="180">
         <template #default="scope">
-          <ElButton size="small" :disabled="!!scope.row.revokedAt" @click="rotate(scope.row)"
-            >轮换配对码</ElButton
-          >
+          <ElButton size="small" :disabled="!!scope.row.revokedAt" @click="rotate(scope.row)">{{
+            t('轮换配对码')
+          }}</ElButton>
           <ElButton
             size="small"
             type="danger"
             text
             :disabled="!!scope.row.revokedAt"
             @click="revoke(scope.row)"
-            >撤销</ElButton
+            >{{ t('撤销') }}</ElButton
           >
         </template>
       </ElTableColumn>
     </ElTable>
 
-    <ElDialog v-model="codeVisible" title="配对码" width="420px">
-      <p>配对码仅在本次操作后显示，请交给对应机位。</p>
+    <ElDialog v-model="codeVisible" :title="t('配对码')" width="420px">
+      <p>{{ t('配对码仅在本次操作后显示，请交给对应机位。') }}</p>
       <ElInput :model-value="pairingCode" readonly size="large" />
     </ElDialog>
   </section>
@@ -74,6 +74,9 @@ import { Plus, Refresh } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { getErrorMessage } from '../api/client';
 import { competitionApi, type Workstation, type WorkstationBinding } from '../api/competition';
+import { useI18n } from '../i18n';
+
+const { t } = useI18n();
 
 const loading = ref(false);
 const errorMessage = ref('');
@@ -123,7 +126,7 @@ async function createWorkstation() {
 }
 async function bind(workstationId: number) {
   const teamId = teamIds[workstationId];
-  if (!teamId) return ElMessage.warning('请输入队伍 ID');
+  if (!teamId) return ElMessage.warning(t('请输入队伍 ID'));
   await run(async () => {
     showCode(await competitionApi.bind(contestId.value, workstationId, teamId));
     await loadBindings();
@@ -137,7 +140,9 @@ async function rotate(value: unknown) {
 }
 async function revoke(value: unknown) {
   const binding = value as WorkstationBinding;
-  await ElMessageBox.confirm('撤销后该终端的现有会话会立即失效。', '确认撤销', { type: 'warning' });
+  await ElMessageBox.confirm(t('撤销后该终端的现有会话会立即失效。'), t('确认撤销'), {
+    type: 'warning',
+  });
   await run(async () => {
     await competitionApi.revoke(contestId.value, binding.id);
     await loadBindings();

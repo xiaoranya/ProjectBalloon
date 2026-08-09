@@ -1,35 +1,40 @@
 <template>
   <el-container direction="vertical" class="practice-page">
     <el-header height="auto" class="page-head"
-      ><div><h1>日常练习</h1></div>
+      ><div>
+        <h1>{{ t('日常练习') }}</h1>
+      </div>
       <nav>
-        <RouterLink to="/problem-bank">题库</RouterLink
-        ><RouterLink to="/practice/virtual">虚拟比赛</RouterLink
-        ><RouterLink to="/profile">账户</RouterLink>
+        <RouterLink to="/problem-bank">{{ t('题库') }}</RouterLink
+        ><RouterLink to="/practice/virtual">{{ t('虚拟比赛') }}</RouterLink
+        ><RouterLink to="/profile">{{ t('账户') }}</RouterLink>
       </nav></el-header
     >
     <el-main class="page-body">
       <div class="practice-stats">
         <div>
-          <span>已通过</span><strong>{{ solvedCount }}</strong
+          <span>{{ t('已通过') }}</span
+          ><strong>{{ solvedCount }}</strong
           ><small>/ {{ problems.length }}</small>
         </div>
         <div>
-          <span>总尝试</span><strong>{{ attemptCount }}</strong>
+          <span>{{ t('总尝试') }}</span
+          ><strong>{{ attemptCount }}</strong>
         </div>
         <div>
-          <span>已提交</span><strong>{{ submissions.length }}</strong>
+          <span>{{ t('已提交') }}</span
+          ><strong>{{ submissions.length }}</strong>
         </div>
       </div>
       <ElRow :gutter="24" class="practice-layout">
         <ElCol :xs="24" :md="7"
           ><aside>
-            <ElInput v-model="filter" clearable placeholder="搜索题目" /><ElRadioGroup
+            <ElInput v-model="filter" clearable :placeholder="t('搜索题目')" /><ElRadioGroup
               v-model="problemFilter"
               size="small"
-              ><ElRadioButton value="all">全部</ElRadioButton
-              ><ElRadioButton value="favorites">收藏</ElRadioButton
-              ><ElRadioButton value="unsolved">未通过</ElRadioButton></ElRadioGroup
+              ><ElRadioButton value="all">{{ t('全部') }}</ElRadioButton
+              ><ElRadioButton value="favorites">{{ t('收藏') }}</ElRadioButton
+              ><ElRadioButton value="unsolved">{{ t('未通过') }}</ElRadioButton></ElRadioGroup
             ><button
               v-for="problem in filteredProblems"
               :key="problem.id"
@@ -38,7 +43,9 @@
             >
               <strong>{{ problem.slug }}</strong
               ><span>{{ problem.title }}</span
-              ><ElTag v-if="status(problem.id)?.solved" type="success" size="small">已通过</ElTag>
+              ><ElTag v-if="status(problem.id)?.solved" type="success" size="small">{{
+                t('已通过')
+              }}</ElTag>
             </button>
           </aside></ElCol
         >
@@ -48,24 +55,27 @@
               <div>
                 <h2>{{ selected.title }}</h2>
                 <ElTag v-for="tag in selected.tags" :key="tag" size="small">{{ tag }}</ElTag
-                ><ElTag v-if="selected.difficulty !== null" type="warning" size="small"
-                  >难度 {{ selected.difficulty }}</ElTag
-                >
+                ><ElTag v-if="selected.difficulty !== null" type="warning" size="small">{{
+                  t('难度 {value}', { value: selected.difficulty })
+                }}</ElTag>
               </div>
               <div class="problem-actions">
-                <span v-if="status(selected.id)"
-                  >尝试 {{ status(selected.id)?.attempts }} 次 · 最佳
-                  {{ status(selected.id)?.bestScore }}</span
+                <span v-if="status(selected.id)">{{
+                  t('尝试 {count} 次 · 最佳 {score}', {
+                    count: status(selected.id)?.attempts ?? 0,
+                    score: status(selected.id)?.bestScore ?? 0,
+                  })
+                }}</span
                 ><ElButton
                   :icon="Star"
                   circle
                   :type="favorites.has(selected.id) ? 'warning' : 'default'"
-                  title="收藏"
+                  :title="t('收藏')"
                   @click="toggleFavorite"
-                /><ElButton @click="openEditorial">题解</ElButton>
+                /><ElButton @click="openEditorial">{{ t('题解') }}</ElButton>
               </div>
             </div>
-            <article class="statement" v-html="selected.statement || '<p>暂无题面</p>'" />
+            <article class="statement" v-html="selected.statement || `<p>${t('暂无题面')}</p>`" />
             <div class="submit-panel">
               <div class="submit-toolbar">
                 <ElSelect v-model="language" style="width: 140px"
@@ -74,7 +84,9 @@
                     :key="item"
                     :label="item"
                     :value="item" /></ElSelect
-                ><ElButton type="primary" :loading="submitting" @click="submit">提交练习</ElButton>
+                ><ElButton type="primary" :loading="submitting" @click="submit">{{
+                  t('提交练习')
+                }}</ElButton>
               </div>
               <CodeEditor v-model="source" :language="language" height="280px" /><ElAlert
                 v-if="message"
@@ -84,19 +96,24 @@
               />
             </div>
           </section>
-          <ElEmpty v-else description="请选择题目"
+          <ElEmpty v-else :description="t('请选择题目')"
         /></ElCol>
       </ElRow>
       <section class="history">
         <div class="history-head">
-          <h2>提交记录</h2>
-          <ElButton link @click="loadSubmissions">刷新</ElButton>
+          <h2>{{ t('提交记录') }}</h2>
+          <ElButton link @click="loadSubmissions">{{ t('刷新') }}</ElButton>
         </div>
-        <ElTable :data="submissions" stripe empty-text="暂无练习提交" @row-click="openSubmission">
+        <ElTable
+          :data="submissions"
+          stripe
+          :empty-text="t('暂无练习提交')"
+          @row-click="openSubmission"
+        >
           <ElTableColumn prop="id" label="#" width="80" />
-          <ElTableColumn prop="problemTitle" label="题目" min-width="180" />
-          <ElTableColumn prop="language" label="语言" width="100" />
-          <ElTableColumn label="状态" width="120"
+          <ElTableColumn prop="problemTitle" :label="t('题目')" min-width="180" />
+          <ElTableColumn prop="language" :label="t('语言')" width="100" />
+          <ElTableColumn :label="t('状态')" width="120"
             ><template #default="{ row }"
               ><ElTag
                 :type="
@@ -110,33 +127,35 @@
               ></template
             ></ElTableColumn
           >
-          <ElTableColumn prop="submittedAt" label="提交时间" width="190" />
+          <ElTableColumn prop="submittedAt" :label="t('提交时间')" width="190" />
         </ElTable>
       </section>
       <ElDrawer
         v-model="editorialVisible"
-        :title="editorial?.title || '题解'"
+        :title="editorial?.title || t('题解')"
         size="min(760px,92vw)"
         ><article v-if="editorial" class="statement" v-html="editorial.bodyHtml"
       /></ElDrawer>
-      <ElDrawer v-model="submissionVisible" title="提交详情" size="min(860px,94vw)"
+      <ElDrawer v-model="submissionVisible" :title="t('提交详情')" size="min(860px,94vw)"
         ><div v-if="submissionDetail" class="submission-detail">
           <ElDescriptions :column="2" border
-            ><ElDescriptionsItem label="题目">{{
+            ><ElDescriptionsItem :label="t('题目')">{{
               submissionDetail.problemTitle
             }}</ElDescriptionsItem
-            ><ElDescriptionsItem label="语言">{{ submissionDetail.language }}</ElDescriptionsItem
-            ><ElDescriptionsItem label="状态">{{
+            ><ElDescriptionsItem :label="t('语言')">{{
+              submissionDetail.language
+            }}</ElDescriptionsItem
+            ><ElDescriptionsItem :label="t('状态')">{{
               submissionDetail.verdict || submissionDetail.status
             }}</ElDescriptionsItem
             ><ElDescriptionsItem label="SHA-256">{{
               submissionDetail.sourceSha256 || '--'
             }}</ElDescriptionsItem></ElDescriptions
           >
-          <h3>源码</h3>
+          <h3>{{ t('源码') }}</h3>
           <ElEmpty
             v-if="submissionDetail.language === 'output'"
-            description="输出题提交为 ZIP 归档，不支持在线查看"
+            :description="t('输出题提交为 ZIP 归档，不支持在线查看')"
           /><CodeEditor
             v-else
             v-model="submissionDetail.source"
@@ -144,14 +163,14 @@
             readonly
             height="380px"
           />
-          <h3>判题记录</h3>
+          <h3>{{ t('判题记录') }}</h3>
           <ElTable :data="submissionDetail.judgements" size="small"
-            ><ElTableColumn prop="version" label="版本" width="70" /><ElTableColumn
+            ><ElTableColumn prop="version" :label="t('版本')" width="70" /><ElTableColumn
               prop="verdict"
-              label="结果" /><ElTableColumn
+              :label="t('结果')" /><ElTableColumn
               prop="totalTimeMs"
-              label="时间(ms)"
-              width="100" /><ElTableColumn prop="peakMemoryKb" label="内存(KB)" width="110"
+              :label="t('时间(ms)')"
+              width="100" /><ElTableColumn prop="peakMemoryKb" :label="t('内存(KB)')" width="110"
           /></ElTable></div
       ></ElDrawer>
     </el-main>
@@ -164,6 +183,7 @@ import { ElMessage } from 'element-plus';
 import { Star } from '@element-plus/icons-vue';
 import CodeEditor from '../components/CodeEditor.vue';
 import { getErrorMessage } from '../api/client';
+import { useI18n } from '../i18n';
 import {
   trainingApi,
   type BankProblem,
@@ -191,6 +211,7 @@ const problems = ref<BankProblem[]>([]),
   editorialVisible = ref(false),
   submissionDetail = ref<PracticeSubmissionDetail>(),
   submissionVisible = ref(false);
+const { t } = useI18n();
 const defaultLanguages = ['c', 'cpp', 'java', 'python'];
 const languages = computed(() => {
   const allowed = selected.value?.languages;
@@ -292,7 +313,7 @@ async function submit() {
       virtualSessionId,
     );
     messageType.value = 'success';
-    message.value = '已提交，判题完成后会更新练习进度';
+    message.value = t('已提交，判题完成后会更新练习进度');
     await load();
   } catch (e) {
     messageType.value = 'error';

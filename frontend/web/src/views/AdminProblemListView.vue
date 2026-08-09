@@ -2,8 +2,8 @@
   <el-container direction="vertical" class="admin-page">
     <el-header height="auto" class="page-head">
       <div class="admin-page-header compact">
-        <h1>题库管理</h1>
-        <ElButton type="primary" :icon="Plus" @click="createProblem">创建题目</ElButton>
+        <h1>{{ t('题库管理') }}</h1>
+        <ElButton type="primary" :icon="Plus" @click="createProblem">{{ t('创建题目') }}</ElButton>
       </div>
     </el-header>
 
@@ -19,7 +19,7 @@
 
       <ElCard shadow="never">
         <ElTable v-loading="loading" :data="page.content" row-key="id" @row-click="editProblem">
-          <ElTableColumn label="题目" min-width="280">
+          <ElTableColumn :label="t('题目')" min-width="280">
             <template #default="{ row }">
               <div class="admin-primary-cell">
                 <strong>{{ row.title }}</strong>
@@ -27,7 +27,7 @@
               </div>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="语言" min-width="190">
+          <ElTableColumn :label="t('语言')" min-width="190">
             <template #default="{ row }">
               <ElTag
                 v-for="language in row.languages"
@@ -39,33 +39,33 @@
               </ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="资源限制" min-width="220">
+          <ElTableColumn :label="t('资源限制')" min-width="220">
             <template #default="{ row }"
               >{{ row.timeLimitMs }} ms · {{ row.memoryLimitMb }} MiB ·
               {{ row.outputLimitKb }} KiB</template
             >
           </ElTableColumn>
-          <ElTableColumn label="测试数据" width="130">
+          <ElTableColumn :label="t('测试数据')" width="130">
             <template #default="{ row }">
               <ElTag :type="row.testdataVersion > 0 ? 'success' : 'info'"
                 >v{{ row.testdataVersion }}</ElTag
               >
             </template>
           </ElTableColumn>
-          <ElTableColumn label="版本" width="90"
+          <ElTableColumn :label="t('版本')" width="90"
             ><template #default="{ row }">{{ row.version }}</template></ElTableColumn
           >
-          <ElTableColumn label="操作" width="150" fixed="right">
+          <ElTableColumn :label="t('操作')" width="150" fixed="right">
             <template #default="{ row }">
-              <ElButton link type="primary" @click.stop="editProblem(row as Problem)"
-                >编辑</ElButton
-              >
-              <ElButton link type="danger" @click.stop="removeProblem(row as Problem)"
-                >删除</ElButton
-              >
+              <ElButton link type="primary" @click.stop="editProblem(row as Problem)">{{
+                t('编辑')
+              }}</ElButton>
+              <ElButton link type="danger" @click.stop="removeProblem(row as Problem)">{{
+                t('删除')
+              }}</ElButton>
             </template>
           </ElTableColumn>
-          <template #empty><ElEmpty description="暂无题目" /></template>
+          <template #empty><ElEmpty :description="t('暂无题目')" /></template>
         </ElTable>
         <ElRow justify="end" class="pagination-row">
           <ElPagination
@@ -90,8 +90,10 @@ import { adminProblemApi } from '../api/admin-problems';
 import { getErrorMessage } from '../api/client';
 import type { PageResponse, Problem } from '../api/types';
 import { languageLabel } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const router = useRouter();
+const { t } = useI18n();
 const page = ref<PageResponse<Problem>>({
   content: [],
   page: 0,
@@ -130,12 +132,12 @@ function editProblem(row: unknown) {
 async function removeProblem(problem: Problem) {
   try {
     await ElMessageBox.confirm(
-      `确认删除题目“${problem.title}”？已分配到比赛的题目无法删除。`,
-      '删除题目',
-      { type: 'warning', confirmButtonText: '确认删除' },
+      t('确认删除题目“{title}”？已分配到比赛的题目无法删除。', { title: problem.title }),
+      t('删除题目'),
+      { type: 'warning', confirmButtonText: t('确认删除') },
     );
     await adminProblemApi.deleteProblem(problem.id);
-    ElMessage.success('题目已删除');
+    ElMessage.success(t('题目已删除'));
     await loadProblems();
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') errorMessage.value = getErrorMessage(error);

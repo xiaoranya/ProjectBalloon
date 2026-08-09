@@ -3,24 +3,30 @@
     <el-header height="auto" class="host-script-page-header"
       ><div>
         <p class="eyebrow">Host Cue Sheet</p>
-        <h1>颁奖主持人脚本</h1>
+        <h1>{{ t('颁奖主持人脚本') }}</h1>
       </div>
       <ElSpace wrap :size="16" class="host-script-toolbar"
-        ><ElSelect v-model="contestId" filterable placeholder="选择比赛" @change="changeContest"
+        ><ElSelect
+          v-model="contestId"
+          filterable
+          :placeholder="t('选择比赛')"
+          @change="changeContest"
           ><ElOption
             v-for="contest in contests"
             :key="contest.id"
             :label="contest.name"
             :value="contest.id" /></ElSelect
-        ><ElButton :icon="Refresh" :loading="loading" @click="load(true)">刷新</ElButton
-        ><ElButton :icon="Printer" :disabled="!script" @click="printScript">打印</ElButton
+        ><ElButton :icon="Refresh" :loading="loading" @click="load(true)">{{ t('刷新') }}</ElButton
+        ><ElButton :icon="Printer" :disabled="!script" @click="printScript">{{
+          t('打印')
+        }}</ElButton
         ><ElButton
           type="primary"
           :icon="Check"
           :disabled="!script || !dirty"
           :loading="saving"
           @click="save"
-          >保存脚本</ElButton
+          >{{ t('保存脚本') }}</ElButton
         ></ElSpace
       ></el-header
     >
@@ -37,7 +43,8 @@
           ><template #header
             ><div class="card-header">
               <div>
-                <strong>主持人当前提示</strong><small>{{ statusLabel }}</small>
+                <strong>{{ t('主持人当前提示') }}</strong
+                ><small>{{ statusLabel }}</small>
               </div>
               <ElTag>{{ script.presentationStatus }}</ElTag>
             </div></template
@@ -47,15 +54,19 @@
                 <small>{{ currentSection.code }}</small>
                 <h2>{{ currentSection.name }}</h2>
                 <p>{{ currentSection.cueText }}</p>
-                <span>{{ nextSection ? `下一项：${nextSection.name}` : '这是最后一个奖项' }}</span>
+                <span>{{
+                  nextSection
+                    ? t('下一项：{name}', { name: nextSection.name })
+                    : t('这是最后一个奖项')
+                }}</span>
               </div></ElCol
             ><ElCol :xs="24" :md="11"
               ><div class="host-current-recipients">
-                <strong>请宣读</strong>
+                <strong>{{ t('请宣读') }}</strong>
                 <ol>
                   <li v-for="recipient in currentSection.recipients" :key="recipient.id">
                     <span>{{ recipient.teamName }}</span
-                    ><small>{{ recipient.school || '未填写学校' }}</small>
+                    ><small>{{ recipient.school || t('未填写学校') }}</small>
                   </li>
                 </ol>
               </div></ElCol
@@ -66,11 +77,14 @@
           ><template #header
             ><div class="card-header">
               <div>
-                <strong>口播内容</strong><small>乐观锁版本 v{{ script.version ?? '草稿' }}</small>
+                <strong>{{ t('口播内容') }}</strong
+                ><small>{{
+                  t('乐观锁版本 v{version}', { version: script.version ?? t('草稿') })
+                }}</small>
               </div>
             </div></template
           ><ElForm label-position="top"
-            ><ElFormItem label="开场语"
+            ><ElFormItem :label="t('开场语')"
               ><ElInput
                 v-model="form.openingText"
                 type="textarea"
@@ -96,7 +110,7 @@
                     show-word-limit
                     @input="dirty = true"
                   /></article></ElCol></ElRow
-            ><ElFormItem label="结束语"
+            ><ElFormItem :label="t('结束语')"
               ><ElInput
                 v-model="form.closingText"
                 type="textarea"
@@ -108,10 +122,10 @@
         <article class="host-script-print">
           <header>
             <p>ProjectBalloon · HOST CUE SHEET</p>
-            <h1>{{ script.contestName }}颁奖主持人提词稿</h1>
+            <h1>{{ t('{contest}颁奖主持人提词稿', { contest: script.contestName }) }}</h1>
           </header>
           <section>
-            <h2>开场</h2>
+            <h2>{{ t('开场') }}</h2>
             <p>{{ form.openingText }}</p>
           </section>
           <section v-for="(section, index) in form.sections" :key="section.categoryId">
@@ -125,12 +139,12 @@
             </ol>
           </section>
           <section>
-            <h2>结束</h2>
+            <h2>{{ t('结束') }}</h2>
             <p>{{ form.closingText }}</p>
           </section>
         </article>
       </template>
-      <ElEmpty v-else-if="!loading && !errorMessage" description="请选择比赛" />
+      <ElEmpty v-else-if="!loading && !errorMessage" :description="t('请选择比赛')" />
     </el-main>
   </el-container>
 </template>
@@ -147,6 +161,8 @@ import {
   subscribeContestEvents,
   type ContestRealtimeSubscription,
 } from '../realtime/contest-events';
+import { useI18n } from '../i18n';
+const { t } = useI18n();
 const contests = ref<Contest[]>([]);
 const contestId = ref<number | null>(null);
 const script = ref<AwardHostScript | null>(null);
@@ -187,11 +203,12 @@ const nextSection = computed(() => {
     script.value?.sections.findIndex((item) => item.categoryId === effectiveCategoryId.value) ?? -1;
   return index >= 0 ? (script.value?.sections[index + 1] ?? null) : null;
 });
-const statusLabel = computed(
-  () =>
-    ({ WAITING: '等待开始', PRESENTING: '颁奖进行中', COMPLETED: '典礼结束' })[
+const statusLabel = computed(() =>
+  t(
+    { WAITING: '等待开始', PRESENTING: '颁奖进行中', COMPLETED: '典礼结束' }[
       script.value?.presentationStatus ?? 'WAITING'
     ],
+  ),
 );
 function apply(value: AwardHostScript) {
   script.value = value;
@@ -251,7 +268,7 @@ async function save() {
       expectedVersion: script.value.version,
     });
     apply(value);
-    ElMessage.success('主持人脚本已保存');
+    ElMessage.success(t('主持人脚本已保存'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
     await load(false);

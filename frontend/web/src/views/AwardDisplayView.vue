@@ -4,33 +4,33 @@
     :class="`award-display-${presentation?.status.toLowerCase() || 'offline'}`"
   >
     <div v-if="disconnected && presentation" class="award-display-connection">
-      连接中断，继续展示最后一次同步结果
+      {{ t('连接中断，继续展示最后一次同步结果') }}
     </div>
     <header v-if="presentation" class="award-display-header">
       <div>
         <span>ProjectBalloon · AWARD CEREMONY</span><strong>{{ presentation.contestName }}</strong>
       </div>
-      <button type="button" @click="toggleFullscreen">全屏</button>
+      <button type="button" @click="toggleFullscreen">{{ t('全屏') }}</button>
     </header>
     <section v-if="presentation?.status === 'WAITING'" class="award-display-message">
       <p>AWARD CEREMONY</p>
-      <h1>颁奖典礼即将开始</h1>
-      <span>获奖名单已经锁定，请等待主持人宣布。</span>
+      <h1>{{ t('颁奖典礼即将开始') }}</h1>
+      <span>{{ t('获奖名单已经锁定，请等待主持人宣布。') }}</span>
     </section>
     <section
       v-else-if="presentation?.status === 'COMPLETED'"
       class="award-display-message completed"
     >
       <p>CONGRATULATIONS</p>
-      <h1>颁奖典礼圆满结束</h1>
-      <span>祝贺所有获奖队伍。</span>
+      <h1>{{ t('颁奖典礼圆满结束') }}</h1>
+      <span>{{ t('祝贺所有获奖队伍。') }}</span>
     </section>
     <section v-else-if="category" class="award-display-stage">
       <div class="award-display-category">
         <small>{{ category.code }}</small>
         <h1>{{ category.name }}</h1>
         <p v-if="category.groupName">{{ category.groupName }}</p>
-        <span>{{ category.recipients.length }} 条获奖记录</span>
+        <span>{{ t('{count} 条获奖记录', { count: category.recipients.length }) }}</span>
       </div>
       <div class="award-display-recipients">
         <article
@@ -42,11 +42,11 @@
             {{ recipient.problemAlias ? `FB ${recipient.problemAlias}` : (recipient.rank ?? '★') }}
           </div>
           <div>
-            <small>{{ recipient.school || '参赛队伍' }}</small>
+            <small>{{ recipient.school || t('参赛队伍') }}</small>
             <h2>{{ recipient.teamName }}</h2>
             <p>
-              <span v-if="recipient.seatNo">座位 {{ recipient.seatNo }}</span
-              ><b v-if="recipient.star">打星队</b>
+              <span v-if="recipient.seatNo">{{ t('座位 {seat}', { seat: recipient.seatNo }) }}</span
+              ><b v-if="recipient.star">{{ t('打星队') }}</b>
             </p>
           </div>
           <div class="award-display-score">
@@ -55,14 +55,14 @@
           </div>
         </article>
         <div v-if="!category.recipients.length" class="award-display-empty">
-          当前奖项没有获奖队伍
+          {{ t('当前奖项没有获奖队伍') }}
         </div>
       </div>
     </section>
     <section v-else class="award-display-message">
       <p>AWARD CEREMONY</p>
-      <h1>{{ errorMessage || '等待最终获奖名单' }}</h1>
-      <span>请使用 ?contestId= 指定比赛。</span>
+      <h1>{{ errorMessage || t('等待最终获奖名单') }}</h1>
+      <span>{{ t('请使用 ?contestId= 指定比赛。') }}</span>
     </section>
   </main>
 </template>
@@ -76,6 +76,8 @@ import {
   subscribeContestEvents,
   type ContestRealtimeSubscription,
 } from '../realtime/contest-events';
+import { useI18n } from '../i18n';
+const { t } = useI18n();
 const route = useRoute();
 const contestId = Number(route.query.contestId) || null;
 const presentation = ref<AwardPresentation | null>(null);

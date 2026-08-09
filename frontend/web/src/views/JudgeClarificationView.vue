@@ -4,14 +4,14 @@
       <div class="page-title-row">
         <div>
           <p class="eyebrow">Clarification Desk</p>
-          <h1>答疑工作台</h1>
+          <h1>{{ t('答疑工作台') }}</h1>
         </div>
         <div
           class="clarification-live-state"
           :class="{ connected: realtimeConnected }"
           aria-live="polite"
         >
-          <span />{{ realtimeConnected ? '实时更新' : '轮询更新' }}
+          <span />{{ realtimeConnected ? t('实时更新') : t('轮询更新') }}
         </div>
       </div>
     </el-header>
@@ -31,7 +31,7 @@
           <ElSelect
             v-model="selectedContestId"
             filterable
-            placeholder="选择比赛"
+            :placeholder="t('选择比赛')"
             @change="changeContest"
           >
             <ElOption
@@ -42,10 +42,10 @@
             />
           </ElSelect>
           <ElRadioGroup v-model="statusFilter" @change="loadClarifications(false)">
-            <ElRadioButton value="ALL">全部</ElRadioButton>
-            <ElRadioButton value="PENDING">待回复</ElRadioButton>
-            <ElRadioButton value="ANSWERED">已回复</ElRadioButton>
-            <ElRadioButton value="CLOSED">已关闭</ElRadioButton>
+            <ElRadioButton value="ALL">{{ t('全部') }}</ElRadioButton>
+            <ElRadioButton value="PENDING">{{ t('待回复') }}</ElRadioButton>
+            <ElRadioButton value="ANSWERED">{{ t('已回复') }}</ElRadioButton>
+            <ElRadioButton value="CLOSED">{{ t('已关闭') }}</ElRadioButton>
           </ElRadioGroup>
           <ElButton
             :icon="Refresh"
@@ -53,7 +53,7 @@
             :disabled="!selectedContestId"
             @click="loadClarifications(false)"
           >
-            刷新
+            {{ t('刷新') }}
           </ElButton>
         </ElSpace>
       </ElCard>
@@ -63,38 +63,38 @@
           v-loading="loading"
           :data="clarifications"
           row-key="id"
-          empty-text="当前筛选下没有答疑"
+          :empty-text="t('当前筛选下没有答疑')"
           highlight-current-row
           @row-click="openDetail"
         >
           <ElTableColumn prop="id" label="#" width="76" />
-          <ElTableColumn label="状态" width="110">
+          <ElTableColumn :label="t('状态')" width="110">
             <template #default="{ row }"
               ><ElTag :type="statusType(row.status)">{{ statusLabel(row.status) }}</ElTag></template
             >
           </ElTableColumn>
-          <ElTableColumn label="范围" width="100">
+          <ElTableColumn :label="t('范围')" width="100">
             <template #default="{ row }">{{
-              row.problemAlias ? `题目 ${row.problemAlias}` : '通用'
+              row.problemAlias ? t('题目 {alias}', { alias: row.problemAlias }) : t('通用')
             }}</template>
           </ElTableColumn>
-          <ElTableColumn label="队伍" min-width="180">
+          <ElTableColumn :label="t('队伍')" min-width="180">
             <template #default="{ row }">
               <div class="admin-primary-cell">
-                <strong>{{ row.teamName ?? `队伍 #${row.teamId}` }}</strong
-                ><small>队伍 ID {{ row.teamId }}</small>
+                <strong>{{ row.teamName ?? t('队伍 #{id}', { id: row.teamId }) }}</strong
+                ><small>{{ t('队伍 ID {id}', { id: row.teamId }) }}</small>
               </div>
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="question" label="问题" min-width="300" show-overflow-tooltip />
-          <ElTableColumn label="提问时间" min-width="170">
+          <ElTableColumn prop="question" :label="t('问题')" min-width="300" show-overflow-tooltip />
+          <ElTableColumn :label="t('提问时间')" min-width="170">
             <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
           </ElTableColumn>
-          <ElTableColumn label="操作" width="110" fixed="right">
+          <ElTableColumn :label="t('操作')" width="110" fixed="right">
             <template #default="{ row }"
-              ><ElButton link type="primary" @click.stop="openDetail(row as Clarification)"
-                >查看详情</ElButton
-              ></template
+              ><ElButton link type="primary" @click.stop="openDetail(row as Clarification)">{{
+                t('查看详情')
+              }}</ElButton></template
             >
           </ElTableColumn>
         </ElTable>
@@ -102,7 +102,7 @@
 
       <ElDrawer
         v-model="detailVisible"
-        title="答疑详情"
+        :title="t('答疑详情')"
         size="min(620px, 94vw)"
         @closed="selected = null"
       >
@@ -112,28 +112,29 @@
             <div>
               <ElTag :type="statusType(selected.status)">{{ statusLabel(selected.status) }}</ElTag>
               <ElTag type="info" effect="plain">{{
-                selected.problemAlias ? `题目 ${selected.problemAlias}` : '通用问题'
+                selected.problemAlias
+                  ? t('题目 {alias}', { alias: selected.problemAlias })
+                  : t('通用问题')
               }}</ElTag>
             </div>
-            <span>版本 {{ selected.version }}</span>
+            <span>{{ t('版本 {version}', { version: selected.version }) }}</span>
           </div>
-          <h3>提问队伍</h3>
+          <h3>{{ t('提问队伍') }}</h3>
           <p class="clarification-detail-meta">
-            {{ selected.teamName ?? '未命名队伍' }}（队伍 #{{ selected.teamId }}） · 用户 #{{
-              selected.askedByUserId
-            }}
-            · {{ formatDateTime(selected.createdAt) }}
+            {{ selected.teamName ?? t('未命名队伍') }} ·
+            {{ t('队伍 #{id}', { id: selected.teamId }) }} ·
+            {{ t('用户 #{id}', { id: selected.askedByUserId }) }} ·
+            {{ formatDateTime(selected.createdAt) }}
           </p>
-          <h3>问题</h3>
+          <h3>{{ t('问题') }}</h3>
           <div class="clarification-bubble question">{{ selected.question }}</div>
           <template v-if="selected.reply">
-            <h3>当前回复</h3>
+            <h3>{{ t('当前回复') }}</h3>
             <div class="clarification-bubble reply">{{ selected.reply }}</div>
             <p class="clarification-detail-meta">
-              {{ selected.replyVisibility === 'PUBLIC' ? '公开回复' : '仅该队可见' }} · 回复用户 #{{
-                selected.repliedByUserId
-              }}
-              · {{ formatDateTime(selected.repliedAt) }}
+              {{ selected.replyVisibility === 'PUBLIC' ? t('公开回复') : t('仅该队可见') }} ·
+              {{ t('回复用户 #{id}', { id: selected.repliedByUserId ?? '—' }) }} ·
+              {{ formatDateTime(selected.repliedAt) }}
             </p>
           </template>
 
@@ -142,7 +143,7 @@
             label-position="top"
             class="clarification-reply-form"
           >
-            <ElFormItem label="回复内容">
+            <ElFormItem :label="t('回复内容')">
               <ElInput
                 v-model="replyForm.reply"
                 type="textarea"
@@ -151,10 +152,10 @@
                 show-word-limit
               />
             </ElFormItem>
-            <ElFormItem label="可见范围">
+            <ElFormItem :label="t('可见范围')">
               <ElRadioGroup v-model="replyForm.visibility">
-                <ElRadio value="PRIVATE">仅该队可见</ElRadio>
-                <ElRadio value="PUBLIC">公开回复</ElRadio>
+                <ElRadio value="PRIVATE">{{ t('仅该队可见') }}</ElRadio>
+                <ElRadio value="PUBLIC">{{ t('公开回复') }}</ElRadio>
               </ElRadioGroup>
             </ElFormItem>
             <ElButton
@@ -163,7 +164,7 @@
               :disabled="!replyForm.reply.trim()"
               @click="reply"
             >
-              {{ selected.reply ? '更新回复' : '提交回复' }}
+              {{ selected.reply ? t('更新回复') : t('提交回复') }}
             </ElButton>
           </ElForm>
 
@@ -174,31 +175,31 @@
               plain
               :loading="closing"
               @click="closeClarification"
-              >关闭问题</ElButton
+              >{{ t('关闭问题') }}</ElButton
             >
-            <ElButton v-if="canConvert" type="success" plain @click="openConversion"
-              >转为公告</ElButton
-            >
+            <ElButton v-if="canConvert" type="success" plain @click="openConversion">{{
+              t('转为公告')
+            }}</ElButton>
             <ElTag v-if="selected.convertedAnnouncementId" type="success">
-              已转公告 #{{ selected.convertedAnnouncementId }}
+              {{ t('已转公告 #{id}', { id: selected.convertedAnnouncementId }) }}
             </ElTag>
           </div>
         </div>
       </ElDrawer>
 
-      <ElDialog v-model="conversionVisible" title="转为比赛公告" width="min(580px, 92vw)">
+      <ElDialog v-model="conversionVisible" :title="t('转为比赛公告')" width="min(580px, 92vw)">
         <ElAlert
-          title="仅公开回复可转为公告；留空时后端将使用问题摘要和当前回复。"
+          :title="t('仅公开回复可转为公告；留空时后端将使用问题摘要和当前回复。')"
           type="info"
           show-icon
           :closable="false"
           class="form-alert"
         />
         <ElForm label-position="top">
-          <ElFormItem label="公告标题（可选）"
+          <ElFormItem :label="t('公告标题（可选）')"
             ><ElInput v-model="conversionForm.title" maxlength="255" show-word-limit
           /></ElFormItem>
-          <ElFormItem label="公告正文（可选）"
+          <ElFormItem :label="t('公告正文（可选）')"
             ><ElInput
               v-model="conversionForm.body"
               type="textarea"
@@ -208,8 +209,10 @@
           /></ElFormItem>
         </ElForm>
         <template #footer>
-          <ElButton @click="conversionVisible = false">取消</ElButton>
-          <ElButton type="success" :loading="converting" @click="convert">发布公告</ElButton>
+          <ElButton @click="conversionVisible = false">{{ t('取消') }}</ElButton>
+          <ElButton type="success" :loading="converting" @click="convert">{{
+            t('发布公告')
+          }}</ElButton>
         </template>
       </ElDialog>
     </el-main>
@@ -235,9 +238,11 @@ import {
   type ContestRealtimeSubscription,
 } from '../realtime/contest-events';
 import { formatDateTime } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const contests = ref<Contest[]>([]);
 const selectedContestId = ref<number | null>(null);
 const statusFilter = ref<ClarificationStatus | 'ALL'>('PENDING');
@@ -267,7 +272,7 @@ const canConvert = computed(
 );
 
 function statusLabel(status: ClarificationStatus) {
-  return { PENDING: '待回复', ANSWERED: '已回复', CLOSED: '已关闭' }[status];
+  return t({ PENDING: '待回复', ANSWERED: '已回复', CLOSED: '已关闭' }[status]);
 }
 
 function statusType(status: ClarificationStatus): 'warning' | 'success' | 'info' {
@@ -352,7 +357,7 @@ async function reply() {
       reply: replyForm.reply.trim(),
       visibility: replyForm.visibility,
     });
-    ElMessage.success('回复已保存');
+    ElMessage.success(t('回复已保存'));
     await loadClarifications();
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
@@ -364,7 +369,9 @@ async function reply() {
 async function closeClarification() {
   if (!selected.value) return;
   try {
-    await ElMessageBox.confirm('关闭后不能再次回复，确定继续吗？', '关闭答疑', { type: 'warning' });
+    await ElMessageBox.confirm(t('关闭后不能再次回复，确定继续吗？'), t('关闭答疑'), {
+      type: 'warning',
+    });
   } catch {
     return;
   }
@@ -374,7 +381,7 @@ async function closeClarification() {
     await clarificationApi.close(id);
     await refreshDetail(id);
     await loadClarifications();
-    ElMessage.success('问题已关闭');
+    ElMessage.success(t('问题已关闭'));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {
@@ -399,7 +406,7 @@ async function convert() {
     selected.value = { ...selected.value, convertedAnnouncementId: announcement.id };
     conversionVisible.value = false;
     await loadClarifications();
-    ElMessage.success(`已发布公告 #${announcement.id}`);
+    ElMessage.success(t('已发布公告 #{id}', { id: announcement.id }));
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   } finally {

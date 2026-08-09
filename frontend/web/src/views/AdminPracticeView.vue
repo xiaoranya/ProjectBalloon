@@ -2,8 +2,10 @@
   <el-container direction="vertical" class="admin-page">
     <el-header height="auto" class="page-head">
       <div class="admin-page-header compact">
-        <h1>日常练习</h1>
-        <ElButton type="primary" :loading="savingSettings" @click="saveSettings">保存设置</ElButton>
+        <h1>{{ t('日常练习') }}</h1>
+        <ElButton type="primary" :loading="savingSettings" @click="saveSettings">{{
+          t('保存设置')
+        }}</ElButton>
       </div>
     </el-header>
     <el-main class="page-body">
@@ -18,19 +20,20 @@
       <ElRow :gutter="20" class="settings-grid">
         <ElCol :xs="24" :md="9"
           ><ElCard shadow="never"
-            ><template #header><strong>平台配额</strong></template
+            ><template #header
+              ><strong>{{ t('平台配额') }}</strong></template
             ><ElForm label-position="top"
-              ><ElFormItem label="每日提交上限"
+              ><ElFormItem :label="t('每日提交上限')"
                 ><ElInputNumber
                   v-model="settings.dailySubmissionLimit"
                   :min="1"
                   :max="10000" /></ElFormItem
-              ><ElFormItem label="并发判题上限"
+              ><ElFormItem :label="t('并发判题上限')"
                 ><ElInputNumber
                   v-model="settings.concurrentJudgingLimit"
                   :min="1"
                   :max="20" /></ElFormItem
-              ><ElFormItem label="源码保留天数"
+              ><ElFormItem :label="t('源码保留天数')"
                 ><ElInputNumber
                   v-model="settings.sourceRetentionDays"
                   :min="1"
@@ -38,47 +41,48 @@
         ></ElCol>
         <ElCol :xs="24" :md="15"
           ><ElCard shadow="never"
-            ><template #header><strong>题解管理</strong></template
+            ><template #header
+              ><strong>{{ t('题解管理') }}</strong></template
             ><ElForm label-position="top"
-              ><ElFormItem label="公开题目"
+              ><ElFormItem :label="t('公开题目')"
                 ><ElSelect
                   v-model="editorialProblemId"
                   filterable
                   clearable
-                  placeholder="选择题目"
+                  :placeholder="t('选择题目')"
                   @change="loadEditorial"
                   ><ElOption
                     v-for="problem in problems"
                     :key="problem.id"
                     :label="`${problem.slug} · ${problem.title}`"
                     :value="problem.id" /></ElSelect></ElFormItem
-              ><ElFormItem label="语言"
+              ><ElFormItem :label="t('语言')"
                 ><ElInput
                   v-model="editorialLang"
                   maxlength="8"
                   @change="loadEditorial" /></ElFormItem
               ><template v-if="editorialProblemId"
-                ><ElFormItem label="标题"
+                ><ElFormItem :label="t('标题')"
                   ><ElInput v-model="editorial.title" maxlength="255" /></ElFormItem
-                ><ElFormItem label="解锁条件"
+                ><ElFormItem :label="t('解锁条件')"
                   ><ElSelect v-model="editorial.unlockPolicy"
-                    ><ElOption label="始终可见" value="ALWAYS" /><ElOption
-                      label="提交后解锁"
+                    ><ElOption :label="t('始终可见')" value="ALWAYS" /><ElOption
+                      :label="t('提交后解锁')"
                       value="AFTER_ATTEMPT" /><ElOption
-                      label="通过后解锁"
+                      :label="t('通过后解锁')"
                       value="AFTER_ACCEPTED" /></ElSelect></ElFormItem
-                ><ElFormItem label="Markdown 内容"
+                ><ElFormItem :label="t('Markdown 内容')"
                   ><CodeEditor
                     v-model="editorial.body"
                     language="markdown"
                     height="360px" /></ElFormItem
-                ><ElCheckbox v-model="editorial.published">发布题解</ElCheckbox>
+                ><ElCheckbox v-model="editorial.published">{{ t('发布题解') }}</ElCheckbox>
                 <div class="editorial-actions">
-                  <ElButton type="primary" :loading="savingEditorial" @click="saveEditorial"
-                    >保存题解</ElButton
-                  >
+                  <ElButton type="primary" :loading="savingEditorial" @click="saveEditorial">{{
+                    t('保存题解')
+                  }}</ElButton>
                 </div></template
-              ><ElEmpty v-else description="选择题目开始维护题解" /></ElForm></ElCard
+              ><ElEmpty v-else :description="t('选择题目开始维护题解')" /></ElForm></ElCard
         ></ElCol>
       </ElRow>
     </el-main>
@@ -90,6 +94,8 @@ import { ElMessage } from 'element-plus';
 import { getErrorMessage } from '../api/client';
 import { trainingApi, type BankProblem } from '../api/training';
 import CodeEditor from '../components/CodeEditor.vue';
+import { useI18n } from '../i18n';
+const { t } = useI18n();
 const problems = ref<BankProblem[]>([]),
   editorialProblemId = ref<number>(),
   editorialLang = ref('en'),
@@ -128,7 +134,7 @@ async function saveSettings() {
   savingSettings.value = true;
   try {
     await trainingApi.updatePracticeSettings(settings);
-    ElMessage.success('练习设置已保存');
+    ElMessage.success(t('练习设置已保存'));
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   } finally {
@@ -140,7 +146,7 @@ async function saveEditorial() {
   savingEditorial.value = true;
   try {
     await trainingApi.saveEditorial(editorialProblemId.value, editorialLang.value, editorial);
-    ElMessage.success('题解已保存');
+    ElMessage.success(t('题解已保存'));
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   } finally {

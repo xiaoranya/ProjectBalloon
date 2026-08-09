@@ -6,8 +6,8 @@
       </div>
       <div class="resolver-display-status">
         <span :class="run?.status.toLowerCase()">{{ statusLabel }}</span
-        ><small>{{ run ? `${run.currentStep} / ${run.totalSteps}` : '等待连接' }}</small
-        ><button type="button" @click="toggleFullscreen">全屏</button>
+        ><small>{{ run ? `${run.currentStep} / ${run.totalSteps}` : t('等待连接') }}</small
+        ><button type="button" @click="toggleFullscreen">{{ t('全屏') }}</button>
       </div>
     </header>
     <section v-if="run" class="resolver-display-stage">
@@ -17,7 +17,7 @@
           ><span>{{ focusRow.solvedCount }} solved</span>
         </div>
         <div class="resolver-display-team">
-          <p>{{ focusRow.school ?? '学校未填写' }}</p>
+          <p>{{ focusRow.school ?? t('学校未填写') }}</p>
           <h1>{{ focusRow.teamName }}</h1>
           <div>
             <span>{{ focusRow.penaltyMinutes }} penalty</span
@@ -35,7 +35,7 @@
       </div>
       <div v-else class="resolver-display-complete">
         <small>{{ run.status === 'COMPLETED' ? 'RESOLVER COMPLETE' : 'WAITING FOR REVEAL' }}</small>
-        <h1>{{ run.status === 'COMPLETED' ? '最终排名' : '等待下一步' }}</h1>
+        <h1>{{ run.status === 'COMPLETED' ? t('最终排名') : t('等待下一步') }}</h1>
       </div>
       <div class="resolver-display-board">
         <article
@@ -55,8 +55,8 @@
     </section>
     <section v-else class="resolver-display-waiting">
       <p>OFFICIAL RESOLVER</p>
-      <h1>{{ errorMessage || '等待正式运行开始' }}</h1>
-      <small>运行必须为正式运行且已经开始。</small>
+      <h1>{{ errorMessage || t('等待正式运行开始') }}</h1>
+      <small>{{ t('运行必须为正式运行且已经开始。') }}</small>
     </section>
   </main>
 </template>
@@ -72,6 +72,9 @@ import {
   subscribeContestEvents,
   type ContestRealtimeSubscription,
 } from '../realtime/contest-events';
+import { useI18n } from '../i18n';
+
+const { t } = useI18n();
 
 const route = useRoute();
 const run = ref<ResolverPublicRun | null>(null);
@@ -123,7 +126,7 @@ async function activate() {
   errorMessage.value = '';
   const id = Number(route.params.runId);
   if (!Number.isSafeInteger(id) || id <= 0) {
-    errorMessage.value = 'Resolver 运行 ID 不正确';
+    errorMessage.value = t('Resolver 运行 ID 不正确');
     return;
   }
   const activeRun = await load(id, request);

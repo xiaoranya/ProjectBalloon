@@ -2,9 +2,9 @@
   <el-container direction="vertical" class="admin-page">
     <el-header height="auto" class="page-head">
       <div class="admin-page-header compact">
-        <h1>比赛管理</h1>
+        <h1>{{ t('比赛管理') }}</h1>
         <ElButton v-if="session.isSuperAdmin.value" type="primary" :icon="Plus" @click="openCreate">
-          创建比赛
+          {{ t('创建比赛') }}
         </ElButton>
       </div>
     </el-header>
@@ -21,36 +21,40 @@
 
       <ElCard shadow="never">
         <ElTable v-loading="loading" :data="page.content" row-key="id" @row-click="openContest">
-          <ElTableColumn label="比赛" min-width="240">
+          <ElTableColumn :label="t('比赛')" min-width="240">
             <template #default="{ row }">
               <div class="admin-primary-cell">
                 <strong>{{ row.name }}</strong>
-                <small>#{{ row.id }} · {{ row.visibility === 'PUBLIC' ? '公开' : '私有' }}</small>
+                <small
+                  >#{{ row.id }} · {{ row.visibility === 'PUBLIC' ? t('公开') : t('私有') }}</small
+                >
               </div>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="状态" width="130">
+          <ElTableColumn :label="t('状态')" width="130">
             <template #default="{ row }"
               ><ElTag :type="contestTagType(row.status)">{{
                 contestStatusLabel(row.status)
               }}</ElTag></template
             >
           </ElTableColumn>
-          <ElTableColumn label="开始时间" min-width="180"
+          <ElTableColumn :label="t('开始时间')" min-width="180"
             ><template #default="{ row }">{{
               formatDateTime(row.startAt)
             }}</template></ElTableColumn
           >
-          <ElTableColumn label="结束时间" min-width="180"
+          <ElTableColumn :label="t('结束时间')" min-width="180"
             ><template #default="{ row }">{{ formatDateTime(row.endAt) }}</template></ElTableColumn
           >
-          <ElTableColumn label="操作" width="150" fixed="right">
+          <ElTableColumn :label="t('操作')" width="150" fixed="right">
             <template #default="{ row }">
-              <ElButton link type="primary" @click.stop="openContest(row)">管理</ElButton>
-              <ElButton link @click.stop="openEdit(row)">编辑</ElButton>
+              <ElButton link type="primary" @click.stop="openContest(row)">{{
+                t('管理')
+              }}</ElButton>
+              <ElButton link @click.stop="openEdit(row)">{{ t('编辑') }}</ElButton>
             </template>
           </ElTableColumn>
-          <template #empty><ElEmpty description="暂无比赛" /></template>
+          <template #empty><ElEmpty :description="t('暂无比赛')" /></template>
         </ElTable>
         <ElRow justify="end" class="pagination-row">
           <ElPagination
@@ -63,30 +67,34 @@
         </ElRow>
       </ElCard>
 
-      <ElDialog v-model="dialogVisible" :title="editing ? '编辑比赛' : '创建比赛'" width="660">
+      <ElDialog
+        v-model="dialogVisible"
+        :title="editing ? t('编辑比赛') : t('创建比赛')"
+        width="660"
+      >
         <ElForm ref="formRef" :model="form" :rules="rules" label-position="top">
-          <ElFormItem label="比赛名称" prop="name"
+          <ElFormItem :label="t('比赛名称')" prop="name"
             ><ElInput v-model="form.name" maxlength="120" show-word-limit
           /></ElFormItem>
-          <ElFormItem label="可见性" prop="visibility">
+          <ElFormItem :label="t('可见性')" prop="visibility">
             <ElRadioGroup v-model="form.visibility">
-              <ElRadioButton value="PRIVATE">私有比赛</ElRadioButton>
-              <ElRadioButton value="PUBLIC">公开比赛</ElRadioButton>
+              <ElRadioButton value="PRIVATE">{{ t('私有比赛') }}</ElRadioButton>
+              <ElRadioButton value="PUBLIC">{{ t('公开比赛') }}</ElRadioButton>
             </ElRadioGroup>
           </ElFormItem>
           <ElRow :gutter="12" class="admin-form-grid">
             <ElCol :xs="24" :sm="8">
-              <ElFormItem label="开始时间"
+              <ElFormItem :label="t('开始时间')"
                 ><ElDatePicker v-model="form.startAt" type="datetime"
               /></ElFormItem>
             </ElCol>
             <ElCol :xs="24" :sm="8">
-              <ElFormItem label="封榜时间"
+              <ElFormItem :label="t('封榜时间')"
                 ><ElDatePicker v-model="form.freezeAt" type="datetime"
               /></ElFormItem>
             </ElCol>
             <ElCol :xs="24" :sm="8">
-              <ElFormItem label="结束时间"
+              <ElFormItem :label="t('结束时间')"
                 ><ElDatePicker v-model="form.endAt" type="datetime"
               /></ElFormItem>
             </ElCol>
@@ -100,9 +108,9 @@
           />
         </ElForm>
         <template #footer>
-          <ElButton @click="dialogVisible = false">取消</ElButton>
+          <ElButton @click="dialogVisible = false">{{ t('取消') }}</ElButton>
           <ElButton type="primary" :loading="saving" @click="save">{{
-            editing ? '保存修改' : '创建比赛'
+            editing ? t('保存修改') : t('创建比赛')
           }}</ElButton>
         </template>
       </ElDialog>
@@ -111,7 +119,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { FormInstance, FormRules } from 'element-plus';
 import { Plus } from '@element-plus/icons-vue';
@@ -120,6 +128,7 @@ import { getErrorMessage } from '../api/client';
 import type { Contest, ContestVisibility, PageResponse } from '../api/types';
 import { useSession } from '../auth/session';
 import { contestStatusLabel, formatDateTime } from '../utils/format';
+import { useI18n } from '../i18n';
 
 interface ContestForm {
   name: string;
@@ -131,6 +140,7 @@ interface ContestForm {
 
 const router = useRouter();
 const session = useSession();
+const { t } = useI18n();
 const page = ref<PageResponse<Contest>>({
   content: [],
   page: 0,
@@ -153,7 +163,9 @@ const form = reactive<ContestForm>({
   freezeAt: null,
   endAt: null,
 });
-const rules: FormRules = { name: [{ required: true, message: '请输入比赛名称', trigger: 'blur' }] };
+const rules = computed<FormRules>(() => ({
+  name: [{ required: true, message: t('请输入比赛名称'), trigger: 'blur' }],
+}));
 
 async function loadContests() {
   loading.value = true;
@@ -194,7 +206,7 @@ async function save() {
   if (!(await formRef.value?.validate().catch(() => false))) return;
   const configured = [form.startAt, form.freezeAt, form.endAt].filter(Boolean).length;
   if (configured !== 0 && configured !== 3) {
-    dialogError.value = '赛程时间必须全部填写，或全部留空。';
+    dialogError.value = t('赛程时间必须全部填写，或全部留空。');
     return;
   }
   saving.value = true;

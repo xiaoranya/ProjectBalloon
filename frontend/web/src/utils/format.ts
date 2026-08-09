@@ -1,15 +1,15 @@
-const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: false,
-});
+import { currentLocale, translate } from '../i18n';
 
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return '—';
-  return dateFormatter.format(new Date(value));
+  return new Intl.DateTimeFormat(currentLocale(), {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date(value));
 }
 
 export function formatBytes(bytes: number): string {
@@ -18,7 +18,7 @@ export function formatBytes(bytes: number): string {
 }
 
 export function contestStatusLabel(status: string): string {
-  return (
+  return translate(
     {
       DRAFT: '草稿',
       FROZEN_CONFIG: '配置已锁定',
@@ -26,7 +26,7 @@ export function contestStatusLabel(status: string): string {
       PAUSED: '已暂停',
       ENDED: '已结束',
       ARCHIVED: '已归档',
-    }[status] ?? status
+    }[status] ?? status,
   );
 }
 
@@ -43,7 +43,7 @@ export function languageLabel(language: string): string {
 }
 
 export function submissionStatusLabel(status: string): string {
-  return (
+  return translate(
     {
       PENDING: '等待判题',
       JUDGING: '判题中',
@@ -56,7 +56,7 @@ export function submissionStatusLabel(status: string): string {
       OUTPUT_LIMIT_EXCEEDED: '输出超限',
       SYSTEM_ERROR: '系统错误',
       CANCELLED: '已取消',
-    }[status] ?? status
+    }[status] ?? status,
   );
 }
 

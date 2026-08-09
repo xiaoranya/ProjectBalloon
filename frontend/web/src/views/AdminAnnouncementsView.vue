@@ -4,13 +4,13 @@
       <div class="admin-page-header compact">
         <div>
           <ElButton link :icon="ArrowLeft" @click="router.push(`/admin/contests/${contestId}`)">
-            返回比赛管理
+            {{ t('返回比赛管理') }}
           </ElButton>
-          <h1>公告管理</h1>
+          <h1>{{ t('公告管理') }}</h1>
         </div>
         <div class="admin-page-actions">
-          <ElButton :icon="Refresh" :loading="loading" @click="load">刷新</ElButton>
-          <ElButton type="primary" @click="openCreate">新建公告</ElButton>
+          <ElButton :icon="Refresh" :loading="loading" @click="load">{{ t('刷新') }}</ElButton>
+          <ElButton type="primary" @click="openCreate">{{ t('新建公告') }}</ElButton>
         </div>
       </div>
     </el-header>
@@ -26,21 +26,21 @@
 
       <ElCard shadow="never">
         <ElTable v-loading="loading" :data="announcements" row-key="id">
-          <ElTableColumn label="状态" width="120">
+          <ElTableColumn :label="t('状态')" width="120">
             <template #default="{ row }">
               <ElTag :type="statusType(row.status)">{{ statusLabel(row.status) }}</ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="公告" min-width="360">
+          <ElTableColumn :label="t('公告')" min-width="360">
             <template #default="{ row }">
               <div class="announcement-title">
-                <ElTag v-if="row.pinned" size="small" type="danger">置顶</ElTag>
+                <ElTag v-if="row.pinned" size="small" type="danger">{{ t('置顶') }}</ElTag>
                 <strong>{{ row.title }}</strong>
               </div>
               <p class="announcement-body">{{ row.body }}</p>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="发布时间" min-width="190">
+          <ElTableColumn :label="t('发布时间')" min-width="190">
             <template #default="{ row }">
               {{
                 formatDateTime(
@@ -49,33 +49,35 @@
               }}
             </template>
           </ElTableColumn>
-          <ElTableColumn label="版本" width="80" prop="version" />
-          <ElTableColumn label="操作" width="270" fixed="right">
+          <ElTableColumn :label="t('版本')" width="80" prop="version" />
+          <ElTableColumn :label="t('操作')" width="270" fixed="right">
             <template #default="{ row }">
               <template v-if="row.status === 'SCHEDULED'">
-                <ElButton link type="primary" @click="openEdit(row)">编辑计划</ElButton>
-                <ElButton link type="danger" @click="cancelSchedule(row)">取消计划</ElButton>
+                <ElButton link type="primary" @click="openEdit(row)">{{ t('编辑计划') }}</ElButton>
+                <ElButton link type="danger" @click="cancelSchedule(row)">{{
+                  t('取消计划')
+                }}</ElButton>
               </template>
               <template v-else-if="row.status === 'PUBLISHED'">
-                <ElButton link type="primary" @click="openEdit(row)">编辑</ElButton>
+                <ElButton link type="primary" @click="openEdit(row)">{{ t('编辑') }}</ElButton>
                 <ElButton link @click="togglePin(row)">{{
-                  row.pinned ? '取消置顶' : '置顶'
+                  row.pinned ? t('取消置顶') : t('置顶')
                 }}</ElButton>
-                <ElButton link type="danger" @click="withdraw(row)">撤回</ElButton>
+                <ElButton link type="danger" @click="withdraw(row)">{{ t('撤回') }}</ElButton>
               </template>
-              <span v-else class="muted">不可再修改</span>
+              <span v-else class="muted">{{ t('不可再修改') }}</span>
             </template>
           </ElTableColumn>
-          <template #empty><ElEmpty description="暂无公告" /></template>
+          <template #empty><ElEmpty :description="t('暂无公告')" /></template>
         </ElTable>
       </ElCard>
 
       <ElDialog v-model="editorVisible" :title="editorTitle" width="680px">
         <ElForm label-position="top">
-          <ElFormItem label="标题">
+          <ElFormItem :label="t('标题')">
             <ElInput v-model="form.title" maxlength="255" show-word-limit />
           </ElFormItem>
-          <ElFormItem label="内容">
+          <ElFormItem :label="t('内容')">
             <ElInput
               v-model="form.body"
               type="textarea"
@@ -84,26 +86,28 @@
               show-word-limit
             />
           </ElFormItem>
-          <ElFormItem v-if="!editing || editing.status === 'SCHEDULED'" label="发布方式">
+          <ElFormItem v-if="!editing || editing.status === 'SCHEDULED'" :label="t('发布方式')">
             <ElRadioGroup v-model="form.mode" :disabled="editing?.status === 'SCHEDULED'">
-              <ElRadioButton value="immediate">立即发布</ElRadioButton>
-              <ElRadioButton value="scheduled">定时发布</ElRadioButton>
+              <ElRadioButton value="immediate">{{ t('立即发布') }}</ElRadioButton>
+              <ElRadioButton value="scheduled">{{ t('定时发布') }}</ElRadioButton>
             </ElRadioGroup>
           </ElFormItem>
-          <ElFormItem v-if="form.mode === 'scheduled'" label="计划发布时间">
+          <ElFormItem v-if="form.mode === 'scheduled'" :label="t('计划发布时间')">
             <ElDatePicker
               v-model="form.scheduledAt"
               type="datetime"
-              placeholder="选择比赛结束前的未来时间"
+              :placeholder="t('选择比赛结束前的未来时间')"
               :disabled-date="disablePastDate"
             />
           </ElFormItem>
-          <ElFormItem><ElCheckbox v-model="form.pinned">置顶公告</ElCheckbox></ElFormItem>
+          <ElFormItem
+            ><ElCheckbox v-model="form.pinned">{{ t('置顶公告') }}</ElCheckbox></ElFormItem
+          >
         </ElForm>
         <template #footer>
-          <ElButton @click="editorVisible = false">取消</ElButton>
+          <ElButton @click="editorVisible = false">{{ t('取消') }}</ElButton>
           <ElButton type="primary" :loading="saving" :disabled="!canSave" @click="save">
-            {{ editing ? '保存' : form.mode === 'scheduled' ? '创建计划' : '发布' }}
+            {{ editing ? t('保存') : form.mode === 'scheduled' ? t('创建计划') : t('发布') }}
           </ElButton>
         </template>
       </ElDialog>
@@ -119,9 +123,11 @@ import { useRoute, useRouter } from 'vue-router';
 import { announcementApi, type Announcement, type AnnouncementStatus } from '../api/announcements';
 import { getErrorMessage } from '../api/client';
 import { formatDateTime } from '../utils/format';
+import { useI18n } from '../i18n';
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const contestId = Number(route.params.contestId);
 const announcements = ref<Announcement[]>([]);
 const loading = ref(false);
@@ -138,8 +144,8 @@ const form = reactive({
 });
 
 const editorTitle = computed(() => {
-  if (!editing.value) return '新建公告';
-  return editing.value.status === 'SCHEDULED' ? '编辑定时公告' : '编辑已发布公告';
+  if (!editing.value) return t('新建公告');
+  return editing.value.status === 'SCHEDULED' ? t('编辑定时公告') : t('编辑已发布公告');
 });
 const canSave = computed(() =>
   Boolean(
@@ -150,9 +156,9 @@ const canSave = computed(() =>
 );
 
 function statusLabel(status: AnnouncementStatus) {
-  return { SCHEDULED: '待发布', PUBLISHED: '已发布', WITHDRAWN: '已撤回', CANCELLED: '已取消' }[
-    status
-  ];
+  return t(
+    { SCHEDULED: '待发布', PUBLISHED: '已发布', WITHDRAWN: '已撤回', CANCELLED: '已取消' }[status],
+  );
 }
 
 function statusType(status: AnnouncementStatus) {
@@ -224,7 +230,7 @@ async function save() {
     }
     editorVisible.value = false;
     ElMessage.success(
-      editing.value ? '公告已保存' : payload.scheduledAt ? '定时公告已创建' : '公告已发布',
+      editing.value ? t('公告已保存') : payload.scheduledAt ? t('定时公告已创建') : t('公告已发布'),
     );
     await load();
   } catch (error) {
@@ -237,11 +243,11 @@ async function save() {
 async function cancelSchedule(tableRow: Record<string, unknown>) {
   const item = tableRow as unknown as Announcement;
   try {
-    await ElMessageBox.confirm('取消后该计划不可恢复，确认继续？', '取消定时公告', {
+    await ElMessageBox.confirm(t('取消后该计划不可恢复，确认继续？'), t('取消定时公告'), {
       type: 'warning',
     });
     await announcementApi.cancel(item.id);
-    ElMessage.success('定时公告已取消');
+    ElMessage.success(t('定时公告已取消'));
     await load();
   } catch (error) {
     if (error instanceof Error) ElMessage.error(getErrorMessage(error));
@@ -261,9 +267,11 @@ async function togglePin(tableRow: Record<string, unknown>) {
 async function withdraw(tableRow: Record<string, unknown>) {
   const item = tableRow as unknown as Announcement;
   try {
-    await ElMessageBox.confirm('撤回后该公告不可恢复，确认继续？', '撤回公告', { type: 'warning' });
+    await ElMessageBox.confirm(t('撤回后该公告不可恢复，确认继续？'), t('撤回公告'), {
+      type: 'warning',
+    });
     await announcementApi.withdraw(item.id);
-    ElMessage.success('公告已撤回');
+    ElMessage.success(t('公告已撤回'));
     await load();
   } catch (error) {
     if (error instanceof Error) ElMessage.error(getErrorMessage(error));
