@@ -5,10 +5,17 @@
         <template #header>
           <div>
             <h2>参赛队登录</h2>
-            <p>请输入比赛账号和密码</p>
+            <p>{{ competitionMode ? '选择本机登录方式' : '请输入比赛账号和密码' }}</p>
           </div>
         </template>
+        <ElSegmented
+          v-if="competitionMode"
+          v-model="loginMode"
+          :options="loginOptions"
+          class="login-mode"
+        />
         <ElForm
+          v-if="loginMode === 'account'"
           ref="formRef"
           :model="form"
           :rules="rules"
@@ -53,7 +60,40 @@
           >
             登录
           </ElButton>
-          <RouterLink class="register-link" to="/register">注册个人练习账号</RouterLink>
+          <RouterLink v-if="!competitionMode" class="register-link" to="/register"
+            >注册个人练习账号</RouterLink
+          >
+        </ElForm>
+        <ElForm v-else label-position="top" @submit.prevent="submitPairing">
+          <ElFormItem label="配对码">
+            <ElInput
+              v-model="pairingCode"
+              size="large"
+              autocomplete="one-time-code"
+              placeholder="请输入本机配对码"
+              :prefix-icon="Key"
+              maxlength="32"
+              @keyup.enter="submitPairing"
+            />
+          </ElFormItem>
+          <ElAlert
+            v-if="errorMessage"
+            :title="errorMessage"
+            type="error"
+            show-icon
+            :closable="false"
+            class="form-alert"
+          />
+          <ElButton
+            type="primary"
+            size="large"
+            native-type="submit"
+            :loading="session.state.loading"
+            :disabled="!pairingCode.trim()"
+            class="wide-button"
+          >
+            进入比赛
+          </ElButton>
         </ElForm>
       </ElCard>
     </el-main>
@@ -61,10 +101,10 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { FormInstance, FormRules } from 'element-plus';
-import { Lock, User } from '@element-plus/icons-vue';
+import { Key, Lock, User } from '@element-plus/icons-vue';
 import { getErrorMessage } from '../api/client';
 import { useSession } from '../auth/session';
 const route = useRoute();
@@ -72,6 +112,13 @@ const router = useRouter();
 const session = useSession();
 const formRef = ref<FormInstance>();
 const errorMessage = ref('');
+const pairingCode = ref('');
+const competitionMode = computed(() => session.state.deployment.mode === 'competition');
+const loginMode = ref<'pairing' | 'account'>(competitionMode.value ? 'pairing' : 'account');
+const loginOptions = [
+  { label: '配对码', value: 'pairing' },
+  { label: '账号密码', value: 'account' },
+];
 const form = reactive({ username: '', password: '' });
 const rules: FormRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
@@ -83,7 +130,10 @@ async function submit() {
   errorMessage.value = '';
   try {
     const user = await session.login(form.username.trim(), form.password);
-    if (!['TEAM', 'INDIVIDUAL'].includes(user.userType)) {
+    const accepted = competitionMode.value
+      ? user.userType === 'TEAM'
+      : ['TEAM', 'INDIVIDUAL'].includes(user.userType);
+    if (!accepted) {
       errorMessage.value = '该账号不是参赛队账号，请使用对应的管理入口';
       await session.logout();
       return;
@@ -103,6 +153,17 @@ async function submit() {
     errorMessage.value = getErrorMessage(error);
   }
 }
+
+async function submitPairing() {
+  if (!pairingCode.value.trim()) return;
+  errorMessage.value = '';
+  try {
+    const user = await session.workstationLogin(pairingCode.value.trim());
+    await router.replace(`/contests/${user.competition?.contestId ?? ''}`);
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error);
+  }
+}
 </script>
 
 <style scoped>
@@ -116,5 +177,10 @@ async function submit() {
 
 .login-page-main {
   padding: 0;
+}
+
+.login-mode {
+  width: 100%;
+  margin-bottom: 22px;
 }
 </style>

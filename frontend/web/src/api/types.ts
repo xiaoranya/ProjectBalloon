@@ -108,6 +108,19 @@ export interface CurrentUser {
   userType: UserType;
   roles: string[];
   passwordResetRequired: boolean;
+  competition?: CompetitionSession;
+}
+
+export interface CompetitionSession {
+  contestId: number;
+  contestName: string;
+  workstationId: number;
+  seatNo: string;
+}
+
+export interface DeploymentInfo {
+  mode: 'standard' | 'competition';
+  activeContest: { id: number; name: string; startAt: string; endAt: string } | null;
 }
 
 export interface StaffAccount {

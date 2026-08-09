@@ -108,6 +108,12 @@ async fn main() -> Result<()> {
             config.realtime_redis_enabled,
         ),
     };
+    state = state.with_deployment_mode(config.deployment_mode);
+    if config.deployment_mode.is_competition() {
+        state.competition().validate_schedule_integrity().await.map_err(|error| {
+            anyhow::anyhow!("competition schedule validation failed: {error:?}")
+        })?;
+    }
     if let Some(publisher) = &judge_publisher {
         state = state.with_judge_publisher(publisher.clone());
     }

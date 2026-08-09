@@ -4,6 +4,7 @@ pub mod auth;
 pub mod awards;
 pub mod balloons;
 pub mod clarifications;
+pub mod competition;
 pub mod contest_admin_scopes;
 pub mod contest_problems;
 pub mod contests;

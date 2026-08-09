@@ -116,6 +116,9 @@ manual adjustments with optimistic versions.
 expired API instance cannot overwrite a newer dispatcher result, while preserving one final
 delivery attempt after an expired lease reaches the retry limit.
 
+`20260809000000_competition_mode.sql` adds static-IP competition workstations, per-contest team
+bindings with hashed pairing codes, and IP-bound browser sessions used by on-site deployments.
+
 It was generated from the effective PostgreSQL schema after applying the
 previous V001-V031 migration history, then stripped of `pg_dump` session and
 client meta-commands. The baseline was verified against the previous result:

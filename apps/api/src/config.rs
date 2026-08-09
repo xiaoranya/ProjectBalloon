@@ -41,8 +41,31 @@ const DEFAULT_CUPS_PRINTER: &str = "xcpc";
 const DEFAULT_CUPS_COMMAND_TIMEOUT_MILLISECONDS: u64 = 5_000;
 const DEFAULT_TRUSTED_PROXY_CIDRS: &str = "127.0.0.1/32,::1/128";
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DeploymentMode {
+    #[default]
+    Standard,
+    Competition,
+}
+
+impl DeploymentMode {
+    #[must_use]
+    pub const fn is_competition(self) -> bool {
+        matches!(self, Self::Competition)
+    }
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Standard => "standard",
+            Self::Competition => "competition",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct AppConfig {
+    pub deployment_mode: DeploymentMode,
     pub bind_address: SocketAddr,
     pub trusted_proxy_cidrs: Vec<IpNet>,
     pub database_url: String,
@@ -109,6 +132,21 @@ impl AppConfig {
     }
 
     fn from_lookup(mut lookup: impl FnMut(&str) -> Option<String>) -> Result<Self, ConfigError> {
+        let deployment_mode = match lookup("PROJECT_BALLOON_DEPLOYMENT_MODE")
+            .unwrap_or_else(|| "standard".to_owned())
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "standard" => DeploymentMode::Standard,
+            "competition" => DeploymentMode::Competition,
+            value => {
+                return Err(ConfigError::Invalid {
+                    name: "PROJECT_BALLOON_DEPLOYMENT_MODE",
+                    value: value.to_owned(),
+                    reason: "expected standard or competition",
+                });
+            }
+        };
         let bind_address = parse(
             "PROJECT_BALLOON_API_BIND",
             lookup("PROJECT_BALLOON_API_BIND").unwrap_or_else(|| DEFAULT_BIND_ADDRESS.to_owned()),
@@ -453,6 +491,7 @@ impl AppConfig {
         }
 
         Ok(Self {
+            deployment_mode,
             bind_address,
             trusted_proxy_cidrs,
             database_url,
@@ -571,7 +610,7 @@ where
 mod tests {
     use std::{collections::HashMap, time::Duration};
 
-    use super::{AppConfig, ConfigError};
+    use super::{AppConfig, ConfigError, DeploymentMode};
 
     /// Wraps a value map so the development CSRF secret is explicitly allowed;
     /// every validation test below targets a different concern, not the CSRF
@@ -594,6 +633,7 @@ mod tests {
             AppConfig::from_lookup(dev_lookup(&HashMap::new())).expect("defaults must be valid");
 
         assert_eq!(config.bind_address.to_string(), "127.0.0.1:8080");
+        assert_eq!(config.deployment_mode, DeploymentMode::Standard);
         assert_eq!(config.database_max_connections, 20);
         assert!(config.run_migrations);
         assert_eq!(config.session_ttl.as_secs(), 43_200);
@@ -613,6 +653,20 @@ mod tests {
         assert_eq!(config.judge_dispatch_batch_size, 50);
         assert_eq!(config.judge_result_prefetch, 32);
         assert!(!config.cups_enabled);
+    }
+
+    #[test]
+    fn deployment_mode_is_closed_and_accepts_competition() {
+        let values = HashMap::from([("PROJECT_BALLOON_DEPLOYMENT_MODE", "competition".to_owned())]);
+        let config = AppConfig::from_lookup(dev_lookup(&values)).expect("competition mode");
+        assert_eq!(config.deployment_mode, DeploymentMode::Competition);
+        assert_eq!(config.deployment_mode.as_str(), "competition");
+
+        let invalid = HashMap::from([("PROJECT_BALLOON_DEPLOYMENT_MODE", "event".to_owned())]);
+        assert!(matches!(
+            AppConfig::from_lookup(dev_lookup(&invalid)),
+            Err(ConfigError::Invalid { name: "PROJECT_BALLOON_DEPLOYMENT_MODE", .. })
+        ));
     }
 
     #[test]

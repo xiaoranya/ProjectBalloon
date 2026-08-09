@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::error::AppError;
+use crate::features::competition::model::CompetitionSessionResponse;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -91,6 +92,7 @@ impl AuthUser {
             user_type: self.user_type,
             roles: self.roles.clone(),
             password_reset_required: self.password_reset_required,
+            competition: None,
         }
     }
 }
@@ -104,6 +106,8 @@ pub struct CurrentUserResponse {
     pub user_type: UserType,
     pub roles: Vec<String>,
     pub password_reset_required: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub competition: Option<CompetitionSessionResponse>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

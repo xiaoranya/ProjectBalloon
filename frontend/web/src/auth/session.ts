@@ -1,11 +1,12 @@
 import { computed, reactive, readonly } from 'vue';
 import { apiRequest, clearCsrfToken, setUnauthorizedHandler } from '../api/client';
-import type { CurrentUser } from '../api/types';
+import type { CurrentUser, DeploymentInfo } from '../api/types';
 
 const state = reactive({
   user: null as CurrentUser | null,
   initialized: false,
   loading: false,
+  deployment: { mode: 'standard', activeContest: null } as DeploymentInfo,
 });
 
 let initialization: Promise<void> | null = null;
@@ -20,6 +21,7 @@ async function initialize() {
   initialization = (async () => {
     state.loading = true;
     try {
+      state.deployment = await apiRequest<DeploymentInfo>('/api/deployment');
       state.user = await apiRequest<CurrentUser>('/api/auth/me');
     } catch {
       state.user = null;
@@ -30,6 +32,20 @@ async function initialize() {
     }
   })();
   return initialization;
+}
+
+async function workstationLogin(pairingCode: string) {
+  state.loading = true;
+  try {
+    state.user = await apiRequest<CurrentUser>('/api/auth/workstation', {
+      method: 'POST',
+      body: { pairingCode },
+    });
+    state.initialized = true;
+    return state.user;
+  } finally {
+    state.loading = false;
+  }
 }
 
 async function login(username: string, password: string) {
@@ -123,6 +139,7 @@ export function useSession() {
     isLiveOperator: computed(() => hasPermission('LIVE_OPERATOR')),
     initialize,
     login,
+    workstationLogin,
     register,
     changePassword,
     updateProfile,

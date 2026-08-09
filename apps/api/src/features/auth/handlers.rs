@@ -16,6 +16,7 @@ use super::{
         ChangePasswordRequest, CurrentUserResponse, LoginRequest, ProfileRequest, RegisterRequest,
     },
 };
+use crate::features::competition::model::WorkstationLoginRequest;
 
 #[utoipa::path(
     post,
@@ -52,6 +53,31 @@ pub async fn login(
     Ok((jar.add(cookie), Json(outcome.user.response())))
 }
 
+pub async fn workstation_login(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    jar: CookieJar,
+    payload: Result<Json<WorkstationLoginRequest>, JsonRejection>,
+) -> Result<(CookieJar, Json<CurrentUserResponse>), AppError> {
+    let Json(request) = payload
+        .map_err(|_| AppError::validation("request", "must be a valid pairing login object"))?;
+    let code = request.validate()?;
+    let grant = state.competition().login_grant(state.deployment_mode(), peer.ip(), &code).await?;
+    let (outcome, competition) = state.auth().create_workstation_session(grant).await?;
+    if let Some(previous) = jar.get(SESSION_COOKIE_NAME) {
+        state.auth().logout_token(previous.value()).await?;
+    }
+    let cookie = session_cookie(
+        outcome.session_token,
+        state.auth().session_ttl(),
+        state.auth().secure_cookies(),
+    );
+    let mut response = outcome.user.response();
+    response.password_reset_required = false;
+    response.competition = Some(competition);
+    Ok((jar.add(cookie), Json(response)))
+}
+
 #[utoipa::path(post, path = "/api/auth/register", operation_id = "registerIndividual", tag = "auth", request_body = RegisterRequest, responses((status = 200, body = CurrentUserResponse), (status = 400, body = crate::error::ApiErrorBody), (status = 409, body = crate::error::ApiErrorBody)), security(("csrf_cookie" = [], "csrf_header" = [])))]
 pub async fn register(
     State(state): State<AppState>,
@@ -82,7 +108,7 @@ pub async fn register(
     security(("session_cookie" = []))
 )]
 pub async fn current_user(context: AuthContext) -> Json<CurrentUserResponse> {
-    Json(context.user().response())
+    Json(context.response())
 }
 
 #[utoipa::path(
@@ -126,6 +152,7 @@ pub async fn change_password(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     payload: Result<Json<ChangePasswordRequest>, JsonRejection>,
 ) -> Result<Json<CurrentUserResponse>, AppError> {
+    context.require_account_session()?;
     let Json(request) = payload.map_err(|_| {
         AppError::validation("request", "must be a valid password-change JSON object")
     })?;
@@ -153,6 +180,7 @@ pub async fn update_profile(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     payload: Result<Json<ProfileRequest>, JsonRejection>,
 ) -> Result<Json<CurrentUserResponse>, AppError> {
+    context.require_account_session()?;
     context.require_password_ready()?;
     let Json(request) = payload
         .map_err(|_| AppError::validation("request", "must be a valid profile JSON object"))?;

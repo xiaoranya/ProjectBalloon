@@ -36,12 +36,19 @@ const CONTEST_COLUMNS: &str = r#"
 
 pub struct ContestService {
     database: PgPool,
+    competition_mode: bool,
 }
 
 impl ContestService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, competition_mode: false }
+    }
+
+    #[must_use]
+    pub const fn with_competition_mode(mut self, enabled: bool) -> Self {
+        self.competition_mode = enabled;
+        self
     }
 
     pub async fn require_team_id(&self, contest_id: i64, user_id: i64) -> Result<i64, AppError> {
@@ -228,6 +235,7 @@ impl ContestService {
             .begin()
             .await
             .map_err(|error| AppError::internal("begin contest creation", error))?;
+        self.require_non_overlapping_schedule(&mut transaction, None, start_at, end_at).await?;
         let sql = format!(
             r#"
             INSERT INTO contests
@@ -268,6 +276,7 @@ impl ContestService {
             .begin()
             .await
             .map_err(|error| AppError::internal("begin contest clone", error))?;
+        self.require_non_overlapping_schedule(&mut transaction, None, start_at, end_at).await?;
         let source_exists = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(SELECT 1 FROM contests WHERE id=$1 AND deleted_at IS NULL)",
         )
@@ -365,6 +374,8 @@ impl ContestService {
             }
         };
         let (start_at, freeze_at, end_at) = schedule_values(schedule);
+        self.require_non_overlapping_schedule(&mut transaction, Some(contest_id), start_at, end_at)
+            .await?;
         let name = request.name.unwrap_or(current.name);
         let visibility = request
             .visibility
@@ -538,6 +549,13 @@ impl ContestService {
             request.new_end_at,
         )
         .map_err(map_extension_error)?;
+        self.require_non_overlapping_schedule(
+            &mut transaction,
+            Some(contest_id),
+            current.start_at,
+            Some(request.new_end_at),
+        )
+        .await?;
         let (version, updated_at) = sqlx::query_as::<_, (i64, OffsetDateTime)>(
             r#"
             UPDATE contests
@@ -594,6 +612,50 @@ impl ContestService {
             version,
             updated_at,
         })
+    }
+
+    async fn require_non_overlapping_schedule(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        excluded_contest_id: Option<i64>,
+        start_at: Option<OffsetDateTime>,
+        end_at: Option<OffsetDateTime>,
+    ) -> Result<(), AppError> {
+        if !self.competition_mode {
+            return Ok(());
+        }
+        let (Some(start_at), Some(end_at)) = (start_at, end_at) else {
+            return Ok(());
+        };
+        sqlx::query("SELECT pg_advisory_xact_lock(707_766_001)")
+            .execute(&mut **transaction)
+            .await
+            .map_err(|error| AppError::internal("lock competition schedule", error))?;
+        let overlaps = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM contests
+                WHERE deleted_at IS NULL
+                  AND ($1::bigint IS NULL OR id <> $1)
+                  AND start_at IS NOT NULL AND end_at IS NOT NULL
+                  AND start_at < $3 AND $2 < end_at
+            )
+            "#,
+        )
+        .bind(excluded_contest_id)
+        .bind(start_at)
+        .bind(end_at)
+        .fetch_one(&mut **transaction)
+        .await
+        .map_err(|error| AppError::internal("check competition schedule overlap", error))?;
+        if overlaps {
+            Err(AppError::conflict(
+                "COMPETITION_SCHEDULE_OVERLAP",
+                "Contest schedules must not overlap in competition mode",
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     pub async fn delete(
@@ -869,10 +931,62 @@ fn contest_not_found() -> AppError {
 mod tests {
     use super::*;
     use crate::features::auth::model::{AuthUser, UserType};
-    use crate::features::contests::model::{ContestVisibility, ValidatedContestClone};
+    use crate::features::contests::model::{
+        ContestVisibility, ValidatedContestClone, ValidatedCreateContest,
+    };
     use sqlx::PgPool;
     use std::net::{IpAddr, Ipv4Addr};
     use time::{Duration, OffsetDateTime};
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires PostgreSQL"]
+    async fn competition_mode_rejects_overlapping_schedules(pool: PgPool) {
+        let service = ContestService::new(pool).with_competition_mode(true);
+        let start = OffsetDateTime::now_utc() + Duration::hours(1);
+        let schedule = |offset_minutes| ContestSchedule {
+            start_at: start + Duration::minutes(offset_minutes),
+            freeze_at: start + Duration::minutes(offset_minutes + 30),
+            end_at: start + Duration::minutes(offset_minutes + 60),
+        };
+        service
+            .create(
+                ValidatedCreateContest {
+                    name: "Test round".into(),
+                    visibility: ContestVisibility::Private,
+                    schedule: Some(schedule(0)),
+                },
+                1,
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+            )
+            .await
+            .expect("first contest");
+        let error = service
+            .create(
+                ValidatedCreateContest {
+                    name: "Official round".into(),
+                    visibility: ContestVisibility::Private,
+                    schedule: Some(schedule(30)),
+                },
+                1,
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+            )
+            .await
+            .expect_err("overlap must be rejected");
+        assert_eq!(error.code(), "COMPETITION_SCHEDULE_OVERLAP");
+
+        service
+            .create(
+                ValidatedCreateContest {
+                    name: "Later round".into(),
+                    visibility: ContestVisibility::Private,
+                    schedule: Some(schedule(60)),
+                },
+                1,
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+            )
+            .await
+            .expect("touching half-open intervals do not overlap");
+    }
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires PostgreSQL"]

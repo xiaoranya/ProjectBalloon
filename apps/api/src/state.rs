@@ -2,6 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use sqlx::PgPool;
 
+use crate::config::DeploymentMode;
 use crate::features::{
     announcements::AnnouncementService,
     audit_logs::AuditLogService,
@@ -9,6 +10,7 @@ use crate::features::{
     awards::AwardService,
     balloons::BalloonService,
     clarifications::ClarificationService,
+    competition::CompetitionService,
     contest_admin_scopes::ContestAdminScopeService,
     contest_problems::ContestProblemService,
     contests::ContestService,
@@ -29,11 +31,13 @@ use crate::object_storage::ObjectStorageHandle;
 pub struct AppState {
     database: PgPool,
     readiness_timeout: Duration,
+    deployment_mode: DeploymentMode,
     auth: Arc<AuthService>,
     awards: Arc<AwardService>,
     balloons: Arc<BalloonService>,
     csrf: Arc<CsrfSigner>,
     clarifications: Arc<ClarificationService>,
+    competition: Arc<CompetitionService>,
     announcements: Arc<AnnouncementService>,
     staff_accounts: Arc<StaffAccountService>,
     contest_admin_scopes: Arc<ContestAdminScopeService>,
@@ -119,6 +123,7 @@ impl AppState {
         let balloons = Arc::new(BalloonService::new(database.clone()));
         let csrf = Arc::new(CsrfSigner::new(csrf_secret));
         let clarifications = Arc::new(ClarificationService::new(database.clone()));
+        let competition = Arc::new(CompetitionService::new(database.clone()));
         let announcements = Arc::new(AnnouncementService::new(database.clone()));
         let staff_accounts = Arc::new(StaffAccountService::new(database.clone()));
         let contest_admin_scopes = Arc::new(ContestAdminScopeService::new(database.clone()));
@@ -137,11 +142,13 @@ impl AppState {
         Self {
             database,
             readiness_timeout,
+            deployment_mode: DeploymentMode::Standard,
             auth,
             awards,
             balloons,
             csrf,
             clarifications,
+            competition,
             announcements,
             staff_accounts,
             contest_admin_scopes,
@@ -170,6 +177,15 @@ impl AppState {
     }
 
     #[must_use]
+    pub fn with_deployment_mode(mut self, mode: DeploymentMode) -> Self {
+        self.deployment_mode = mode;
+        self.contests = Arc::new(
+            ContestService::new(self.database.clone()).with_competition_mode(mode.is_competition()),
+        );
+        self
+    }
+
+    #[must_use]
     pub fn with_scoreboard_cache(mut self, cache: ScoreboardCache) -> Self {
         self.scoreboard = Arc::new(ScoreboardService::new(self.database.clone()).with_cache(cache));
         self
@@ -189,6 +205,11 @@ impl AppState {
     #[must_use]
     pub const fn readiness_timeout(&self) -> Duration {
         self.readiness_timeout
+    }
+
+    #[must_use]
+    pub const fn deployment_mode(&self) -> DeploymentMode {
+        self.deployment_mode
     }
 
     #[must_use]
@@ -214,6 +235,11 @@ impl AppState {
     #[must_use]
     pub fn clarifications(&self) -> &ClarificationService {
         &self.clarifications
+    }
+
+    #[must_use]
+    pub fn competition(&self) -> &CompetitionService {
+        &self.competition
     }
 
     #[must_use]
