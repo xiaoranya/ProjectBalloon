@@ -3,7 +3,7 @@ name: Docker integration
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 2 * * 1'
+    - cron: '30 2 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
