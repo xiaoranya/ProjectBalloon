@@ -1,3 +1,9 @@
+macro_rules! safe_sql {
+    ($($arg:tt)*) => {
+        sqlx::AssertSqlSafe(format!($($arg)*))
+    };
+}
+
 pub mod bootstrap;
 pub mod config;
 pub mod error;

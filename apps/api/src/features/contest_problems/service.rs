@@ -105,7 +105,7 @@ impl ContestProblemService {
             RETURNING {ASSIGNMENT_COLUMNS}
             "#
         );
-        let row = sqlx::query_as::<_, ContestProblemResponse>(&sql)
+        let row = sqlx::query_as::<_, ContestProblemResponse>(sqlx::AssertSqlSafe(sql))
             .bind(contest_id)
             .bind(assignment.problem_id)
             .bind(assignment.alias)
@@ -155,7 +155,7 @@ impl ContestProblemService {
             RETURNING {ASSIGNMENT_COLUMNS}
             "#
         );
-        let row = sqlx::query_as::<_, ContestProblemResponse>(&sql)
+        let row = sqlx::query_as::<_, ContestProblemResponse>(sqlx::AssertSqlSafe(sql))
             .bind(update.alias)
             .bind(update.display_order)
             .bind(update.color)
@@ -303,7 +303,7 @@ impl ContestProblemService {
             ORDER BY display_order, problem_id
             "#
         );
-        let reordered = sqlx::query_as::<_, ContestProblemResponse>(&sql)
+        let reordered = sqlx::query_as::<_, ContestProblemResponse>(sqlx::AssertSqlSafe(sql))
             .bind(contest_id)
             .fetch_all(&mut *transaction)
             .await

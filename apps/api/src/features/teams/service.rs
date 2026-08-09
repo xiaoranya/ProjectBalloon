@@ -153,7 +153,7 @@ impl TeamService {
             "#,
             query.order_by
         );
-        let rows = sqlx::query_as::<_, TeamRow>(&sql)
+        let rows = sqlx::query_as::<_, TeamRow>(sqlx::AssertSqlSafe(sql))
             .bind(include_deleted)
             .bind(contest_admin_id)
             .bind(i64::from(query.size))
@@ -888,7 +888,7 @@ impl TeamService {
             WHERE t.id = $1 AND ($2 OR t.deleted_at IS NULL)
             "#
         );
-        sqlx::query_as::<_, TeamRow>(&sql)
+        sqlx::query_as::<_, TeamRow>(sqlx::AssertSqlSafe(sql))
             .bind(team_id)
             .bind(include_deleted)
             .fetch_optional(&self.database)

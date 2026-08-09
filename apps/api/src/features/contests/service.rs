@@ -156,7 +156,7 @@ impl ContestService {
             "#,
             query.order_by
         );
-        let rows = sqlx::query_as::<_, ContestRow>(&sql)
+        let rows = sqlx::query_as::<_, ContestRow>(sqlx::AssertSqlSafe(sql))
             .bind(include_deleted)
             .bind(access.read_all)
             .bind(access.contest_admin_id)
@@ -204,7 +204,7 @@ impl ContestService {
               )
             "#
         );
-        sqlx::query_as::<_, ContestRow>(&sql)
+        sqlx::query_as::<_, ContestRow>(sqlx::AssertSqlSafe(sql))
             .bind(contest_id)
             .bind(access.read_all)
             .bind(access.contest_admin_id)
@@ -237,7 +237,7 @@ impl ContestService {
             RETURNING {CONTEST_COLUMNS}
             "#
         );
-        let created = sqlx::query_as::<_, ContestRow>(&sql)
+        let created = sqlx::query_as::<_, ContestRow>(sqlx::AssertSqlSafe(sql))
             .bind(request.name)
             .bind(request.visibility.as_str())
             .bind(start_at)
@@ -281,7 +281,7 @@ impl ContestService {
         let sql = format!(
             "INSERT INTO contests(name,status,visibility,start_at,freeze_at,end_at) VALUES($1,'DRAFT',$2,$3,$4,$5) RETURNING {CONTEST_COLUMNS}"
         );
-        let target = sqlx::query_as::<_, ContestRow>(&sql)
+        let target = sqlx::query_as::<_, ContestRow>(sqlx::AssertSqlSafe(sql))
             .bind(request.name)
             .bind(request.visibility.as_str())
             .bind(start_at)
@@ -387,7 +387,7 @@ impl ContestService {
             RETURNING {CONTEST_COLUMNS}
             "#
         );
-        let updated = sqlx::query_as::<_, ContestRow>(&sql)
+        let updated = sqlx::query_as::<_, ContestRow>(sqlx::AssertSqlSafe(sql))
             .bind(name)
             .bind(visibility)
             .bind(start_at)
@@ -730,7 +730,7 @@ async fn lock_active_contest(
         FOR UPDATE
         "#
     );
-    sqlx::query_as::<_, ContestRow>(&sql)
+    sqlx::query_as::<_, ContestRow>(sqlx::AssertSqlSafe(sql))
         .bind(contest_id)
         .fetch_optional(&mut **transaction)
         .await

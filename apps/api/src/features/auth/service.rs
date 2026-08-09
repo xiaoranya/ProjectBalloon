@@ -438,7 +438,7 @@ impl AuthService {
             GROUP BY u.id
             "#
         );
-        sqlx::query_as::<_, UserRow>(&query)
+        sqlx::query_as::<_, UserRow>(sqlx::AssertSqlSafe(query))
             .bind(username)
             .fetch_optional(&self.database)
             .await
@@ -456,7 +456,7 @@ impl AuthService {
             GROUP BY u.id
             "#
         );
-        sqlx::query_as::<_, UserRow>(&query)
+        sqlx::query_as::<_, UserRow>(sqlx::AssertSqlSafe(query))
             .bind(user_id)
             .fetch_optional(&self.database)
             .await

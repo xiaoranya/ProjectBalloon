@@ -634,7 +634,7 @@ async fn load_context_transaction(
     let query = format!(
         "{CONTEXT_QUERY} FOR SHARE OF account, team, roster, contest, assignment, problem, version"
     );
-    sqlx::query_as::<_, SubmissionContext>(&query)
+    sqlx::query_as::<_, SubmissionContext>(sqlx::AssertSqlSafe(query))
         .bind(user_id)
         .bind(contest_id)
         .bind(problem_id)

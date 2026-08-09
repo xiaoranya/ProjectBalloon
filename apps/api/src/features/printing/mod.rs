@@ -282,7 +282,7 @@ impl PrintingService {
                 "Only a team can view team print requests",
             ));
         }
-        sqlx::query_as::<_, PrintRequestResponse>(&format!("{SELECT_COLUMNS} JOIN team_accounts account ON account.team_id = request.team_id WHERE request.contest_id = $1 AND account.user_id = $2 ORDER BY request.created_at DESC LIMIT 100"))
+        sqlx::query_as::<_, PrintRequestResponse>(safe_sql!("{SELECT_COLUMNS} JOIN team_accounts account ON account.team_id = request.team_id WHERE request.contest_id = $1 AND account.user_id = $2 ORDER BY request.created_at DESC LIMIT 100"))
             .bind(contest_id).bind(actor.id).fetch_all(&self.database).await
             .map_err(|error| AppError::internal("list team print requests", error))
     }
@@ -294,7 +294,7 @@ impl PrintingService {
         actor: &AuthUser,
     ) -> Result<Vec<PrintRequestResponse>, AppError> {
         require_operator(actor)?;
-        sqlx::query_as::<_, PrintRequestResponse>(&format!("{SELECT_COLUMNS} WHERE request.contest_id = $1 AND ($2::text IS NULL OR request.status = $2) ORDER BY request.created_at DESC LIMIT 1000"))
+        sqlx::query_as::<_, PrintRequestResponse>(safe_sql!("{SELECT_COLUMNS} WHERE request.contest_id = $1 AND ($2::text IS NULL OR request.status = $2) ORDER BY request.created_at DESC LIMIT 1000"))
             .bind(contest_id).bind(status.as_deref()).fetch_all(&self.database).await
             .map_err(|error| AppError::internal("list print queue", error))
     }
@@ -447,7 +447,7 @@ async fn resolve_team_tx(
 }
 
 async fn load(database: &PgPool, id: i64) -> Result<PrintRequestResponse, AppError> {
-    sqlx::query_as::<_, PrintRequestResponse>(&format!("{SELECT_COLUMNS} WHERE request.id = $1"))
+    sqlx::query_as::<_, PrintRequestResponse>(safe_sql!("{SELECT_COLUMNS} WHERE request.id = $1"))
         .bind(id)
         .fetch_optional(database)
         .await

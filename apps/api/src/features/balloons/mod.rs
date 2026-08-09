@@ -138,7 +138,7 @@ impl BalloonService {
     ) -> Result<Vec<BalloonTaskResponse>, AppError> {
         require_operator(actor)?;
         ensure_contest(&self.database, contest_id).await?;
-        sqlx::query_as::<_, BalloonTaskResponse>(&format!(
+        sqlx::query_as::<_, BalloonTaskResponse>(safe_sql!(
             "{SELECT_COLUMNS} WHERE task.contest_id = $1 AND ($2::text IS NULL OR task.status = $2) ORDER BY task.is_first_blood DESC, task.created_at, task.id LIMIT 2000"
         ))
         .bind(contest_id)
@@ -360,7 +360,7 @@ impl BalloonService {
         let sql = format!(
             "WITH candidates AS (SELECT id FROM balloon_tasks WHERE contest_id=$1 AND status='PENDING' AND ($2::text IS NULL OR delivery_zone=$2) AND (last_dispatched_at IS NULL OR last_dispatched_at<=now()-make_interval(secs=>$3)) ORDER BY CASE WHEN $4='ZONE' THEN coalesce(array_position($5::text[],delivery_zone),2147483647) ELSE 0 END, CASE WHEN $4='PRIORITY' THEN priority ELSE 0 END DESC, is_first_blood DESC, created_at,id LIMIT $6 FOR UPDATE SKIP LOCKED), claimed AS (UPDATE balloon_tasks SET status='CLAIMED',claimed_by=$7,claimed_at=now(),last_dispatched_at=now(),dispatch_attempts=dispatch_attempts+1,updated_at=now(),version=version+1 WHERE id IN(SELECT id FROM candidates) RETURNING id) {SELECT_COLUMNS} JOIN claimed ON claimed.id=task.id ORDER BY task.priority DESC,task.created_at,task.id"
         );
-        sqlx::query_as::<_, BalloonTaskResponse>(&sql)
+        sqlx::query_as::<_, BalloonTaskResponse>(sqlx::AssertSqlSafe(sql))
             .bind(contest_id)
             .bind(zone)
             .bind(policy.cooldown_seconds)
@@ -458,7 +458,7 @@ pub(crate) async fn generate_for_accepted(
 }
 
 async fn load(database: &PgPool, id: i64) -> Result<BalloonTaskResponse, AppError> {
-    sqlx::query_as::<_, BalloonTaskResponse>(&format!("{SELECT_COLUMNS} WHERE task.id = $1"))
+    sqlx::query_as::<_, BalloonTaskResponse>(safe_sql!("{SELECT_COLUMNS} WHERE task.id = $1"))
         .bind(id)
         .fetch_optional(database)
         .await

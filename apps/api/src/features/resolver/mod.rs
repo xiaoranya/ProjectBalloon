@@ -331,7 +331,7 @@ impl ResolverService {
     ) -> Result<Vec<ResolverRunResponse>, AppError> {
         require_operator(actor)?;
         require_active_contest(&self.database, contest_id).await?;
-        sqlx::query_as::<_, RunRow>(&format!(
+        sqlx::query_as::<_, RunRow>(safe_sql!(
             "{RUN_SELECT} WHERE run.contest_id = $1 ORDER BY run.official DESC, run.created_at DESC"
         ))
         .bind(contest_id)
@@ -854,7 +854,7 @@ async fn require_active_contest(database: &PgPool, contest_id: i64) -> Result<()
 }
 
 async fn load_run(database: &PgPool, id: i64) -> Result<ResolverRunResponse, AppError> {
-    sqlx::query_as::<_, RunRow>(&format!("{RUN_SELECT} WHERE run.id = $1"))
+    sqlx::query_as::<_, RunRow>(safe_sql!("{RUN_SELECT} WHERE run.id = $1"))
         .bind(id)
         .fetch_optional(database)
         .await

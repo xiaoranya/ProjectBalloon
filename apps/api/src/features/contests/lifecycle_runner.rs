@@ -106,7 +106,7 @@ async fn transition_due(
     let sql = format!(
         "SELECT id,{timestamp_column} FROM contests WHERE status=$1 AND deleted_at IS NULL AND {timestamp_column} IS NOT NULL AND {due_condition} ORDER BY {timestamp_column},id FOR UPDATE SKIP LOCKED LIMIT 100"
     );
-    let due = sqlx::query_as::<_, (i64, time::OffsetDateTime)>(&sql)
+    let due = sqlx::query_as::<_, (i64, time::OffsetDateTime)>(sqlx::AssertSqlSafe(sql))
         .bind(from)
         .fetch_all(&mut **transaction)
         .await
