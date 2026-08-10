@@ -1,10 +1,15 @@
+---
+title: Quickstart
+description: How to prepare hosts, install the release, bootstrap the first administrator, and run an official contest step by step.
+---
+
 # Quickstart
 
 This guide gets a fresh ProjectBalloon deployment ready for an official
 contest. It assumes the standard topology described in
-`docs/architecture/deployment-topology.md`; a single-host rehearsal can use the
+[Deployment Topology](../architecture/deployment-topology.md); a single-host rehearsal can use the
 `all` role instead. Detailed install, operation, and recovery procedures are in
-`docs/ops/install.md`, `docs/ops/ops.md`, and `docs/ops/disaster-recovery.md`.
+[Installation](install.md), [Operations](ops.md), and [Disaster Recovery](disaster-recovery.md).
 
 ## 1. Prepare Hosts
 
@@ -16,7 +21,7 @@ Install the host prerequisites from trusted media before starting:
 - `postgresql-client` and AWS CLI v2 on the host that runs backups.
 - CUPS packages and a configured printer when printing is enabled.
 - Docker Engine or Podman on Judge hosts (production uses rootless Podman with
-  `runsc`, see `docs/architecture/ADR-001-production-judge-sandbox.md`).
+  `runsc`, see [ADR-001: production judge sandbox](../architecture/ADR-001-production-judge-sandbox.md)).
 
 Provision the external services and create the databases, queues, object-storage
 buckets, and credentials. The installer does not create them.
@@ -37,7 +42,7 @@ sudo ./install.sh --role worker --skip-nginx --no-start \
 
 The first run creates `/etc/project-balloon/project-balloon.env` and exits.
 Fill in the external service URLs and secrets (see
-`docs/ops/configuration.md`), then run the installer again to import images and
+[Configuration Reference](configuration.md)), then run the installer again to import images and
 start services:
 
 ```text
@@ -68,7 +73,7 @@ curl --fail http://127.0.0.1:8080/api/health
 
 `/api/health` returns `200` with `status: up` only when PostgreSQL (and Redis,
 when realtime fanout is enabled) is ready. The full pre-contest health checklist
-is in `docs/ops/ops.md`.
+is in [Operations](ops.md).
 
 ## 5. Prepare the Contest
 
@@ -76,7 +81,7 @@ is in `docs/ops/ops.md`.
 - Create the contest and configure the schedule (start, freeze, end).
 - Create problems, upload statements, attachments, and test data.
 - Configure balloon colors and the printer.
-- Run a test session and the pressure suite (`docs/ops/pressure-test.md`).
+- Run a test session and the pressure suite ([Pressure Test](pressure-test.md)).
 - Take a backup, then freeze the contest configuration.
 
 ## 6. Run the Contest
@@ -88,5 +93,12 @@ is in `docs/ops/ops.md`.
 
 ## 7. Backup and Archive
 
-Take backups at every mandatory backup point (`docs/ops/backup-restore.md`),
+Take backups at every mandatory backup point ([Backup and Restore](backup-restore.md)),
 export results and submissions, and archive the contest.
+
+## See Also
+
+- [Installation](install.md) — package contents and prerequisites.
+- [Configuration Reference](configuration.md) — environment variables.
+- [Operations](ops.md) — running and monitoring the contest.
+- [Backup and Restore](backup-restore.md) — mandatory backup points.

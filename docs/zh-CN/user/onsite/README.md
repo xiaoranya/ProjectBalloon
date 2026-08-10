@@ -1,6 +1,11 @@
+---
+title: 现场运营指南
+description: 介绍现场工作人员如何使用大屏、直播、气球、打印工作台、Resolver 仪式与颁奖展示。
+---
+
 # 现场运营指南
 
-本指南覆盖现场（ICPC/XCPC 风格）赛事使用的工具：大屏、直播、气球、打印、Resolver 仪式与颁奖。各工作台需要拥有对应权限的员工账号。
+本指南面向现场（ICPC/XCPC 风格）赛事的工作人员，覆盖赛事期间使用的工具：大屏、直播、气球、打印、Resolver 仪式与颁奖。各工作台需要拥有对应权限的员工账号；权限如何分配见[管理员指南](../admin/README.md)。
 
 ## 员工工作台总览
 
@@ -71,4 +76,9 @@ Resolver 在闭幕仪式中逐步揭示封榜榜单。它基于快照：
 - 开始前：验证大屏、直播令牌、打印队列、气球颜色与 Resolver 访问权限。
 - 进行中：监控 Clarification、气球、打印与判题队列。
 - 结束后：排空判题队列、生成最终榜单与 Resolver 快照，然后进行 Resolver 与颁奖仪式。
-- 任何失败都按 [`../../ops/troubleshooting.md`](../../ops/troubleshooting.md) 记录事故日志。
+- 任何失败都按[故障排查](../../ops/troubleshooting.md)记录事故日志。
+
+## 另见
+
+- [管理员指南](../admin/README.md) — 权限与比赛配置。
+- [故障排查](../../ops/troubleshooting.md) — 常见故障检查。

@@ -1,6 +1,11 @@
+---
+title: Disaster Recovery
+description: Failure scenarios and response principles for the API, judge workers, RabbitMQ, Redis, PostgreSQL, RustFS, printers, screens, and live views.
+---
+
 # Disaster Recovery
 
-This document defines first-version failure scenarios and response principles.
+This page defines failure scenarios and response principles for an official deployment.
 
 ## General Response Flow
 
@@ -87,7 +92,7 @@ Response:
 - Stop API writes if database integrity is uncertain.
 - Preserve PostgreSQL logs and data directory.
 - Attempt normal restart first.
-- If restore is required, follow `docs/ops/backup-restore.md`.
+- If restore is required, follow [Backup and Restore](backup-restore.md).
 - Verify submission and judgement consistency after recovery.
 
 ## RustFS Failure
@@ -145,3 +150,8 @@ Consider contest pause or extension if:
 - Data correctness is uncertain.
 
 Pause and extension decisions must be audited.
+
+## See Also
+
+- [Backup and Restore](backup-restore.md) — creating and restoring backups.
+- [Operations](ops.md) — routine health checks.

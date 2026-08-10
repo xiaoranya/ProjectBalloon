@@ -1,4 +1,9 @@
-# 二进制安装
+---
+title: 安装
+description: 在应用、网关与判题主机上安装 ProjectBalloon 二进制包，包括发布平台与先决条件。
+---
+
+# 安装
 
 默认发布物是二进制包。它包含 API、Judge Worker、bootstrap CLI 与 Vue 静态文件。四个 Judge Runtime 镜像作为独立归档发布，并通过 `install.sh --judge-images` 导入。PostgreSQL、Redis、RabbitMQ、RustFS、Docker 或 Podman，以及可选的 CUPS/Nginx 服务是主机管理的先决条件。
 
@@ -103,3 +108,8 @@ Redis 可重建，RabbitMQ 应在最终比赛备份前排空。脚本为遗留�
 ## 兼容 Compose 模式
 
 仓库仍包含 `deploy/compose/`，用于开发与单主机彩排。它构建 API、Worker 与 Web 镜像，并可以启动数据与监控栈，但它不是默认的二进制发布路径。仅当主机有意将完整栈作为容器管理时，才使用 Compose 脚本。
+
+## 另见
+
+- [快速开始](quickstart.md) — 正式比赛的端到端部署。
+- [配置参考](configuration.md) — 环境变量。

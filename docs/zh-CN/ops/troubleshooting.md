@@ -1,6 +1,11 @@
+---
+title: 故障排查
+description: 常见症状对应的检查项与恢复操作：API 健康、判题 Worker、队列、打印机、大屏与备份。
+---
+
 # 故障排查
 
-本文档将常见症状映射到检查项与恢复操作。针对特定故障的响应流程，参见 `docs/ops/disaster-recovery.md`（中文镜像：`docs/zh-CN/ops/disaster-recovery.md`）。
+本节将常见症状映射到检查项与恢复操作。
 
 ## API 健康检查 DOWN
 
@@ -99,7 +104,7 @@ Worker 在最近一次心跳后的 15 秒内被视为在线。重启后，确认
 - 备份主机可访问 `BACKUP_OBJECT_STORAGE_ENDPOINT`。
 - 所需工具存在（`pg_dump`、`psql`、`sha256sum`、AWS CLI v2）。
 - 恢复需要 `PROJECT_BALLOON_RESTORE_ACK=I_UNDERSTAND_THIS_REPLACES_CURRENT_DATA`。
-- 恢复后，在正式比赛前按照 `docs/ops/backup-restore.md`（中文镜像：`docs/zh-CN/ops/backup-restore.md`）执行恢复后验证。
+- 恢复后，在正式比赛前按照 [备份与恢复](backup-restore.md)执行恢复后验证。
 
 ## 对象清理积压
 
@@ -124,3 +129,8 @@ Worker 在最近一次心跳后的 15 秒内被视为在线。重启后，确认
 ## 通用事故记录
 
 每次事故都应记录：时间、受影响服务、症状、操作者、采取的操作、验证结果与后续跟进。在重启或恢复前保留日志与当前状态。
+
+## 另见
+
+- [灾难恢复](disaster-recovery.md) — 故障响应流程。
+- [备份与恢复](backup-restore.md) — 恢复后验证。

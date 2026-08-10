@@ -1,10 +1,18 @@
+---
+title: On-Site Operations Guide
+description: How on-site staff use the screen wall, live broadcast, balloons,
+  printing workbench, Resolver ceremony, and awards presentation.
+---
+
 # On-Site Operations Guide
 
-This guide covers the tools used during an on-site (ICPC/XCPC-style) event:
-screen walls, live broadcast, balloons, printing, the Resolver ceremony, and
-awards. The workbenches require staff accounts with the matching permissions.
+This guide is for staff working an on-site (ICPC/XCPC-style) event. It covers
+the tools used during the event: screen walls, live broadcast, balloons,
+printing, the Resolver ceremony, and awards. The workbenches require staff
+accounts with the matching permissions; see the
+[Administrator Guide](../admin/README.md) for how permissions are assigned.
 
-## Overview of Staff Workbenches
+## Staff Workbenches
 
 | Workbench | Route | Permission |
 | --- | --- | --- |
@@ -96,4 +104,9 @@ regenerating the Resolver snapshot.
 - After end: drain the judge queue, generate the final scoreboard and Resolver
   snapshot, then run the Resolver and awards ceremonies.
 - Record the incident log as described in
-  [`../../ops/troubleshooting.md`](../../ops/troubleshooting.md) if anything fails.
+  [Troubleshooting](../../ops/troubleshooting.md) if anything fails.
+
+## See Also
+
+- [Administrator Guide](../admin/README.md) — permissions and contest setup.
+- [Troubleshooting](../../ops/troubleshooting.md) — common failure checks.

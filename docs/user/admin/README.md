@@ -1,9 +1,15 @@
+---
+title: Administrator Guide
+description: How contest administrators manage contests, teams, problems, staff
+  accounts and permissions, rejudge, backups, and archiving.
+---
+
 # Administrator Guide
 
-This guide covers contest administration: lifecycle, teams and accounts,
-problems and test data, staff accounts and permissions, rejudge, backups, and
-archiving. The on-site ceremony tooling is covered separately in
-[`../onsite/README.md`](../onsite/README.md).
+This guide is for contest administrators. It covers contest lifecycle, teams
+and accounts, problems and test data, staff accounts and permissions, rejudge,
+backups, and archiving. On-site ceremony tooling is covered separately in the
+[On-Site Operations Guide](../onsite/README.md).
 
 ## Contest Lifecycle
 
@@ -85,8 +91,8 @@ visibility is not an authorization boundary; the API enforces permissions.
 
 ## Backups and Archiving
 
-- Back up PostgreSQL, object storage, and environment files as documented in
-  [`../../ops/backup-restore.md`](../../ops/backup-restore.md).
+- Back up PostgreSQL, object storage, and environment files as described in
+  [Backup and Restore](../../ops/backup-restore.md).
 - Restore requires the explicit acknowledgment
   `PROJECT_BALLOON_RESTORE_ACK=I_UNDERSTAND_THIS_REPLACES_CURRENT_DATA` and
   post-restore verification before a live contest.
@@ -99,3 +105,10 @@ visibility is not an authorization boundary; the API enforces permissions.
 2. Upload test data and validate a sample submission.
 3. Freeze configuration, back up, and only then start the contest.
 4. Verify freeze time, balloon colors, printer, and scoreboard cache.
+
+## See Also
+
+- [On-Site Operations Guide](../onsite/README.md) — ceremony workbenches.
+- [Backup and Restore](../../ops/backup-restore.md) — backup points and
+  restore verification.
+- [Troubleshooting](../../ops/troubleshooting.md) — common failure checks.

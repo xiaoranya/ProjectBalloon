@@ -1,7 +1,11 @@
+---
+title: Troubleshooting
+description: Common symptoms with checks and recovery actions for API health, judge workers, queues, printers, screens, and backups.
+---
+
 # Troubleshooting
 
-This document maps common symptoms to checks and recovery actions. For
-failure-specific response flows, see `docs/ops/disaster-recovery.md`.
+Common symptoms map to checks and recovery actions below.
 
 ## API Health Is DOWN
 
@@ -124,7 +128,7 @@ Checks:
 - Required tools exist (`pg_dump`, `psql`, `sha256sum`, AWS CLI v2).
 - Restore requires `PROJECT_BALLOON_RESTORE_ACK=I_UNDERSTAND_THIS_REPLACES_CURRENT_DATA`.
 - After restore, follow the post-restore verification in
-  `docs/ops/backup-restore.md` before a live contest.
+  [Backup and Restore](backup-restore.md) before a live contest.
 
 ## Object Cleanup Backlog
 
@@ -155,3 +159,8 @@ Checks:
 For every incident, record: time, affected service, symptom, operator, action
 taken, verification result, and follow-up needed. Preserve logs and current
 state before restart or recovery.
+
+## See Also
+
+- [Disaster Recovery](disaster-recovery.md) — failure response flows.
+- [Backup and Restore](backup-restore.md) — restore verification.

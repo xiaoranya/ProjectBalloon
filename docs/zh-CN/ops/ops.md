@@ -1,6 +1,11 @@
+---
+title: 运维
+description: 彩排与正式比赛的常规现场运维：健康检查、监控、日志、常见操作与事故记录。
+---
+
 # 运维
 
-本文档定义彩排与正式比赛的常规现场运维。
+本节介绍彩排与正式比赛的常规现场运维。
 
 ## 操作员原则
 
@@ -133,7 +138,7 @@ PROJECT_BALLOON_RESTORE_ACK=I_UNDERSTAND_THIS_REPLACES_CURRENT_DATA \
   sudo -E /opt/project-balloon/scripts/backup/restore.sh <backup-run-dir>
 ```
 
-参见 `docs/ops/backup-restore.md` 了解强制备份点、内容、保留与恢复后验证。在彩排前、数据冻结后、比赛开始前立即以及 Judge 队列排空后各做一次备份。
+参见 [备份与恢复](backup-restore.md) 了解强制备份点、内容、保留与恢复后验证。在彩排前、数据冻结后、比赛开始前立即以及 Judge 队列排空后各做一次备份。
 
 每日 practice 操作：
 
@@ -171,3 +176,9 @@ PROJECT_BALLOON_RESTORE_ACK=I_UNDERSTAND_THIS_REPLACES_CURRENT_DATA \
 - 采取的行动。
 - 验证结果。
 - 需要的后续跟进。
+
+## 另见
+
+- [快速开始](quickstart.md) — 端到端比赛部署。
+- [备份与恢复](backup-restore.md) — 强制备份点。
+- [故障排查](troubleshooting.md) — 症状检查。

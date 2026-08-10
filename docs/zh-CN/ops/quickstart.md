@@ -1,6 +1,11 @@
+---
+title: 快速开始
+description: 分步骤介绍如何准备主机、安装发布物、引导第一个管理员并举办正式比赛。
+---
+
 # 快速开始
 
-本指南让全新的 ProjectBalloon 部署为正式比赛做好准备。它假设 `docs/architecture/deployment-topology.md` 中描述的标准拓扑；单主机彩排可以使用 `all` 角色。详细安装、运维与恢复流程见 `docs/ops/install.md`、`docs/ops/ops.md` 与 `docs/ops/disaster-recovery.md`。
+本指南让全新的 ProjectBalloon 部署为正式比赛做好准备。它假设 [部署拓扑](../architecture/deployment-topology.md) 中描述的标准拓扑；单主机彩排可以使用 `all` 角色。详细安装、运维与恢复流程见 [安装](install.md)、[运维](ops.md) 与 [灾难恢复](disaster-recovery.md)。
 
 ## 1. 准备主机
 
@@ -11,7 +16,7 @@
 - 用于捆绑前端配置的 Nginx。
 - 运行备份的主机需要 `postgresql-client` 与 AWS CLI v2。
 - 启用打印时需要 CUPS 包与已配置的打印机。
-- Judge 主机需要 Docker Engine 或 Podman（生产使用 rootless Podman 与 `runsc`，见 `docs/architecture/ADR-001-production-judge-sandbox.md`）。
+- Judge 主机需要 Docker Engine 或 Podman（生产使用 rootless Podman 与 `runsc`，见 [ADR-001：生产判题沙箱](../architecture/ADR-001-production-judge-sandbox.md)）。
 
 提供外部服务，并创建数据库、队列、对象存储桶与凭据。安装程序不会创建它们。
 
@@ -28,7 +33,7 @@ sudo ./install.sh --role worker --skip-nginx --no-start \
   --container-group docker --judge-images ../judge-images
 ```
 
-首次运行创建 `/etc/project-balloon/project-balloon.env` 并退出。填写外部服务 URL 与机密（见 `docs/ops/configuration.md`），然后再次运行安装程序以导入镜像并启动服务：
+首次运行创建 `/etc/project-balloon/project-balloon.env` 并退出。填写外部服务 URL 与机密（见 [配置参考](configuration.md)），然后再次运行安装程序以导入镜像并启动服务：
 
 ```text
 sudoedit /etc/project-balloon/project-balloon.env
@@ -56,7 +61,7 @@ curl --fail http://127.0.0.1:8080/livez
 curl --fail http://127.0.0.1:8080/api/health
 ```
 
-仅当 PostgreSQL（以及启用实时扇出时的 Redis）就绪时，`/api/health` 返回 `200` 且 `status: up`。完整的赛前健康检查清单见 `docs/ops/ops.md`。
+仅当 PostgreSQL（以及启用实时扇出时的 Redis）就绪时，`/api/health` 返回 `200` 且 `status: up`。完整的赛前健康检查清单见 [运维](ops.md)。
 
 ## 5. 准备比赛
 
@@ -64,7 +69,7 @@ curl --fail http://127.0.0.1:8080/api/health
 - 创建比赛并配置日程（开始、封榜、结束）。
 - 创建题目，上传题面、附件与测试数据。
 - 配置气球颜色与打印机。
-- 运行试机赛与压测套件（`docs/ops/pressure-test.md`）。
+- 运行试机赛与压测套件（[压测](pressure-test.md)）。
 - 做一次备份，然后冻结比赛配置。
 
 ## 6. 运行比赛
@@ -75,4 +80,11 @@ curl --fail http://127.0.0.1:8080/api/health
 
 ## 7. 备份与归档
 
-在每个强制备份点做备份（`docs/ops/backup-restore.md`），导出成绩与提交，并归档比赛。
+在每个强制备份点做备份（[备份与恢复](backup-restore.md)），导出成绩与提交，并归档比赛。
+
+## 另见
+
+- [安装](install.md) — 包内容与先决条件。
+- [配置参考](configuration.md) — 环境变量。
+- [运维](ops.md) — 运行与监控比赛。
+- [备份与恢复](backup-restore.md) — 强制备份点。

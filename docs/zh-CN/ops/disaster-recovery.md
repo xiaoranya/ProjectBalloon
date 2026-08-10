@@ -1,6 +1,11 @@
+---
+title: 灾难恢复
+description: API、判题 Worker、RabbitMQ、Redis、PostgreSQL、RustFS、打印机、大屏与直播的故障场景与响应原则。
+---
+
 # 灾难恢复
 
-本文档定义第一版的故障场景与响应原则。
+本节定义正式部署的故障场景与响应原则。
 
 ## 通用响应流程
 
@@ -87,7 +92,7 @@
 - 数据库完整性不确定时停止 API 写入。
 - 保留 PostgreSQL 日志与数据目录。
 - 先尝试正常重启。
-- 如需恢复，遵循 `docs/ops/backup-restore.md`。
+- 如需恢复，遵循 [备份与恢复](backup-restore.md)。
 - 恢复后验证提交与判定一致性。
 
 ## RustFS 故障
@@ -145,3 +150,8 @@
 - 数据正确性不确定。
 
 暂停与延长决定必须被审计。
+
+## 另见
+
+- [备份与恢复](backup-restore.md) — 创建与恢复备份。
+- [运维](ops.md) — 常规健康检查。

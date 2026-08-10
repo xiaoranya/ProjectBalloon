@@ -1,6 +1,11 @@
+---
+title: 配置参考
+description: 二进制部署中 API 与 Judge Worker 的环境变量：数据库、对象存储、实时、榜单缓存、打印、判题 Worker 与沙箱。
+---
+
 # 配置参考
 
-本文档是二进制部署的配置参考。安装程序创建 `/etc/project-balloon/project-balloon.env`；API 与 Judge Worker 通过其 systemd 单元读取它。本地开发使用从 `.env.example` 复制的根目录 `.env` 文件（见 `docs/dev/local-development.md`）。
+本文档是二进制部署的配置参考。安装程序创建 `/etc/project-balloon/project-balloon.env`；API 与 Judge Worker 通过其 systemd 单元读取它。本地开发使用从 `.env.example` 复制的根目录 `.env` 文件（见 [本地开发](../dev/local-development.md)）。
 
 ## 配置规则
 
@@ -152,3 +157,9 @@ API 在启动时创建其配置的桶。桶名属于部署配置，绝不通过�
 |---|---|---|
 | `PROJECT_BALLOON_DATABASE_MODE` | `direct` | `direct` 使用主机 PostgreSQL 客户端工具；`compose` 用于遗留单主机部署 |
 | `BACKUP_OBJECT_STORAGE_ENDPOINT` | `http://127.0.0.1:9000` | 当备份主机无法在默认端点访问 RustFS 时覆盖 |
+
+## 另见
+
+- [安装](install.md) — 环境文件的创建位置。
+- [故障排查](troubleshooting.md) — 引用这些变量的检查项。
+- [本地开发](../dev/local-development.md) — 开发环境 `.env` 配置。

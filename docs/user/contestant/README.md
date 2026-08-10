@@ -1,13 +1,21 @@
+---
+title: Contestant Guide
+description: How contestants register and log in, submit code, read verdicts,
+  and use the scoreboard, Clarifications, and printing during a contest.
+---
+
 # Contestant Guide
 
-This guide covers what a team member does during an online contest: accounts,
-submitting code, understanding verdicts, reading the scoreboard, asking
-Clarifications, and using the printing queue.
+This guide is for team members competing in an online contest. It covers
+accounts, submitting code, understanding verdicts, reading the scoreboard,
+asking Clarifications, and using the printing queue.
+
+Before you start, make sure you have an account and can log in. Accounts are
+usually imported by the organizers; the team leader receives the credentials.
 
 ## Accounts and Login
 
-- Accounts are usually imported by the organizers; the team leader receives
-  credentials. If self-registration is enabled, use `/register`.
+- If self-registration is enabled, use `/register` to create an account.
 - A generated account may require a password change at first login. Until the
   password is changed, only the authentication flow is accessible.
 - Logging out or changing your password revokes the current session and other
@@ -30,12 +38,16 @@ gives you these pages:
 
 ## Submitting Code
 
-- Pick a problem, choose the language, and upload or paste your source file.
-- Supported languages are the judge runtime images: C, C++, Java, and Python.
-- There is a rate limit of 20 submissions per team per minute; exceeding it
-  returns a rate-limit error, so wait and retry rather than spamming.
-- Submissions remain in `PENDING`/`JUDGING` while queued; the worker pool
-  processes them. During high load, results may be delayed.
+1. Pick a problem.
+2. Choose the language.
+3. Upload or paste your source file.
+
+Supported languages are the judge runtime images: C, C++, Java, and Python.
+
+There is a rate limit of 20 submissions per team per minute; exceeding it
+returns a rate-limit error, so wait and retry rather than spamming.
+Submissions remain in `PENDING`/`JUDGING` while queued; the worker pool
+processes them, and results may be delayed during high load.
 
 ### Reading Verdicts
 
@@ -75,7 +87,8 @@ before comparing output; everything else is byte-exact.
 
 ## Printing (On-Site Contests)
 
-- The printing page accepts source code to be printed at the venue.
+The printing page accepts source code to be printed at the venue.
+
 - Limits: at most 20 KiB of content and 5 pages per request; one request per
   team every 10 minutes; at most 20 requests per team for the whole contest.
 - Track your request status (`QUEUED`, `PRINTING`, `DONE`, `FAILED`). If a job
@@ -86,3 +99,9 @@ before comparing output; everything else is byte-exact.
 Use `/profile` to view team and member information, and `/change-password` to
 rotate your password. After changing the password, log in again with the new
 one.
+
+## See Also
+
+- [User Guide](../README.md) — other role-based manuals.
+- [On-Site Operations Guide](../onsite/README.md) — how staff handle
+  Clarifications, printing, and balloons.

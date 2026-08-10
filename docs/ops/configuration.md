@@ -1,9 +1,14 @@
+---
+title: Configuration Reference
+description: Environment variables for the API and Judge Worker in binary deployments: database, object storage, realtime, scoreboard cache, printing, judge worker, and sandbox.
+---
+
 # Configuration Reference
 
 This document is the configuration reference for binary deployments. The
 installer creates `/etc/project-balloon/project-balloon.env`; the API and
 Judge Worker read it through their systemd units. Local development uses the
-root `.env` file copied from `.env.example` (see `docs/dev/local-development.md`).
+root `.env` file copied from `.env.example` (see [Local Development](../dev/local-development.md)).
 
 ## Configuration Rules
 
@@ -161,3 +166,9 @@ use the rootless Podman socket, uid/gid `10001:10001`, and `runsc`.
 |---|---|---|
 | `PROJECT_BALLOON_DATABASE_MODE` | `direct` | `direct` uses host PostgreSQL client tools; `compose` is for legacy single-host deployments |
 | `BACKUP_OBJECT_STORAGE_ENDPOINT` | `http://127.0.0.1:9000` | Override when RustFS is not reachable from the backup host at the default endpoint |
+
+## See Also
+
+- [Installation](install.md) — where the environment file is created.
+- [Troubleshooting](troubleshooting.md) — checks that reference these variables.
+- [Local Development](../dev/local-development.md) — development `.env` setup.

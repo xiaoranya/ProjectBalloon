@@ -1,6 +1,11 @@
+---
+title: Pressure Test
+description: Rehearsal pressure tests required before an official deployment, including targets, test data, and the automated k6 suite.
+---
+
 # Pressure Test
 
-This document defines rehearsal pressure tests required before official deployment.
+Run these rehearsal pressure tests before an official deployment.
 
 ## Targets
 
@@ -201,3 +206,8 @@ inject one failure at a time, annotate the dashboard timestamp, wait for
 recovery, and only then continue. Save the k6 JSON summary together with metric
 screenshots, queue-depth observations, hardware differences, and the incident
 timeline as the rehearsal evidence.
+
+## See Also
+
+- [Quickstart](quickstart.md) — where the pressure suite fits into contest preparation.
+- [Operations](ops.md) — monitoring dashboards to record during a run.
