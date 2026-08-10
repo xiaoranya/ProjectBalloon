@@ -9,22 +9,20 @@ Use a lightweight release workflow.
 | Branch | Purpose |
 |---|---|
 | `main` | Releasable versions only |
-| `develop` | Integration branch for normal development |
 | `feature/*` | Feature development |
 | `fix/*` | Normal bug fixes |
-| `release/*` | Release stabilization and binary package validation |
+| `release/*` or `chore/release-*` | Release stabilization and binary package validation |
 | `hotfix/*` | Urgent fixes based on `main` |
+| `deps/*`, `chore/*`, `refactor/*`, `docs/*` | Dependency updates, maintenance, refactors, and documentation |
 
 Feature branch examples:
 
-- `feature/auth-rbac`
-- `feature/contest-problem`
-- `feature/submission-judge`
-- `feature/scoreboard-freeze`
-- `feature/resolver`
-- `feature/printing-balloon`
-- `feature/screen-live`
-- `feature/binary-distribution`
+- `feature/competition-mode-ip-login`
+- `feature/permission-role-migration`
+- `fix/sqlx-0.9-update`
+- `deps/frontend-security-updates`
+- `refactor/split-large-files`
+- `docs/vitepress-site`
 
 ## Commit Messages
 
@@ -80,13 +78,12 @@ build(release): generate binary package
 Normal release:
 
 ```text
-develop
-  -> release/X.Y.Z
+feature/* or fix/* branch
+  -> pull request reviewed and merged to main
+  -> release/X.Y.Z (or chore/release-*) from main
   -> validate migrations, tests, binary package,
      and optional compatibility Compose configuration
-  -> merge to main
   -> tag vX.Y.Z
-  -> merge back to develop
 ```
 
 Official contest release candidate should include:

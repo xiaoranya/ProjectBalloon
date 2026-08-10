@@ -1,6 +1,13 @@
+---
+title: Operations
+description: >-
+  Routine on-site operations for rehearsals and official contests: health
+  checks, monitoring, logs, common operations, and incident notes.
+---
+
 # Operations
 
-This document defines routine on-site operations for rehearsal and official contests.
+This page covers routine on-site operations for rehearsals and official contests.
 
 ## Operator Principles
 
@@ -151,7 +158,19 @@ PROJECT_BALLOON_RESTORE_ACK=I_UNDERSTAND_THIS_REPLACES_CURRENT_DATA \
   sudo -E /opt/project-balloon/scripts/backup/restore.sh <backup-run-dir>
 ```
 
-See `docs/ops/backup-restore.md` for mandatory backup points, contents, retention, and post-restore verification. Take a backup before rehearsal, after data freeze, immediately before contest start, and after the judge queue drains.
+See [Backup and Restore](backup-restore.md) for mandatory backup points, contents, retention, and post-restore verification. Take a backup before rehearsal, after data freeze, immediately before contest start, and after the judge queue drains.
+
+Competition mode (workstation pairing):
+
+```text
+Set PROJECT_BALLOON_DEPLOYMENT_MODE=competition
+Register workstations and bind teams under /admin/competition
+Verify pairing-code login from a test seat
+Rotate pairing codes after rehearsal
+```
+
+See [Competition Mode](competition-mode.md) for the full setup and runtime
+behavior.
 
 Daily practice operations:
 
@@ -194,3 +213,9 @@ For each incident record:
 - Action taken.
 - Verification result.
 - Follow-up needed.
+
+## See Also
+
+- [Quickstart](quickstart.md) — end-to-end contest setup.
+- [Backup and Restore](backup-restore.md) — mandatory backup points.
+- [Troubleshooting](troubleshooting.md) — symptom checks.

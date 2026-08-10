@@ -1,4 +1,9 @@
-# Binary Install
+---
+title: Installation
+description: How to install the ProjectBalloon binary package on app, gateway, and judge hosts, including release platforms and prerequisites.
+---
+
+# Installation
 
 The default release is a binary package. It contains the API, Judge Worker,
 bootstrap CLI, and Vue static files. The four Judge Runtime images are
@@ -149,3 +154,8 @@ rehearsal. It builds the API, Worker, and Web images and can start the data and
 monitoring stacks, but it is not the default binary release path. Use the
 Compose scripts only when the host intentionally manages the complete stack as
 containers.
+
+## See Also
+
+- [Quickstart](quickstart.md) — end-to-end setup for an official contest.
+- [Configuration Reference](configuration.md) — environment variables.

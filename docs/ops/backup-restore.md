@@ -1,3 +1,8 @@
+---
+title: Backup and Restore
+description: How to create backups, restore a deployment, the required backup points, and post-restore verification.
+---
+
 # Backup And Restore
 
 PostgreSQL and RustFS are the authoritative backup targets. Redis is rebuildable;
@@ -80,3 +85,8 @@ submission/judgement counts, public/admin scoreboards, Resolver snapshots,
 awards, printing, balloon tasks, and cleanup/export backlogs. Preserve the
 failed-state data and operator timeline separately before any live-contest
 restore.
+
+## See Also
+
+- [Operations](ops.md) — routine on-site operations and monitoring.
+- [Disaster Recovery](disaster-recovery.md) — failure response flows.

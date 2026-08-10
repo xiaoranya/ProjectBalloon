@@ -1,54 +1,53 @@
+---
+title: ProjectBalloon Documentation
+description: >-
+  The manual for ProjectBalloon: installing the platform, running an
+  official contest, and using the web interface as a contestant, administrator,
+  or on-site staff member.
+---
+
 # ProjectBalloon Documentation
 
-This directory is the documentation root for the Rust implementation of
-ProjectBalloon. The previous Java implementation has been migrated and removed;
-the compatibility baseline remains in the reviewed contracts, migrations, and
-API migration matrix.
+ProjectBalloon is an offline XCPC/ICPC contest platform. This documentation is
+the manual for installing the platform, running an official contest, and using
+the web interface as a contestant, administrator, or on-site staff member.
 
-## Status
+## Where to Start
 
-- Architecture, requirements, operations, and the existing OpenAPI contract have
-  been promoted to the workspace root.
-- Backend implementation decisions now target Rust 2024, Tokio, Axum, SQLx,
-  Redis, RabbitMQ, and S3-compatible object storage.
-- `api/openapi.yaml` is the compatibility baseline captured from the previous
-  implementation. It must not be regenerated as the new Rust contract until
-  endpoint parity has been reviewed.
-- The running Rust API serves its reviewed, code-generated OpenAPI 3.1 contract
-  at `/api/openapi.json` and its vendored Swagger UI at `/api/docs`.
-- References to Java in judge language lists mean contestant Java submissions,
-  not the backend implementation language.
+| If you are... | Start here |
+| --- | --- |
+| Setting up a new deployment | [Quickstart](ops/quickstart.md) |
+| A contestant using the platform | [Contestant Guide](user/contestant/) |
+| A contest administrator | [Administrator Guide](user/admin/) |
+| On-site staff (screens, balloons, printing, Resolver, awards) | [On-Site Operations Guide](user/onsite/) |
+| Running an on-site contest with workstation login | [Competition Mode](ops/competition-mode.md) |
+| Deploying or operating the server | [Installation](ops/install.md) and [Operations](ops/ops.md) |
+| Looking up a configuration variable or an endpoint | [Configuration Reference](ops/configuration.md) and [API contract](https://github.com/xiaoranya/ProjectBalloon/blob/main/docs/api/openapi.yaml) |
 
-## Document Map
+## Documentation Sections
 
-- `requirements/`: product and contest requirements.
-- `architecture/`: system boundaries, data ownership, judge, security, and
-  architectural decisions, including `ADR-002-rust-backend-reset.md`.
-- `api/`: externally observable HTTP contract and Rust implementation notes.
-- `dev/`: Rust and frontend development rules.
-- `ops/`: offline installation, operation, pressure testing, and recovery.
+- **User Guide** — `user/`: role-based manuals for contestants (including
+  the [Daily Practice Guide](user/contestant/practice.md)), contest
+  administrators, and on-site staff. These pages assume the deployment
+  described in the [Quickstart](ops/quickstart.md) is running.
+- **Operations** — `ops/`: install, configure, operate, troubleshoot, back up,
+  recover, and pressure-test a deployment.
+- **Reference** — exact values for environment variables, routes, permissions,
+  and the HTTP contract.
+- **Development and Internals** — `architecture/`, `dev/`, `api/`, and
+  `requirements/`: system design, coding rules, and requirement traceability.
+  These are engineering documents kept in the repository; they are not part of
+  the published manual.
 
-## Source Layout
+## Language
 
-```text
-apps/api/              Rust modular-monolith API
-apps/judge-worker/     Rust judge worker
-crates/domain/         Pure domain types and state machines
-crates/contracts/      Versioned AMQP and event wire contracts
-crates/test-support/   Shared integration-test support
-migrations/            SQLx PostgreSQL migrations
-frontend/web/          Vue 3 frontend
-deploy/judge/runtimes/ Contestant language images
-deploy/                Offline deployment definitions
-scripts/               Development and operations commands
-apps/*/tests/          Application integration and acceptance tests
-```
+English is the canonical language. Every page has a Chinese mirror under
+`zh-CN/` with the same relative path; code blocks, commands, routes, and
+permission codes stay in English in both languages. The OpenAPI contract
+(`api/openapi.yaml`) is machine-generated and is not mirrored.
 
-## Documentation Rules
+## Writing for This Site
 
-- Treat the requirement document, database behavior, queue contracts, and
-  reviewed OpenAPI operations as migration inputs, not as instructions to copy
-  Java class structure.
-- Update the relevant document in the same change as an architecture, contract,
-  security, deployment, or operator-workflow change.
-- Use repository-root-relative paths in commands and file references.
+New and changed documentation must follow the
+[Documentation Style Guide](STYLE.md). See also
+[`CONTRIBUTING.md`](https://github.com/xiaoranya/ProjectBalloon/blob/main/CONTRIBUTING.md) for contribution workflow.

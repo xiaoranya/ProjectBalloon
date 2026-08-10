@@ -117,7 +117,7 @@ to reconstruct their contents safely.
 
 ## Staff Accounts
 
-All endpoints require the `SUPER_ADMIN` role and a completed mandatory password
+All endpoints require the `SUPER_ADMIN` user type and a completed mandatory password
 change:
 
 | Method | Path | Behavior |
@@ -265,7 +265,7 @@ The Rust API preserves the existing browser routes:
 - `GET /api/team/events/contests/{contestId}`.
 
 Frames retain the version-1 Java/TypeScript shape. Public access uses normal
-contest readability, staff access requires an approved operator role plus
+contest readability, staff access requires an approved operator permission plus
 contest readability, and team access resolves the authenticated team within
 the contest. The current fanout channel is process-local; production
 instances optionally bridge their local Tokio channels through Redis Pub/Sub.
