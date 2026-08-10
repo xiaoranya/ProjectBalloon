@@ -142,16 +142,18 @@ After contest configuration freeze, changes should require privileged operation 
 
 ## Schema Migrations
 
-Fresh Rust installations start from
-`migrations/20260719000000_initial_baseline.sql`. The baseline represents the
-effective schema of the previous migration history; it does not copy the
-previous framework's entity model.
+Fresh Rust installations start from the consolidated alpha migration
+`migrations/0001_initial.sql`, which merges the original timestamped migration
+history into a single file. It does not copy the previous framework's entity
+model.
 
 The API embeds SQLx migrations into its executable and applies them before
-accepting traffic. Applied migrations are immutable. The Rust release supports
-fresh installations only; an existing installation from the previous
-implementation must not replay the fresh-install baseline. Any historical-data
-transfer is a separate export/import project, not an upgrade guarantee.
+accepting traffic. In alpha the consolidated migration may be edited
+destructively; deployments drop and recreate (or restore) databases instead of
+upgrading in place. The Rust release supports fresh installations only; an
+existing installation from the previous implementation must not replay the
+migration. Any historical-data transfer is a separate export/import project,
+not an upgrade guarantee.
 
 ## Audit Requirements
 

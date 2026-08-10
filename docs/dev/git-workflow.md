@@ -127,6 +127,8 @@ Before merging:
 
 - Tests relevant to the change pass.
 - Database migrations are reversible or have a documented forward-only reason.
+  In alpha, edits to the single `migrations/0001_initial.sql` are destructive
+  and must be called out in the change description.
 - Public/live/screen APIs do not expose sensitive data.
 - Operational docs are updated for deployment or recovery changes.
 - Binary deployment impact is considered.

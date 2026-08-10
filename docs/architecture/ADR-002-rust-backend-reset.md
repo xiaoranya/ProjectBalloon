@@ -67,6 +67,11 @@ source filenames or classes.
 For a fresh installation, consolidate the previous schema history into a
 reviewed SQLx baseline migration, then create immutable forward migrations.
 
+Update (2026-08): while the project is in alpha, the baseline is a single
+consolidated SQLx migration (`migrations/0001_initial.sql`) and may be edited
+destructively; it will be frozen before the first non-alpha release, after
+which forward migrations become immutable.
+
 For an installation containing official data, the Rust reset does not promise
 an in-place upgrade. Deploy the Rust baseline into a fresh database; any
 historical-data export/import must be designed and reviewed separately from

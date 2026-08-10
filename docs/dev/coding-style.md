@@ -129,7 +129,11 @@ Frontend guidelines:
 ## Database Migrations
 
 - Use SQLx migrations for all schema changes in the Rust reset.
-- Never edit an applied migration. Add a forward migration.
+- Alpha: the schema is a single consolidated migration
+  (`migrations/0001_initial.sql`); it may be edited destructively while
+  deployments recreate databases from scratch.
+- Before the first non-alpha release, freeze the consolidated migration and add
+  new forward migrations instead of editing it.
 - Avoid destructive migrations after official data exists unless backup and
   restore have been tested.
 - Add indexes for contest-scoped queries, especially submissions, judgements,

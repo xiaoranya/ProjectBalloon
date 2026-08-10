@@ -98,7 +98,8 @@
 ## 数据库迁移
 
 - 在 Rust 重置中对所有架构变更使用 SQLx 迁移。
-- 绝不编辑已应用的迁移。添加前向迁移。
+- alpha 阶段：schema 是单个合并迁移（`migrations/0001_initial.sql`）；在部署从零重建数据库的前提下，可对其进行破坏性编辑。
+- 在首个非 alpha 版本发布前，冻结该合并迁移，之后通过新增前向迁移而不是编辑它来演进。
 - 在官方数据存在后避免破坏性迁移，除非备份与恢复已经过测试。
 - 为比赛范围查询添加索引，尤其是 submissions、judgements、scoreboards、print tasks 与 balloon tasks。
 - 将大对象存储在 RustFS，并将其哈希、版本与元数据存储在 PostgreSQL。
