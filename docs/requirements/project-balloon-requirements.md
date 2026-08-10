@@ -758,14 +758,16 @@ File-type data is stored in RustFS:
 
 ### 24.3 P2 Extended Capabilities
 
-- OI/IOI format.
-- Interactive problems.
-- Output-only problems.
-- Code similarity detection.
+Status as of the current implementation; items marked (implemented) were delivered ahead of plan:
+
+- OI/IOI format (implemented).
+- Interactive problems (implemented).
+- Output-only problems (implemented).
+- Code similarity detection (implemented).
 - Advanced live-stream packaging.
-- Custom screen templates.
+- Custom screen templates (implemented).
 - Multi-venue synchronization.
-- Public problem bank and training system.
+- Public problem bank and training system (implemented).
 - Multi-tenancy.
 
 ## 25. Pre-Contest Flow

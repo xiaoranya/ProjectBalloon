@@ -58,11 +58,11 @@ Freeze 之后：
 - 带暂停、继续、回退与完成控制的逐步 Resolver 揭示。
 - 面向 Resolver、公共记分板、展示、公告以及工作人员 Clarification、气球与打印工作台的 SSE 失效事件。
 - 用于跨 API 实例投递 SSE 的 Redis Pub/Sub 扇出，并带轮询回退。
+- 面向提交状态与私有 Clarification 回复的队伍级 SSE 通道。
 
 推迟到未来版本：
 
 - 超出权威状态刷新提示的富动画命令。
-- 面向提交状态与私有 Clarification 回复的队伍级 SSE 通道。
 
 ## 数据模型
 

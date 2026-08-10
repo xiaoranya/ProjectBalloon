@@ -59,11 +59,11 @@ The current implementation also includes:
 - SSE invalidation events for resolver, public scoreboard, presentation, announcements,
   and the staff clarification, balloon, and printing workbenches.
 - Redis Pub/Sub fanout for SSE delivery across API instances, with polling fallback.
+- Team-scoped SSE channels for submission status and private clarification replies.
 
 Deferred to future versions:
 
 - Rich animation commands beyond authoritative-state refresh hints.
-- Team-scoped SSE channels for submission status and private clarification replies.
 
 ## Data Model
 

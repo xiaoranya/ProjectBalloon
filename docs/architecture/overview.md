@@ -134,11 +134,15 @@ SSE payloads should avoid sensitive information on public, screen, and live chan
 
 ## Initial Non-Goals
 
-These are not first-version goals unless explicitly promoted:
+These were not part of the original first-version scope. Most were implemented
+ahead of plan during initial development:
 
-- OI/IOI scoring.
+- OI/IOI scoring (including subtask configuration).
 - Interactive problems.
 - Output-only problems.
 - Code similarity detection.
-- Public training system.
+- Public problem bank and training system.
+
+Still outside the current version's scope:
+
 - Multi-tenant public OJ operation.
