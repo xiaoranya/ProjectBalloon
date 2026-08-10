@@ -3,7 +3,9 @@ name: Docs (VitePress)
 on:
   push:
     branches:
-      - docs/vitepress-site
+      - main
+    paths:
+      - 'docs/**'
   workflow_dispatch:
 
 concurrency:
