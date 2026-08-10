@@ -11,7 +11,7 @@ This guide is for contestants who use the daily practice area outside official
 contests: the public problem bank, training plans, practice submissions,
 personal virtual contests, and editorials. The daily area is available in
 standard deployment mode; `competition` mode disables it and uses workstation
-pairing login instead (see the [Contestant Guide](README.md)).
+pairing login instead (see the [Contestant Guide](./)).
 
 ## Problem Bank (`/problem-bank`)
 
@@ -64,6 +64,6 @@ A personal virtual contest lets you practice a timed problem set on your own:
 
 ## See Also
 
-- [Contestant Guide](README.md) — official contest features.
-- [Administrator Guide](../admin/README.md) — how practice settings and
+- [Contestant Guide](./) — official contest features.
+- [Administrator Guide](../admin/) — how practice settings and
   editorials are managed.

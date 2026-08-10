@@ -10,7 +10,7 @@ This guide is for contest administrators. It covers contest lifecycle (including
 cloning and extension), teams and accounts, problems and test data, staff
 accounts and permissions, announcements, submission similarity review, rejudge,
 audit logs, backups, and archiving. On-site ceremony tooling is covered
-separately in the [On-Site Operations Guide](../onsite/README.md).
+separately in the [On-Site Operations Guide](../onsite/).
 
 ## Contest Lifecycle
 
@@ -215,7 +215,7 @@ Behavior:
 
 ## See Also
 
-- [On-Site Operations Guide](../onsite/README.md) — ceremony workbenches.
+- [On-Site Operations Guide](../onsite/) — ceremony workbenches.
 - [Competition Mode](../../ops/competition-mode.md) — workstation pairing
   deployment.
 - [Daily Practice Guide](../contestant/practice.md) — contestant view of the

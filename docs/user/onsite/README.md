@@ -10,7 +10,7 @@ This guide is for staff working an on-site (ICPC/XCPC-style) event. It covers
 the tools used during the event: screen walls, live broadcast, balloons,
 printing, the Resolver ceremony, and awards. The workbenches require staff
 accounts with the matching permissions; see the
-[Administrator Guide](../admin/README.md) for how permissions are assigned.
+[Administrator Guide](../admin/) for how permissions are assigned.
 
 ## Staff Workbenches
 
@@ -118,5 +118,5 @@ regenerating the Resolver snapshot.
 
 ## See Also
 
-- [Administrator Guide](../admin/README.md) — permissions and contest setup.
+- [Administrator Guide](../admin/) — permissions and contest setup.
 - [Troubleshooting](../../ops/troubleshooting.md) — common failure checks.

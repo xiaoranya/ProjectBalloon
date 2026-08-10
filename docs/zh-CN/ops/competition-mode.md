@@ -28,7 +28,7 @@ description: 介绍如何在 competition 部署模式下运行 ProjectBalloon：
 4. 把终端绑定到队伍；队伍必须已在比赛名单中。
 5. 复制仅显示一次的配对码并交给对应机位。
 
-完整流程见[管理员指南](../user/admin/README.md)。
+完整流程见[管理员指南](../user/admin/)。
 
 ## 赛前验证
 
@@ -55,4 +55,4 @@ description: 介绍如何在 competition 部署模式下运行 ProjectBalloon：
 
 - [运维](ops.md) — 常规现场运维。
 - [配置参考](configuration.md) — 部署模式变量。
-- [管理员指南](../user/admin/README.md) — 终端绑定界面。
+- [管理员指南](../user/admin/) — 终端绑定界面。

@@ -1,6 +1,7 @@
 ---
 title: ProjectBalloon Documentation
-description: The manual for ProjectBalloon: installing the platform, running an
+description: >-
+  The manual for ProjectBalloon: installing the platform, running an
   official contest, and using the web interface as a contestant, administrator,
   or on-site staff member.
 ---
@@ -16,12 +17,12 @@ the web interface as a contestant, administrator, or on-site staff member.
 | If you are... | Start here |
 | --- | --- |
 | Setting up a new deployment | [Quickstart](ops/quickstart.md) |
-| A contestant using the platform | [Contestant Guide](user/contestant/README.md) |
-| A contest administrator | [Administrator Guide](user/admin/README.md) |
-| On-site staff (screens, balloons, printing, Resolver, awards) | [On-Site Operations Guide](user/onsite/README.md) |
+| A contestant using the platform | [Contestant Guide](user/contestant/) |
+| A contest administrator | [Administrator Guide](user/admin/) |
+| On-site staff (screens, balloons, printing, Resolver, awards) | [On-Site Operations Guide](user/onsite/) |
 | Running an on-site contest with workstation login | [Competition Mode](ops/competition-mode.md) |
 | Deploying or operating the server | [Installation](ops/install.md) and [Operations](ops/ops.md) |
-| Looking up a configuration variable or an endpoint | [Configuration Reference](ops/configuration.md) and [API contract](api/openapi.yaml) |
+| Looking up a configuration variable or an endpoint | [Configuration Reference](ops/configuration.md) and [API contract](https://github.com/xiaoranya/ProjectBalloon/blob/main/docs/api/openapi.yaml) |
 
 ## Documentation Sections
 
@@ -49,4 +50,4 @@ permission codes stay in English in both languages. The OpenAPI contract
 
 New and changed documentation must follow the
 [Documentation Style Guide](STYLE.md). See also
-[`CONTRIBUTING.md`](../CONTRIBUTING.md) for contribution workflow.
+[`CONTRIBUTING.md`](https://github.com/xiaoranya/ProjectBalloon/blob/main/CONTRIBUTING.md) for contribution workflow.

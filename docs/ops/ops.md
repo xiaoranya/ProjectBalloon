@@ -1,6 +1,8 @@
 ---
 title: Operations
-description: Routine on-site operations for rehearsals and official contests: health checks, monitoring, logs, common operations, and incident notes.
+description: >-
+  Routine on-site operations for rehearsals and official contests: health
+  checks, monitoring, logs, common operations, and incident notes.
 ---
 
 # Operations

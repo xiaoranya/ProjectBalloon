@@ -1,6 +1,9 @@
 ---
 title: Configuration Reference
-description: Environment variables for the API and Judge Worker in binary deployments: database, object storage, realtime, scoreboard cache, printing, judge worker, and sandbox.
+description: >-
+  Environment variables for the API and Judge Worker in binary deployments:
+  database, object storage, realtime, scoreboard cache, printing, judge worker,
+  and sandbox.
 ---
 
 # Configuration Reference

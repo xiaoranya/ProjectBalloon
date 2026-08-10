@@ -132,6 +132,6 @@ one.
 
 ## See Also
 
-- [User Guide](../README.md) — other role-based manuals.
-- [On-Site Operations Guide](../onsite/README.md) — how staff handle
+- [User Guide](../) — other role-based manuals.
+- [On-Site Operations Guide](../onsite/) — how staff handle
   Clarifications, printing, and balloons.

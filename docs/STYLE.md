@@ -1,7 +1,7 @@
 ---
 title: Documentation Style Guide
 description: How ProjectBalloon documentation is written for the published
-  documentation website: audience, page anatomy, tone, links, and review checklist.
+  documentation website (audience, page anatomy, tone, links, and review checklist).
 ---
 
 # Documentation Style Guide
@@ -70,7 +70,13 @@ Every published page has the same skeleton:
   - Correct: `[Installation](ops/install.md)`
   - Wrong: `docs/ops/install.md`
 - Write descriptive link text ("see the Installation guide"), not bare paths.
-- Keep the `.md` extension so links work on GitHub and in the site builder.
+- Keep the `.md` extension for ordinary pages so links work on GitHub and in
+  the site builder.
+- Link to a section landing page by directory, not by its `README.md`: the
+  site builder rewrites `README.md` to `index.html`, so a `README.md` link
+  would 404 on the published site.
+  - Correct: `[Contestant Guide](user/contestant/)`
+  - Wrong: `[Contestant Guide](user/contestant/README.md)`
 - Use one link per related page; do not link the same target repeatedly in
   one page.
 
@@ -114,6 +120,8 @@ Every published page has the same skeleton:
 - [ ] First paragraph states audience and scope.
 - [ ] Steps are numbered where order matters; bullets are single-purpose.
 - [ ] Links are `docs/`-relative with descriptive text and no `docs/` prefix.
+- [ ] Section landing pages are linked by directory (`user/contestant/`), not
+      by `README.md`.
 - [ ] No repository-internal status or layout notes in published pages.
 - [ ] Chinese mirror updated in the same change.
 - [ ] Terminology matches the UI and this guide.

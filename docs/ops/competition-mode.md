@@ -39,7 +39,7 @@ restart the API service:
    roster.
 5. Copy the pairing code shown once and hand it to the seat.
 
-See the [Administrator Guide](../user/admin/README.md) for the full workflow.
+See the [Administrator Guide](../user/admin/) for the full workflow.
 
 ## Verify Before the Contest
 
@@ -74,4 +74,4 @@ See the [Administrator Guide](../user/admin/README.md) for the full workflow.
 
 - [Operations](ops.md) — routine on-site operations.
 - [Configuration Reference](configuration.md) — deployment mode variable.
-- [Administrator Guide](../user/admin/README.md) — workstation binding UI.
+- [Administrator Guide](../user/admin/) — workstation binding UI.

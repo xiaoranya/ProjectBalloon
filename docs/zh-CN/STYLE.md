@@ -52,7 +52,12 @@ description: ProjectBalloon 文档在已发布文档网站上的写作方式：�
   - 正确：`[安装指南](ops/install.md)`
   - 错误：`docs/ops/install.md`
 - 链接文字要可读（如「参见安装指南」），不要写裸路径。
-- 保留 `.md` 扩展名，保证 GitHub 与文档站点都能解析。
+- 普通页面保留 `.md` 扩展名，保证 GitHub 与文档站点都能解析。
+- 指向栏目首页时使用目录形式而不是 `README.md`：站点构建器会把
+  `README.md` 重写为 `index.html`，直接链接 `README.md` 在发布后的站点上会
+  404。
+  - 正确：`[选手指南](user/contestant/)`
+  - 错误：`[选手指南](user/contestant/README.md)`
 - 每页中同一个目标只链接一次。
 
 ## 代码与命令
@@ -87,6 +92,7 @@ description: ProjectBalloon 文档在已发布文档网站上的写作方式：�
 - [ ] 首段说明读者对象与范围。
 - [ ] 有顺序的操作使用编号步骤；列表为单用途要点。
 - [ ] 链接为 `docs/` 相对路径，文字可读，且不带 `docs/` 前缀。
+- [ ] 栏目首页使用目录形式（`user/contestant/`），而不是 `README.md`。
 - [ ] 已发布页面中没有仓库内部状态或布局说明。
 - [ ] 同一次变更中更新了中文镜像。
 - [ ] 术语与界面及本规范一致。
