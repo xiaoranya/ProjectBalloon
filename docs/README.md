@@ -19,12 +19,14 @@ the web interface as a contestant, administrator, or on-site staff member.
 | A contestant using the platform | [Contestant Guide](user/contestant/README.md) |
 | A contest administrator | [Administrator Guide](user/admin/README.md) |
 | On-site staff (screens, balloons, printing, Resolver, awards) | [On-Site Operations Guide](user/onsite/README.md) |
+| Running an on-site contest with workstation login | [Competition Mode](ops/competition-mode.md) |
 | Deploying or operating the server | [Installation](ops/install.md) and [Operations](ops/ops.md) |
 | Looking up a configuration variable or an endpoint | [Configuration Reference](ops/configuration.md) and [API contract](api/openapi.yaml) |
 
 ## Documentation Sections
 
-- **User Guide** — `user/`: role-based manuals for contestants, contest
+- **User Guide** — `user/`: role-based manuals for contestants (including
+  the [Daily Practice Guide](user/contestant/practice.md)), contest
   administrators, and on-site staff. These pages assume the deployment
   described in the [Quickstart](ops/quickstart.md) is running.
 - **Operations** — `ops/`: install, configure, operate, troubleshoot, back up,

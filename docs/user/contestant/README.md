@@ -23,6 +23,29 @@ usually imported by the organizers; the team leader receives the credentials.
 - Keep your browser session cookie; the default session lifetime is 12 hours
   (`PROJECT_BALLOON_SESSION_TTL_SECONDS`).
 
+### Competition Mode (Pairing-Code Login)
+
+In `competition` deployment mode, contestants log in from assigned
+workstations with a pairing code instead of (or in addition to) an account
+password:
+
+1. Sit at your assigned workstation and open `/login`.
+2. Choose the **Pairing code** login mode.
+3. Enter the code given to your seat by the organizers.
+4. You are signed in as your team for the currently active contest.
+
+Notes:
+
+- Pairing codes work only for the active contest and only from the
+  workstation's static IP address.
+- The session is bound to that IP; if the request comes from a different IP,
+  the session is rejected and you must log in again from the assigned
+  workstation.
+- The session ends when the contest ends.
+- If staff rotate or revoke a binding, existing sessions are invalidated
+  immediately and a new code is handed out.
+- Account/password login remains available from the same page.
+
 ## Contest Pages
 
 After login, `/contests` lists contests your team can join. Opening a contest
@@ -93,6 +116,13 @@ The printing page accepts source code to be printed at the venue.
   team every 10 minutes; at most 20 requests per team for the whole contest.
 - Track your request status (`QUEUED`, `PRINTING`, `DONE`, `FAILED`). If a job
   fails, ask the printing desk to retry it.
+
+## Daily Practice
+
+Outside official contests, the platform may offer a daily practice area:
+a public problem bank, training plans, practice submissions, personal virtual
+contests, and editorials. See the
+[Daily Practice Guide](practice.md) for how to use it.
 
 ## Profile
 

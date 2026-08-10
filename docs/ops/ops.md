@@ -158,6 +158,18 @@ PROJECT_BALLOON_RESTORE_ACK=I_UNDERSTAND_THIS_REPLACES_CURRENT_DATA \
 
 See [Backup and Restore](backup-restore.md) for mandatory backup points, contents, retention, and post-restore verification. Take a backup before rehearsal, after data freeze, immediately before contest start, and after the judge queue drains.
 
+Competition mode (workstation pairing):
+
+```text
+Set PROJECT_BALLOON_DEPLOYMENT_MODE=competition
+Register workstations and bind teams under /admin/competition
+Verify pairing-code login from a test seat
+Rotate pairing codes after rehearsal
+```
+
+See [Competition Mode](competition-mode.md) for the full setup and runtime
+behavior.
+
 Daily practice operations:
 
 - Review the `practice_submissions_today` and `practice_judging` Prometheus

@@ -11,7 +11,8 @@ description: 面向选手、比赛管理员和现场工作人员的分角色使�
 
 ## 章节
 
-- [选手指南](contestant/README.md) — 注册与登录、提交代码、解读判定结果、榜单与封榜规则、Clarification 与打印。
+- [选手指南](contestant/README.md) — 注册与登录（含比赛模式配对码）、提交代码、解读判定结果、榜单与封榜规则、Clarification 与打印。
+- [日常练习指南](contestant/practice.md) — 题库、训练计划、练习提交、虚拟比赛与题解。
 - [管理员指南](admin/README.md) — 比赛、队伍、题目、员工账号与权限、重判、备份与归档。
 - [现场运营指南](onsite/README.md) — 大屏、直播、气球、打印工作台、Resolver 仪式与颁奖展示。
 

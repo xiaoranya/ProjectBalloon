@@ -96,6 +96,16 @@ regenerating the Resolver snapshot.
   display at `/awards/display`.
 - Freeze the award list before the ceremony to keep it stable.
 
+### Host Script (`/awards/host-script`)
+
+- Edit and print the host cue sheet for a selected contest; the script is
+  organized by award sections with cue text.
+- The page shows the current cue and the next item, and stays in sync with
+  the presentation status.
+- Save edits with optimistic concurrency; if someone else changed the script,
+  reload and retry.
+- Print the script for the ceremony host.
+
 ## Event Checklist
 
 - Before start: verify screens, live tokens, printer queue, balloon colors,

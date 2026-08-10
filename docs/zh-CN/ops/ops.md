@@ -140,6 +140,17 @@ PROJECT_BALLOON_RESTORE_ACK=I_UNDERSTAND_THIS_REPLACES_CURRENT_DATA \
 
 参见 [备份与恢复](backup-restore.md) 了解强制备份点、内容、保留与恢复后验证。在彩排前、数据冻结后、比赛开始前立即以及 Judge 队列排空后各做一次备份。
 
+比赛模式（终端配对）：
+
+```text
+设置 PROJECT_BALLOON_DEPLOYMENT_MODE=competition
+在 /admin/competition 登记终端并绑定队伍
+从测试机位验证配对码登录
+排练结束后轮换配对码
+```
+
+完整配置与运行期行为见[比赛模式](competition-mode.md)。
+
 每日 practice 操作：
 
 - 在正常负载下查看 `practice_submissions_today` 与 `practice_judging` Prometheus 仪表。

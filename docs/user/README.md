@@ -18,9 +18,11 @@ common failure checks are in [Troubleshooting](../ops/troubleshooting.md).
 
 ## Sections
 
-- [Contestant Guide](contestant/README.md) — registration and login, submitting
-  code, reading verdicts, scoreboard and freeze rules, Clarifications, and
-  printing.
+- [Contestant Guide](contestant/README.md) — registration and login
+  (including competition-mode pairing codes), submitting code, reading
+  verdicts, scoreboard and freeze rules, Clarifications, and printing.
+- [Daily Practice Guide](contestant/practice.md) — problem bank, training
+  plans, practice submissions, virtual contests, and editorials.
 - [Administrator Guide](admin/README.md) — contests, teams, problems, staff
   accounts and permissions, rejudge, backups, and archiving.
 - [On-Site Operations Guide](onsite/README.md) — screen wall, live broadcast,
