@@ -2,9 +2,20 @@ use std::{collections::HashSet, time::Duration};
 
 use sqlx::PgPool;
 
-use crate::object_storage::{ObjectStorageHandle, ObjectStorageObject};
+use crate::object_storage::{ObjectStorageError, ObjectStorageHandle, ObjectStorageObject};
 
 use super::enqueue_cleanup_batch;
+
+/// Distinguishes the two failure domains of an integrity scan so that a
+/// PostgreSQL outage is not reported as an object-storage outage and
+/// vice versa.
+#[derive(Debug, thiserror::Error)]
+pub enum IntegrityScanError {
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+    #[error(transparent)]
+    Storage(#[from] ObjectStorageError),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObjectStorageIntegrityReport {
@@ -23,19 +34,15 @@ pub async fn scan_object_integrity(
     prefixes: &[&str],
     referenced_keys: &HashSet<String>,
     grace: Duration,
-) -> Result<ObjectStorageIntegrityReport, sqlx::Error> {
+) -> Result<ObjectStorageIntegrityReport, IntegrityScanError> {
     let mut token = None;
-    let mut missing = referenced_keys.clone();
+    let mut missing: HashSet<&str> = referenced_keys.iter().map(String::as_str).collect();
     let mut queued_orphans = 0;
     loop {
-        let page = storage
-            .backend()
-            .list_objects(bucket, token.as_deref())
-            .await
-            .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        let page = storage.backend().list_objects(bucket, token.as_deref()).await?;
         let mut orphan_keys = Vec::new();
         for object in page.objects {
-            missing.remove(&object.key);
+            missing.remove(object.key.as_str());
             if is_orphan_candidate(&object, prefixes, referenced_keys, grace) {
                 orphan_keys.push(object.key);
             }
@@ -47,7 +54,7 @@ pub async fn scan_object_integrity(
             break;
         }
     }
-    let mut missing: Vec<String> = missing.into_iter().collect();
+    let mut missing: Vec<String> = missing.into_iter().map(str::to_owned).collect();
     missing.sort_unstable();
     reconcile_missing_references(database, bucket, &missing).await?;
     Ok(ObjectStorageIntegrityReport { queued_orphans, missing_references: missing.len() })
@@ -116,7 +123,7 @@ pub async fn referenced_object_keys(
     database: &PgPool,
     storage: &ObjectStorageHandle,
     bucket: &str,
-) -> Result<std::collections::HashSet<String>, sqlx::Error> {
+) -> Result<std::collections::HashSet<String>, IntegrityScanError> {
     let keys: Vec<String> =
         if bucket == storage.problem_bucket() && bucket == storage.source_bucket() {
             sqlx::query_scalar(
