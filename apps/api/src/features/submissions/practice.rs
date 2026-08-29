@@ -40,7 +40,7 @@ struct PracticeContext {
     interactor_sha256: Option<String>,
 }
 
-const PRACTICE_CONTEXT_QUERY: &str = r#"
+const PRACTICE_CONTEXT_SQL: &str = r#"
 SELECT problem.time_limit_ms,problem.memory_limit_mb,problem.output_limit_kb,
        problem.languages,version.version AS testdata_version,
        version.object_key AS testdata_object_key,version.sha256 AS testdata_sha256,
@@ -371,7 +371,7 @@ async fn load_context_pool(
     database: &PgPool,
     problem_id: i64,
 ) -> Result<PracticeContext, AppError> {
-    sqlx::query_as(PRACTICE_CONTEXT_QUERY)
+    sqlx::query_as(PRACTICE_CONTEXT_SQL)
         .bind(problem_id)
         .fetch_optional(database)
         .await
@@ -382,7 +382,7 @@ async fn load_context_tx(
     tx: &mut Transaction<'_, Postgres>,
     problem_id: i64,
 ) -> Result<PracticeContext, AppError> {
-    let query = format!("{PRACTICE_CONTEXT_QUERY} FOR SHARE OF bank,problem,version");
+    let query = format!("{PRACTICE_CONTEXT_SQL} FOR SHARE OF bank,problem,version");
     sqlx::query_as(sqlx::AssertSqlSafe(query))
         .bind(problem_id)
         .fetch_optional(&mut **tx)

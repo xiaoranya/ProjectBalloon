@@ -290,7 +290,7 @@ pub(super) fn parse_judge_mode(value: &str) -> Result<JudgeMode, AppError> {
     }
 }
 
-const CONTEXT_QUERY: &str = r#"
+const SUBMISSION_CONTEXT_SQL: &str = r#"
     SELECT
         account.team_id,
         problem.time_limit_ms,
@@ -331,7 +331,7 @@ async fn load_context_pool(
     problem_id: i64,
     user_id: i64,
 ) -> Result<SubmissionContext, AppError> {
-    sqlx::query_as::<_, SubmissionContext>(CONTEXT_QUERY)
+    sqlx::query_as::<_, SubmissionContext>(SUBMISSION_CONTEXT_SQL)
         .bind(user_id)
         .bind(contest_id)
         .bind(problem_id)
@@ -348,7 +348,7 @@ async fn load_context_transaction(
     user_id: i64,
 ) -> Result<SubmissionContext, AppError> {
     let query = format!(
-        "{CONTEXT_QUERY} FOR SHARE OF account, team, roster, contest, assignment, problem, version"
+        "{SUBMISSION_CONTEXT_SQL} FOR SHARE OF account, team, roster, contest, assignment, problem, version"
     );
     sqlx::query_as::<_, SubmissionContext>(sqlx::AssertSqlSafe(query))
         .bind(user_id)
