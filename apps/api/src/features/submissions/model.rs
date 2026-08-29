@@ -646,7 +646,7 @@ pub struct RunDetail {
 mod tests {
     use bytes::Bytes;
 
-    use super::{
+    use crate::features::submissions::model::{
         MAX_SOURCE_BYTES, SubmissionStatus, SubmitMetadata, source_fingerprint,
         source_similarity_signature,
     };
@@ -748,7 +748,7 @@ mod tests {
 
     #[test]
     fn submission_filters_are_closed_and_bounded() {
-        use super::SubmissionListQuery;
+        use crate::features::submissions::model::SubmissionListQuery;
 
         let valid = SubmissionListQuery {
             team_id: Some(1),

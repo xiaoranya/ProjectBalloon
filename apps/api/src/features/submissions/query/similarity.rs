@@ -4,11 +4,11 @@ use crate::{
     error::AppError, features::auth::model::AuthUser, object_storage::ObjectStorageHandle,
 };
 
-use super::super::service::SubmissionService;
-use super::{
+use crate::features::submissions::query::{
     SimilarityBackfillResponse, SimilarityGroupResponse, SimilarityPairQuery,
     SimilarityPairResponse, SimilarityQuery, require_admin_access,
 };
+use crate::features::submissions::service::SubmissionService;
 
 impl SubmissionService {
     pub async fn backfill_similarity(

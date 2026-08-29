@@ -14,7 +14,7 @@ use crate::{
     pagination::PageResponse,
 };
 
-use super::{
+use crate::features::submissions::{
     SubmissionService,
     model::{
         JudgementDetail, PracticeProblemStatus, PracticeSubmissionDetail,

@@ -177,7 +177,7 @@ fn submission_not_found() -> AppError {
 
 #[cfg(test)]
 mod tests {
-    use super::{SimilarityPairQuery, SimilarityQuery};
+    use crate::features::submissions::query::{SimilarityPairQuery, SimilarityQuery};
 
     #[test]
     fn similarity_filters_are_bounded_and_normalized() {

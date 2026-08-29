@@ -10,12 +10,12 @@ use crate::{
     error::AppError, features::auth::AuthContext, pagination::PageResponse, state::AppState,
 };
 
-use super::super::model::{
+use crate::features::submissions::handlers::required_storage;
+use crate::features::submissions::model::{
     PracticeProblemStatus, PracticeSubmissionDetail, PracticeSubmissionSummary,
     PracticeSubmitMetadata, SubmissionListQuery, SubmissionUploadRequest, SubmitMetadata,
     SubmitResponse,
 };
-use super::required_storage;
 
 #[utoipa::path(
     post,

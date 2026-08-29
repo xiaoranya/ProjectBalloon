@@ -12,8 +12,8 @@ use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 use crate::error::AppError;
 
-use super::super::export_tasks::ExportTaskKind;
-use super::{
+use crate::features::submissions::export_tasks::ExportTaskKind;
+use crate::features::submissions::exports::{
     ExportRow, MAX_SYNC_SOURCE_BYTES, MAX_SYNC_SOURCE_COUNT, SourceFile, SourceManifestEntry,
 };
 

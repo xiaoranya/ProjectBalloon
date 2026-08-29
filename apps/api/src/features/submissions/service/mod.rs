@@ -17,7 +17,7 @@ use crate::{
     object_storage_cleanup::defer_failed_cleanup,
 };
 
-use super::model::{
+use crate::features::submissions::model::{
     RejudgeRequest, RejudgeResponse, SubmitResponse, ValidatedSubmission, source_fingerprint,
     source_similarity_signature,
 };

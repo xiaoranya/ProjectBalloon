@@ -10,12 +10,14 @@ use crate::{
     state::AppState,
 };
 
-use super::super::model::{JudgeQueueStatusResponse, SubmissionListQuery, SubmissionSummary};
-use super::super::query::{
+use crate::features::submissions::handlers::required_storage;
+use crate::features::submissions::model::{
+    JudgeQueueStatusResponse, SubmissionListQuery, SubmissionSummary,
+};
+use crate::features::submissions::query::{
     SimilarityBackfillResponse, SimilarityGroupResponse, SimilarityPairQuery,
     SimilarityPairResponse, SimilarityQuery,
 };
-use super::required_storage;
 
 #[utoipa::path(
     get,

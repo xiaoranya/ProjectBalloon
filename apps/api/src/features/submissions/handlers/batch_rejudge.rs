@@ -6,7 +6,7 @@ use axum::{
 
 use crate::{error::AppError, features::auth::ContestManagerContext, state::AppState};
 
-use super::super::{
+use crate::features::submissions::{
     BatchRejudgeCreateRequest, BatchRejudgeFilter, BatchRejudgePreviewResponse,
     BatchRejudgeTaskResponse,
 };

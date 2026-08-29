@@ -10,7 +10,7 @@ use project_balloon_contracts::JudgeTask;
 use sqlx::PgPool;
 use time::OffsetDateTime;
 
-use super::{SubmissionService, language_multiplier};
+use crate::features::submissions::service::{SubmissionService, language_multiplier};
 use crate::{
     features::{
         auth::model::{AuthUser, UserType},

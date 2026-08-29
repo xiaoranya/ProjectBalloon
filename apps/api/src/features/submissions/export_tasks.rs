@@ -13,7 +13,7 @@ use crate::{
     object_storage_cleanup::defer_failed_cleanup,
 };
 
-use super::{query::require_admin_access, service::SubmissionService};
+use crate::features::submissions::{query::require_admin_access, service::SubmissionService};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -35,8 +35,8 @@ mod tests {
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    use super::{ExportTaskKind, retry_delay};
     use crate::features::submissions::SubmissionService;
+    use crate::features::submissions::export_tasks::{ExportTaskKind, retry_delay};
 
     #[test]
     fn export_kinds_have_stable_wire_names() {
