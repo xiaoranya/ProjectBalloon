@@ -42,9 +42,51 @@ impl PresentationService {
         require_presentation_operator(actor)?;
         let mode = validate_mode(mode)?;
         require_contest(&self.database, contest).await?;
-        Ok(sqlx::query_as::<_, ConfigResponse>("SELECT c.contest_id,c.mode,c.enabled,c.title,c.subtitle,c.accent_color,c.row_limit,c.show_announcements,c.announcement_interval_seconds,c.template,c.custom_template_id,t.name AS custom_template_name,t.background_color AS custom_background_color,t.foreground_color AS custom_foreground_color,t.accent_color AS custom_accent_color,t.font_family AS custom_font_family,t.density AS custom_density,t.show_clock AS custom_show_clock,t.show_logo AS custom_show_logo,t.logo_object_key AS custom_logo_object_key,c.updated_at FROM presentation_configs c LEFT JOIN presentation_templates t ON t.id=c.custom_template_id WHERE c.contest_id=$1 AND c.mode=$2")
-            .bind(contest).bind(mode).fetch_optional(&self.database).await.map_err(|error| AppError::internal("load presentation config", error))?
-            .unwrap_or(ConfigResponse { contest_id: contest, mode: mode.to_owned(), enabled: false, title: None, subtitle: None, accent_color: "#22c55e".into(), row_limit: 12, show_announcements: true, announcement_interval_seconds: 10, template: "DEFAULT".into(), custom_template_id: None, custom_template_name: None, custom_background_color: None, custom_foreground_color: None, custom_accent_color: None, custom_font_family: None, custom_density: None, custom_show_clock: None, custom_show_logo: None, custom_logo_object_key: None, updated_at: None }))
+        Ok(sqlx::query_as::<_, ConfigResponse>(
+            r#"
+            SELECT c.contest_id,c.mode,c.enabled,c.title,c.subtitle,c.accent_color,c.row_limit,
+                   c.show_announcements,c.announcement_interval_seconds,c.template,
+                   c.custom_template_id,t.name AS custom_template_name,
+                   t.background_color AS custom_background_color,
+                   t.foreground_color AS custom_foreground_color,
+                   t.accent_color AS custom_accent_color,
+                   t.font_family AS custom_font_family,t.density AS custom_density,
+                   t.show_clock AS custom_show_clock,t.show_logo AS custom_show_logo,
+                   t.logo_object_key AS custom_logo_object_key,c.updated_at
+            FROM presentation_configs c
+            LEFT JOIN presentation_templates t
+                ON t.id=c.custom_template_id
+            WHERE c.contest_id=$1 AND c.mode=$2
+            "#,
+        )
+        .bind(contest)
+        .bind(mode)
+        .fetch_optional(&self.database)
+        .await
+        .map_err(|error| AppError::internal("load presentation config", error))?
+        .unwrap_or(ConfigResponse {
+            contest_id: contest,
+            mode: mode.to_owned(),
+            enabled: false,
+            title: None,
+            subtitle: None,
+            accent_color: "#22c55e".into(),
+            row_limit: 12,
+            show_announcements: true,
+            announcement_interval_seconds: 10,
+            template: "DEFAULT".into(),
+            custom_template_id: None,
+            custom_template_name: None,
+            custom_background_color: None,
+            custom_foreground_color: None,
+            custom_accent_color: None,
+            custom_font_family: None,
+            custom_density: None,
+            custom_show_clock: None,
+            custom_show_logo: None,
+            custom_logo_object_key: None,
+            updated_at: None,
+        }))
     }
 
     pub(super) async fn update_config(
@@ -88,9 +130,42 @@ impl PresentationService {
                 "is only valid with the CUSTOM template",
             ));
         }
-        sqlx::query("INSERT INTO presentation_configs(contest_id,mode,enabled,title,subtitle,accent_color,row_limit,show_announcements,announcement_interval_seconds,template,custom_template_id,updated_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(contest_id,mode) DO UPDATE SET enabled=excluded.enabled,title=excluded.title,subtitle=excluded.subtitle,accent_color=excluded.accent_color,row_limit=excluded.row_limit,show_announcements=excluded.show_announcements,announcement_interval_seconds=excluded.announcement_interval_seconds,template=excluded.template,custom_template_id=excluded.custom_template_id,updated_by_user_id=excluded.updated_by_user_id,updated_at=now()")
-            .bind(contest).bind(mode).bind(request.enabled).bind(request.title.as_deref()).bind(request.subtitle.as_deref()).bind(&request.accent_color).bind(request.row_limit).bind(request.show_announcements).bind(request.announcement_interval_seconds).bind(template).bind(request.custom_template_id).bind(actor.id)
-            .execute(&mut *tx).await.map_err(|error| AppError::internal("save presentation config", error))?;
+        sqlx::query(
+            r#"
+            INSERT INTO presentation_configs
+                (contest_id,mode,enabled,title,subtitle,accent_color,row_limit,
+                 show_announcements,announcement_interval_seconds,template,
+                 custom_template_id,updated_by_user_id)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+            ON CONFLICT(contest_id,mode) DO UPDATE
+                SET enabled=excluded.enabled,
+                    title=excluded.title,
+                    subtitle=excluded.subtitle,
+                    accent_color=excluded.accent_color,
+                    row_limit=excluded.row_limit,
+                    show_announcements=excluded.show_announcements,
+                    announcement_interval_seconds=excluded.announcement_interval_seconds,
+                    template=excluded.template,
+                    custom_template_id=excluded.custom_template_id,
+                    updated_by_user_id=excluded.updated_by_user_id,
+                    updated_at=now()
+            "#,
+        )
+        .bind(contest)
+        .bind(mode)
+        .bind(request.enabled)
+        .bind(request.title.as_deref())
+        .bind(request.subtitle.as_deref())
+        .bind(&request.accent_color)
+        .bind(request.row_limit)
+        .bind(request.show_announcements)
+        .bind(request.announcement_interval_seconds)
+        .bind(template)
+        .bind(request.custom_template_id)
+        .bind(actor.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| AppError::internal("save presentation config", error))?;
         audit(&mut tx, actor.id, "PRESENTATION_CONFIG_UPDATED", "CONTEST", contest, ip).await?;
         sqlx::query("INSERT INTO realtime_outbox(event_id,contest_id,event_type,scope,payload_json) VALUES($1,$2,'PRESENTATION_UPDATED','PUBLIC',$3)")
             .bind(uuid::Uuid::new_v4()).bind(contest).bind(serde_json::json!({"mode":mode})).execute(&mut *tx).await.map_err(|error| AppError::internal("publish presentation config", error))?;
@@ -167,8 +242,26 @@ impl PresentationService {
             .begin()
             .await
             .map_err(|error| AppError::internal("begin screen heartbeat", error))?;
-        let updated = sqlx::query_scalar::<_, i64>("UPDATE screen_instances instance SET current_view=$3,last_seen_at=now(),last_ip=$4,updated_at=now() WHERE instance.id=$1 AND instance.client_token_hash=$2 AND instance.revoked_at IS NULL AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id=instance.contest_id AND contest.deleted_at IS NULL) RETURNING instance.id")
-            .bind(instance).bind(token_hash(&request.client_token)).bind(&request.current_view).bind(ip.to_string()).fetch_optional(&mut *tx).await.map_err(|error| AppError::internal("update screen heartbeat", error))?;
+        let updated = sqlx::query_scalar::<_, i64>(
+            r#"
+            UPDATE screen_instances instance
+            SET current_view=$3,last_seen_at=now(),last_ip=$4,updated_at=now()
+            WHERE instance.id=$1 AND instance.client_token_hash=$2
+                AND instance.revoked_at IS NULL
+                AND EXISTS (
+                    SELECT 1 FROM contests contest
+                    WHERE contest.id=instance.contest_id AND contest.deleted_at IS NULL
+                )
+            RETURNING instance.id
+            "#,
+        )
+        .bind(instance)
+        .bind(token_hash(&request.client_token))
+        .bind(&request.current_view)
+        .bind(ip.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|error| AppError::internal("update screen heartbeat", error))?;
         if updated.is_none() {
             return Err(AppError::unauthorized("SCREEN_TOKEN_INVALID", "Screen token is invalid"));
         }
@@ -249,8 +342,23 @@ impl PresentationService {
             .begin()
             .await
             .map_err(|error| AppError::internal("begin screen revoke", error))?;
-        let changed = sqlx::query("UPDATE screen_instances instance SET revoked_at=coalesce(revoked_at,now()),updated_at=now() WHERE instance.id=$1 AND instance.contest_id=$2 AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id=instance.contest_id AND contest.deleted_at IS NULL)")
-            .bind(instance).bind(contest).execute(&mut *tx).await.map_err(|error| AppError::internal("revoke screen instance", error))?.rows_affected();
+        let changed = sqlx::query(
+            r#"
+            UPDATE screen_instances instance
+            SET revoked_at=coalesce(revoked_at,now()),updated_at=now()
+            WHERE instance.id=$1 AND instance.contest_id=$2
+                AND EXISTS (
+                    SELECT 1 FROM contests contest
+                    WHERE contest.id=instance.contest_id AND contest.deleted_at IS NULL
+                )
+            "#,
+        )
+        .bind(instance)
+        .bind(contest)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| AppError::internal("revoke screen instance", error))?
+        .rows_affected();
         if changed != 1 {
             return Err(AppError::not_found(
                 "SCREEN_INSTANCE_NOT_FOUND",

@@ -194,8 +194,31 @@ async fn require_access(
             ));
         }
     }
-    sqlx::query_as("SELECT c.contest_id,c.mode,c.enabled,c.title,c.subtitle,c.accent_color,c.row_limit,c.show_announcements,c.announcement_interval_seconds,c.template,c.custom_template_id,t.name AS custom_template_name,t.background_color AS custom_background_color,t.foreground_color AS custom_foreground_color,t.accent_color AS custom_accent_color,t.font_family AS custom_font_family,t.density AS custom_density,t.show_clock AS custom_show_clock,t.show_logo AS custom_show_logo,t.logo_object_key AS custom_logo_object_key,c.updated_at FROM presentation_configs c LEFT JOIN presentation_templates t ON t.id=c.custom_template_id WHERE c.contest_id=$1 AND c.mode=$2 AND c.enabled")
-        .bind(contest).bind(mode).fetch_optional(database).await.map_err(|e| AppError::internal("load published presentation", e))?.ok_or_else(|| AppError::not_found("PRESENTATION_NOT_PUBLISHED", "Presentation is not published"))
+    sqlx::query_as(
+        r#"
+        SELECT c.contest_id,c.mode,c.enabled,c.title,c.subtitle,c.accent_color,c.row_limit,
+               c.show_announcements,c.announcement_interval_seconds,c.template,
+               c.custom_template_id,t.name AS custom_template_name,
+               t.background_color AS custom_background_color,
+               t.foreground_color AS custom_foreground_color,
+               t.accent_color AS custom_accent_color,
+               t.font_family AS custom_font_family,t.density AS custom_density,
+               t.show_clock AS custom_show_clock,t.show_logo AS custom_show_logo,
+               t.logo_object_key AS custom_logo_object_key,c.updated_at
+        FROM presentation_configs c
+        LEFT JOIN presentation_templates t
+            ON t.id=c.custom_template_id
+        WHERE c.contest_id=$1 AND c.mode=$2 AND c.enabled
+        "#,
+    )
+    .bind(contest)
+    .bind(mode)
+    .fetch_optional(database)
+    .await
+    .map_err(|e| AppError::internal("load published presentation", e))?
+    .ok_or_else(|| {
+        AppError::not_found("PRESENTATION_NOT_PUBLISHED", "Presentation is not published")
+    })
 }
 
 fn supplied_token(headers: &HeaderMap) -> Option<&str> {
@@ -257,7 +280,23 @@ pub async fn metrics(
 }
 
 async fn load_metrics(database: &PgPool, contest: i64) -> Result<PresentationMetrics, AppError> {
-    let balloon = sqlx::query_as::<_, (i64,i64,i64,i64,i64,i64,i64)>("SELECT count(*),count(*) FILTER(WHERE is_first_blood),count(*) FILTER(WHERE upper(status)='PENDING'),0::bigint,count(*) FILTER(WHERE upper(status)='CLAIMED'),count(*) FILTER(WHERE upper(status)='DELIVERED'),count(*) FILTER(WHERE upper(status)='CANCELLED') FROM balloon_tasks WHERE contest_id=$1").bind(contest).fetch_one(database).await.map_err(|e| AppError::internal("load balloon presentation metrics", e))?;
+    let balloon = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64)>(
+        r#"
+        SELECT count(*),
+               count(*) FILTER(WHERE is_first_blood),
+               count(*) FILTER(WHERE upper(status)='PENDING'),
+               0::bigint,
+               count(*) FILTER(WHERE upper(status)='CLAIMED'),
+               count(*) FILTER(WHERE upper(status)='DELIVERED'),
+               count(*) FILTER(WHERE upper(status)='CANCELLED')
+        FROM balloon_tasks
+        WHERE contest_id=$1
+        "#,
+    )
+    .bind(contest)
+    .fetch_one(database)
+    .await
+    .map_err(|e| AppError::internal("load balloon presentation metrics", e))?;
     let colors = sqlx::query_as("SELECT coalesce(color,'未设置') AS name,count(*) AS total FROM balloon_tasks WHERE contest_id=$1 AND upper(status)<>'CANCELLED' GROUP BY color ORDER BY total DESC,name").bind(contest).fetch_all(database).await.map_err(|e| AppError::internal("load balloon colors", e))?;
     let submission = sqlx::query_as::<_, (i64,i64,i64)>("SELECT count(*),count(*) FILTER(WHERE status IN('AC','ACCEPTED')),count(*) FILTER(WHERE status IN('PENDING','JUDGING')) FROM submissions WHERE contest_id=$1").bind(contest).fetch_one(database).await.map_err(|e| AppError::internal("load submission presentation metrics", e))?;
     let languages = sqlx::query_as("SELECT language AS name,count(*) AS total FROM submissions WHERE contest_id=$1 GROUP BY language ORDER BY total DESC,name").bind(contest).fetch_all(database).await.map_err(|e| AppError::internal("load submission languages", e))?;
