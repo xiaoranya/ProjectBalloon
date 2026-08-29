@@ -21,6 +21,8 @@ use tokio::{sync::watch, time::timeout};
 use tracing::{error, info};
 use uuid::Uuid;
 
+use crate::rabbit::RabbitWorkerError;
+
 struct WorkerActivityState {
     capacity: u16,
     active_tasks: AtomicU16,
@@ -127,15 +129,17 @@ impl WorkerHeartbeatPublisher {
         info!(worker_id = %self.worker_id, "Worker heartbeat publisher stopped");
     }
 
-    async fn publish_session(&self, mut shutdown: watch::Receiver<bool>) -> Result<(), String> {
+    async fn publish_session(
+        &self,
+        mut shutdown: watch::Receiver<bool>,
+    ) -> Result<(), RabbitWorkerError> {
         let connection = timeout(
             self.request_timeout,
             Connection::connect(&self.uri, ConnectionProperties::default()),
         )
         .await
-        .map_err(|_| "RabbitMQ heartbeat publisher connection timed out".to_owned())?
-        .map_err(|error| error.to_string())?;
-        let channel = connection.create_channel().await.map_err(|error| error.to_string())?;
+        .map_err(|_| RabbitWorkerError::Timeout("heartbeat publisher connection"))??;
+        let channel = connection.create_channel().await?;
         channel
             .exchange_declare(
                 JUDGE_HEARTBEATS_EXCHANGE.into(),
@@ -147,12 +151,8 @@ impl WorkerHeartbeatPublisher {
                 },
                 FieldTable::default(),
             )
-            .await
-            .map_err(|error| error.to_string())?;
-        channel
-            .confirm_select(ConfirmSelectOptions::default())
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
+        channel.confirm_select(ConfirmSelectOptions::default()).await?;
         let mut ticker = tokio::time::interval(self.interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
@@ -165,7 +165,7 @@ impl WorkerHeartbeatPublisher {
         }
     }
 
-    async fn publish(&self, channel: &lapin::Channel) -> Result<(), String> {
+    async fn publish(&self, channel: &lapin::Channel) -> Result<(), RabbitWorkerError> {
         let message_id = Uuid::new_v4();
         let heartbeat = WorkerHeartbeat {
             schema_version: WORKER_HEARTBEAT_SCHEMA_VERSION,
@@ -185,8 +185,8 @@ impl WorkerHeartbeatPublisher {
             runtime_versions: self.runtime_versions.clone(),
             sandbox_runtime: self.sandbox_runtime.clone(),
         };
-        heartbeat.validate().map_err(|error| error.to_string())?;
-        let payload = serde_json::to_vec(&heartbeat).map_err(|error| error.to_string())?;
+        heartbeat.validate()?;
+        let payload = serde_json::to_vec(&heartbeat)?;
         let confirm = timeout(
             self.request_timeout,
             channel.basic_publish(
@@ -200,16 +200,14 @@ impl WorkerHeartbeatPublisher {
             ),
         )
         .await
-        .map_err(|_| "RabbitMQ heartbeat publish timed out".to_owned())?
-        .map_err(|error| error.to_string())?;
+        .map_err(|_| RabbitWorkerError::Timeout("heartbeat publish"))??;
         let confirmation = timeout(self.request_timeout, confirm)
             .await
-            .map_err(|_| "RabbitMQ heartbeat confirm timed out".to_owned())?
-            .map_err(|error| error.to_string())?;
+            .map_err(|_| RabbitWorkerError::Timeout("heartbeat confirm"))??;
         if confirmation.is_ack() && confirmation.take_message().is_none() {
             Ok(())
         } else {
-            Err("RabbitMQ rejected or returned the Worker heartbeat".to_owned())
+            Err(RabbitWorkerError::Rejected("heartbeat"))
         }
     }
 }
