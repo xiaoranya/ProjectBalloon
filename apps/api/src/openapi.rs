@@ -303,7 +303,7 @@ mod tests {
     use serde_json::Value;
     use tower::ServiceExt;
 
-    use super::{document, swagger_ui};
+    use crate::openapi::{document, swagger_ui};
 
     const EXPECTED_OPERATIONS: &[(&str, &str)] = &[
         ("/livez", "get"),

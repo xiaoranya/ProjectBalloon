@@ -106,7 +106,7 @@ pub async fn bootstrap_super_admin(
 
 #[cfg(test)]
 mod tests {
-    use super::BootstrapAdmin;
+    use crate::bootstrap::BootstrapAdmin;
 
     #[test]
     fn input_is_normalized() {

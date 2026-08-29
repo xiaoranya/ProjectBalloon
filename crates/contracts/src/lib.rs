@@ -442,7 +442,7 @@ mod tests {
     use serde_json::json;
     use uuid::Uuid;
 
-    use super::{
+    use crate::{
         JUDGE_RESULT_SCHEMA_VERSION, JUDGE_TASK_SCHEMA_VERSION, JudgeResult, JudgeRunResult,
         JudgeTask, JudgeVerdict, REALTIME_EVENT_SCHEMA_VERSION, RealtimeEvent, RealtimeScope,
         WORKER_HEARTBEAT_SCHEMA_VERSION, WorkerHeartbeat,

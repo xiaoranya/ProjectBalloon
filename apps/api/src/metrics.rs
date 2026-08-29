@@ -162,7 +162,7 @@ pub fn routes() -> axum::Router<crate::state::AppState> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MetricsSnapshot, render};
+    use crate::metrics::{MetricsSnapshot, render};
 
     #[test]
     fn prometheus_output_has_help_type_and_values() {

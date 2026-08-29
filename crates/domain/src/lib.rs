@@ -163,7 +163,7 @@ pub enum ContestExtensionError {
 
 #[cfg(test)]
 mod tests {
-    use super::{
+    use crate::{
         ContestExtensionError, ContestSchedule, ContestState, ContestTransitionError,
         SubmissionState, validate_contest_end_extension, validate_contest_transition,
     };

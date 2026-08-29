@@ -29,7 +29,7 @@ pub fn checked_offset(page: u32, size: u32) -> Result<i64, crate::error::AppErro
 
 #[cfg(test)]
 mod tests {
-    use super::{PageResponse, checked_offset};
+    use crate::pagination::{PageResponse, checked_offset};
 
     #[test]
     fn zero_page_size_does_not_panic() {
