@@ -105,7 +105,13 @@ async fn accepted_result_completes_required_training_enrollment(pool: PgPool) {
     .await
     .expect("training enrollment");
     let submission_id = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO submissions(contest_id,problem_id,team_id,language,source_object_key,source_size_bytes,source_sha256,status,submission_scope,participant_user_id,training_enrollment_id) VALUES(NULL,$1,NULL,'cpp','practice-training-source',10,$2,'PENDING','PRACTICE',$3,$4) RETURNING id",
+        r#"
+        INSERT INTO submissions
+            (contest_id,problem_id,team_id,language,source_object_key,source_size_bytes,
+             source_sha256,status,submission_scope,participant_user_id,training_enrollment_id)
+        VALUES(NULL,$1,NULL,'cpp','practice-training-source',10,$2,'PENDING','PRACTICE',$3,$4)
+        RETURNING id
+        "#,
     )
     .bind(problem_id)
     .bind("b".repeat(64))
