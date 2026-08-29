@@ -14,7 +14,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../api/training', () => ({ trainingApi: mocks }));
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }));
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {} }),
+  useRouter: () => ({ push: vi.fn() }),
+}));
 vi.mock('../components/CodeEditor.vue', () => ({
   default: {
     name: 'CodeEditor',

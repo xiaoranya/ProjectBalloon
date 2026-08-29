@@ -27,6 +27,19 @@ export interface UpdateProblemPayload extends Partial<ProblemPayload> {
   expectedVersion: number;
 }
 
+export interface ProblemPublication {
+  visibility: 'PUBLIC' | 'PRIVATE';
+  difficulty: number | null;
+  tags: string[];
+  publishedAt: string | null;
+}
+
+export interface PublicationPayload {
+  visibility: 'PUBLIC' | 'PRIVATE';
+  difficulty?: number | null;
+  tags?: string[];
+}
+
 const MAX_PAGE_SIZE = 100;
 
 function boundedPageSize(size: number): number {
@@ -65,6 +78,15 @@ export const adminProblemApi = {
   },
   deleteProblem(problemId: number) {
     return apiRequest<void>(`/api/problems/${problemId}`, { method: 'DELETE' });
+  },
+  getPublication(problemId: number) {
+    return apiRequest<ProblemPublication>(`/api/admin/problems/${problemId}/publication`);
+  },
+  updatePublication(problemId: number, payload: PublicationPayload) {
+    return apiRequest<ProblemPublication>(`/api/admin/problems/${problemId}/publication`, {
+      method: 'PUT',
+      body: payload,
+    });
   },
   upsertStatement(problemId: number, langCode: string, body: string) {
     return mutateThenRefresh(

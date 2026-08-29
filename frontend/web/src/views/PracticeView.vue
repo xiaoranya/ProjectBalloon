@@ -7,7 +7,10 @@
       <nav>
         <RouterLink to="/problem-bank">{{ t('题库') }}</RouterLink
         ><RouterLink to="/practice/virtual">{{ t('虚拟比赛') }}</RouterLink
-        ><RouterLink to="/profile">{{ t('账户') }}</RouterLink>
+        ><RouterLink to="/profile">{{ t('账户') }}</RouterLink
+        ><button class="logout-link" type="button" @click="logout">
+          {{ t('退出登录') }}
+        </button>
       </nav></el-header
     >
     <el-main class="page-body">
@@ -127,7 +130,9 @@
               ></template
             ></ElTableColumn
           >
-          <ElTableColumn prop="submittedAt" :label="t('提交时间')" width="190" />
+          <ElTableColumn :label="t('提交时间')" width="190">
+            <template #default="{ row }">{{ formatDateTime(row.submittedAt) }}</template>
+          </ElTableColumn>
         </ElTable>
       </section>
       <ElDrawer
@@ -178,12 +183,14 @@
 </template>
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Star } from '@element-plus/icons-vue';
 import CodeEditor from '../components/CodeEditor.vue';
 import { getErrorMessage } from '../api/client';
+import { formatDateTime } from '../utils/format';
 import { useI18n } from '../i18n';
+import { useSession } from '../auth/session';
 import {
   trainingApi,
   type BankProblem,
@@ -193,6 +200,8 @@ import {
   type PracticeSubmissionDetail,
 } from '../api/training';
 const route = useRoute(),
+  router = useRouter(),
+  session = useSession(),
   virtualSessionId = Number(route.query.virtualSessionId) || undefined,
   initialProblemId = Number(route.query.problemId) || undefined;
 const problems = ref<BankProblem[]>([]),
@@ -220,6 +229,11 @@ const languages = computed(() => {
 });
 function status(id: number) {
   return progress.value.find((item) => item.problemId === id);
+}
+async function logout() {
+  await session.logout();
+  ElMessage.success(t('已退出登录'));
+  await router.push('/login');
 }
 const solvedCount = computed(() => progress.value.filter((item) => item.solved).length),
   attemptCount = computed(() => progress.value.reduce((total, item) => total + item.attempts, 0));
@@ -347,6 +361,30 @@ h2 {
 }
 .page-head p {
   color: #606266;
+}
+.page-head nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 14px;
+}
+.page-head nav a {
+  color: #337ecc;
+  text-decoration: none;
+}
+.page-head nav a.router-link-active {
+  font-weight: 600;
+}
+.logout-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #f56c6c;
+  font-size: 14px;
+  cursor: pointer;
+}
+.logout-link:hover {
+  text-decoration: underline;
 }
 .practice-stats {
   display: flex;

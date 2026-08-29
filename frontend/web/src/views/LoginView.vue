@@ -95,6 +95,9 @@
             {{ t('进入比赛') }}
           </ElButton>
         </ElForm>
+        <div class="staff-entry">
+          <RouterLink to="/admin/login">{{ t('工作人员登录') }}</RouterLink>
+        </div>
       </ElCard>
     </el-main>
   </el-container>
@@ -184,5 +187,19 @@ async function submitPairing() {
 .login-mode {
   width: 100%;
   margin-bottom: 22px;
+}
+
+.staff-entry {
+  margin-top: 16px;
+  font-size: 14px;
+  text-align: center;
+}
+.staff-entry a {
+  color: #606266;
+  text-decoration: none;
+}
+.staff-entry a:hover {
+  color: #337ecc;
+  text-decoration: underline;
 }
 </style>

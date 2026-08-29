@@ -5,8 +5,8 @@ use axum::{
 use sqlx::PgPool;
 
 use super::model::{
-    BankProblem, BankProblemRow, BankQuery, PublicationRequest, TrainingItem, TrainingSet,
-    validate_page,
+    BankProblem, BankProblemRow, BankQuery, ProblemPublication, PublicationRequest, TrainingItem,
+    TrainingSet, validate_page,
 };
 use crate::{
     error::AppError, features::auth::SuperAdminContext, features::problems::render_safe_statement,
@@ -88,6 +88,44 @@ pub async fn update_publication(
         .map_err(|e| AppError::internal("commit problem publication update", e))?;
     let _ = context;
     Ok(Json(problem))
+}
+
+#[utoipa::path(get, path = "/api/admin/problems/{problem_id}/publication", operation_id = "getProblemPublication", tag = "training", params(("problem_id" = i64, Path)), responses((status = 200, body = ProblemPublication), (status = 404, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
+pub async fn get_publication(
+    context: SuperAdminContext,
+    State(state): State<AppState>,
+    Path(problem_id): Path<i64>,
+) -> Result<Json<ProblemPublication>, AppError> {
+    let _ = context;
+    if problem_id <= 0 {
+        return Err(AppError::not_found("PROBLEM_NOT_FOUND", "Problem not found"));
+    }
+    let row = sqlx::query_as::<
+        _,
+        (Option<String>, Option<i16>, Option<serde_json::Value>, Option<time::OffsetDateTime>),
+    >(
+        "SELECT b.visibility,b.difficulty,b.tags::jsonb,b.published_at
+         FROM problems p
+         LEFT JOIN problem_bank_entries b ON b.problem_id=p.id
+         WHERE p.id=$1 AND p.deleted_at IS NULL",
+    )
+    .bind(problem_id)
+    .fetch_optional(state.database())
+    .await
+    .map_err(|e| AppError::internal("load problem publication", e))?
+    .ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem not found"))?;
+    let (visibility, difficulty, tags, published_at) = row;
+    let tags = tags
+        .map(serde_json::from_value::<Vec<String>>)
+        .transpose()
+        .map_err(|e| AppError::internal("decode problem publication tags", e))?
+        .unwrap_or_default();
+    Ok(Json(ProblemPublication {
+        visibility: visibility.unwrap_or_else(|| "PRIVATE".to_owned()),
+        difficulty,
+        tags,
+        published_at,
+    }))
 }
 
 pub(super) async fn team_for_user(state: &AppState, user_id: i64) -> Result<Option<i64>, AppError> {

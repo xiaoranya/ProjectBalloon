@@ -58,6 +58,9 @@
             @error-message="errorMessage = $event"
           />
         </ElTabPane>
+        <ElTabPane :label="t('发布')" name="publication" :disabled="isNew" lazy>
+          <PublicationPanel v-if="problem" :problem-id="problem.id" />
+        </ElTabPane>
       </ElTabs>
     </el-main>
   </el-container>
@@ -69,6 +72,7 @@ import { ArrowLeft } from '@element-plus/icons-vue';
 import { useRoute, useRouter } from 'vue-router';
 import AttachmentsTab from '../components/problem-editor/AttachmentsTab.vue';
 import BasicInfoTab from '../components/problem-editor/BasicInfoTab.vue';
+import PublicationPanel from '../components/problem-editor/PublicationPanel.vue';
 import StatementsTab from '../components/problem-editor/StatementsTab.vue';
 import TestdataTab from '../components/problem-editor/TestdataTab.vue';
 import { adminProblemApi } from '../api/admin-problems';

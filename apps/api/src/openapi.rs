@@ -92,6 +92,7 @@ const SWAGGER_UI_PATH: &str = "/api/docs";
         submissions::handlers::rejudge,
         training::list_bank,
         training::get_bank,
+        training::get_publication,
         training::update_publication,
         training::create_set,
         training::update_set,
@@ -324,7 +325,7 @@ mod tests {
             })
             .sum::<usize>();
         // Update this snapshot count when a documented endpoint is intentionally added or removed.
-        assert_eq!(operation_count, 202);
+        assert_eq!(operation_count, 203);
         assert!(document["paths"]["/livez"]["get"].is_object());
         assert!(document["paths"]["/api/health"]["get"].is_object());
         assert!(document["paths"]["/metrics"]["get"].is_object());

@@ -161,6 +161,7 @@ pub async fn referenced_object_keys(
              WHERE output_bucket = $1 AND output_object_key IS NOT NULL
                AND status = 'SUCCEEDED' AND expires_at > now()",
             )
+            .bind(bucket)
             .fetch_all(database)
             .await?
         } else if bucket == storage.source_bucket() {
