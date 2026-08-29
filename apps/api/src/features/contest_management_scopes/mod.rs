@@ -13,3 +13,6 @@ pub fn routes() -> axum::Router<crate::state::AppState> {
 }
 
 use axum::routing::{get, put};
+
+#[cfg(test)]
+mod tests;

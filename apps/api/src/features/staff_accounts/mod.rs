@@ -14,3 +14,6 @@ pub fn routes() -> axum::Router<crate::state::AppState> {
 }
 
 use axum::routing::{get, patch, post};
+
+#[cfg(test)]
+mod tests;
