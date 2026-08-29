@@ -45,6 +45,32 @@ impl TaskFailure {
     }
 }
 
+/// Transport- and protocol-level failures of the worker's AMQP sessions.
+/// Every variant is logged by the session loops and triggers a reconnect;
+/// none of them are Judge task failures, which travel as [`TaskFailure`]
+/// payloads routed through the broker instead.
+#[derive(Debug, thiserror::Error)]
+pub enum RabbitWorkerError {
+    #[error("RabbitMQ {0} timed out")]
+    Timeout(&'static str),
+    #[error(transparent)]
+    Amqp(#[from] lapin::Error),
+    #[error(transparent)]
+    Serialization(#[from] serde_json::Error),
+    #[error(transparent)]
+    Contract(#[from] project_balloon_contracts::ContractError),
+    #[error("RabbitMQ cancelled the Judge task consumer")]
+    ConsumerCancelled,
+    #[error("timed out draining in-flight Judge tasks")]
+    DrainTimeout,
+    #[error("Judge task execution panicked: {0}")]
+    TaskPanicked(String),
+    #[error("RabbitMQ rejected or returned the Worker {0}")]
+    Rejected(&'static str),
+    #[error("Judge handler returned mismatched immutable identifiers")]
+    MismatchedResultIdentifiers,
+}
+
 #[async_trait]
 pub trait JudgeTaskHandler: Send + Sync {
     async fn handle(&self, task: &JudgeTask, retry_count: u32) -> Result<JudgeResult, TaskFailure>;
@@ -110,24 +136,20 @@ impl RabbitJudgeWorker {
         info!(worker_id = %self.worker_id, "Judge task consumer stopped");
     }
 
-    async fn consume_session(&self, mut shutdown: watch::Receiver<bool>) -> Result<(), String> {
+    async fn consume_session(
+        &self,
+        mut shutdown: watch::Receiver<bool>,
+    ) -> Result<(), RabbitWorkerError> {
         let connection = timeout(
             self.request_timeout,
             Connection::connect(&self.uri, ConnectionProperties::default()),
         )
         .await
-        .map_err(|_| "RabbitMQ worker connection timed out".to_owned())?
-        .map_err(|error| error.to_string())?;
-        let channel = connection.create_channel().await.map_err(|error| error.to_string())?;
+        .map_err(|_| RabbitWorkerError::Timeout("worker connection"))??;
+        let channel = connection.create_channel().await?;
         verify_topology(&channel, &self.task_queue).await?;
-        channel
-            .confirm_select(ConfirmSelectOptions::default())
-            .await
-            .map_err(|error| error.to_string())?;
-        channel
-            .basic_qos(self.prefetch, BasicQosOptions::default())
-            .await
-            .map_err(|error| error.to_string())?;
+        channel.confirm_select(ConfirmSelectOptions::default()).await?;
+        channel.basic_qos(self.prefetch, BasicQosOptions::default()).await?;
         let mut consumer = channel
             .basic_consume(
                 self.task_queue.clone().into(),
@@ -135,16 +157,15 @@ impl RabbitJudgeWorker {
                 BasicConsumeOptions::default(),
                 FieldTable::default(),
             )
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
         let mut in_flight = JoinSet::new();
         loop {
             tokio::select! {
                 delivery = consumer.next(), if in_flight.len() < usize::from(self.prefetch) => {
                     let Some(delivery) = delivery else {
-                        return Err("RabbitMQ cancelled the Judge task consumer".to_owned());
+                        return Err(RabbitWorkerError::ConsumerCancelled);
                     };
-                    let delivery = delivery.map_err(|error| error.to_string())?;
+                    let delivery = delivery?;
                     let channel = channel.clone();
                     let handler = self.handler.clone();
                     let activity = self.activity.clone();
@@ -163,14 +184,14 @@ impl RabbitJudgeWorker {
                 }
                 joined = in_flight.join_next(), if !in_flight.is_empty() => {
                     let Some(joined) = joined else { continue };
-                    joined.map_err(|error| format!("Judge task execution panicked: {error}"))??;
+                    joined.map_err(|error| RabbitWorkerError::TaskPanicked(error.to_string()))??;
                 }
                 changed = shutdown.changed() => {
                     if changed.is_err() || *shutdown.borrow() {
                         info!(active_tasks = in_flight.len(), "stopped accepting Judge tasks; draining in-flight work");
                         return timeout(Duration::from_secs(60), drain_in_flight(&mut in_flight))
                             .await
-                            .map_err(|_| "timed out draining in-flight Judge tasks".to_owned())?;
+                            .map_err(|_| RabbitWorkerError::DrainTimeout)?;
                     }
                 }
             }
@@ -178,10 +199,12 @@ impl RabbitJudgeWorker {
     }
 }
 
-async fn drain_in_flight(in_flight: &mut JoinSet<Result<(), String>>) -> Result<(), String> {
+async fn drain_in_flight(
+    in_flight: &mut JoinSet<Result<(), RabbitWorkerError>>,
+) -> Result<(), RabbitWorkerError> {
     let mut first_error = None;
     while let Some(joined) = in_flight.join_next().await {
-        let result = joined.map_err(|error| format!("Judge task execution panicked: {error}"))?;
+        let result = joined.map_err(|error| RabbitWorkerError::TaskPanicked(error.to_string()))?;
         if let Err(error) = result
             && first_error.is_none()
         {
@@ -191,7 +214,7 @@ async fn drain_in_flight(in_flight: &mut JoinSet<Result<(), String>>) -> Result<
     first_error.map_or(Ok(()), Err)
 }
 
-async fn verify_topology(channel: &Channel, task_queue: &str) -> Result<(), String> {
+async fn verify_topology(channel: &Channel, task_queue: &str) -> Result<(), RabbitWorkerError> {
     let passive_exchange = ExchangeDeclareOptions {
         passive: true,
         durable: true,
@@ -207,8 +230,7 @@ async fn verify_topology(channel: &Channel, task_queue: &str) -> Result<(), Stri
                 passive_exchange,
                 FieldTable::default(),
             )
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
     }
     for queue in [task_queue, JUDGE_RETRY_QUEUE, JUDGE_DEAD_QUEUE, JUDGE_RESULTS_QUEUE] {
         channel
@@ -221,8 +243,7 @@ async fn verify_topology(channel: &Channel, task_queue: &str) -> Result<(), Stri
                 },
                 FieldTable::default(),
             )
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
     }
     Ok(())
 }
@@ -234,7 +255,7 @@ async fn process_delivery(
     activity: &WorkerActivity,
     task_queue: &str,
     delivery: &Delivery,
-) -> Result<(), String> {
+) -> Result<(), RabbitWorkerError> {
     let task = match serde_json::from_slice::<JudgeTask>(&delivery.data) {
         Ok(task) => task,
         Err(error) => {
@@ -273,9 +294,15 @@ async fn process_delivery(
     match handled {
         Ok(result) => {
             if let Err(reason) = validate_handler_result(&task, &result) {
-                return dead_letter_and_ack(channel, request_timeout, delivery, &reason).await;
+                return dead_letter_and_ack(
+                    channel,
+                    request_timeout,
+                    delivery,
+                    &reason.to_string(),
+                )
+                .await;
             }
-            let payload = serde_json::to_vec(&result).map_err(|error| error.to_string())?;
+            let payload = serde_json::to_vec(&result)?;
             if let Err(reason) = publish_persistent(
                 channel,
                 request_timeout,
@@ -290,7 +317,7 @@ async fn process_delivery(
                 reject_for_retry(delivery).await?;
                 return Err(reason);
             }
-            delivery.ack(BasicAckOptions::default()).await.map_err(|error| error.to_string())?;
+            delivery.ack(BasicAckOptions::default()).await?;
             info!(
                 judgement_id = %result.judgement_id,
                 verdict = result.verdict.as_str(),
@@ -307,10 +334,7 @@ async fn process_delivery(
                 reason = %failure.reason,
                 "Judge task scheduled for broker retry"
             );
-            delivery
-                .nack(BasicNackOptions { multiple: false, requeue: false })
-                .await
-                .map_err(|error| error.to_string())?;
+            delivery.nack(BasicNackOptions { multiple: false, requeue: false }).await?;
             Ok(())
         }
     }
@@ -353,13 +377,16 @@ fn retry_count(delivery: &Delivery, task_queue: &str) -> u32 {
         .sum()
 }
 
-fn validate_handler_result(task: &JudgeTask, result: &JudgeResult) -> Result<(), String> {
-    result.validate().map_err(|error| error.to_string())?;
+fn validate_handler_result(
+    task: &JudgeTask,
+    result: &JudgeResult,
+) -> Result<(), RabbitWorkerError> {
+    result.validate()?;
     if result.judgement_id != task.judgement_id
         || result.submission_id != task.submission_id
         || result.message_id != task.judgement_id
     {
-        return Err("Judge handler returned mismatched immutable identifiers".to_owned());
+        return Err(RabbitWorkerError::MismatchedResultIdentifiers);
     }
     Ok(())
 }
@@ -369,7 +396,7 @@ async fn dead_letter_and_ack(
     request_timeout: Duration,
     delivery: &Delivery,
     reason: &str,
-) -> Result<(), String> {
+) -> Result<(), RabbitWorkerError> {
     let safe_reason: String = reason.chars().take(1_000).collect();
     let mut headers = FieldTable::default();
     headers.insert(
@@ -396,7 +423,7 @@ async fn dead_letter_and_ack(
         reject_for_retry(delivery).await?;
         return Err(error);
     }
-    delivery.ack(BasicAckOptions::default()).await.map_err(|error| error.to_string())?;
+    delivery.ack(BasicAckOptions::default()).await?;
     warn!(%safe_reason, "Judge task moved to dead-letter queue");
     Ok(())
 }
@@ -409,7 +436,7 @@ async fn publish_persistent(
     message_id: uuid::Uuid,
     payload: &[u8],
     mut headers: FieldTable,
-) -> Result<(), String> {
+) -> Result<(), RabbitWorkerError> {
     let message_id = message_id.to_string();
     headers.insert(
         ShortString::from("messageId"),
@@ -431,21 +458,19 @@ async fn publish_persistent(
         ),
     )
     .await
-    .map_err(|_| "RabbitMQ worker publish timed out".to_owned())?
-    .map_err(|error| error.to_string())?;
+    .map_err(|_| RabbitWorkerError::Timeout("worker publish"))??;
     let confirmation = timeout(request_timeout, confirm)
         .await
-        .map_err(|_| "RabbitMQ worker confirm timed out".to_owned())?
-        .map_err(|error| error.to_string())?;
+        .map_err(|_| RabbitWorkerError::Timeout("worker confirm"))??;
     if confirmation.is_ack() && confirmation.take_message().is_none() {
         Ok(())
     } else {
-        Err("RabbitMQ rejected or returned the Worker publication".to_owned())
+        Err(RabbitWorkerError::Rejected("publication"))
     }
 }
 
-async fn reject_for_retry(delivery: &Delivery) -> Result<(), String> {
-    delivery.nack(retry_nack_options()).await.map_err(|error| error.to_string())?;
+async fn reject_for_retry(delivery: &Delivery) -> Result<(), RabbitWorkerError> {
+    delivery.nack(retry_nack_options()).await?;
     Ok(())
 }
 
@@ -468,7 +493,7 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{retry_count, retry_nack_options, validate_handler_result};
+    use crate::rabbit::{retry_count, retry_nack_options, validate_handler_result};
 
     #[test]
     fn retry_rejection_enters_dead_letter_flow() {

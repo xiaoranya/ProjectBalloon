@@ -10,10 +10,10 @@ use uuid::Uuid;
 
 use crate::object_storage::ObjectStorageHandle;
 
-use super::{
-    ClaimedCleanup, ORPHAN_SCAN_GRACE, ORPHAN_SCAN_INTERVAL, ObjectStorageCleanupConfig,
-    ObjectStorageCleanupRunner, SOURCE_PURGE_INTERVAL, referenced_object_keys,
-    scan_object_integrity,
+use crate::object_storage_cleanup::{
+    ClaimedCleanup, IntegrityScanError, ORPHAN_SCAN_GRACE, ORPHAN_SCAN_INTERVAL,
+    ObjectStorageCleanupConfig, ObjectStorageCleanupRunner, SOURCE_PURGE_INTERVAL,
+    referenced_object_keys, scan_object_integrity,
 };
 
 impl ObjectStorageCleanupRunner {
@@ -67,7 +67,7 @@ impl ObjectStorageCleanupRunner {
         info!(instance_id = %self.instance_id, "object-storage cleanup runner stopped");
     }
 
-    pub async fn scan_orphans_once(&self) -> Result<usize, sqlx::Error> {
+    pub async fn scan_orphans_once(&self) -> Result<usize, IntegrityScanError> {
         let mut total = 0;
         let mut scanned = HashSet::new();
         for bucket in [self.storage.problem_bucket(), self.storage.source_bucket()] {

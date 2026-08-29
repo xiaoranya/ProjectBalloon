@@ -16,6 +16,7 @@ use crate::{
     features::auth::{ContestManagerContext, model::AuthUser},
     state::AppState,
 };
+use axum::routing::get;
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -529,6 +530,19 @@ pub(crate) async fn score_judgement(
         .execute(&mut **transaction)
         .await?;
     Ok(score)
+}
+
+/// Routes owned by this feature, assembled by the root router.
+pub fn routes() -> axum::Router<crate::state::AppState> {
+    axum::Router::new()
+        .route(
+            "/api/admin/contests/{contest_id}/scoring-policy",
+            get(get_policy).put(update_policy),
+        )
+        .route(
+            "/api/admin/contests/{contest_id}/problems/{problem_id}/subtasks",
+            get(get_subtasks).put(replace_subtasks),
+        )
 }
 
 #[cfg(test)]

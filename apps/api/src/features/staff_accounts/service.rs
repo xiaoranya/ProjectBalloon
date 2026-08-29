@@ -8,7 +8,7 @@ use crate::{
     pagination::PageResponse,
 };
 
-use super::model::{
+use crate::features::staff_accounts::model::{
     PageQuery, StaffAccountResponse, StaffAccountRow, ValidatedCreate, ValidatedUpdate,
 };
 
@@ -413,10 +413,10 @@ mod tests {
 
     use sqlx::PgPool;
 
-    use super::StaffAccountService;
     use crate::features::staff_accounts::model::{
         CreateStaffAccountRequest, UpdateStaffAccountRequest,
     };
+    use crate::features::staff_accounts::service::StaffAccountService;
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]

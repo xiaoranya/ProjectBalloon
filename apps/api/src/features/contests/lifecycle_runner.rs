@@ -127,7 +127,26 @@ async fn transition_due(
 }
 
 async fn record_freezes(transaction: &mut Transaction<'_, Postgres>) -> Result<u64, AppError> {
-    let due = sqlx::query_as::<_, (i64, time::OffsetDateTime, String)>("SELECT c.id,c.freeze_at,c.status FROM contests c WHERE c.deleted_at IS NULL AND c.freeze_at IS NOT NULL AND c.freeze_at<=now() AND c.status IN('RUNNING','PAUSED','ENDED','ARCHIVED') AND NOT EXISTS(SELECT 1 FROM contest_lifecycle_milestones m WHERE m.contest_id=c.id AND m.milestone='FROZEN') ORDER BY c.freeze_at,c.id FOR UPDATE OF c SKIP LOCKED LIMIT 100").fetch_all(&mut **transaction).await.map_err(|error| AppError::internal("load due contest freezes", error))?;
+    let due = sqlx::query_as::<_, (i64, time::OffsetDateTime, String)>(
+        r#"
+        SELECT c.id,c.freeze_at,c.status
+        FROM contests c
+        WHERE c.deleted_at IS NULL
+            AND c.freeze_at IS NOT NULL
+            AND c.freeze_at<=now()
+            AND c.status IN('RUNNING','PAUSED','ENDED','ARCHIVED')
+            AND NOT EXISTS(
+                SELECT 1 FROM contest_lifecycle_milestones m
+                WHERE m.contest_id=c.id AND m.milestone='FROZEN'
+            )
+        ORDER BY c.freeze_at,c.id
+        FOR UPDATE OF c SKIP LOCKED
+        LIMIT 100
+        "#,
+    )
+    .fetch_all(&mut **transaction)
+    .await
+    .map_err(|error| AppError::internal("load due contest freezes", error))?;
     for (contest_id, scheduled_at, status) in &due {
         insert_milestone(transaction, *contest_id, "FROZEN", *scheduled_at, status, status).await?;
         automatic_audit(

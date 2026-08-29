@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::{error::AppError, features::auth::model::AuthUser};
 
-use super::model::{AnnouncementResponse, CreateRequest, UpdateRequest};
+use crate::features::announcements::model::{AnnouncementResponse, CreateRequest, UpdateRequest};
 
 pub struct AnnouncementService {
     database: PgPool,
@@ -282,7 +282,7 @@ impl AnnouncementService {
             require_manage_pool(&self.database, contest_id, actor).await?;
         }
         sqlx::query_as::<_, AnnouncementResponse>(safe_sql!(
-            "{SELECT_COLUMNS} WHERE announcement.contest_id = $1 AND (announcement.status = 'PUBLISHED' OR $2) ORDER BY announcement.pinned DESC, announcement.published_at DESC NULLS LAST, announcement.id DESC LIMIT 1000"
+            "{ANNOUNCEMENT_SQL} WHERE announcement.contest_id = $1 AND (announcement.status = 'PUBLISHED' OR $2) ORDER BY announcement.pinned DESC, announcement.published_at DESC NULLS LAST, announcement.id DESC LIMIT 1000"
         )).bind(contest_id).bind(include_withdrawn).fetch_all(&self.database).await
             .map_err(|error| AppError::internal("list announcements", error))
     }
@@ -301,7 +301,7 @@ impl AnnouncementService {
     }
 }
 
-const SELECT_COLUMNS: &str = r#"
+const ANNOUNCEMENT_SQL: &str = r#"
     SELECT announcement.id, announcement.contest_id, announcement.title, announcement.body,
            announcement.pinned, announcement.status,
            announcement.created_by AS created_by_user_id, announcement.published_at,
@@ -317,7 +317,7 @@ pub(crate) async fn load(database: &PgPool, id: i64) -> Result<AnnouncementRespo
         return Err(not_found());
     }
     sqlx::query_as::<_, AnnouncementResponse>(safe_sql!(
-        "{SELECT_COLUMNS} WHERE announcement.id = $1"
+        "{ANNOUNCEMENT_SQL} WHERE announcement.id = $1"
     ))
     .bind(id)
     .fetch_optional(database)

@@ -3,9 +3,11 @@ use std::net::{IpAddr, Ipv4Addr};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 
-use super::plan::build_states;
-use super::{AutoPlayRequest, CreateRequest, ResolverAutoRunner, ResolverService};
 use crate::features::auth::model::{AuthUser, UserType};
+use crate::features::resolver::plan::build_states;
+use crate::features::resolver::{
+    AutoPlayRequest, CreateRequest, ResolverAutoRunner, ResolverService,
+};
 use crate::features::scoreboard::{
     ScoreboardCell, ScoreboardProblem, ScoreboardResponse, ScoreboardRow,
 };

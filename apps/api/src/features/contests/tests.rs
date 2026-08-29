@@ -1,9 +1,9 @@
-use super::model::{
+use crate::features::auth::model::{AuthUser, UserType};
+use crate::features::contests::model::{
     ContestSchedule, ContestStatus, ContestVisibility, ValidatedContestClone,
     ValidatedCreateContest,
 };
-use super::service::ContestService;
-use crate::features::auth::model::{AuthUser, UserType};
+use crate::features::contests::service::ContestService;
 use sqlx::PgPool;
 use std::net::{IpAddr, Ipv4Addr};
 use time::{Duration, OffsetDateTime};

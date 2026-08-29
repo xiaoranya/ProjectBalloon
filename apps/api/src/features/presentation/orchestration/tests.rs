@@ -2,8 +2,10 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use sqlx::PgPool;
 
-use super::model::{GroupControlRequest, GroupRequest, PlaylistItemRequest, PlaylistRequest};
-use super::service::OrchestrationService;
+use crate::features::presentation::orchestration::model::{
+    GroupControlRequest, GroupRequest, PlaylistItemRequest, PlaylistRequest,
+};
+use crate::features::presentation::orchestration::service::OrchestrationService;
 use crate::features::{
     auth::model::{AuthUser, UserType},
     presentation::{ConfigRequest, HeartbeatRequest, PresentationService, RegisterRequest},

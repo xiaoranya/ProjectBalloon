@@ -26,7 +26,7 @@ pub fn valid_judge_task() -> JudgeTask {
 
 #[cfg(test)]
 mod tests {
-    use super::valid_judge_task;
+    use crate::valid_judge_task;
 
     #[test]
     fn fixture_is_valid() {

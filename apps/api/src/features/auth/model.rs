@@ -41,7 +41,7 @@ impl FromStr for UserType {
             "STAFF" => Ok(Self::Staff),
             "TEAM" => Ok(Self::Team),
             "INDIVIDUAL" => Ok(Self::Individual),
-            invalid => Err(AppError::internal("invalid users.user_type", invalid)),
+            invalid => Err(AppError::internal_message("invalid users.user_type", invalid)),
         }
     }
 }
@@ -237,7 +237,9 @@ impl UserRow {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChangePasswordRequest, LoginRequest, ProfileRequest, UserType};
+    use crate::features::auth::model::{
+        ChangePasswordRequest, LoginRequest, ProfileRequest, UserType,
+    };
 
     #[test]
     fn user_type_wire_names_are_stable() {

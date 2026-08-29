@@ -8,7 +8,7 @@ use tokio::{sync::watch, time::MissedTickBehavior};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use super::{fanout::RealtimePublisher, hub::RealtimeEnvelope};
+use crate::features::realtime::{fanout::RealtimePublisher, hub::RealtimeEnvelope};
 
 #[derive(Debug, Clone, Copy)]
 pub struct DispatcherConfig {
@@ -246,8 +246,10 @@ mod tests {
 
     use crate::features::realtime::RealtimeHub;
 
-    use super::{DispatcherConfig, OutboxDispatcher, RealtimePublisher};
-    use super::{parse_scope, recovery_attempt_cap, retry_delay};
+    use crate::features::realtime::dispatcher::{
+        DispatcherConfig, OutboxDispatcher, RealtimePublisher,
+    };
+    use crate::features::realtime::dispatcher::{parse_scope, recovery_attempt_cap, retry_delay};
 
     #[test]
     fn retry_delay_is_exponential_and_capped() {

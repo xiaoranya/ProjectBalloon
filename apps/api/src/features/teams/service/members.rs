@@ -3,9 +3,11 @@ use std::net::IpAddr;
 use crate::error::AppError;
 use crate::features::auth::model::AuthUser;
 
-use super::super::model::{TeamMemberResponse, ValidatedTeamMember, ValidatedTeamMemberPatch};
-use super::TeamService;
-use super::helpers::{record_audit, require_manage_team};
+use crate::features::teams::model::{
+    TeamMemberResponse, ValidatedTeamMember, ValidatedTeamMemberPatch,
+};
+use crate::features::teams::service::TeamService;
+use crate::features::teams::service::helpers::{record_audit, require_manage_team};
 
 impl TeamService {
     pub async fn add_member(

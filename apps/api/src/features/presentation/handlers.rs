@@ -8,12 +8,12 @@ use axum::{
 
 use crate::{error::AppError, features::auth::AuthContext, state::AppState};
 
-use super::model::{
+use crate::features::presentation::model::{
     CommandRequest, CommandResponse, ConfigRequest, ConfigResponse, HeartbeatRequest,
     HeartbeatResponse, InstanceResponse, ModeQuery, PresentationTemplateRequest,
     PresentationTemplateResponse, RegisterRequest, RegistrationResponse,
 };
-use super::service::require_presentation_operator;
+use crate::features::presentation::service::require_presentation_operator;
 
 #[utoipa::path(get, path = "/api/presentation-configs/{contest_id}", operation_id = "getPresentationConfig", tag = "presentation", params(("contest_id" = i64, Path), ("mode" = String, Query)), responses((status = 200, body = ConfigResponse), (status = 400, body = crate::error::ApiErrorBody), (status = 401, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
 pub async fn get_config(
@@ -175,7 +175,30 @@ pub async fn create_template(
     require_presentation_operator(context.user())?;
     let Json(request) = payload.map_err(|_| AppError::validation("request", "invalid template"))?;
     validate_template_request(&request)?;
-    let row=sqlx::query_as::<_,PresentationTemplateResponse>("INSERT INTO presentation_templates(name,description,background_color,foreground_color,accent_color,font_family,density,show_clock,show_logo,logo_object_key,created_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id,name,description,background_color,foreground_color,accent_color,font_family,density,show_clock,show_logo,logo_object_key,updated_at").bind(request.name.trim()).bind(request.description.trim()).bind(request.background_color).bind(request.foreground_color).bind(request.accent_color).bind(request.font_family.trim()).bind(request.density).bind(request.show_clock).bind(request.show_logo).bind(request.logo_object_key).bind(context.user().id).fetch_one(state.database()).await.map_err(|e|AppError::internal("create presentation template",e))?;
+    let row = sqlx::query_as::<_, PresentationTemplateResponse>(
+        r#"
+        INSERT INTO presentation_templates
+            (name,description,background_color,foreground_color,accent_color,font_family,
+             density,show_clock,show_logo,logo_object_key,created_by_user_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        RETURNING id,name,description,background_color,foreground_color,accent_color,
+            font_family,density,show_clock,show_logo,logo_object_key,updated_at
+        "#,
+    )
+    .bind(request.name.trim())
+    .bind(request.description.trim())
+    .bind(request.background_color)
+    .bind(request.foreground_color)
+    .bind(request.accent_color)
+    .bind(request.font_family.trim())
+    .bind(request.density)
+    .bind(request.show_clock)
+    .bind(request.show_logo)
+    .bind(request.logo_object_key)
+    .bind(context.user().id)
+    .fetch_one(state.database())
+    .await
+    .map_err(|e| AppError::internal("create presentation template", e))?;
     Ok((StatusCode::CREATED, Json(row)))
 }
 
@@ -190,6 +213,31 @@ pub async fn update_template(
     require_presentation_operator(context.user())?;
     let Json(request) = payload.map_err(|_| AppError::validation("request", "invalid template"))?;
     validate_template_request(&request)?;
-    let row=sqlx::query_as::<_,PresentationTemplateResponse>("UPDATE presentation_templates SET name=$2,description=$3,background_color=$4,foreground_color=$5,accent_color=$6,font_family=$7,density=$8,show_clock=$9,show_logo=$10,logo_object_key=$11,updated_at=now() WHERE id=$1 RETURNING id,name,description,background_color,foreground_color,accent_color,font_family,density,show_clock,show_logo,logo_object_key,updated_at").bind(template_id).bind(request.name.trim()).bind(request.description.trim()).bind(request.background_color).bind(request.foreground_color).bind(request.accent_color).bind(request.font_family.trim()).bind(request.density).bind(request.show_clock).bind(request.show_logo).bind(request.logo_object_key).fetch_optional(state.database()).await.map_err(|e|AppError::internal("update presentation template",e))?.ok_or_else(||AppError::not_found("PRESENTATION_TEMPLATE_NOT_FOUND","Template not found"))?;
+    let row = sqlx::query_as::<_, PresentationTemplateResponse>(
+        r#"
+        UPDATE presentation_templates
+        SET name=$2,description=$3,background_color=$4,foreground_color=$5,accent_color=$6,
+            font_family=$7,density=$8,show_clock=$9,show_logo=$10,logo_object_key=$11,
+            updated_at=now()
+        WHERE id=$1
+        RETURNING id,name,description,background_color,foreground_color,accent_color,
+            font_family,density,show_clock,show_logo,logo_object_key,updated_at
+        "#,
+    )
+    .bind(template_id)
+    .bind(request.name.trim())
+    .bind(request.description.trim())
+    .bind(request.background_color)
+    .bind(request.foreground_color)
+    .bind(request.accent_color)
+    .bind(request.font_family.trim())
+    .bind(request.density)
+    .bind(request.show_clock)
+    .bind(request.show_logo)
+    .bind(request.logo_object_key)
+    .fetch_optional(state.database())
+    .await
+    .map_err(|e| AppError::internal("update presentation template", e))?
+    .ok_or_else(|| AppError::not_found("PRESENTATION_TEMPLATE_NOT_FOUND", "Template not found"))?;
     Ok(Json(row))
 }

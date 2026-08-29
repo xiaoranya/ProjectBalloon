@@ -1,3 +1,4 @@
+use project_balloon_contracts::JudgeVerdict;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -379,6 +380,100 @@ pub struct ValidatedSubmissionListQuery {
     pub offset: i64,
 }
 
+/// The lifecycle state of a submission as persisted in `submissions.status`,
+/// mapped onto the domain state machine in
+/// [`project_balloon_domain::SubmissionState`]. Every Rust-side branch on a
+/// submission status must go through this enum; the bare strings only remain
+/// inside SQL text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubmissionStatus {
+    Pending,
+    Judging,
+    Accepted,
+    WrongAnswer,
+    CompileError,
+    RuntimeError,
+    TimeLimitExceeded,
+    MemoryLimitExceeded,
+    OutputLimitExceeded,
+    SystemError,
+    Cancelled,
+}
+
+impl SubmissionStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "PENDING",
+            Self::Judging => "JUDGING",
+            Self::Accepted => "ACCEPTED",
+            Self::WrongAnswer => "WRONG_ANSWER",
+            Self::CompileError => "COMPILE_ERROR",
+            Self::RuntimeError => "RUNTIME_ERROR",
+            Self::TimeLimitExceeded => "TIME_LIMIT_EXCEEDED",
+            Self::MemoryLimitExceeded => "MEMORY_LIMIT_EXCEEDED",
+            Self::OutputLimitExceeded => "OUTPUT_LIMIT_EXCEEDED",
+            Self::SystemError => "SYSTEM_ERROR",
+            Self::Cancelled => "CANCELLED",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "PENDING" => Self::Pending,
+            "JUDGING" => Self::Judging,
+            "ACCEPTED" => Self::Accepted,
+            "WRONG_ANSWER" => Self::WrongAnswer,
+            "COMPILE_ERROR" => Self::CompileError,
+            "RUNTIME_ERROR" => Self::RuntimeError,
+            "TIME_LIMIT_EXCEEDED" => Self::TimeLimitExceeded,
+            "MEMORY_LIMIT_EXCEEDED" => Self::MemoryLimitExceeded,
+            "OUTPUT_LIMIT_EXCEEDED" => Self::OutputLimitExceeded,
+            "SYSTEM_ERROR" => Self::SystemError,
+            "CANCELLED" => Self::Cancelled,
+            _ => return None,
+        })
+    }
+
+    #[must_use]
+    pub const fn domain(self) -> project_balloon_domain::SubmissionState {
+        match self {
+            Self::Pending => project_balloon_domain::SubmissionState::Pending,
+            Self::Judging => project_balloon_domain::SubmissionState::Judging,
+            Self::Accepted => project_balloon_domain::SubmissionState::Accepted,
+            Self::WrongAnswer => project_balloon_domain::SubmissionState::WrongAnswer,
+            Self::CompileError => project_balloon_domain::SubmissionState::CompileError,
+            Self::RuntimeError => project_balloon_domain::SubmissionState::RuntimeError,
+            Self::TimeLimitExceeded => project_balloon_domain::SubmissionState::TimeLimitExceeded,
+            Self::MemoryLimitExceeded => {
+                project_balloon_domain::SubmissionState::MemoryLimitExceeded
+            }
+            Self::OutputLimitExceeded => {
+                project_balloon_domain::SubmissionState::OutputLimitExceeded
+            }
+            Self::SystemError => project_balloon_domain::SubmissionState::SystemError,
+            Self::Cancelled => project_balloon_domain::SubmissionState::Cancelled,
+        }
+    }
+}
+
+impl From<JudgeVerdict> for SubmissionStatus {
+    fn from(verdict: JudgeVerdict) -> Self {
+        match verdict {
+            JudgeVerdict::Accepted => Self::Accepted,
+            JudgeVerdict::WrongAnswer => Self::WrongAnswer,
+            JudgeVerdict::TimeLimitExceeded => Self::TimeLimitExceeded,
+            JudgeVerdict::MemoryLimitExceeded => Self::MemoryLimitExceeded,
+            JudgeVerdict::RuntimeError => Self::RuntimeError,
+            JudgeVerdict::CompileError => Self::CompileError,
+            JudgeVerdict::OutputLimitExceeded => Self::OutputLimitExceeded,
+            JudgeVerdict::SystemError => Self::SystemError,
+            JudgeVerdict::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
 impl SubmissionListQuery {
     pub fn validate(self) -> Result<ValidatedSubmissionListQuery, AppError> {
         if self.team_id.is_some_and(|id| id <= 0) {
@@ -394,22 +489,7 @@ impl SubmissionListQuery {
             return Err(AppError::validation("sort", "only submittedAt,desc is supported"));
         }
         let status = self.status.map(|value| value.trim().to_ascii_uppercase());
-        if status.as_ref().is_some_and(|value| {
-            !matches!(
-                value.as_str(),
-                "PENDING"
-                    | "JUDGING"
-                    | "ACCEPTED"
-                    | "WRONG_ANSWER"
-                    | "COMPILE_ERROR"
-                    | "RUNTIME_ERROR"
-                    | "TIME_LIMIT_EXCEEDED"
-                    | "MEMORY_LIMIT_EXCEEDED"
-                    | "OUTPUT_LIMIT_EXCEEDED"
-                    | "SYSTEM_ERROR"
-                    | "CANCELLED"
-            )
-        }) {
+        if status.as_ref().is_some_and(|value| SubmissionStatus::parse(value).is_none()) {
             return Err(AppError::validation(
                 "status",
                 "contains an unsupported submission status",
@@ -566,9 +646,54 @@ pub struct RunDetail {
 mod tests {
     use bytes::Bytes;
 
-    use super::{
-        MAX_SOURCE_BYTES, SubmitMetadata, source_fingerprint, source_similarity_signature,
+    use crate::features::submissions::model::{
+        MAX_SOURCE_BYTES, SubmissionStatus, SubmitMetadata, source_fingerprint,
+        source_similarity_signature,
     };
+    use project_balloon_contracts::JudgeVerdict;
+
+    #[test]
+    fn submission_status_round_trips_every_persisted_value() {
+        const VALUES: &[(&str, SubmissionStatus, bool)] = &[
+            ("PENDING", SubmissionStatus::Pending, false),
+            ("JUDGING", SubmissionStatus::Judging, false),
+            ("ACCEPTED", SubmissionStatus::Accepted, true),
+            ("WRONG_ANSWER", SubmissionStatus::WrongAnswer, true),
+            ("COMPILE_ERROR", SubmissionStatus::CompileError, true),
+            ("RUNTIME_ERROR", SubmissionStatus::RuntimeError, true),
+            ("TIME_LIMIT_EXCEEDED", SubmissionStatus::TimeLimitExceeded, true),
+            ("MEMORY_LIMIT_EXCEEDED", SubmissionStatus::MemoryLimitExceeded, true),
+            ("OUTPUT_LIMIT_EXCEEDED", SubmissionStatus::OutputLimitExceeded, true),
+            ("SYSTEM_ERROR", SubmissionStatus::SystemError, true),
+            ("CANCELLED", SubmissionStatus::Cancelled, true),
+        ];
+        for (text, expected, terminal) in VALUES {
+            let parsed = SubmissionStatus::parse(text).expect("parse persisted status");
+            assert_eq!(parsed, *expected);
+            assert_eq!(parsed.as_str(), *text);
+            assert_eq!(parsed.domain().is_terminal(), *terminal, "terminal for {text}");
+            assert_eq!(SubmissionStatus::parse(text.to_lowercase().as_str()), None);
+        }
+    }
+
+    #[test]
+    fn judge_verdicts_map_onto_submission_statuses() {
+        for verdict in [
+            JudgeVerdict::Accepted,
+            JudgeVerdict::WrongAnswer,
+            JudgeVerdict::TimeLimitExceeded,
+            JudgeVerdict::MemoryLimitExceeded,
+            JudgeVerdict::RuntimeError,
+            JudgeVerdict::CompileError,
+            JudgeVerdict::OutputLimitExceeded,
+            JudgeVerdict::SystemError,
+            JudgeVerdict::Cancelled,
+        ] {
+            let status = SubmissionStatus::from(verdict);
+            assert_eq!(status.as_str(), verdict.as_str());
+            assert!(status.domain().is_terminal());
+        }
+    }
 
     #[test]
     fn source_fingerprint_ignores_comments_and_formatting_but_keeps_literals() {
@@ -623,7 +748,7 @@ mod tests {
 
     #[test]
     fn submission_filters_are_closed_and_bounded() {
-        use super::SubmissionListQuery;
+        use crate::features::submissions::model::SubmissionListQuery;
 
         let valid = SubmissionListQuery {
             team_id: Some(1),

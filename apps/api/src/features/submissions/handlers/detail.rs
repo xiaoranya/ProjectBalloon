@@ -9,8 +9,8 @@ use crate::{
     state::AppState,
 };
 
-use super::super::model::SubmissionDetail;
-use super::required_storage;
+use crate::features::submissions::handlers::required_storage;
+use crate::features::submissions::model::SubmissionDetail;
 
 #[utoipa::path(
     get,

@@ -535,7 +535,7 @@ mod tests {
     use bytes::Bytes;
     use futures_util::{StreamExt, TryStreamExt};
 
-    use super::{ObjectStorage, ObjectStorageError, keys};
+    use crate::object_storage::{ObjectStorage, ObjectStorageError, keys};
 
     struct BufferedStorage;
 

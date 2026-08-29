@@ -15,7 +15,7 @@ use crate::{
     state::AppState,
 };
 
-use super::model::{
+use crate::features::problems::model::{
     ActivateTestdataVersionRequest, AttachmentKind, AttachmentUploadRequest, CreateProblemRequest,
     InteractorUploadRequest, ProblemAttachmentResponse, ProblemListQuery, ProblemResponse,
     ProblemStatementResponse, ProblemTestdataResponse, ProblemTestdataVersionResponse,

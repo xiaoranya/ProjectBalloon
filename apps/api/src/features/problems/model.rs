@@ -569,7 +569,9 @@ pub(super) fn validate_lang_code_field(
 
 #[cfg(test)]
 mod tests {
-    use super::{CreateProblemRequest, UpdateProblemRequest, UpsertStatementRequest};
+    use crate::features::problems::model::{
+        CreateProblemRequest, UpdateProblemRequest, UpsertStatementRequest,
+    };
 
     #[test]
     fn create_normalizes_and_sorts_languages() {

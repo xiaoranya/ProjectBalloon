@@ -188,7 +188,7 @@ impl ContestProblemDetailRow {
                 }
                 (None, None, None) => None,
                 _ => {
-                    return Err(AppError::internal(
+                    return Err(AppError::internal_message(
                         "decode contest problem statement",
                         "inconsistent nullable statement columns",
                     ));
@@ -254,7 +254,7 @@ fn validate_lang_code(value: String) -> Result<String, AppError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
+    use crate::features::contest_problems::model::{
         AssignProblemRequest, ReorderEntry, UpdateContestProblemRequest, validate_reorder,
     };
 

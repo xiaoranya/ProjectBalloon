@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use sqlx::PgPool;
 use time::OffsetDateTime;
 
-use super::{
+use crate::features::announcements::{
     AnnouncementScheduleRunner, AnnouncementService, CreateRequest, UpdateRequest, validate_text,
 };
 use crate::features::auth::model::{AuthUser, UserType};

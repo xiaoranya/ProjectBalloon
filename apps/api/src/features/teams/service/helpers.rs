@@ -9,7 +9,7 @@ use crate::{
     features::auth::{hash_password, model::AuthUser},
 };
 
-use super::super::model::ValidatedCreateTeam;
+use crate::features::teams::model::ValidatedCreateTeam;
 
 pub(super) async fn prepare_team(request: ValidatedCreateTeam) -> Result<PreparedTeam, AppError> {
     let password_hash = match &request.account {
@@ -69,7 +69,12 @@ pub(super) async fn create_team_in_transaction(
             Some((user_id, account.username))
         }
         (None, None) => None,
-        _ => return Err(AppError::internal("create team account", "incomplete prepared account")),
+        _ => {
+            return Err(AppError::internal_message(
+                "create team account",
+                "incomplete prepared account",
+            ));
+        }
     };
     Ok((team_id, account))
 }

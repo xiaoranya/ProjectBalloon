@@ -1,5 +1,5 @@
-use super::crypto::{access_fingerprint, constant_time_equal};
 use crate::features::auth::model::{AuthUser, UserType};
+use crate::features::auth::service::crypto::{access_fingerprint, constant_time_equal};
 
 #[test]
 fn access_fingerprint_is_deterministic() {

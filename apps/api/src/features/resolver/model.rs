@@ -151,15 +151,15 @@ impl RunRow {
             current_step: self.current_step,
             total_steps: self.total_steps,
             source_public_snapshot_id: self.source_public_snapshot_id.ok_or_else(|| {
-                AppError::internal("load resolver run", "run has no public source snapshot")
+                AppError::internal_message("load resolver run", "run has no public source snapshot")
             })?,
             source_final_snapshot_id: self.source_final_snapshot_id.ok_or_else(|| {
-                AppError::internal("load resolver run", "run has no final source snapshot")
+                AppError::internal_message("load resolver run", "run has no final source snapshot")
             })?,
             plan_sha256: self.plan_sha256,
-            created_by_user_id: self
-                .created_by_user_id
-                .ok_or_else(|| AppError::internal("load resolver run", "run has no creator"))?,
+            created_by_user_id: self.created_by_user_id.ok_or_else(|| {
+                AppError::internal_message("load resolver run", "run has no creator")
+            })?,
             started_at: self.started_at,
             completed_at: self.completed_at,
             auto_play_enabled: self.auto_play_enabled,

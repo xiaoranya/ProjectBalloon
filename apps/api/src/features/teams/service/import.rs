@@ -5,14 +5,16 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::features::auth::model::AuthUser;
 
-use super::super::model::{
+use crate::features::teams::model::{
     BatchImportResponse, BatchImportRowResponse, ParticipationType, ValidatedBatchImport,
 };
-use super::TeamService;
-use super::contest_roster::{
+use crate::features::teams::service::TeamService;
+use crate::features::teams::service::contest_roster::{
     lock_open_contest, map_contest_team_write_error, require_manage_contest,
 };
-use super::helpers::{create_team_in_transaction, enqueue_realtime, prepare_team, record_audit};
+use crate::features::teams::service::helpers::{
+    create_team_in_transaction, enqueue_realtime, prepare_team, record_audit,
+};
 
 impl TeamService {
     pub async fn batch_import(

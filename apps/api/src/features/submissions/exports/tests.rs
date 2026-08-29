@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use zip::ZipArchive;
 
-use super::{
+use crate::features::submissions::exports::{
     SourceFile,
     helpers::{build_zip, csv_field, safe_component},
 };

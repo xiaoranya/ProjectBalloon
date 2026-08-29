@@ -2,9 +2,11 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use sqlx::PgPool;
 
-use super::model::NoteRequest;
-use super::service::{BalloonService, validate_note, validate_reason, validate_status};
 use crate::features::auth::model::{AuthUser, UserType};
+use crate::features::balloons::model::NoteRequest;
+use crate::features::balloons::service::{
+    BalloonService, validate_note, validate_reason, validate_status,
+};
 
 #[test]
 fn balloon_input_domains_are_closed() {

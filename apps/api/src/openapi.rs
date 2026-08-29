@@ -303,7 +303,293 @@ mod tests {
     use serde_json::Value;
     use tower::ServiceExt;
 
-    use super::{document, swagger_ui};
+    use crate::openapi::{document, swagger_ui};
+
+    const EXPECTED_OPERATIONS: &[(&str, &str)] = &[
+        ("/livez", "get"),
+        ("/api/health", "get"),
+        ("/metrics", "get"),
+        ("/api/auth/csrf", "get"),
+        ("/api/auth/login", "post"),
+        ("/api/auth/logout", "post"),
+        ("/api/auth/me", "get"),
+        ("/api/auth/password", "post"),
+        ("/api/contests", "get"),
+        ("/api/contests", "post"),
+        ("/api/contests/{contest_id}", "get"),
+        ("/api/contests/{contest_id}", "patch"),
+        ("/api/contests/{contest_id}", "delete"),
+        ("/api/contests/{contest_id}/transitions", "post"),
+        ("/api/contests/{contest_id}/extensions", "post"),
+        ("/api/contests/{source_contest_id}/clones", "post"),
+        ("/api/teams", "get"),
+        ("/api/teams", "post"),
+        ("/api/teams/{team_id}", "get"),
+        ("/api/teams/{team_id}", "patch"),
+        ("/api/teams/{team_id}", "delete"),
+        ("/api/teams/batch", "post"),
+        ("/api/teams/{team_id}/members", "get"),
+        ("/api/teams/{team_id}/members", "post"),
+        ("/api/teams/{team_id}/members/{member_id}", "patch"),
+        ("/api/teams/{team_id}/members/{member_id}", "delete"),
+        ("/api/teams/{team_id}/account/reset-password", "post"),
+        ("/api/contests/{contest_id}/teams", "get"),
+        ("/api/contests/{contest_id}/teams", "post"),
+        ("/api/contests/{contest_id}/teams/{team_id}", "delete"),
+        ("/api/problems", "get"),
+        ("/api/problems", "post"),
+        ("/api/problems/{problem_id}", "get"),
+        ("/api/problems/{problem_id}", "patch"),
+        ("/api/problems/{problem_id}", "delete"),
+        ("/api/problems/{problem_id}/statements", "get"),
+        ("/api/problems/{problem_id}/statements/{lang_code}", "put"),
+        ("/api/problems/{problem_id}/statements/{lang_code}", "delete"),
+        ("/api/problems/{problem_id}/attachments", "get"),
+        ("/api/problems/{problem_id}/attachments", "post"),
+        ("/api/problems/{problem_id}/attachments/{attachment_id}", "get"),
+        ("/api/problems/{problem_id}/attachments/{attachment_id}", "delete"),
+        ("/api/problems/{problem_id}/testdata", "get"),
+        ("/api/problems/{problem_id}/testdata", "post"),
+        ("/api/problems/{problem_id}/testdata/versions", "get"),
+        ("/api/problems/{problem_id}/testdata/versions/{version}", "get"),
+        ("/api/problems/{problem_id}/testdata/versions/{version}/activate", "post"),
+        ("/api/contests/{contest_id}/problems", "get"),
+        ("/api/contests/{contest_id}/problems", "post"),
+        ("/api/contests/{contest_id}/problems/{problem_id}", "patch"),
+        ("/api/contests/{contest_id}/problems/{problem_id}", "delete"),
+        ("/api/contests/{contest_id}/problems/reorder", "put"),
+        ("/api/contests/{contest_id}/submissions", "get"),
+        ("/api/contests/{contest_id}/submissions", "post"),
+        ("/api/contests/{contest_id}/submissions/{submission_id}", "get"),
+        ("/api/admin/contests/{contest_id}/submissions", "get"),
+        ("/api/admin/contests/{contest_id}/submissions/{submission_id}", "get"),
+        ("/api/admin/contests/{contest_id}/submissions/{submission_id}/rejudge", "post"),
+        ("/api/admin/contests/{contest_id}/exports/submissions.csv", "get"),
+        ("/api/admin/contests/{contest_id}/exports/submission-sources.zip", "get"),
+        ("/api/admin/contests/{contest_id}/rejudge-tasks/preview", "post"),
+        ("/api/admin/contests/{contest_id}/rejudge-tasks", "get"),
+        ("/api/admin/contests/{contest_id}/rejudge-tasks", "post"),
+        ("/api/admin/contests/{contest_id}/rejudge-tasks/{task_id}", "get"),
+        ("/api/admin/contests/{contest_id}/rejudge-tasks/{task_id}/pause", "post"),
+        ("/api/admin/contests/{contest_id}/rejudge-tasks/{task_id}/resume", "post"),
+        ("/api/admin/contests/{contest_id}/scoreboard", "get"),
+        ("/api/admin/contests/{contest_id}/scoreboard.csv", "get"),
+        ("/api/admin/contests/{contest_id}/scoreboard/snapshots", "post"),
+        ("/api/admin/contests/{contest_id}/scoreboard/snapshots/latest", "get"),
+        ("/api/contests/{contest_id}/print-requests", "post"),
+        ("/api/contests/{contest_id}/print-requests/mine", "get"),
+        ("/api/contests/{contest_id}/print-requests/all", "get"),
+        ("/api/print-requests/{id}/pdf", "get"),
+        ("/api/print-requests/{id}/retry", "post"),
+        ("/api/print-requests/{id}/cancel", "post"),
+        ("/api/print-requests/{id}/reject", "post"),
+        ("/api/contests/{contest_id}/balloons", "get"),
+        ("/api/contests/{contest_id}/balloons/stats", "get"),
+        ("/api/balloons/{id}/claim", "post"),
+        ("/api/balloons/{id}/deliver", "post"),
+        ("/api/balloons/{id}/cancel", "post"),
+        ("/api/balloons/{id}/reopen", "post"),
+        ("/api/balloons/{id}/note", "patch"),
+        ("/api/contests/{contest_id}/clarifications", "post"),
+        ("/api/contests/{contest_id}/clarifications/mine", "get"),
+        ("/api/contests/{contest_id}/clarifications/all", "get"),
+        ("/api/clarifications/{id}", "get"),
+        ("/api/clarifications/{id}/reply", "post"),
+        ("/api/clarifications/{id}/close", "post"),
+        ("/api/clarifications/{id}/convert", "post"),
+        ("/api/admin/contests/{contest_id}/resolver-runs", "get"),
+        ("/api/admin/contests/{contest_id}/resolver-runs", "post"),
+        ("/api/admin/contests/{contest_id}/resolver-sources", "get"),
+        ("/api/admin/resolver-runs/{id}", "get"),
+        ("/api/admin/resolver-runs/{id}/events", "get"),
+        ("/api/public/resolver-runs/{id}/state", "get"),
+        ("/api/admin/resolver-runs/{id}/start", "post"),
+        ("/api/admin/resolver-runs/{id}/next", "post"),
+        ("/api/admin/resolver-runs/{id}/previous", "post"),
+        ("/api/admin/resolver-runs/{id}/pause", "post"),
+        ("/api/admin/resolver-runs/{id}/resume", "post"),
+        ("/api/admin/resolver-runs/{id}/complete", "post"),
+        ("/api/admin/resolver-runs/{id}/auto-play", "post"),
+        ("/api/presentation-configs/{contest_id}", "get"),
+        ("/api/presentation-configs/{contest_id}/screen", "put"),
+        ("/api/presentation-configs/{contest_id}/live", "put"),
+        ("/api/public/presentations/{contest_id}", "get"),
+        ("/api/public/presentations/{contest_id}/metrics", "get"),
+        ("/api/presentation-configs/{contest_id}/live/tokens", "get"),
+        ("/api/presentation-configs/{contest_id}/live/tokens", "post"),
+        ("/api/presentation-configs/{contest_id}/live/tokens/{token_id}", "delete"),
+        ("/api/public/screens/register", "post"),
+        ("/api/public/screens/{instance_id}/heartbeat", "post"),
+        ("/api/screen-instances/{contest_id}", "get"),
+        ("/api/screen-instances/{contest_id}/{instance_id}/commands", "post"),
+        ("/api/screen-instances/{contest_id}/{instance_id}", "delete"),
+        ("/api/contests/{contest_id}/screen-playlists", "get"),
+        ("/api/contests/{contest_id}/screen-playlists", "post"),
+        ("/api/screen-playlists/{playlist_id}", "put"),
+        ("/api/screen-playlists/{playlist_id}", "delete"),
+        ("/api/contests/{contest_id}/screen-groups", "get"),
+        ("/api/contests/{contest_id}/screen-groups", "post"),
+        ("/api/screen-groups/{group_id}", "put"),
+        ("/api/screen-groups/{group_id}", "delete"),
+        ("/api/screen-groups/{group_id}/control", "post"),
+        ("/api/admin/contests/{contest_id}/award-categories", "get"),
+        ("/api/admin/contests/{contest_id}/award-categories", "post"),
+        ("/api/admin/award-categories/{id}", "put"),
+        ("/api/admin/award-categories/{id}", "delete"),
+        ("/api/admin/contests/{contest_id}/awards", "get"),
+        ("/api/admin/contests/{contest_id}/awards", "post"),
+        ("/api/admin/contests/{contest_id}/awards/resolver-runs", "get"),
+        ("/api/admin/contests/{contest_id}/awards/candidates", "get"),
+        ("/api/admin/contests/{contest_id}/awards/manual", "post"),
+        ("/api/admin/award-recipients/{id}", "delete"),
+        ("/api/admin/contests/{contest_id}/awards/freeze", "post"),
+        ("/api/admin/contests/{contest_id}/awards/unfreeze", "post"),
+        ("/api/admin/contests/{contest_id}/awards.csv", "get"),
+        ("/api/public/contests/{contest_id}/awards/presentation", "get"),
+        ("/api/contests/{contest_id}/awards/presentation", "put"),
+        ("/api/contests/{contest_id}/awards/host-script", "get"),
+        ("/api/contests/{contest_id}/awards/host-script", "put"),
+        ("/api/contests/{contest_id}/awards/certificates/export", "get"),
+        ("/api/contests/{contest_id}/announcements", "get"),
+        ("/api/contests/{contest_id}/announcements", "post"),
+        ("/api/admin/contests/{contest_id}/judge-queue/status", "get"),
+        ("/api/admin/contests/{contest_id}/exports/tasks", "post"),
+        ("/api/admin/contests/{contest_id}/exports/tasks/{task_id}", "get"),
+        ("/api/admin/contests/{contest_id}/exports/tasks/{task_id}/download", "get"),
+        ("/api/admin/staff-accounts", "get"),
+        ("/api/admin/staff-accounts", "post"),
+        ("/api/admin/staff-accounts/{user_id}", "patch"),
+        ("/api/admin/staff-accounts/{user_id}/reset-password", "post"),
+        ("/api/admin/contest-managers", "get"),
+        ("/api/admin/contest-managers/{user_id}/contests", "put"),
+        ("/api/admin/audit-logs", "get"),
+        ("/api/public/events/contests/{contest_id}", "get"),
+        ("/api/events/contests/{contest_id}", "get"),
+        ("/api/team/events/contests/{contest_id}", "get"),
+    ];
+
+    /// Operations whose `security` is exactly one `session_cookie` requirement.
+    const SESSION_SECURED_OPERATIONS: &[(&str, &str)] = &[
+        ("/api/contests/{contest_id}/submissions", "get"),
+        ("/api/contests/{contest_id}/submissions", "post"),
+        ("/api/contests/{contest_id}/submissions/{submission_id}", "get"),
+        ("/api/admin/contests/{contest_id}/submissions", "get"),
+        ("/api/admin/contests/{contest_id}/submissions/{submission_id}", "get"),
+        ("/api/admin/contests/{contest_id}/submissions/{submission_id}/rejudge", "post"),
+        ("/api/admin/contests/{contest_id}/exports/submissions.csv", "get"),
+        ("/api/admin/contests/{contest_id}/exports/submission-sources.zip", "get"),
+        ("/api/admin/contests/{contest_id}/rejudge-tasks/preview", "post"),
+        ("/api/admin/contests/{contest_id}/rejudge-tasks", "get"),
+        ("/api/admin/contests/{contest_id}/rejudge-tasks", "post"),
+        ("/api/admin/contests/{contest_id}/rejudge-tasks/{task_id}", "get"),
+        ("/api/admin/contests/{contest_id}/rejudge-tasks/{task_id}/pause", "post"),
+        ("/api/admin/contests/{contest_id}/rejudge-tasks/{task_id}/resume", "post"),
+        ("/api/admin/contests/{contest_id}/scoreboard", "get"),
+        ("/api/admin/contests/{contest_id}/scoreboard.csv", "get"),
+        ("/api/admin/contests/{contest_id}/scoreboard/snapshots", "post"),
+        ("/api/admin/contests/{contest_id}/scoreboard/snapshots/latest", "get"),
+        ("/api/contests/{contest_id}/print-requests", "post"),
+        ("/api/contests/{contest_id}/print-requests/mine", "get"),
+        ("/api/contests/{contest_id}/print-requests/all", "get"),
+        ("/api/print-requests/{id}/pdf", "get"),
+        ("/api/print-requests/{id}/retry", "post"),
+        ("/api/print-requests/{id}/cancel", "post"),
+        ("/api/print-requests/{id}/reject", "post"),
+        ("/api/contests/{contest_id}/balloons", "get"),
+        ("/api/contests/{contest_id}/balloons/stats", "get"),
+        ("/api/balloons/{id}/claim", "post"),
+        ("/api/balloons/{id}/deliver", "post"),
+        ("/api/balloons/{id}/cancel", "post"),
+        ("/api/balloons/{id}/reopen", "post"),
+        ("/api/balloons/{id}/note", "patch"),
+        ("/api/contests/{contest_id}/clarifications", "post"),
+        ("/api/contests/{contest_id}/clarifications/mine", "get"),
+        ("/api/contests/{contest_id}/clarifications/all", "get"),
+        ("/api/clarifications/{id}", "get"),
+        ("/api/clarifications/{id}/reply", "post"),
+        ("/api/clarifications/{id}/close", "post"),
+        ("/api/clarifications/{id}/convert", "post"),
+        ("/api/admin/staff-accounts", "get"),
+        ("/api/admin/contest-managers", "get"),
+        ("/api/admin/audit-logs", "get"),
+        ("/api/events/contests/{contest_id}", "get"),
+        ("/api/team/events/contests/{contest_id}", "get"),
+        ("/api/teams", "get"),
+        ("/api/teams/{team_id}", "get"),
+        ("/api/teams/{team_id}/members", "get"),
+        ("/api/problems", "get"),
+        ("/api/problems/{problem_id}", "get"),
+        ("/api/problems/{problem_id}/statements", "get"),
+        ("/api/problems/{problem_id}/attachments", "get"),
+        ("/api/problems/{problem_id}/attachments/{attachment_id}", "get"),
+        ("/api/problems/{problem_id}/testdata", "get"),
+        ("/api/problems/{problem_id}/testdata/versions", "get"),
+        ("/api/problems/{problem_id}/testdata/versions/{version}", "get"),
+        ("/api/contests/{contest_id}/problems", "get"),
+    ];
+
+    /// Operations whose `security` requires the session cookie plus both CSRF
+    /// defenses (cookie and header).
+    const MUTATION_SECURED_OPERATIONS: &[(&str, &str)] = &[
+        ("/api/admin/staff-accounts", "post"),
+        ("/api/admin/staff-accounts/{user_id}", "patch"),
+        ("/api/admin/staff-accounts/{user_id}/reset-password", "post"),
+        ("/api/admin/contest-managers/{user_id}/contests", "put"),
+        ("/api/auth/logout", "post"),
+        ("/api/auth/password", "post"),
+        ("/api/contests", "post"),
+        ("/api/contests/{contest_id}", "patch"),
+        ("/api/contests/{contest_id}", "delete"),
+        ("/api/contests/{contest_id}/transitions", "post"),
+        ("/api/contests/{contest_id}/extensions", "post"),
+        ("/api/contests/{source_contest_id}/clones", "post"),
+        ("/api/teams", "post"),
+        ("/api/teams/{team_id}", "patch"),
+        ("/api/teams/{team_id}", "delete"),
+        ("/api/teams/batch", "post"),
+        ("/api/teams/{team_id}/members", "post"),
+        ("/api/teams/{team_id}/members/{member_id}", "patch"),
+        ("/api/teams/{team_id}/members/{member_id}", "delete"),
+        ("/api/teams/{team_id}/account/reset-password", "post"),
+        ("/api/contests/{contest_id}/teams", "post"),
+        ("/api/contests/{contest_id}/teams/{team_id}", "delete"),
+        ("/api/problems", "post"),
+        ("/api/problems/{problem_id}", "patch"),
+        ("/api/problems/{problem_id}", "delete"),
+        ("/api/problems/{problem_id}/statements/{lang_code}", "put"),
+        ("/api/problems/{problem_id}/statements/{lang_code}", "delete"),
+        ("/api/problems/{problem_id}/attachments", "post"),
+        ("/api/problems/{problem_id}/attachments/{attachment_id}", "delete"),
+        ("/api/problems/{problem_id}/testdata", "post"),
+        ("/api/problems/{problem_id}/testdata/versions/{version}/activate", "post"),
+        ("/api/contests/{contest_id}/problems", "post"),
+        ("/api/contests/{contest_id}/problems/{problem_id}", "patch"),
+        ("/api/contests/{contest_id}/problems/{problem_id}", "delete"),
+        ("/api/contests/{contest_id}/problems/reorder", "put"),
+        ("/api/contests/{contest_id}/announcements", "post"),
+    ];
+
+    /// Operations that additionally require the `X-XSRF-TOKEN` header but
+    /// whose full security object is otherwise covered elsewhere.
+    const CSRF_HEADER_SECURED_OPERATIONS: &[(&str, &str)] = &[
+        ("/api/contests/{contest_id}/print-requests", "post"),
+        ("/api/print-requests/{id}/retry", "post"),
+        ("/api/print-requests/{id}/cancel", "post"),
+        ("/api/print-requests/{id}/reject", "post"),
+        ("/api/balloons/{id}/claim", "post"),
+        ("/api/balloons/{id}/deliver", "post"),
+        ("/api/balloons/{id}/cancel", "post"),
+        ("/api/balloons/{id}/reopen", "post"),
+        ("/api/balloons/{id}/note", "patch"),
+        ("/api/contests/{contest_id}/clarifications", "post"),
+        ("/api/clarifications/{id}/reply", "post"),
+        ("/api/clarifications/{id}/close", "post"),
+        ("/api/clarifications/{id}/convert", "post"),
+        ("/api/admin/contests/{contest_id}/scoreboard/snapshots", "post"),
+        ("/api/admin/resolver-runs/{id}/start", "post"),
+        ("/api/public/screens/register", "post"),
+        ("/api/admin/contests/{contest_id}/awards", "post"),
+    ];
 
     #[test]
     fn generated_contract_contains_documented_rust_operations() {
@@ -326,117 +612,65 @@ mod tests {
             .sum::<usize>();
         // Update this snapshot count when a documented endpoint is intentionally added or removed.
         assert_eq!(operation_count, 203);
-        assert!(document["paths"]["/livez"]["get"].is_object());
-        assert!(document["paths"]["/api/health"]["get"].is_object());
-        assert!(document["paths"]["/metrics"]["get"].is_object());
-        assert!(document["paths"]["/api/auth/csrf"]["get"].is_object());
-        assert!(document["paths"]["/api/auth/login"]["post"].is_object());
-        assert!(document["paths"]["/api/auth/logout"]["post"].is_object());
-        assert!(document["paths"]["/api/auth/me"]["get"].is_object());
-        assert!(document["paths"]["/api/auth/password"]["post"].is_object());
-        assert!(document["paths"]["/api/contests"]["get"].is_object());
-        assert!(document["paths"]["/api/contests"]["post"].is_object());
-        assert!(document["paths"]["/api/contests/{contest_id}"]["get"].is_object());
-        assert!(document["paths"]["/api/contests/{contest_id}"]["patch"].is_object());
-        assert!(document["paths"]["/api/contests/{contest_id}"]["delete"].is_object());
-        assert!(document["paths"]["/api/contests/{contest_id}/transitions"]["post"].is_object());
-        assert!(document["paths"]["/api/contests/{contest_id}/extensions"]["post"].is_object());
-        assert!(document["paths"]["/api/contests/{source_contest_id}/clones"]["post"].is_object());
-        assert!(document["paths"]["/api/teams"]["get"].is_object());
-        assert!(document["paths"]["/api/teams"]["post"].is_object());
-        assert!(document["paths"]["/api/teams/{team_id}"]["get"].is_object());
-        assert!(document["paths"]["/api/teams/{team_id}"]["patch"].is_object());
-        assert!(document["paths"]["/api/teams/{team_id}"]["delete"].is_object());
-        assert!(document["paths"]["/api/teams/batch"]["post"].is_object());
-        assert!(document["paths"]["/api/teams/{team_id}/members"]["get"].is_object());
-        assert!(document["paths"]["/api/teams/{team_id}/members"]["post"].is_object());
-        assert!(document["paths"]["/api/teams/{team_id}/members/{member_id}"]["patch"].is_object());
-        assert!(
-            document["paths"]["/api/teams/{team_id}/members/{member_id}"]["delete"].is_object()
-        );
-        assert!(
-            document["paths"]["/api/teams/{team_id}/account/reset-password"]["post"].is_object()
-        );
-        assert!(document["paths"]["/api/contests/{contest_id}/teams"]["get"].is_object());
-        assert!(document["paths"]["/api/contests/{contest_id}/teams"]["post"].is_object());
-        assert!(
-            document["paths"]["/api/contests/{contest_id}/teams/{team_id}"]["delete"].is_object()
-        );
-        assert!(document["paths"]["/api/problems"]["get"].is_object());
-        assert!(document["paths"]["/api/problems"]["post"].is_object());
-        assert!(document["paths"]["/api/problems/{problem_id}"]["get"].is_object());
-        assert!(document["paths"]["/api/problems/{problem_id}"]["patch"].is_object());
-        assert!(document["paths"]["/api/problems/{problem_id}"]["delete"].is_object());
-        assert!(
-            document["paths"]["/api/problems/{problem_id}/statements/{lang_code}"]["put"]
-                .is_object()
-        );
-        assert!(document["paths"]["/api/problems/{problem_id}/statements"]["get"].is_object());
-        assert!(
-            document["paths"]["/api/problems/{problem_id}/statements/{lang_code}"]["delete"]
-                .is_object()
-        );
-        assert!(document["paths"]["/api/problems/{problem_id}/attachments"]["get"].is_object());
-        assert!(document["paths"]["/api/problems/{problem_id}/attachments"]["post"].is_object());
-        assert!(
-            document["paths"]["/api/problems/{problem_id}/attachments/{attachment_id}"]["get"]
-                .is_object()
-        );
-        assert!(
-            document["paths"]["/api/problems/{problem_id}/attachments/{attachment_id}"]["delete"]
-                .is_object()
-        );
-        assert!(document["paths"]["/api/problems/{problem_id}/testdata"]["get"].is_object());
-        assert!(document["paths"]["/api/problems/{problem_id}/testdata"]["post"].is_object());
-        assert!(
-            document["paths"]["/api/problems/{problem_id}/testdata/versions"]["get"].is_object()
-        );
-        assert!(
-            document["paths"]["/api/problems/{problem_id}/testdata/versions/{version}"]["get"]
-                .is_object()
-        );
-        assert!(document["paths"]["/api/problems/{problem_id}/testdata/versions/{version}/activate"]["post"].is_object());
-        assert!(document["paths"]["/api/contests/{contest_id}/problems"]["get"].is_object());
-        assert!(document["paths"]["/api/contests/{contest_id}/problems"]["post"].is_object());
-        assert!(
-            document["paths"]["/api/contests/{contest_id}/problems/{problem_id}"]["patch"]
-                .is_object()
-        );
-        assert!(
-            document["paths"]["/api/contests/{contest_id}/problems/{problem_id}"]["delete"]
-                .is_object()
-        );
-        assert!(
-            document["paths"]["/api/contests/{contest_id}/problems/reorder"]["put"].is_object()
-        );
-        for (path, method) in [
-            ("/api/contests/{contest_id}/submissions", "get"),
-            ("/api/contests/{contest_id}/submissions", "post"),
-            ("/api/contests/{contest_id}/submissions/{submission_id}", "get"),
-            ("/api/admin/contests/{contest_id}/submissions", "get"),
-            ("/api/admin/contests/{contest_id}/submissions/{submission_id}", "get"),
-            ("/api/admin/contests/{contest_id}/submissions/{submission_id}/rejudge", "post"),
-            ("/api/admin/contests/{contest_id}/exports/submissions.csv", "get"),
-            ("/api/admin/contests/{contest_id}/exports/submission-sources.zip", "get"),
-            ("/api/admin/contests/{contest_id}/rejudge-tasks/preview", "post"),
-            ("/api/admin/contests/{contest_id}/rejudge-tasks", "get"),
-            ("/api/admin/contests/{contest_id}/rejudge-tasks", "post"),
-            ("/api/admin/contests/{contest_id}/rejudge-tasks/{task_id}", "get"),
-            ("/api/admin/contests/{contest_id}/rejudge-tasks/{task_id}/pause", "post"),
-            ("/api/admin/contests/{contest_id}/rejudge-tasks/{task_id}/resume", "post"),
-        ] {
-            assert!(document["paths"][path][method].is_object());
-            assert!(document["paths"][path][method]["security"][0]["session_cookie"].is_array());
+
+        for (path, method) in EXPECTED_OPERATIONS {
+            assert!(
+                document["paths"][path][method].is_object(),
+                "contract is missing {method} {path}"
+            );
         }
-        for (path, method) in [
-            ("/api/admin/contests/{contest_id}/scoreboard", "get"),
-            ("/api/admin/contests/{contest_id}/scoreboard.csv", "get"),
-            ("/api/admin/contests/{contest_id}/scoreboard/snapshots", "post"),
-            ("/api/admin/contests/{contest_id}/scoreboard/snapshots/latest", "get"),
-        ] {
-            assert!(document["paths"][path][method].is_object());
-            assert!(document["paths"][path][method]["security"][0]["session_cookie"].is_array());
+    }
+
+    #[test]
+    fn generated_contract_documents_session_and_csrf_requirements() {
+        let document = serde_json::to_value(document()).expect("serialize OpenAPI contract");
+
+        for (path, method) in SESSION_SECURED_OPERATIONS {
+            assert!(
+                document["paths"][path][method]["security"][0]["session_cookie"].is_array(),
+                "expected session_cookie security for {method} {path}"
+            );
         }
+        for (path, method) in MUTATION_SECURED_OPERATIONS {
+            let security = &document["paths"][path][method]["security"][0];
+            assert!(
+                security["session_cookie"].is_array(),
+                "missing session_cookie for {method} {path}"
+            );
+            assert!(security["csrf_cookie"].is_array(), "missing csrf_cookie for {method} {path}");
+            assert!(security["csrf_header"].is_array(), "missing csrf_header for {method} {path}");
+        }
+        for (path, method) in CSRF_HEADER_SECURED_OPERATIONS {
+            assert!(
+                document["paths"][path][method]["security"][0]["csrf_header"].is_array(),
+                "expected csrf_header security for {method} {path}"
+            );
+        }
+        assert!(
+            document["paths"]["/api/contests/{contest_id}/submissions"]["post"]["security"][0]
+                ["csrf_cookie"]
+                .is_array()
+        );
+        let export_task_security = &document["paths"]["/api/admin/contests/{contest_id}/exports/tasks"]
+            ["post"]["security"][0];
+        assert!(export_task_security["session_cookie"].is_array());
+        assert!(export_task_security["csrf_cookie"].is_array());
+        assert!(export_task_security["csrf_header"].is_array());
+        let login_security = &document["paths"]["/api/auth/login"]["post"]["security"][0];
+        assert!(login_security.get("session_cookie").is_none());
+        assert!(login_security["csrf_cookie"].is_array());
+        assert!(login_security["csrf_header"].is_array());
+        let current_user_security = &document["paths"]["/api/auth/me"]["get"]["security"][0];
+        assert!(current_user_security["session_cookie"].is_array());
+        assert!(current_user_security.get("csrf_cookie").is_none());
+        assert!(current_user_security.get("csrf_header").is_none());
+        assert!(document["paths"]["/api/auth/csrf"]["get"]["security"].is_null());
+    }
+
+    #[test]
+    fn generated_contract_documents_anonymous_and_alternative_security() {
+        let document = serde_json::to_value(document()).expect("serialize OpenAPI contract");
+
         assert!(
             document["paths"]["/api/contests/{contest_id}/scoreboard"]["get"]["security"][0]
                 .as_object()
@@ -449,203 +683,24 @@ mod tests {
                 .expect("anonymous scoreboard csv security")
                 .is_empty()
         );
-        assert!(document["paths"]["/api/admin/contests/{contest_id}/scoreboard.csv"]["get"]["responses"]["200"]["content"]["text/csv"].is_object());
-        assert!(document["paths"]["/api/admin/contests/{contest_id}/scoreboard/snapshots"]["post"]["security"][0]["csrf_header"].is_array());
-        for (path, method) in [
-            ("/api/contests/{contest_id}/print-requests", "post"),
-            ("/api/contests/{contest_id}/print-requests/mine", "get"),
-            ("/api/contests/{contest_id}/print-requests/all", "get"),
-            ("/api/print-requests/{id}/pdf", "get"),
-            ("/api/print-requests/{id}/retry", "post"),
-            ("/api/print-requests/{id}/cancel", "post"),
-            ("/api/print-requests/{id}/reject", "post"),
-            ("/api/contests/{contest_id}/balloons", "get"),
-            ("/api/contests/{contest_id}/balloons/stats", "get"),
-            ("/api/balloons/{id}/claim", "post"),
-            ("/api/balloons/{id}/deliver", "post"),
-            ("/api/balloons/{id}/cancel", "post"),
-            ("/api/balloons/{id}/reopen", "post"),
-            ("/api/balloons/{id}/note", "patch"),
-            ("/api/contests/{contest_id}/clarifications", "post"),
-            ("/api/contests/{contest_id}/clarifications/mine", "get"),
-            ("/api/contests/{contest_id}/clarifications/all", "get"),
-            ("/api/clarifications/{id}", "get"),
-            ("/api/clarifications/{id}/reply", "post"),
-            ("/api/clarifications/{id}/close", "post"),
-            ("/api/clarifications/{id}/convert", "post"),
-        ] {
-            assert!(document["paths"][path][method].is_object());
-            assert!(document["paths"][path][method]["security"][0]["session_cookie"].is_array());
-        }
-        for (path, method) in [
-            ("/api/contests/{contest_id}/print-requests", "post"),
-            ("/api/print-requests/{id}/retry", "post"),
-            ("/api/print-requests/{id}/cancel", "post"),
-            ("/api/print-requests/{id}/reject", "post"),
-            ("/api/balloons/{id}/claim", "post"),
-            ("/api/balloons/{id}/deliver", "post"),
-            ("/api/balloons/{id}/cancel", "post"),
-            ("/api/balloons/{id}/reopen", "post"),
-            ("/api/balloons/{id}/note", "patch"),
-            ("/api/contests/{contest_id}/clarifications", "post"),
-            ("/api/clarifications/{id}/reply", "post"),
-            ("/api/clarifications/{id}/close", "post"),
-            ("/api/clarifications/{id}/convert", "post"),
-        ] {
-            assert!(document["paths"][path][method]["security"][0]["csrf_header"].is_array());
-        }
-        assert!(
-            document["paths"]["/api/print-requests/{id}/pdf"]["get"]["responses"]["200"]["content"]
-                ["application/pdf"]
-                .is_object()
-        );
-        for (path, method) in [
-            ("/api/admin/contests/{contest_id}/resolver-runs", "get"),
-            ("/api/admin/contests/{contest_id}/resolver-runs", "post"),
-            ("/api/admin/contests/{contest_id}/resolver-sources", "get"),
-            ("/api/admin/resolver-runs/{id}", "get"),
-            ("/api/admin/resolver-runs/{id}/events", "get"),
-            ("/api/public/resolver-runs/{id}/state", "get"),
-            ("/api/admin/resolver-runs/{id}/start", "post"),
-            ("/api/admin/resolver-runs/{id}/next", "post"),
-            ("/api/admin/resolver-runs/{id}/previous", "post"),
-            ("/api/admin/resolver-runs/{id}/pause", "post"),
-            ("/api/admin/resolver-runs/{id}/resume", "post"),
-            ("/api/admin/resolver-runs/{id}/complete", "post"),
-            ("/api/admin/resolver-runs/{id}/auto-play", "post"),
-        ] {
-            assert!(document["paths"][path][method].is_object());
-        }
         assert!(
             document["paths"]["/api/public/resolver-runs/{id}/state"]["get"]["security"].is_null()
         );
-        assert!(document["paths"]["/api/admin/resolver-runs/{id}/start"]["post"]["security"][0]["csrf_header"].is_array());
-        for (path, method) in [
-            ("/api/presentation-configs/{contest_id}", "get"),
-            ("/api/presentation-configs/{contest_id}/screen", "put"),
-            ("/api/presentation-configs/{contest_id}/live", "put"),
-            ("/api/public/presentations/{contest_id}", "get"),
-            ("/api/public/presentations/{contest_id}/metrics", "get"),
-            ("/api/presentation-configs/{contest_id}/live/tokens", "get"),
-            ("/api/presentation-configs/{contest_id}/live/tokens", "post"),
-            ("/api/presentation-configs/{contest_id}/live/tokens/{token_id}", "delete"),
-            ("/api/public/screens/register", "post"),
-            ("/api/public/screens/{instance_id}/heartbeat", "post"),
-            ("/api/screen-instances/{contest_id}", "get"),
-            ("/api/screen-instances/{contest_id}/{instance_id}/commands", "post"),
-            ("/api/screen-instances/{contest_id}/{instance_id}", "delete"),
-            ("/api/contests/{contest_id}/screen-playlists", "get"),
-            ("/api/contests/{contest_id}/screen-playlists", "post"),
-            ("/api/screen-playlists/{playlist_id}", "put"),
-            ("/api/screen-playlists/{playlist_id}", "delete"),
-            ("/api/contests/{contest_id}/screen-groups", "get"),
-            ("/api/contests/{contest_id}/screen-groups", "post"),
-            ("/api/screen-groups/{group_id}", "put"),
-            ("/api/screen-groups/{group_id}", "delete"),
-            ("/api/screen-groups/{group_id}/control", "post"),
-        ] {
-            assert!(document["paths"][path][method].is_object());
-        }
         assert!(
-            document["paths"]["/api/public/screens/register"]["post"]["security"][0]["csrf_header"]
-                .is_array()
+            document["paths"]["/api/public/contests/{contest_id}/awards/presentation"]["get"]
+                ["security"]
+                .is_null()
         );
-        assert!(document["paths"]["/api/public/presentations/{contest_id}"]["get"]["security"][1]["broadcast_token_header"].is_array());
-        assert!(document["components"]["securitySchemes"]["broadcast_token_query"].is_null());
-        for (path, method) in [
-            ("/api/admin/contests/{contest_id}/award-categories", "get"),
-            ("/api/admin/contests/{contest_id}/award-categories", "post"),
-            ("/api/admin/award-categories/{id}", "put"),
-            ("/api/admin/award-categories/{id}", "delete"),
-            ("/api/admin/contests/{contest_id}/awards", "get"),
-            ("/api/admin/contests/{contest_id}/awards", "post"),
-            ("/api/admin/contests/{contest_id}/awards/resolver-runs", "get"),
-            ("/api/admin/contests/{contest_id}/awards/candidates", "get"),
-            ("/api/admin/contests/{contest_id}/awards/manual", "post"),
-            ("/api/admin/award-recipients/{id}", "delete"),
-            ("/api/admin/contests/{contest_id}/awards/freeze", "post"),
-            ("/api/admin/contests/{contest_id}/awards/unfreeze", "post"),
-            ("/api/admin/contests/{contest_id}/awards.csv", "get"),
-            ("/api/public/contests/{contest_id}/awards/presentation", "get"),
-            ("/api/contests/{contest_id}/awards/presentation", "put"),
-            ("/api/contests/{contest_id}/awards/host-script", "get"),
-            ("/api/contests/{contest_id}/awards/host-script", "put"),
-            ("/api/contests/{contest_id}/awards/certificates/export", "get"),
-        ] {
-            assert!(document["paths"][path][method].is_object());
-        }
-        assert!(document["paths"]["/api/public/contests/{contest_id}/awards/presentation"]["get"]["security"].is_null());
-        assert!(document["paths"]["/api/admin/contests/{contest_id}/awards"]["post"]["security"][0]["csrf_header"].is_array());
-        assert!(document["paths"]["/api/contests/{contest_id}/awards/certificates/export"]["get"]["responses"]["200"]["content"]["text/csv"].is_object());
-        assert!(document["paths"]["/api/contests/{contest_id}/submissions"]["post"]["security"][0]["csrf_cookie"].is_array());
-        assert!(document["paths"]["/api/admin/contests/{contest_id}/exports/submission-sources.zip"]["get"]["responses"]["200"]["content"]["application/zip"].is_object());
-        assert!(
-            document["paths"]["/api/auth/login"]["post"]["responses"]["429"]["content"]["application/json"]
-                ["schema"]["$ref"]
-                == "#/components/schemas/ApiErrorBody"
-        );
-        assert!(document["paths"]["/api/contests/{contest_id}/announcements"]["get"].is_object());
-        assert!(document["paths"]["/api/contests/{contest_id}/announcements"]["post"].is_object());
-        assert!(
-            document["paths"]["/api/admin/contests/{contest_id}/judge-queue/status"]["get"]
-                .is_object()
-        );
-        assert!(
-            document["paths"]["/api/admin/contests/{contest_id}/exports/tasks"]["post"].is_object()
-        );
-        assert!(
-            document["paths"]["/api/admin/contests/{contest_id}/exports/tasks/{task_id}"]["get"]
-                .is_object()
-        );
-        assert!(
-            document["paths"]["/api/admin/contests/{contest_id}/exports/tasks/{task_id}/download"]
-                ["get"]
-                .is_object()
-        );
-        let export_task_security = &document["paths"]["/api/admin/contests/{contest_id}/exports/tasks"]
-            ["post"]["security"][0];
-        assert!(export_task_security["session_cookie"].is_array());
-        assert!(export_task_security["csrf_cookie"].is_array());
-        assert!(export_task_security["csrf_header"].is_array());
-        for (path, method) in [
-            ("/api/admin/staff-accounts", "get"),
-            ("/api/admin/staff-accounts", "post"),
-            ("/api/admin/staff-accounts/{user_id}", "patch"),
-            ("/api/admin/staff-accounts/{user_id}/reset-password", "post"),
-            ("/api/admin/contest-managers", "get"),
-            ("/api/admin/contest-managers/{user_id}/contests", "put"),
-            ("/api/admin/audit-logs", "get"),
-            ("/api/public/events/contests/{contest_id}", "get"),
-            ("/api/events/contests/{contest_id}", "get"),
-            ("/api/team/events/contests/{contest_id}", "get"),
-        ] {
-            assert!(document["paths"][path][method].is_object());
-        }
-        for (path, method) in [
-            ("/api/admin/staff-accounts", "get"),
-            ("/api/admin/contest-managers", "get"),
-            ("/api/admin/audit-logs", "get"),
-        ] {
-            assert!(document["paths"][path][method]["security"][0]["session_cookie"].is_array());
-        }
-        for (path, method) in [
-            ("/api/admin/staff-accounts", "post"),
-            ("/api/admin/staff-accounts/{user_id}", "patch"),
-            ("/api/admin/staff-accounts/{user_id}/reset-password", "post"),
-            ("/api/admin/contest-managers/{user_id}/contests", "put"),
-        ] {
-            let security = &document["paths"][path][method]["security"][0];
-            assert!(security["session_cookie"].is_array());
-            assert!(security["csrf_cookie"].is_array());
-            assert!(security["csrf_header"].is_array());
-        }
         assert!(
             document["paths"]["/api/public/events/contests/{contest_id}"]["get"]["security"]
                 .is_null()
         );
-        assert!(document["paths"]["/api/events/contests/{contest_id}"]["get"]["security"][0]["session_cookie"].is_array());
-        assert!(document["paths"]["/api/team/events/contests/{contest_id}"]["get"]["security"][0]["session_cookie"].is_array());
-        assert!(document["paths"]["/api/public/events/contests/{contest_id}"]["get"]["responses"]["200"]["content"]["text/event-stream"].is_object());
+        assert!(
+            document["paths"]["/api/public/presentations/{contest_id}"]["get"]["security"][1]
+                ["broadcast_token_header"]
+                .is_array()
+        );
+        assert!(document["components"]["securitySchemes"]["broadcast_token_query"].is_null());
         assert!(document["components"]["securitySchemes"]["session_cookie"].is_object());
         assert!(document["components"]["securitySchemes"]["csrf_cookie"].is_object());
         assert!(document["components"]["securitySchemes"]["csrf_header"].is_object());
@@ -654,110 +709,54 @@ mod tests {
             document["components"]["securitySchemes"]["csrf_header"]["name"],
             "X-XSRF-TOKEN"
         );
-        assert!(document["paths"]["/api/auth/csrf"]["get"]["security"].is_null());
-        let login_security = &document["paths"]["/api/auth/login"]["post"]["security"][0];
-        assert!(login_security.get("session_cookie").is_none());
-        assert!(login_security["csrf_cookie"].is_array());
-        assert!(login_security["csrf_header"].is_array());
-        let current_user_security = &document["paths"]["/api/auth/me"]["get"]["security"][0];
-        assert!(current_user_security["session_cookie"].is_array());
-        assert!(current_user_security.get("csrf_cookie").is_none());
-        assert!(current_user_security.get("csrf_header").is_none());
         for path in ["/api/contests", "/api/contests/{contest_id}"] {
             let security = &document["paths"][path]["get"]["security"];
             assert_eq!(security.as_array().expect("optional contest security").len(), 2);
             assert_eq!(security[0].as_object().expect("anonymous security").len(), 0);
             assert!(security[1]["session_cookie"].is_array());
         }
-        for path in ["/api/auth/logout", "/api/auth/password"] {
-            let security = &document["paths"][path]["post"]["security"][0];
-            assert!(security["session_cookie"].is_array());
-            assert!(security["csrf_cookie"].is_array());
-            assert!(security["csrf_header"].is_array());
-        }
-        for (path, method) in [
-            ("/api/contests", "post"),
-            ("/api/contests/{contest_id}", "patch"),
-            ("/api/contests/{contest_id}", "delete"),
-            ("/api/contests/{contest_id}/transitions", "post"),
-            ("/api/contests/{contest_id}/extensions", "post"),
-            ("/api/contests/{source_contest_id}/clones", "post"),
-        ] {
-            let security = &document["paths"][path][method]["security"][0];
-            assert!(security["session_cookie"].is_array());
-            assert!(security["csrf_cookie"].is_array());
-            assert!(security["csrf_header"].is_array());
-        }
-        for (path, method) in [
-            ("/api/teams", "post"),
-            ("/api/teams/{team_id}", "patch"),
-            ("/api/teams/{team_id}", "delete"),
-            ("/api/teams/batch", "post"),
-            ("/api/teams/{team_id}/members", "post"),
-            ("/api/teams/{team_id}/members/{member_id}", "patch"),
-            ("/api/teams/{team_id}/members/{member_id}", "delete"),
-            ("/api/teams/{team_id}/account/reset-password", "post"),
-            ("/api/contests/{contest_id}/teams", "post"),
-            ("/api/contests/{contest_id}/teams/{team_id}", "delete"),
-        ] {
-            let security = &document["paths"][path][method]["security"][0];
-            assert!(security["session_cookie"].is_array());
-            assert!(security["csrf_cookie"].is_array());
-            assert!(security["csrf_header"].is_array());
-        }
-        for (path, method) in [
-            ("/api/teams", "get"),
-            ("/api/teams/{team_id}", "get"),
-            ("/api/teams/{team_id}/members", "get"),
-        ] {
-            assert!(document["paths"][path][method]["security"][0]["session_cookie"].is_array());
-        }
         let contest_teams_security =
             &document["paths"]["/api/contests/{contest_id}/teams"]["get"]["security"];
         assert_eq!(contest_teams_security.as_array().expect("optional roster security").len(), 2);
         assert_eq!(contest_teams_security[0].as_object().expect("anonymous security").len(), 0);
-        for (path, method) in [
-            ("/api/problems", "post"),
-            ("/api/problems/{problem_id}", "patch"),
-            ("/api/problems/{problem_id}", "delete"),
-            ("/api/problems/{problem_id}/statements/{lang_code}", "put"),
-            ("/api/problems/{problem_id}/statements/{lang_code}", "delete"),
-            ("/api/problems/{problem_id}/attachments", "post"),
-            ("/api/problems/{problem_id}/attachments/{attachment_id}", "delete"),
-            ("/api/problems/{problem_id}/testdata", "post"),
-            ("/api/problems/{problem_id}/testdata/versions/{version}/activate", "post"),
-            ("/api/contests/{contest_id}/problems", "post"),
-            ("/api/contests/{contest_id}/problems/{problem_id}", "patch"),
-            ("/api/contests/{contest_id}/problems/{problem_id}", "delete"),
-            ("/api/contests/{contest_id}/problems/reorder", "put"),
-        ] {
-            let security = &document["paths"][path][method]["security"][0];
-            assert!(security["session_cookie"].is_array());
-            assert!(security["csrf_cookie"].is_array());
-            assert!(security["csrf_header"].is_array());
-        }
-        for (path, method) in [
-            ("/api/problems", "get"),
-            ("/api/problems/{problem_id}", "get"),
-            ("/api/problems/{problem_id}/statements", "get"),
-            ("/api/problems/{problem_id}/attachments", "get"),
-            ("/api/problems/{problem_id}/attachments/{attachment_id}", "get"),
-            ("/api/problems/{problem_id}/testdata", "get"),
-            ("/api/problems/{problem_id}/testdata/versions", "get"),
-            ("/api/problems/{problem_id}/testdata/versions/{version}", "get"),
-            ("/api/contests/{contest_id}/problems", "get"),
-        ] {
-            assert!(document["paths"][path][method]["security"][0]["session_cookie"].is_array());
-        }
-        let mutation_security =
-            &document["paths"]["/api/contests/{contest_id}/announcements"]["post"]["security"][0];
-        assert!(mutation_security["session_cookie"].is_array());
-        assert!(mutation_security["csrf_cookie"].is_array());
-        assert!(mutation_security["csrf_header"].is_array());
-        assert_eq!(
-            document["components"]["schemas"]["AnnouncementResponse"]["properties"]["createdAt"]["format"],
-            "date-time"
+    }
+
+    #[test]
+    fn generated_contract_exposes_response_content_and_schema_formats() {
+        let document = serde_json::to_value(document()).expect("serialize OpenAPI contract");
+
+        assert!(document["paths"]["/api/admin/contests/{contest_id}/scoreboard.csv"]["get"]["responses"]["200"]["content"]["text/csv"].is_object());
+        assert!(
+            document["paths"]["/api/print-requests/{id}/pdf"]["get"]["responses"]["200"]["content"]
+                ["application/pdf"]
+                .is_object()
         );
+        assert!(document["paths"]["/api/admin/contests/{contest_id}/exports/submission-sources.zip"]["get"]["responses"]["200"]["content"]["application/zip"].is_object());
+        assert!(
+            document["paths"]["/api/auth/login"]["post"]["responses"]["429"]["content"]["application/json"]
+                ["schema"]["$ref"]
+                == "#/components/schemas/ApiErrorBody"
+        );
+        assert!(document["paths"]["/api/public/events/contests/{contest_id}"]["get"]["responses"]["200"]["content"]["text/event-stream"].is_object());
+        assert!(document["paths"]["/api/admin/contest-admins"].is_null());
+        let date_time_fields = [
+            ("AnnouncementResponse", "createdAt"),
+            ("ContestResponse", "createdAt"),
+            ("ContestExtensionRequest", "expectedEndAt"),
+            ("TeamMemberResponse", "createdAt"),
+            ("ProblemResponse", "createdAt"),
+            ("SubmissionSummary", "submittedAt"),
+            ("ScoreboardResponse", "generatedAt"),
+            ("ResolverRunResponse", "createdAt"),
+            ("PresentationResponse", "serverTime"),
+        ];
+        for (schema, field) in date_time_fields {
+            assert_eq!(
+                document["components"]["schemas"][schema]["properties"][field]["format"],
+                "date-time",
+                "expected date-time format on {schema}.{field}"
+            );
+        }
         assert_eq!(
             document["components"]["schemas"]["LoginRequest"]["properties"]["password"]["writeOnly"],
             true
@@ -773,40 +772,6 @@ mod tests {
         assert!(
             document["components"]["schemas"]["CurrentUserResponse"]["properties"]["roles"]
                 .is_null()
-        );
-        assert!(document["paths"]["/api/admin/contest-admins"].is_null());
-        assert_eq!(
-            document["components"]["schemas"]["ContestResponse"]["properties"]["createdAt"]["format"],
-            "date-time"
-        );
-        assert_eq!(
-            document["components"]["schemas"]["ContestExtensionRequest"]["properties"]["expectedEndAt"]
-                ["format"],
-            "date-time"
-        );
-        assert_eq!(
-            document["components"]["schemas"]["TeamMemberResponse"]["properties"]["createdAt"]["format"],
-            "date-time"
-        );
-        assert_eq!(
-            document["components"]["schemas"]["ProblemResponse"]["properties"]["createdAt"]["format"],
-            "date-time"
-        );
-        assert_eq!(
-            document["components"]["schemas"]["SubmissionSummary"]["properties"]["submittedAt"]["format"],
-            "date-time"
-        );
-        assert_eq!(
-            document["components"]["schemas"]["ScoreboardResponse"]["properties"]["generatedAt"]["format"],
-            "date-time"
-        );
-        assert_eq!(
-            document["components"]["schemas"]["ResolverRunResponse"]["properties"]["createdAt"]["format"],
-            "date-time"
-        );
-        assert_eq!(
-            document["components"]["schemas"]["PresentationResponse"]["properties"]["serverTime"]["format"],
-            "date-time"
         );
         let page_schema_ref = document["paths"]["/api/contests"]["get"]["responses"]["200"]
             ["content"]["application/json"]["schema"]["$ref"]

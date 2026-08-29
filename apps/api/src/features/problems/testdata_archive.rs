@@ -136,7 +136,7 @@ mod tests {
     use bytes::Bytes;
     use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-    use super::validate_sync;
+    use crate::features::problems::testdata_archive::validate_sync;
 
     fn archive(entries: &[(&str, &[u8])]) -> Bytes {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));

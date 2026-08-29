@@ -23,12 +23,39 @@ pub enum CupsJobStatus {
     Unknown,
 }
 
+/// A CUPS gateway failure whose payload has been flattened for storage:
+/// no control characters, single-spaced, at most 255 characters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SanitizedError(String);
+
+impl SanitizedError {
+    #[must_use]
+    pub fn sanitize(raw: impl std::fmt::Display) -> Self {
+        let flattened = raw.to_string().replace(['\r', '\n'], " ");
+        let flattened = flattened.split_whitespace().collect::<Vec<_>>().join(" ");
+        Self(flattened.chars().take(255).collect())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SanitizedError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for SanitizedError {}
+
 #[async_trait]
 pub trait CupsGateway: Send + Sync {
-    async fn probe(&self) -> Result<(), String>;
-    async fn submit(&self, title: &str, pdf: Bytes) -> Result<String, String>;
-    async fn status(&self, job_id: &str) -> Result<CupsJobStatus, String>;
-    async fn cancel(&self, job_id: &str) -> Result<(), String>;
+    async fn probe(&self) -> Result<(), SanitizedError>;
+    async fn submit(&self, title: &str, pdf: Bytes) -> Result<String, SanitizedError>;
+    async fn status(&self, job_id: &str) -> Result<CupsJobStatus, SanitizedError>;
+    async fn cancel(&self, job_id: &str) -> Result<(), SanitizedError>;
     fn printer(&self) -> &str;
 }
 
@@ -49,7 +76,7 @@ impl CommandLineCupsGateway {
         program: &str,
         arguments: &[&str],
         input: Option<Bytes>,
-    ) -> Result<std::process::Output, String> {
+    ) -> Result<std::process::Output, SanitizedError> {
         let mut command = Command::new(program);
         command
             .args(arguments)
@@ -59,20 +86,23 @@ impl CommandLineCupsGateway {
             .kill_on_drop(true);
         let mut child = command.spawn().map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
-                format!("{program} is not installed")
+                SanitizedError::sanitize(format!("{program} is not installed"))
             } else {
-                sanitize_error(&error.to_string())
+                SanitizedError::sanitize(error)
             }
         })?;
         if let Some(input) = input {
-            let mut stdin = child.stdin.take().ok_or_else(|| "missing command stdin".to_owned())?;
-            stdin.write_all(&input).await.map_err(|error| sanitize_error(&error.to_string()))?;
+            let mut stdin = child
+                .stdin
+                .take()
+                .ok_or_else(|| SanitizedError::sanitize("missing command stdin"))?;
+            stdin.write_all(&input).await.map_err(SanitizedError::sanitize)?;
             drop(stdin);
         }
         tokio::time::timeout(self.timeout, child.wait_with_output())
             .await
-            .map_err(|_| format!("{program} timed out"))?
-            .map_err(|error| sanitize_error(&error.to_string()))
+            .map_err(|_| SanitizedError::sanitize(format!("{program} timed out")))?
+            .map_err(SanitizedError::sanitize)
     }
 
     async fn checked(
@@ -80,16 +110,16 @@ impl CommandLineCupsGateway {
         program: &str,
         arguments: &[&str],
         input: Option<Bytes>,
-    ) -> Result<std::process::Output, String> {
+    ) -> Result<std::process::Output, SanitizedError> {
         let output = self.execute(program, arguments, input).await?;
         if output.status.success() {
             Ok(output)
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
             Err(if stderr.trim().is_empty() {
-                format!("{program} exited with {}", output.status)
+                SanitizedError::sanitize(format!("{program} exited with {}", output.status))
             } else {
-                sanitize_error(&stderr)
+                SanitizedError::sanitize(&stderr)
             })
         }
     }
@@ -97,19 +127,19 @@ impl CommandLineCupsGateway {
 
 #[async_trait]
 impl CupsGateway for CommandLineCupsGateway {
-    async fn probe(&self) -> Result<(), String> {
+    async fn probe(&self) -> Result<(), SanitizedError> {
         self.checked("lpstat", &["-p", &self.printer], None).await.map(|_| ())
     }
 
-    async fn submit(&self, title: &str, pdf: Bytes) -> Result<String, String> {
+    async fn submit(&self, title: &str, pdf: Bytes) -> Result<String, SanitizedError> {
         let output = self
             .checked("lp", &["-d", &self.printer, "-t", title, "-o", "media=A4", "-"], Some(pdf))
             .await?;
-        parse_job_id(&String::from_utf8_lossy(&output.stdout), &self.printer)
-            .ok_or_else(|| "CUPS did not return a job identifier".to_owned())
+        parse_job_id(String::from_utf8_lossy(&output.stdout).as_ref(), &self.printer)
+            .ok_or_else(|| SanitizedError::sanitize("CUPS did not return a job identifier"))
     }
 
-    async fn status(&self, job_id: &str) -> Result<CupsJobStatus, String> {
+    async fn status(&self, job_id: &str) -> Result<CupsJobStatus, SanitizedError> {
         let active =
             self.checked("lpstat", &["-W", "not-completed", "-o", &self.printer], None).await?;
         if contains_job(&active.stdout, job_id) {
@@ -124,7 +154,7 @@ impl CupsGateway for CommandLineCupsGateway {
         })
     }
 
-    async fn cancel(&self, job_id: &str) -> Result<(), String> {
+    async fn cancel(&self, job_id: &str) -> Result<(), SanitizedError> {
         self.checked("cancel", &[job_id], None).await.map(|_| ())
     }
 
@@ -154,12 +184,6 @@ fn contains_job(output: &[u8], job_id: &str) -> bool {
         .lines()
         .filter_map(|line| line.split_whitespace().next())
         .any(|candidate| candidate == job_id)
-}
-
-fn sanitize_error(message: &str) -> String {
-    let sanitized = message.replace(['\r', '\n'], " ");
-    let sanitized = sanitized.split_whitespace().collect::<Vec<_>>().join(" ");
-    sanitized.chars().take(255).collect()
 }
 
 #[derive(sqlx::FromRow)]
@@ -268,13 +292,31 @@ impl CupsDeliveryRunner {
         };
         match self.gateway.cancel(job_id).await {
             Ok(()) => {
-                if let Err(error) = sqlx::query("UPDATE print_requests request SET cancellation_pending = false, delivery_lease_owner = NULL, delivery_lease_until = NULL, last_delivery_error = NULL, updated_at = now(), version = version + 1 WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL)")
-                    .bind(request.id).bind(self.instance_id).execute(&self.database).await
+                if let Err(error) = sqlx::query(
+                    r#"
+                    UPDATE print_requests request
+                    SET cancellation_pending = false,
+                        delivery_lease_owner = NULL,
+                        delivery_lease_until = NULL,
+                        last_delivery_error = NULL,
+                        updated_at = now(),
+                        version = version + 1
+                    WHERE request.id = $1 AND request.delivery_lease_owner = $2
+                        AND EXISTS (
+                            SELECT 1 FROM contests contest
+                            WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL
+                        )
+                    "#,
+                )
+                .bind(request.id)
+                .bind(self.instance_id)
+                .execute(&self.database)
+                .await
                 {
                     warn!(print_request_id = request.id, %error, "failed to persist CUPS cancellation");
                 }
             }
-            Err(error) => self.defer(request.id, request.delivery_attempts, &error).await,
+            Err(error) => self.defer(request.id, request.delivery_attempts, error.as_str()).await,
         }
     }
 
@@ -305,7 +347,7 @@ impl CupsDeliveryRunner {
                     warn!(print_request_id = request.id, cups_job_id = %job_id, %error, "CUPS accepted job but database update failed");
                 }
             }
-            Err(error) => self.fail_delivery(request, &error).await,
+            Err(error) => self.fail_delivery(request, error.as_str()).await,
         }
     }
 
@@ -315,9 +357,27 @@ impl CupsDeliveryRunner {
         job_id: &str,
     ) -> Result<(), sqlx::Error> {
         let mut tx = self.database.begin().await?;
-        let updated = sqlx::query("UPDATE print_requests request SET status = 'PRINTING', printer_id = $3, cups_job_id = $4, submitted_at = now(), delivery_lease_owner = NULL, delivery_lease_until = NULL, last_delivery_error = NULL, updated_at = now(), version = version + 1 WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND request.status = 'QUEUED' AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL)")
-            .bind(request.id).bind(self.instance_id).bind(self.gateway.printer()).bind(job_id)
-            .execute(&mut *tx).await?.rows_affected();
+        let updated = sqlx::query(
+            r#"
+            UPDATE print_requests request
+            SET status = 'PRINTING',
+                printer_id = $3,
+                cups_job_id = $4,
+                submitted_at = now(),
+                delivery_lease_owner = NULL,
+                delivery_lease_until = NULL,
+                last_delivery_error = NULL,
+                updated_at = now(),
+                version = version + 1
+            WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND request.status = 'QUEUED'
+                AND EXISTS (
+                    SELECT 1 FROM contests contest
+                    WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL
+                )
+            "#,
+        )
+        .bind(request.id).bind(self.instance_id).bind(self.gateway.printer()).bind(job_id)
+        .execute(&mut *tx).await?.rows_affected();
         if updated == 1 {
             insert_events(&mut tx, request, "PRINTING").await?;
         }
@@ -354,14 +414,31 @@ impl CupsDeliveryRunner {
                     .await;
                 }
             }
-            Err(error) => self.defer(request.id, request.delivery_attempts, &error).await,
+            Err(error) => self.defer(request.id, request.delivery_attempts, error.as_str()).await,
         }
     }
 
     async fn mark_completed(&self, request: &ClaimedPrintRequest) -> Result<(), sqlx::Error> {
         let mut tx = self.database.begin().await?;
-        let updated = sqlx::query("UPDATE print_requests request SET status = 'COMPLETED', completed_at = now(), failed_reason = NULL, delivery_lease_owner = NULL, delivery_lease_until = NULL, last_delivery_error = NULL, updated_at = now(), version = version + 1 WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND request.status = 'PRINTING' AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL)")
-            .bind(request.id).bind(self.instance_id).execute(&mut *tx).await?.rows_affected();
+        let updated = sqlx::query(
+            r#"
+            UPDATE print_requests request
+            SET status = 'COMPLETED',
+                completed_at = now(),
+                failed_reason = NULL,
+                delivery_lease_owner = NULL,
+                delivery_lease_until = NULL,
+                last_delivery_error = NULL,
+                updated_at = now(),
+                version = version + 1
+            WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND request.status = 'PRINTING'
+                AND EXISTS (
+                    SELECT 1 FROM contests contest
+                    WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL
+                )
+            "#,
+        )
+        .bind(request.id).bind(self.instance_id).execute(&mut *tx).await?.rows_affected();
         if updated == 1 {
             insert_events(&mut tx, request, "COMPLETED").await?;
         }
@@ -369,7 +446,7 @@ impl CupsDeliveryRunner {
     }
 
     async fn fail_delivery(&self, request: &ClaimedPrintRequest, message: &str) {
-        let message = sanitize_error(message);
+        let message = SanitizedError::sanitize(message);
         let terminal = request.delivery_attempts >= MAX_DELIVERY_ATTEMPTS;
         let delay_seconds = delivery_retry_delay(request.delivery_attempts);
         let mut tx = match self.database.begin().await {
@@ -379,9 +456,25 @@ impl CupsDeliveryRunner {
                 return;
             }
         };
-        let result = sqlx::query("UPDATE print_requests request SET status = CASE WHEN $3 THEN 'FAILED' ELSE 'QUEUED' END, failed_reason = CASE WHEN $3 THEN $4 ELSE NULL END, last_delivery_error = $4, delivery_lease_owner = NULL, delivery_lease_until = CASE WHEN $3 THEN NULL ELSE now() + make_interval(secs => $5) END, updated_at = now(), version = version + 1 WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL)")
-            .bind(request.id).bind(self.instance_id).bind(terminal).bind(&message).bind(delay_seconds)
-            .execute(&mut *tx).await;
+        let result = sqlx::query(
+            r#"
+            UPDATE print_requests request
+            SET status = CASE WHEN $3 THEN 'FAILED' ELSE 'QUEUED' END,
+                failed_reason = CASE WHEN $3 THEN $4 ELSE NULL END,
+                last_delivery_error = $4,
+                delivery_lease_owner = NULL,
+                delivery_lease_until = CASE WHEN $3 THEN NULL ELSE now() + make_interval(secs => $5) END,
+                updated_at = now(),
+                version = version + 1
+            WHERE request.id = $1 AND request.delivery_lease_owner = $2
+                AND EXISTS (
+                    SELECT 1 FROM contests contest
+                    WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL
+                )
+            "#,
+        )
+        .bind(request.id).bind(self.instance_id).bind(terminal).bind(message.as_str()).bind(delay_seconds)
+        .execute(&mut *tx).await;
         match result {
             Ok(result) if result.rows_affected() == 1 => {
                 if terminal && insert_events(&mut tx, request, "FAILED").await.is_err() {
@@ -403,7 +496,7 @@ impl CupsDeliveryRunner {
     }
 
     async fn fail_internal(&self, request: &ClaimedPrintRequest, message: &str) {
-        let message = sanitize_error(message);
+        let message = SanitizedError::sanitize(message);
         let mut tx = match self.database.begin().await {
             Ok(tx) => tx,
             Err(error) => {
@@ -411,8 +504,29 @@ impl CupsDeliveryRunner {
                 return;
             }
         };
-        match sqlx::query("UPDATE print_requests request SET status = 'FAILED', failed_reason = $3, last_delivery_error = $3, cancellation_pending = false, delivery_lease_owner = NULL, delivery_lease_until = NULL, updated_at = now(), version = version + 1 WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL)")
-            .bind(request.id).bind(self.instance_id).bind(&message).execute(&mut *tx).await
+        match sqlx::query(
+            r#"
+            UPDATE print_requests request
+            SET status = 'FAILED',
+                failed_reason = $3,
+                last_delivery_error = $3,
+                cancellation_pending = false,
+                delivery_lease_owner = NULL,
+                delivery_lease_until = NULL,
+                updated_at = now(),
+                version = version + 1
+            WHERE request.id = $1 AND request.delivery_lease_owner = $2
+                AND EXISTS (
+                    SELECT 1 FROM contests contest
+                    WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL
+                )
+            "#,
+        )
+        .bind(request.id)
+        .bind(self.instance_id)
+        .bind(message.as_str())
+        .execute(&mut *tx)
+        .await
         {
             Ok(result) if result.rows_affected() == 1 => {
                 if insert_events(&mut tx, request, "FAILED").await.is_ok() {
@@ -423,7 +537,9 @@ impl CupsDeliveryRunner {
                     let _ignored = tx.rollback().await;
                 }
             }
-            Ok(_) => { let _ignored = tx.rollback().await; }
+            Ok(_) => {
+                let _ignored = tx.rollback().await;
+            }
             Err(error) => {
                 let _ignored = tx.rollback().await;
                 warn!(print_request_id = request.id, %error, "failed to persist terminal print failure");
@@ -432,11 +548,28 @@ impl CupsDeliveryRunner {
     }
 
     async fn defer(&self, id: i64, attempts: i32, message: &str) {
-        let message = (!message.is_empty()).then(|| sanitize_error(message));
+        let sanitized = (!message.is_empty()).then(|| SanitizedError::sanitize(message));
+        let message = sanitized.as_ref().map(SanitizedError::as_str);
         let delay_seconds = delivery_retry_delay(attempts);
-        if let Err(error) = sqlx::query("UPDATE print_requests request SET delivery_lease_until = now() + make_interval(secs => $3), last_delivery_error = COALESCE($4, request.last_delivery_error), updated_at = now() WHERE request.id = $1 AND request.delivery_lease_owner = $2 AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL)")
-            .bind(id).bind(self.instance_id).bind(delay_seconds).bind(message)
-            .execute(&self.database).await
+        if let Err(error) = sqlx::query(
+            r#"
+            UPDATE print_requests request
+            SET delivery_lease_until = now() + make_interval(secs => $3),
+                last_delivery_error = COALESCE($4, request.last_delivery_error),
+                updated_at = now()
+            WHERE request.id = $1 AND request.delivery_lease_owner = $2
+                AND EXISTS (
+                    SELECT 1 FROM contests contest
+                    WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL
+                )
+            "#,
+        )
+        .bind(id)
+        .bind(self.instance_id)
+        .bind(delay_seconds)
+        .bind(message)
+        .execute(&self.database)
+        .await
         {
             warn!(print_request_id = id, %error, "failed to defer print delivery");
         }
@@ -472,9 +605,9 @@ mod tests {
     use bytes::Bytes;
     use sqlx::PgPool;
 
-    use super::{
-        CommandLineCupsGateway, CupsDeliveryRunner, CupsGateway, CupsJobStatus, contains_job,
-        parse_job_id, sanitize_error,
+    use crate::features::printing::delivery::{
+        CommandLineCupsGateway, CupsDeliveryRunner, CupsGateway, CupsJobStatus, SanitizedError,
+        contains_job, parse_job_id,
     };
     use crate::object_storage::{ObjectStorage, ObjectStorageError, ObjectStorageHandle};
 
@@ -518,22 +651,22 @@ mod tests {
 
     #[async_trait]
     impl CupsGateway for FakeCupsGateway {
-        async fn probe(&self) -> Result<(), String> {
+        async fn probe(&self) -> Result<(), SanitizedError> {
             Ok(())
         }
 
-        async fn submit(&self, _title: &str, pdf: Bytes) -> Result<String, String> {
+        async fn submit(&self, _title: &str, pdf: Bytes) -> Result<String, SanitizedError> {
             if !pdf.starts_with(b"%PDF-") {
-                return Err("invalid PDF".to_owned());
+                return Err(SanitizedError::sanitize("invalid PDF"));
             }
             Ok("fake-42".to_owned())
         }
 
-        async fn status(&self, _job_id: &str) -> Result<CupsJobStatus, String> {
+        async fn status(&self, _job_id: &str) -> Result<CupsJobStatus, SanitizedError> {
             Ok(*self.status.lock().expect("CUPS status lock"))
         }
 
-        async fn cancel(&self, _job_id: &str) -> Result<(), String> {
+        async fn cancel(&self, _job_id: &str) -> Result<(), SanitizedError> {
             Ok(())
         }
 
@@ -551,8 +684,8 @@ mod tests {
         assert_eq!(parse_job_id("request id is other-42", "xcpc"), None);
         assert!(contains_job(b"xcpc-42 user 10\n", "xcpc-42"));
         assert!(!contains_job(b"xcpc-420 user 10\n", "xcpc-42"));
-        assert!(!sanitize_error(&"x\n".repeat(300)).contains('\n'));
-        assert!(sanitize_error(&"x".repeat(300)).len() <= 255);
+        assert!(!SanitizedError::sanitize("x\n".repeat(300)).as_str().contains('\n'));
+        assert!(SanitizedError::sanitize("x".repeat(300)).as_str().len() <= 255);
         let gateway =
             CommandLineCupsGateway::new("xcpc".to_owned(), std::time::Duration::from_secs(1));
         assert_eq!(gateway.printer(), "xcpc");
@@ -571,9 +704,23 @@ mod tests {
         .expect("insert delivery team");
         let contest_id = sqlx::query_scalar::<_, i64>("INSERT INTO contests (name, status, visibility, start_at, end_at) VALUES ('Delivery Contest', 'RUNNING', 'PRIVATE', now() - interval '1 hour', now() + interval '1 hour') RETURNING id")
             .fetch_one(&pool).await.expect("insert delivery contest");
-        let request_id = sqlx::query_scalar::<_, i64>("INSERT INTO print_requests (contest_id, team_id, team_name, content, content_hash, page_count, status, pdf_object_key, pdf_bucket, requested_by) VALUES ($1, $2, 'Delivery Team', 'hello', $3, 1, 'QUEUED', 'prints/one.pdf', 'artifacts', $4) RETURNING id")
-            .bind(contest_id).bind(team_id).bind("0".repeat(64)).bind(user_id)
-            .fetch_one(&pool).await.expect("insert queued print request");
+        let request_id = sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO print_requests
+                (contest_id, team_id, team_name, content, content_hash, page_count, status,
+                 pdf_object_key, pdf_bucket, requested_by)
+            VALUES ($1, $2, 'Delivery Team', 'hello', $3, 1, 'QUEUED', 'prints/one.pdf',
+                    'artifacts', $4)
+            RETURNING id
+            "#,
+        )
+        .bind(contest_id)
+        .bind(team_id)
+        .bind("0".repeat(64))
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("insert queued print request");
         let storage = ObjectStorageHandle::with_buckets(
             std::sync::Arc::new(MemoryStorage {
                 objects: Mutex::new(HashMap::from([(

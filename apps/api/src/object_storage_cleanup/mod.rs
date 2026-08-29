@@ -13,8 +13,7 @@ mod runner;
 mod tests;
 
 pub use integrity::{
-    ObjectStorageIntegrityReport, referenced_object_keys, scan_object_integrity,
-    scan_orphaned_objects,
+    IntegrityScanError, ObjectStorageIntegrityReport, referenced_object_keys, scan_object_integrity,
 };
 #[cfg(test)]
 pub(crate) use integrity::{

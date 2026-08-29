@@ -34,7 +34,9 @@ impl std::str::FromStr for ParticipationType {
             "OFFICIAL" => Ok(Self::Official),
             "STAR" => Ok(Self::Star),
             "PRACTICE" => Ok(Self::Practice),
-            invalid => Err(AppError::internal("invalid contest_teams.participation_type", invalid)),
+            invalid => {
+                Err(AppError::internal_message("invalid contest_teams.participation_type", invalid))
+            }
         }
     }
 }
@@ -262,7 +264,12 @@ impl TeamRow {
                 Some(TeamAccountResponse { user_id, username, enabled, password_reset_required })
             }
             (None, None, None, None) => None,
-            _ => return Err(AppError::internal("load team account", "incomplete account join")),
+            _ => {
+                return Err(AppError::internal_message(
+                    "load team account",
+                    "incomplete account join",
+                ));
+            }
         };
         Ok(TeamResponse {
             id: self.id,
@@ -542,7 +549,9 @@ fn validate_password(field: &'static str, value: &str) -> Result<(), AppError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{BatchImportRequest, CreateTeamRequest, ParticipationType, UpdateTeamRequest};
+    use crate::features::teams::model::{
+        BatchImportRequest, CreateTeamRequest, ParticipationType, UpdateTeamRequest,
+    };
 
     #[test]
     fn account_credentials_must_be_complete() {

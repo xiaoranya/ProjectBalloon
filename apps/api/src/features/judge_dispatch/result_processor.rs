@@ -4,7 +4,10 @@ use sqlx::PgPool;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::features::{balloons, scoreboard, scoring};
+use crate::features::{
+    submissions::SubmissionStatus,
+    {balloons, scoreboard, scoring},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyResultOutcome {
@@ -41,6 +44,7 @@ struct ResultContext {
     result_message_id: Option<Uuid>,
     completed: bool,
     superseded: bool,
+    status: String,
     submission_scope: String,
     contest_id: Option<i64>,
     team_id: Option<i64>,
@@ -67,6 +71,7 @@ impl JudgeResultProcessor {
                    j.result_message_id,
                    j.completed_at IS NOT NULL AS completed,
                    j.superseded,
+                   s.status,
                    s.submission_scope,
                    s.contest_id,
                    s.team_id,
@@ -106,6 +111,20 @@ impl JudgeResultProcessor {
             return Err(ApplyResultError::Conflict(format!(
                 "judgement {} already has a different final result",
                 result.judgement_id
+            )));
+        }
+
+        let current = SubmissionStatus::parse(&context.status).ok_or_else(|| {
+            ApplyResultError::Conflict(format!(
+                "submission {} has unknown status {}",
+                context.submission_id, context.status
+            ))
+        })?;
+        if current.domain().is_terminal() {
+            return Err(ApplyResultError::Conflict(format!(
+                "submission {} already ended as {}",
+                context.submission_id,
+                current.as_str()
             )));
         }
 
@@ -253,7 +272,18 @@ async fn apply_practice_progress(
         .ok_or_else(|| sqlx::Error::Protocol("practice submission has no participant".into()))?;
     let score = if accepted { 100 } else { 0 };
     sqlx::query(
-        "INSERT INTO practice_problem_progress(user_id,problem_id,attempts,best_score,solved,last_submission_id,solved_at) VALUES($1,$2,1,$3,$4,$5,CASE WHEN $4 THEN now() ELSE NULL END) ON CONFLICT(user_id,problem_id) DO UPDATE SET attempts=practice_problem_progress.attempts+1,best_score=GREATEST(practice_problem_progress.best_score,EXCLUDED.best_score),solved=practice_problem_progress.solved OR EXCLUDED.solved,last_submission_id=EXCLUDED.last_submission_id,solved_at=coalesce(practice_problem_progress.solved_at,EXCLUDED.solved_at),updated_at=now()",
+        r#"
+        INSERT INTO practice_problem_progress
+            (user_id,problem_id,attempts,best_score,solved,last_submission_id,solved_at)
+        VALUES($1,$2,1,$3,$4,$5,CASE WHEN $4 THEN now() ELSE NULL END)
+        ON CONFLICT(user_id,problem_id) DO UPDATE
+            SET attempts=practice_problem_progress.attempts+1,
+                best_score=GREATEST(practice_problem_progress.best_score,EXCLUDED.best_score),
+                solved=practice_problem_progress.solved OR EXCLUDED.solved,
+                last_submission_id=EXCLUDED.last_submission_id,
+                solved_at=coalesce(practice_problem_progress.solved_at,EXCLUDED.solved_at),
+                updated_at=now()
+        "#,
     )
     .bind(user_id)
     .bind(context.problem_id)
@@ -264,7 +294,18 @@ async fn apply_practice_progress(
     .await?;
     if let Some(enrollment_id) = context.training_enrollment_id {
         sqlx::query(
-            "INSERT INTO training_progress(enrollment_id,problem_id,status,attempts,best_score,solved_at) VALUES($1,$2,$3,1,$4,CASE WHEN $3='SOLVED' THEN now() ELSE NULL END) ON CONFLICT(enrollment_id,problem_id) DO UPDATE SET status=CASE WHEN training_progress.status='SOLVED' OR EXCLUDED.status='SOLVED' THEN 'SOLVED' ELSE 'IN_PROGRESS' END,attempts=training_progress.attempts+1,best_score=GREATEST(training_progress.best_score,EXCLUDED.best_score),solved_at=coalesce(training_progress.solved_at,EXCLUDED.solved_at),updated_at=now()",
+            r#"
+            INSERT INTO training_progress
+                (enrollment_id,problem_id,status,attempts,best_score,solved_at)
+            VALUES($1,$2,$3,1,$4,CASE WHEN $3='SOLVED' THEN now() ELSE NULL END)
+            ON CONFLICT(enrollment_id,problem_id) DO UPDATE
+                SET status=CASE WHEN training_progress.status='SOLVED' OR EXCLUDED.status='SOLVED'
+                        THEN 'SOLVED' ELSE 'IN_PROGRESS' END,
+                    attempts=training_progress.attempts+1,
+                    best_score=GREATEST(training_progress.best_score,EXCLUDED.best_score),
+                    solved_at=coalesce(training_progress.solved_at,EXCLUDED.solved_at),
+                    updated_at=now()
+            "#,
         )
         .bind(enrollment_id)
         .bind(context.problem_id)
@@ -273,7 +314,29 @@ async fn apply_practice_progress(
         .execute(&mut **transaction)
         .await?;
         sqlx::query(
-            "UPDATE training_enrollments e SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress p WHERE p.enrollment_id=e.id AND p.problem_id=i.problem_id AND p.status='SOLVED')) THEN 'COMPLETED' ELSE 'ACTIVE' END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM training_set_items i WHERE i.set_id=e.set_id AND i.required AND NOT EXISTS(SELECT 1 FROM training_progress p WHERE p.enrollment_id=e.id AND p.problem_id=i.problem_id AND p.status='SOLVED')) THEN coalesce(e.completed_at,now()) ELSE NULL END,updated_at=now() WHERE e.id=$1",
+            r#"
+            UPDATE training_enrollments e
+            SET status=CASE WHEN NOT EXISTS(
+                        SELECT 1 FROM training_set_items i
+                        WHERE i.set_id=e.set_id AND i.required
+                            AND NOT EXISTS(
+                                SELECT 1 FROM training_progress p
+                                WHERE p.enrollment_id=e.id
+                                    AND p.problem_id=i.problem_id AND p.status='SOLVED'
+                            )
+                    ) THEN 'COMPLETED' ELSE 'ACTIVE' END,
+                completed_at=CASE WHEN NOT EXISTS(
+                        SELECT 1 FROM training_set_items i
+                        WHERE i.set_id=e.set_id AND i.required
+                            AND NOT EXISTS(
+                                SELECT 1 FROM training_progress p
+                                WHERE p.enrollment_id=e.id
+                                    AND p.problem_id=i.problem_id AND p.status='SOLVED'
+                            )
+                    ) THEN coalesce(e.completed_at,now()) ELSE NULL END,
+                updated_at=now()
+            WHERE e.id=$1
+            "#,
         )
         .bind(enrollment_id)
         .execute(&mut **transaction)
@@ -291,7 +354,9 @@ mod tests {
     use time::{Duration, OffsetDateTime};
     use uuid::Uuid;
 
-    use super::{ApplyResultError, ApplyResultOutcome, JudgeResultProcessor};
+    use crate::features::judge_dispatch::result_processor::{
+        ApplyResultError, ApplyResultOutcome, JudgeResultProcessor,
+    };
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]

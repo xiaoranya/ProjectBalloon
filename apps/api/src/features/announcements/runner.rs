@@ -6,7 +6,7 @@ use tracing::{error, info};
 
 use crate::error::AppError;
 
-use super::service::{public_event_tx, schedule_event_tx};
+use crate::features::announcements::service::{public_event_tx, schedule_event_tx};
 
 pub struct AnnouncementScheduleRunner {
     database: PgPool,

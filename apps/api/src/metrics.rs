@@ -6,6 +6,7 @@ use axum::{
 use sqlx::FromRow;
 
 use crate::{error::AppError, state::AppState};
+use axum::routing::get;
 
 #[derive(Debug, FromRow)]
 struct MetricsSnapshot {
@@ -154,9 +155,14 @@ fn render(value: &MetricsSnapshot) -> String {
     output
 }
 
+/// Routes owned by this feature, assembled by the root router.
+pub fn routes() -> axum::Router<crate::state::AppState> {
+    axum::Router::new().route("/metrics", get(prometheus))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MetricsSnapshot, render};
+    use crate::metrics::{MetricsSnapshot, render};
 
     #[test]
     fn prometheus_output_has_help_type_and_values() {

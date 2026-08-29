@@ -15,7 +15,9 @@ use crate::{
     state::AppState,
 };
 
-use super::model::{AnnouncementResponse, CreateRequest, ListQuery, PinRequest, UpdateRequest};
+use crate::features::announcements::model::{
+    AnnouncementResponse, CreateRequest, ListQuery, PinRequest, UpdateRequest,
+};
 
 #[utoipa::path(
     post,

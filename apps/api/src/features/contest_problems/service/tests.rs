@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use sqlx::PgPool;
 
-use super::ContestProblemService;
+use crate::features::contest_problems::service::ContestProblemService;
 use crate::features::{
     auth::model::{AuthUser, UserType},
     contest_problems::model::{

@@ -15,7 +15,9 @@ use tokio::{sync::watch, time::timeout};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use super::{result_processor::JudgeResultProcessor, topology};
+use crate::features::judge_dispatch::{
+    error::JudgeDispatchError, result_processor::JudgeResultProcessor, topology,
+};
 
 pub struct RabbitJudgeResultConsumer {
     database: PgPool,
@@ -58,20 +60,19 @@ impl RabbitJudgeResultConsumer {
         info!("Judge result consumer stopped");
     }
 
-    async fn consume_session(&self, mut shutdown: watch::Receiver<bool>) -> Result<(), String> {
+    async fn consume_session(
+        &self,
+        mut shutdown: watch::Receiver<bool>,
+    ) -> Result<(), JudgeDispatchError> {
         let connection = timeout(
             self.request_timeout,
             Connection::connect(&self.uri, ConnectionProperties::default()),
         )
         .await
-        .map_err(|_| "RabbitMQ result consumer connection timed out".to_owned())?
-        .map_err(|error| error.to_string())?;
-        let channel = connection.create_channel().await.map_err(|error| error.to_string())?;
-        topology::declare(&channel).await.map_err(|error| error.to_string())?;
-        channel
-            .basic_qos(self.prefetch, BasicQosOptions::default())
-            .await
-            .map_err(|error| error.to_string())?;
+        .map_err(|_| JudgeDispatchError::Timeout("result consumer connection"))??;
+        let channel = connection.create_channel().await?;
+        topology::declare(&channel).await?;
+        channel.basic_qos(self.prefetch, BasicQosOptions::default()).await?;
         let consumer_tag = format!("project-balloon-api-results-{}", Uuid::new_v4());
         let mut consumer = channel
             .basic_consume(
@@ -80,16 +81,15 @@ impl RabbitJudgeResultConsumer {
                 BasicConsumeOptions::default(),
                 FieldTable::default(),
             )
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
         let processor = JudgeResultProcessor::new(self.database.clone());
         loop {
             tokio::select! {
                 delivery = consumer.next() => {
                     let Some(delivery) = delivery else {
-                        return Err("RabbitMQ cancelled the Judge result consumer".to_owned());
+                        return Err(JudgeDispatchError::ConsumerCancelled("Judge result"));
                     };
-                    let delivery = delivery.map_err(|error| error.to_string())?;
+                    let delivery = delivery?;
                     process_delivery(&processor, &delivery).await?;
                 }
                 changed = shutdown.changed() => {
@@ -105,7 +105,7 @@ impl RabbitJudgeResultConsumer {
 async fn process_delivery(
     processor: &JudgeResultProcessor,
     delivery: &Delivery,
-) -> Result<(), String> {
+) -> Result<(), JudgeDispatchError> {
     let result = match serde_json::from_slice::<JudgeResult>(&delivery.data) {
         Ok(result) => result,
         Err(error) => {
@@ -127,7 +127,7 @@ async fn process_delivery(
     }
     match processor.apply(&result).await {
         Ok(outcome) => {
-            delivery.ack(BasicAckOptions::default()).await.map_err(|error| error.to_string())?;
+            delivery.ack(BasicAckOptions::default()).await?;
             info!(
                 message_id = %result.message_id,
                 judgement_id = %result.judgement_id,
@@ -152,19 +152,13 @@ async fn process_delivery(
                 %error,
                 "requeueing Judge result after transient database failure"
             );
-            delivery
-                .nack(BasicNackOptions { multiple: false, requeue: true })
-                .await
-                .map_err(|ack_error| ack_error.to_string())?;
-            Err(error.to_string())
+            delivery.nack(BasicNackOptions { multiple: false, requeue: true }).await?;
+            Err(JudgeDispatchError::from(error))
         }
     }
 }
 
-async fn reject_permanently(delivery: &Delivery) -> Result<(), String> {
-    delivery
-        .reject(BasicRejectOptions { requeue: false })
-        .await
-        .map_err(|error| error.to_string())?;
+async fn reject_permanently(delivery: &Delivery) -> Result<(), JudgeDispatchError> {
+    delivery.reject(BasicRejectOptions { requeue: false }).await?;
     Ok(())
 }

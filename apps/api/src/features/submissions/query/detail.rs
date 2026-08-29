@@ -8,11 +8,13 @@ use crate::{
     error::AppError, features::auth::model::AuthUser, object_storage::ObjectStorageHandle,
 };
 
-use super::super::model::{
+use crate::features::submissions::model::{
     JudgementDetail, JudgementSubtaskScore, RunDetail, SubmissionDetail, SubmissionSummary,
 };
-use super::super::service::SubmissionService;
-use super::{require_admin_access, require_team_account, submission_not_found, team_id_for_user};
+use crate::features::submissions::query::{
+    require_admin_access, require_team_account, submission_not_found, team_id_for_user,
+};
+use crate::features::submissions::service::SubmissionService;
 
 impl SubmissionService {
     pub async fn detail_own(

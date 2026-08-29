@@ -20,9 +20,8 @@ use project_balloon_api::{
     router,
     state::AppState,
 };
-use sqlx::postgres::PgPoolOptions;
-use tokio::net::TcpListener;
-use tokio::sync::watch;
+use sqlx::{PgPool, postgres::PgPoolOptions};
+use tokio::{net::TcpListener, sync::watch, task::JoinHandle};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -31,6 +30,49 @@ static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
 #[tokio::main]
 async fn main() -> Result<()> {
     init_tracing();
+    let config = load_config()?;
+    let database = connect_database(&config).await?;
+    let object_storage = init_object_storage(&config).await?;
+    let cups_gateway = init_cups_gateway(&config);
+    let judge_publisher = init_judge_publisher(&config);
+
+    let state = build_app_state(
+        &database,
+        &config,
+        object_storage.clone(),
+        cups_gateway.clone(),
+        judge_publisher.clone(),
+    )
+    .await?;
+    let listener = TcpListener::bind(config.bind_address)
+        .await
+        .context("failed to bind the API listening socket")?;
+
+    let shutdown = watch::Sender::new(false);
+    let runners = spawn_background_runners(
+        &database,
+        &config,
+        &state,
+        object_storage,
+        cups_gateway,
+        judge_publisher,
+        shutdown.clone(),
+    )
+    .await?;
+
+    info!(address = %config.bind_address, "API listening");
+    let server_result = axum::serve(
+        listener,
+        router(state, config.trusted_proxy_cidrs.clone())
+            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await;
+
+    runners.shutdown(database, server_result).await
+}
+
+fn load_config() -> Result<AppConfig> {
     let config = AppConfig::from_env().context("invalid API configuration")?;
     if config.uses_development_csrf_secret {
         tracing::warn!(
@@ -42,7 +84,10 @@ async fn main() -> Result<()> {
             "session and CSRF cookies are not Secure; set PROJECT_BALLOON_SECURE_COOKIES=true for HTTPS deployments"
         );
     }
+    Ok(config)
+}
 
+async fn connect_database(config: &AppConfig) -> Result<PgPool> {
     let database = PgPoolOptions::new()
         .max_connections(config.database_max_connections)
         .acquire_timeout(config.database_acquire_timeout)
@@ -54,7 +99,10 @@ async fn main() -> Result<()> {
         MIGRATOR.run(&database).await.context("failed to run PostgreSQL migrations")?;
         info!("PostgreSQL migrations are current");
     }
+    Ok(database)
+}
 
+async fn init_object_storage(config: &AppConfig) -> Result<Option<ObjectStorageHandle>> {
     let object_storage = if config.object_storage_enabled {
         Some(ObjectStorageHandle::with_buckets(
             Arc::new(S3ObjectStorage::new(S3ObjectStorageConfig {
@@ -75,18 +123,31 @@ async fn main() -> Result<()> {
         storage.ensure_buckets().await.context("failed to ensure object-storage buckets")?;
         info!("object-storage buckets are ready");
     }
-    let cleanup_storage = object_storage.clone();
-    let delivery_storage = object_storage.clone();
-    let export_storage = object_storage.clone();
-    let cups_gateway: Option<Arc<dyn CupsGateway>> = config.cups_enabled.then(|| {
+    Ok(object_storage)
+}
+
+fn init_cups_gateway(config: &AppConfig) -> Option<Arc<dyn CupsGateway>> {
+    config.cups_enabled.then(|| {
         Arc::new(CommandLineCupsGateway::new(
             config.cups_printer.clone(),
             config.cups_command_timeout,
         )) as Arc<dyn CupsGateway>
-    });
-    let judge_publisher = config.rabbitmq_enabled.then(|| {
+    })
+}
+
+fn init_judge_publisher(config: &AppConfig) -> Option<Arc<RabbitJudgeTaskPublisher>> {
+    config.rabbitmq_enabled.then(|| {
         RabbitJudgeTaskPublisher::new(config.rabbitmq_url.clone(), config.rabbitmq_request_timeout)
-    });
+    })
+}
+
+async fn build_app_state(
+    database: &PgPool,
+    config: &AppConfig,
+    object_storage: Option<ObjectStorageHandle>,
+    cups_gateway: Option<Arc<dyn CupsGateway>>,
+    judge_publisher: Option<Arc<RabbitJudgeTaskPublisher>>,
+) -> Result<AppState> {
     let mut state = match object_storage {
         Some(object_storage) => AppState::with_object_storage(
             database.clone(),
@@ -146,10 +207,116 @@ async fn main() -> Result<()> {
             }
         }
     }
-    let listener = TcpListener::bind(config.bind_address)
-        .await
-        .context("failed to bind the API listening socket")?;
-    let (dispatcher_shutdown, dispatcher_shutdown_rx) = watch::channel(false);
+    Ok(state)
+}
+
+/// Every background task spawned by the API plus the channel that stops them.
+struct BackgroundRunners {
+    shutdown: watch::Sender<bool>,
+    dispatcher: Option<JoinHandle<()>>,
+    redis_subscriber: Option<JoinHandle<()>>,
+    judge_dispatcher: Option<JoinHandle<()>>,
+    judge_result_consumer: Option<JoinHandle<()>>,
+    worker_heartbeat_consumer: Option<JoinHandle<()>>,
+    judge_dead_letter_consumer: Option<JoinHandle<()>>,
+    cups_delivery: Option<JoinHandle<()>>,
+    object_cleanup: Option<JoinHandle<()>>,
+    export: Option<JoinHandle<()>>,
+    batch_rejudge: JoinHandle<()>,
+    resolver_auto: JoinHandle<()>,
+    contest_lifecycle: JoinHandle<()>,
+    announcement_schedule: JoinHandle<()>,
+}
+
+impl BackgroundRunners {
+    /// Signals every runner, drains them, closes the pool, and applies the
+    /// startup/shutdown error precedence of the original single `main`.
+    async fn shutdown(self, database: PgPool, server_result: std::io::Result<()>) -> Result<()> {
+        let _sent = self.shutdown.send(true);
+        let dispatcher_result = match self.dispatcher {
+            Some(task) => Some(task.await.context("realtime outbox dispatcher task failed")),
+            None => None,
+        };
+        let subscriber_result = match self.redis_subscriber {
+            Some(task) => Some(task.await.context("Redis realtime subscriber task failed")),
+            None => None,
+        };
+        let judge_dispatcher_result = match self.judge_dispatcher {
+            Some(task) => Some(task.await.context("submission outbox dispatcher task failed")),
+            None => None,
+        };
+        let judge_result_consumer_result = match self.judge_result_consumer {
+            Some(task) => Some(task.await.context("Judge result consumer task failed")),
+            None => None,
+        };
+        let worker_heartbeat_consumer_result = match self.worker_heartbeat_consumer {
+            Some(task) => Some(task.await.context("Worker heartbeat consumer task failed")),
+            None => None,
+        };
+        let judge_dead_letter_consumer_result = match self.judge_dead_letter_consumer {
+            Some(task) => Some(task.await.context("Judge dead-letter consumer task failed")),
+            None => None,
+        };
+        let cups_delivery_result = match self.cups_delivery {
+            Some(task) => Some(task.await.context("CUPS delivery runner task failed")),
+            None => None,
+        };
+        let object_cleanup_result = match self.object_cleanup {
+            Some(task) => Some(task.await.context("object-storage cleanup runner task failed")),
+            None => None,
+        };
+        let export_result = match self.export {
+            Some(task) => Some(task.await.context("submission export runner task failed")),
+            None => None,
+        };
+        self.batch_rejudge.await.context("batch rejudge runner task failed")?;
+        self.resolver_auto.await.context("Resolver auto-play runner task failed")?;
+        self.contest_lifecycle.await.context("contest lifecycle runner task failed")?;
+        self.announcement_schedule.await.context("announcement schedule runner task failed")?;
+        database.close().await;
+        server_result.context("API server failed")?;
+        if let Some(result) = dispatcher_result {
+            result?;
+        }
+        if let Some(result) = subscriber_result {
+            result?;
+        }
+        if let Some(result) = judge_dispatcher_result {
+            result?;
+        }
+        if let Some(result) = judge_result_consumer_result {
+            result?;
+        }
+        if let Some(result) = worker_heartbeat_consumer_result {
+            result?;
+        }
+        if let Some(result) = judge_dead_letter_consumer_result {
+            result?;
+        }
+        if let Some(result) = cups_delivery_result {
+            result?;
+        }
+        if let Some(result) = object_cleanup_result {
+            result?;
+        }
+        if let Some(result) = export_result {
+            result?;
+        }
+        Ok(())
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn spawn_background_runners(
+    database: &PgPool,
+    config: &AppConfig,
+    state: &AppState,
+    object_storage: Option<ObjectStorageHandle>,
+    cups_gateway: Option<Arc<dyn CupsGateway>>,
+    judge_publisher: Option<Arc<RabbitJudgeTaskPublisher>>,
+    shutdown: watch::Sender<bool>,
+) -> Result<BackgroundRunners> {
+    let shutdown_rx = shutdown.subscribe();
     let (publisher, redis_subscriber) = if config.realtime_redis_enabled {
         let (publisher, subscriber) = RealtimePublisher::connect_redis(
             &config.redis_url,
@@ -163,8 +330,8 @@ async fn main() -> Result<()> {
     } else {
         (RealtimePublisher::local(state.realtime().clone()), None)
     };
-    let redis_subscriber_task = redis_subscriber
-        .map(|subscriber| tokio::spawn(subscriber.run(dispatcher_shutdown_rx.clone())));
+    let redis_subscriber_task =
+        redis_subscriber.map(|subscriber| tokio::spawn(subscriber.run(shutdown_rx.clone())));
     let dispatcher_task = config.realtime_dispatcher_enabled.then(|| {
         tokio::spawn(
             OutboxDispatcher::new(
@@ -178,7 +345,7 @@ async fn main() -> Result<()> {
                     max_attempts: config.realtime_max_attempts,
                 },
             )
-            .run(dispatcher_shutdown_rx.clone()),
+            .run(shutdown_rx.clone()),
         )
     });
     let judge_dispatcher_task = judge_publisher.as_ref().map(|publisher| {
@@ -194,12 +361,14 @@ async fn main() -> Result<()> {
                     max_attempts: config.judge_dispatch_max_attempts,
                 },
             )
-            .run(dispatcher_shutdown_rx.clone()),
+            .run(shutdown_rx.clone()),
         )
     });
     let batch_rejudge_task =
-        tokio::spawn(BatchRejudgeRunner::new(database.clone()).run(dispatcher_shutdown_rx.clone()));
-    let export_task = export_storage.map(|storage| {
+        tokio::spawn(BatchRejudgeRunner::new(database.clone()).run(shutdown_rx.clone()));
+    let cleanup_storage = object_storage.clone();
+    let delivery_storage = object_storage.clone();
+    let export_task = object_storage.map(|storage| {
         tokio::spawn(
             ExportTaskRunner::new(
                 database.clone(),
@@ -211,17 +380,15 @@ async fn main() -> Result<()> {
                     output_ttl: Duration::from_secs(86_400),
                 },
             )
-            .run(dispatcher_shutdown_rx.clone()),
+            .run(shutdown_rx.clone()),
         )
     });
     let resolver_auto_task =
-        tokio::spawn(ResolverAutoRunner::new(database.clone()).run(dispatcher_shutdown_rx.clone()));
-    let contest_lifecycle_task = tokio::spawn(
-        ContestLifecycleRunner::new(database.clone()).run(dispatcher_shutdown_rx.clone()),
-    );
-    let announcement_schedule_task = tokio::spawn(
-        AnnouncementScheduleRunner::new(database.clone()).run(dispatcher_shutdown_rx.clone()),
-    );
+        tokio::spawn(ResolverAutoRunner::new(database.clone()).run(shutdown_rx.clone()));
+    let contest_lifecycle_task =
+        tokio::spawn(ContestLifecycleRunner::new(database.clone()).run(shutdown_rx.clone()));
+    let announcement_schedule_task =
+        tokio::spawn(AnnouncementScheduleRunner::new(database.clone()).run(shutdown_rx.clone()));
     let judge_result_consumer_task = config.rabbitmq_enabled.then(|| {
         tokio::spawn(
             RabbitJudgeResultConsumer::new(
@@ -231,7 +398,7 @@ async fn main() -> Result<()> {
                 config.judge_result_reconnect_delay,
                 config.judge_result_prefetch,
             )
-            .run(dispatcher_shutdown_rx.clone()),
+            .run(shutdown_rx.clone()),
         )
     });
     let worker_heartbeat_consumer_task = config.rabbitmq_enabled.then(|| {
@@ -243,7 +410,7 @@ async fn main() -> Result<()> {
                 config.judge_result_reconnect_delay,
                 config.judge_result_prefetch,
             )
-            .run(dispatcher_shutdown_rx.clone()),
+            .run(shutdown_rx.clone()),
         )
     });
     let judge_dead_letter_consumer_task = config.rabbitmq_enabled.then(|| {
@@ -255,13 +422,12 @@ async fn main() -> Result<()> {
                 config.judge_result_reconnect_delay,
                 config.judge_result_prefetch,
             )
-            .run(dispatcher_shutdown_rx.clone()),
+            .run(shutdown_rx.clone()),
         )
     });
     let cups_delivery_task = match (cups_gateway, delivery_storage) {
         (Some(gateway), Some(storage)) => Some(tokio::spawn(
-            CupsDeliveryRunner::new(database.clone(), storage, gateway)
-                .run(dispatcher_shutdown_rx.clone()),
+            CupsDeliveryRunner::new(database.clone(), storage, gateway).run(shutdown_rx.clone()),
         )),
         (Some(_), None) => {
             warn!("CUPS delivery enabled without object storage; delivery runner is disabled");
@@ -281,90 +447,26 @@ async fn main() -> Result<()> {
                     batch_size: config.object_cleanup_batch_size,
                 },
             )
-            .run(dispatcher_shutdown_rx.clone()),
+            .run(shutdown_rx.clone()),
         )
     });
 
-    info!(address = %config.bind_address, "API listening");
-    let server_result = axum::serve(
-        listener,
-        router(state, config.trusted_proxy_cidrs.clone())
-            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal())
-    .await;
-
-    let _sent = dispatcher_shutdown.send(true);
-    let dispatcher_result = match dispatcher_task {
-        Some(task) => Some(task.await.context("realtime outbox dispatcher task failed")),
-        None => None,
-    };
-    let subscriber_result = match redis_subscriber_task {
-        Some(task) => Some(task.await.context("Redis realtime subscriber task failed")),
-        None => None,
-    };
-    let judge_dispatcher_result = match judge_dispatcher_task {
-        Some(task) => Some(task.await.context("submission outbox dispatcher task failed")),
-        None => None,
-    };
-    let judge_result_consumer_result = match judge_result_consumer_task {
-        Some(task) => Some(task.await.context("Judge result consumer task failed")),
-        None => None,
-    };
-    let worker_heartbeat_consumer_result = match worker_heartbeat_consumer_task {
-        Some(task) => Some(task.await.context("Worker heartbeat consumer task failed")),
-        None => None,
-    };
-    let judge_dead_letter_consumer_result = match judge_dead_letter_consumer_task {
-        Some(task) => Some(task.await.context("Judge dead-letter consumer task failed")),
-        None => None,
-    };
-    let cups_delivery_result = match cups_delivery_task {
-        Some(task) => Some(task.await.context("CUPS delivery runner task failed")),
-        None => None,
-    };
-    let object_cleanup_result = match object_cleanup_task {
-        Some(task) => Some(task.await.context("object-storage cleanup runner task failed")),
-        None => None,
-    };
-    let export_result = match export_task {
-        Some(task) => Some(task.await.context("submission export runner task failed")),
-        None => None,
-    };
-    batch_rejudge_task.await.context("batch rejudge runner task failed")?;
-    resolver_auto_task.await.context("Resolver auto-play runner task failed")?;
-    contest_lifecycle_task.await.context("contest lifecycle runner task failed")?;
-    announcement_schedule_task.await.context("announcement schedule runner task failed")?;
-    database.close().await;
-    server_result.context("API server failed")?;
-    if let Some(result) = dispatcher_result {
-        result?;
-    }
-    if let Some(result) = subscriber_result {
-        result?;
-    }
-    if let Some(result) = judge_dispatcher_result {
-        result?;
-    }
-    if let Some(result) = judge_result_consumer_result {
-        result?;
-    }
-    if let Some(result) = worker_heartbeat_consumer_result {
-        result?;
-    }
-    if let Some(result) = judge_dead_letter_consumer_result {
-        result?;
-    }
-    if let Some(result) = cups_delivery_result {
-        result?;
-    }
-    if let Some(result) = object_cleanup_result {
-        result?;
-    }
-    if let Some(result) = export_result {
-        result?;
-    }
-    Ok(())
+    Ok(BackgroundRunners {
+        shutdown,
+        dispatcher: dispatcher_task,
+        redis_subscriber: redis_subscriber_task,
+        judge_dispatcher: judge_dispatcher_task,
+        judge_result_consumer: judge_result_consumer_task,
+        worker_heartbeat_consumer: worker_heartbeat_consumer_task,
+        judge_dead_letter_consumer: judge_dead_letter_consumer_task,
+        cups_delivery: cups_delivery_task,
+        object_cleanup: object_cleanup_task,
+        export: export_task,
+        batch_rejudge: batch_rejudge_task,
+        resolver_auto: resolver_auto_task,
+        contest_lifecycle: contest_lifecycle_task,
+        announcement_schedule: announcement_schedule_task,
+    })
 }
 
 fn init_tracing() {

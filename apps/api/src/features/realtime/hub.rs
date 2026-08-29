@@ -51,7 +51,7 @@ impl RealtimeHub {
 mod tests {
     use project_balloon_contracts::{RealtimeEvent, RealtimeScope};
 
-    use super::{RealtimeEnvelope, RealtimeHub};
+    use crate::features::realtime::hub::{RealtimeEnvelope, RealtimeHub};
 
     #[tokio::test]
     async fn subscribers_receive_the_same_event_id() {

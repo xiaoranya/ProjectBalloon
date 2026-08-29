@@ -10,7 +10,7 @@ use crate::{
     state::AppState,
 };
 
-use super::model::{
+use crate::features::competition::model::{
     BindWorkstationRequest, CreateWorkstationRequest, DeploymentInfoResponse,
     UpdateWorkstationRequest, WorkstationBindingResponse, WorkstationResponse,
 };

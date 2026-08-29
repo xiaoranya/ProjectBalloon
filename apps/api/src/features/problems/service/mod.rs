@@ -16,14 +16,14 @@ use crate::{
     pagination::PageResponse,
 };
 
-use super::markdown::render_safe;
-use super::model::{
+use crate::features::problems::markdown::render_safe;
+use crate::features::problems::model::{
     AttachmentKind, ProblemAttachmentResponse, ProblemListQuery, ProblemResponse, ProblemRow,
     ProblemStatementResponse, ProblemStatementRow, ProblemTestdataResponse,
     ProblemTestdataVersionResponse, ValidatedProblem, ValidatedProblemUpdate, ValidatedStatement,
     validate_languages_for_judge_mode,
 };
-use super::testdata_archive;
+use crate::features::problems::testdata_archive;
 
 const PROBLEM_COLUMNS: &str = r#"
     id, slug, title, time_limit_ms, memory_limit_mb, output_limit_kb,

@@ -6,6 +6,7 @@ use tracing::warn;
 use utoipa::ToSchema;
 
 use crate::{SERVICE_NAME, state::AppState};
+use axum::routing::get;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
@@ -286,6 +287,11 @@ fn response(
         judge_dispatch,
         cups,
     }
+}
+
+/// Routes owned by this feature, assembled by the root router.
+pub fn routes() -> axum::Router<crate::state::AppState> {
+    axum::Router::new().route("/livez", get(liveness)).route("/api/health", get(readiness))
 }
 
 #[cfg(test)]

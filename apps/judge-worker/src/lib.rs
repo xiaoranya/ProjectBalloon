@@ -201,7 +201,7 @@ fn validate_sandbox_user(value: &str) -> Result<(), ConfigError> {
 mod tests {
     use std::collections::HashMap;
 
-    use super::{ConfigError, WorkerConfig};
+    use crate::{ConfigError, WorkerConfig};
 
     #[test]
     fn configuration_accepts_explicit_infrastructure_credentials() {

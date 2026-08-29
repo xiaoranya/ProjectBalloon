@@ -16,8 +16,8 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::to_csv;
-use super::model::{
+use crate::features::scoreboard::helpers::to_csv;
+use crate::features::scoreboard::model::{
     ScoreboardQuery, ScoreboardResponse, ScoreboardSnapshotResponse, SnapshotSelector,
 };
 

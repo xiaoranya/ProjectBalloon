@@ -2,14 +2,14 @@ use std::net::IpAddr;
 
 use crate::error::AppError;
 
-use super::super::{
-    model::{AuthUser, ChangePasswordRequest, LoginRequest, ProfileRequest, RegisterRequest},
-    password,
-};
-use super::{
+use crate::features::auth::service::{
     AuthService, AuthenticatedSession, LoginOutcome, PASSWORD_CHANGE_ATTEMPT_LIMIT,
     PROFILE_UPDATE_ATTEMPT_LIMIT, REGISTER_ATTEMPT_LIMIT, crypto::rate_limited,
     internal::record_audit,
+};
+use crate::features::auth::{
+    model::{AuthUser, ChangePasswordRequest, LoginRequest, ProfileRequest, RegisterRequest},
+    password,
 };
 
 impl AuthService {

@@ -2,7 +2,7 @@ use sqlx::PgPool;
 
 use crate::{error::AppError, features::auth::model::AuthUser};
 
-use super::model::{
+use crate::features::submissions::bulk_rejudge::model::{
     BatchRejudgeCreateRequest, BatchRejudgeFilter, BatchRejudgeItemResponse,
     BatchRejudgePreviewResponse, BatchRejudgeTaskResponse, BatchRejudgeTaskRow,
 };

@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 
-use super::{
+use crate::features::submissions::bulk_rejudge::{
     BatchRejudgeCreateRequest, BatchRejudgeFilter, BatchRejudgeRunner, BatchRejudgeService,
 };
 use crate::features::{

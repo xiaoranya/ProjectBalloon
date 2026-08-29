@@ -9,12 +9,12 @@ use time::OffsetDateTime;
 
 use crate::{error::AppError, features::auth::model::AuthUser, pagination::PageResponse};
 
-use super::helpers::{
+use crate::features::contests::helpers::{
     CONTEST_COLUMNS, ReadAccess, contest_not_found, format_rfc3339, insert_realtime_outbox,
     lock_active_contest, map_contest_write_error, map_extension_error, map_transition_error,
     record_audit, record_audit_result, require_manage, schedule_values,
 };
-use super::model::{
+use crate::features::contests::model::{
     ContestCloneResponse, ContestExtensionRequest, ContestExtensionResponse, ContestResponse,
     ContestRow, ContestSchedule, ContestStatus, LifecycleTransitionResponse, ValidatedContestClone,
     ValidatedContestListQuery, ValidatedCreateContest, ValidatedUpdateContest,

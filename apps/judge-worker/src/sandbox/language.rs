@@ -1,6 +1,6 @@
 use project_balloon_contracts::JudgeTask;
 
-use super::SandboxError;
+use crate::sandbox::SandboxError;
 
 #[derive(Clone, Copy)]
 pub(super) enum LanguageConfig {

@@ -4,7 +4,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::error::AppError;
 
-use super::model::ContestManagementScopeResponse;
+use crate::features::contest_management_scopes::model::ContestManagementScopeResponse;
 
 pub struct ContestManagementScopeService {
     database: PgPool,

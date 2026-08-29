@@ -80,7 +80,7 @@ fn dummy_bcrypt_hash() -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{hash, needs_upgrade, verify};
+    use crate::features::auth::password::{hash, needs_upgrade, verify};
 
     #[tokio::test]
     async fn argon2id_round_trip() {

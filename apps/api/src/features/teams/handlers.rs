@@ -13,7 +13,7 @@ use crate::{
     state::AppState,
 };
 
-use super::model::{
+use crate::features::teams::model::{
     BatchImportRequest, BatchImportResponse, ContestTeamAssignmentRequest, ContestTeamResponse,
     CreateTeamRequest, ResetTeamPasswordRequest, TeamListQuery, TeamMemberPatchRequest,
     TeamMemberRequest, TeamMemberResponse, TeamResponse, UpdateTeamRequest,

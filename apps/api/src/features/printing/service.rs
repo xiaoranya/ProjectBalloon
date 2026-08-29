@@ -14,7 +14,7 @@ use crate::{
     state::AppState,
 };
 
-use super::model::{PrintRequestResponse, ValidatedContent};
+use crate::features::printing::model::{PrintRequestResponse, ValidatedContent};
 
 pub struct PrintingService {
     database: PgPool,
@@ -157,7 +157,7 @@ impl PrintingService {
                 "Only a team can view team print requests",
             ));
         }
-        sqlx::query_as::<_, PrintRequestResponse>(safe_sql!("{SELECT_COLUMNS} JOIN team_accounts account ON account.team_id = request.team_id WHERE request.contest_id = $1 AND account.user_id = $2 ORDER BY request.created_at DESC LIMIT 100"))
+        sqlx::query_as::<_, PrintRequestResponse>(safe_sql!("{PRINT_REQUEST_SQL} JOIN team_accounts account ON account.team_id = request.team_id WHERE request.contest_id = $1 AND account.user_id = $2 ORDER BY request.created_at DESC LIMIT 100"))
             .bind(contest_id).bind(actor.id).fetch_all(&self.database).await
             .map_err(|error| AppError::internal("list team print requests", error))
     }
@@ -169,7 +169,7 @@ impl PrintingService {
         actor: &AuthUser,
     ) -> Result<Vec<PrintRequestResponse>, AppError> {
         require_operator(actor)?;
-        sqlx::query_as::<_, PrintRequestResponse>(safe_sql!("{SELECT_COLUMNS} WHERE request.contest_id = $1 AND ($2::text IS NULL OR request.status = $2) ORDER BY request.created_at DESC LIMIT 1000"))
+        sqlx::query_as::<_, PrintRequestResponse>(safe_sql!("{PRINT_REQUEST_SQL} WHERE request.contest_id = $1 AND ($2::text IS NULL OR request.status = $2) ORDER BY request.created_at DESC LIMIT 1000"))
             .bind(contest_id).bind(status.as_deref()).fetch_all(&self.database).await
             .map_err(|error| AppError::internal("list print queue", error))
     }
@@ -190,13 +190,21 @@ impl PrintingService {
             .map_err(|error| AppError::internal("begin print transition", error))?;
         let (contest_id, team_id, status, delivery_in_progress) =
             sqlx::query_as::<_, (i64, i64, String, bool)>(
-                "SELECT request.contest_id, request.team_id, request.status, coalesce(request.delivery_lease_until > now(), false) FROM print_requests request JOIN contests contest ON contest.id = request.contest_id AND contest.deleted_at IS NULL WHERE request.id = $1 FOR UPDATE OF request",
+                r#"
+                SELECT request.contest_id, request.team_id, request.status,
+                       coalesce(request.delivery_lease_until > now(), false)
+                FROM print_requests request
+                JOIN contests contest
+                    ON contest.id = request.contest_id AND contest.deleted_at IS NULL
+                WHERE request.id = $1
+                FOR UPDATE OF request
+                "#,
             )
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|error| AppError::internal("lock print request", error))?
-        .ok_or_else(print_not_found)?;
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|error| AppError::internal("lock print request", error))?
+            .ok_or_else(print_not_found)?;
         if action == "CANCEL" && status == "QUEUED" && delivery_in_progress {
             return Err(AppError::conflict(
                 "PRINTING_DELIVERY_IN_PROGRESS",
@@ -219,8 +227,27 @@ impl PrintingService {
                 ));
             }
         };
-        sqlx::query("UPDATE print_requests SET status = $2, failed_reason = $3, operator_user_id = $4, cancellation_pending = CASE WHEN $5 = 'CANCEL' AND cups_job_id IS NOT NULL THEN true ELSE false END, printer_id = CASE WHEN $5 = 'RETRY' THEN NULL ELSE printer_id END, cups_job_id = CASE WHEN $5 = 'RETRY' THEN NULL ELSE cups_job_id END, submitted_at = CASE WHEN $5 = 'RETRY' THEN NULL ELSE submitted_at END, delivery_attempts = CASE WHEN $5 = 'RETRY' THEN 0 ELSE delivery_attempts END, delivery_lease_owner = CASE WHEN $5 = 'RETRY' THEN NULL ELSE delivery_lease_owner END, delivery_lease_until = CASE WHEN $5 = 'RETRY' THEN NULL ELSE delivery_lease_until END, last_delivery_error = NULL, updated_at = now(), version = version + 1 WHERE id = $1")
-            .bind(id).bind(next).bind(failed_reason).bind(actor.id).bind(action).execute(&mut *tx).await
+        sqlx::query(
+            r#"
+            UPDATE print_requests
+            SET status = $2,
+                failed_reason = $3,
+                operator_user_id = $4,
+                cancellation_pending = CASE WHEN $5 = 'CANCEL' AND cups_job_id IS NOT NULL
+                    THEN true ELSE false END,
+                printer_id = CASE WHEN $5 = 'RETRY' THEN NULL ELSE printer_id END,
+                cups_job_id = CASE WHEN $5 = 'RETRY' THEN NULL ELSE cups_job_id END,
+                submitted_at = CASE WHEN $5 = 'RETRY' THEN NULL ELSE submitted_at END,
+                delivery_attempts = CASE WHEN $5 = 'RETRY' THEN 0 ELSE delivery_attempts END,
+                delivery_lease_owner = CASE WHEN $5 = 'RETRY' THEN NULL ELSE delivery_lease_owner END,
+                delivery_lease_until = CASE WHEN $5 = 'RETRY' THEN NULL ELSE delivery_lease_until END,
+                last_delivery_error = NULL,
+                updated_at = now(),
+                version = version + 1
+            WHERE id = $1
+            "#,
+        )
+        .bind(id).bind(next).bind(failed_reason).bind(actor.id).bind(action).execute(&mut *tx).await
             .map_err(|error| AppError::internal("transition print request", error))?;
         audit(
             &mut tx,
@@ -282,7 +309,7 @@ impl PrintingService {
     }
 }
 
-const SELECT_COLUMNS: &str = r#"SELECT request.id, request.contest_id, request.team_id, request.team_name,
+const PRINT_REQUEST_SQL: &str = r#"SELECT request.id, request.contest_id, request.team_id, request.team_name,
  request.seat_no, request.content_hash, request.page_count, request.status, request.printer_id,
  request.cups_job_id, request.requested_by AS requested_by_user_id, request.operator_user_id,
  request.completed_at, request.failed_reason, request.created_at, request.updated_at, request.version
@@ -324,12 +351,14 @@ async fn resolve_team_tx(
 }
 
 async fn load(database: &PgPool, id: i64) -> Result<PrintRequestResponse, AppError> {
-    sqlx::query_as::<_, PrintRequestResponse>(safe_sql!("{SELECT_COLUMNS} WHERE request.id = $1"))
-        .bind(id)
-        .fetch_optional(database)
-        .await
-        .map_err(|error| AppError::internal("load print request", error))?
-        .ok_or_else(print_not_found)
+    sqlx::query_as::<_, PrintRequestResponse>(safe_sql!(
+        "{PRINT_REQUEST_SQL} WHERE request.id = $1"
+    ))
+    .bind(id)
+    .fetch_optional(database)
+    .await
+    .map_err(|error| AppError::internal("load print request", error))?
+    .ok_or_else(print_not_found)
 }
 
 async fn check_print_quota(
@@ -399,7 +428,7 @@ async fn render_pdf(content: &str) -> Result<Bytes, AppError> {
     let mut stdin = child
         .stdin
         .take()
-        .ok_or_else(|| AppError::internal("open PDF renderer stdin", "missing pipe"))?;
+        .ok_or_else(|| AppError::internal_message("open PDF renderer stdin", "missing pipe"))?;
     stdin
         .write_all(content.as_bytes())
         .await

@@ -2,11 +2,13 @@ use sqlx::PgPool;
 
 use crate::{error::AppError, features::auth::model::AuthUser, pagination::PageResponse};
 
-use super::super::model::{
+use crate::features::submissions::model::{
     JudgeQueueStatusResponse, SubmissionSummary, ValidatedSubmissionListQuery,
 };
-use super::super::service::SubmissionService;
-use super::{require_admin_access, require_team_account, submission_not_found, team_id_for_user};
+use crate::features::submissions::query::{
+    require_admin_access, require_team_account, submission_not_found, team_id_for_user,
+};
+use crate::features::submissions::service::SubmissionService;
 
 impl SubmissionService {
     pub async fn list_own(

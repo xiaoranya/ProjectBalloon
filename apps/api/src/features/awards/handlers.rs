@@ -1,6 +1,6 @@
 use super::*;
 
-use super::service::require_operator;
+use crate::features::awards::service::require_operator;
 
 #[utoipa::path(get, path = "/api/admin/contests/{contest_id}/award-categories", operation_id = "listAwardCategories", tag = "awards", params(("contest_id" = i64, Path)), responses((status = 200, body = [CategoryResponse]), (status = 401, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
 pub async fn list_categories(
@@ -157,9 +157,7 @@ pub async fn csv(
 ) -> Result<Response, AppError> {
     c.require_password_ready()?;
     let set = s.awards().load_set(id, c.user()).await?;
-    let mut out = String::from(
-        "categoryCode,categoryName,rank,teamId,teamName,school,participationType,groupName,manual\n",
-    );
+    let mut out = "categoryCode,categoryName,rank,teamId,teamName,school,participationType,groupName,manual\n".to_string();
     for r in set.recipients {
         out.push_str(&format!(
             "{},{},{},{},{},{},{},{},{}\n",

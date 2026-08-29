@@ -15,7 +15,9 @@ use crate::{
     state::AppState,
 };
 
-use super::model::{AskRequest, ClarificationResponse, ConvertRequest, ListAllQuery, ReplyRequest};
+use crate::features::clarifications::model::{
+    AskRequest, ClarificationResponse, ConvertRequest, ListAllQuery, ReplyRequest,
+};
 
 #[utoipa::path(post, path = "/api/contests/{contest_id}/clarifications", operation_id = "askClarification", tag = "clarifications", params(("contest_id" = i64, Path)), request_body = AskRequest, responses((status = 201, body = ClarificationResponse), (status = 400, body = crate::error::ApiErrorBody), (status = 401, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody), (status = 409, body = crate::error::ApiErrorBody), (status = 429, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
 pub async fn ask(

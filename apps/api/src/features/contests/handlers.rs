@@ -13,7 +13,7 @@ use crate::{
     state::AppState,
 };
 
-use super::model::{
+use crate::features::contests::model::{
     ContestCloneRequest, ContestCloneResponse, ContestExtensionRequest, ContestExtensionResponse,
     ContestListQuery, ContestResponse, CreateContestRequest, LifecycleTransitionRequest,
     LifecycleTransitionResponse, UpdateContestRequest,

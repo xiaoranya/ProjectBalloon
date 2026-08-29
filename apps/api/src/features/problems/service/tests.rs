@@ -11,7 +11,7 @@ use bytes::Bytes;
 use sqlx::PgPool;
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-use super::ProblemService;
+use crate::features::problems::service::ProblemService;
 use crate::{
     features::auth::model::{AuthUser, UserType},
     features::problems::model::{

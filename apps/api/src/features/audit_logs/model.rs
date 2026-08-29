@@ -107,7 +107,7 @@ fn escape_like(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{AuditLogQuery, escape_like};
+    use crate::features::audit_logs::model::{AuditLogQuery, escape_like};
 
     #[test]
     fn like_metacharacters_are_escaped() {

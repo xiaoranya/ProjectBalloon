@@ -132,7 +132,7 @@ pub async fn protect_csrf(State(state): State<AppState>, request: Request, next:
 
 #[cfg(test)]
 mod tests {
-    use super::{CsrfSigner, reuse_or_issue};
+    use crate::features::auth::csrf::{CsrfSigner, reuse_or_issue};
 
     #[test]
     fn issued_token_verifies_and_tampering_fails() {

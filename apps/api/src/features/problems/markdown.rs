@@ -14,7 +14,7 @@ pub fn render_safe(source: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::render_safe;
+    use crate::features::problems::markdown::render_safe;
 
     #[test]
     fn dangerous_html_and_urls_are_removed() {

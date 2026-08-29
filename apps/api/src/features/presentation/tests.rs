@@ -1,8 +1,10 @@
-use super::model::{CommandRequest, ConfigRequest, HeartbeatRequest, RegisterRequest};
-use super::service::{
+use crate::features::auth::model::{AuthUser, UserType};
+use crate::features::presentation::model::{
+    CommandRequest, ConfigRequest, HeartbeatRequest, RegisterRequest,
+};
+use crate::features::presentation::service::{
     PresentationService, token_hash, validate_mode, validate_template, validate_view,
 };
-use crate::features::auth::model::{AuthUser, UserType};
 
 use std::net::{IpAddr, Ipv4Addr};
 

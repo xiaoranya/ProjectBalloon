@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use super::{AppConfig, ConfigError, DeploymentMode};
+use crate::config::{AppConfig, ConfigError, DeploymentMode};
 
 /// Wraps a value map so the development CSRF secret is explicitly allowed;
 /// every validation test below targets a different concern, not the CSRF

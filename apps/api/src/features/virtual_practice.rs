@@ -48,7 +48,29 @@ pub struct VirtualSessionDetail {
     problems: Vec<VirtualProblemResponse>,
 }
 
-const SESSION_SELECT: &str = "SELECT s.id,s.title,s.start_at,s.end_at,now() AS server_time,CASE WHEN s.archived_at IS NOT NULL THEN 'ARCHIVED' WHEN now()<s.start_at THEN 'SCHEDULED' WHEN now()<s.end_at THEN 'RUNNING' ELSE 'ENDED' END AS status,count(DISTINCT i.problem_id) FILTER(WHERE problem.id IS NOT NULL AND bank.problem_id IS NOT NULL)::bigint AS total_problems,count(DISTINCT sub.problem_id) FILTER(WHERE sub.status='ACCEPTED' AND problem.id IS NOT NULL AND bank.problem_id IS NOT NULL)::bigint AS solved_problems FROM practice_virtual_sessions s JOIN practice_virtual_items i ON i.session_id=s.id LEFT JOIN problems problem ON problem.id=i.problem_id AND problem.deleted_at IS NULL LEFT JOIN problem_bank_entries bank ON bank.problem_id=problem.id AND bank.visibility='PUBLIC' LEFT JOIN submissions sub ON sub.virtual_session_id=s.id AND sub.participant_user_id=s.user_id";
+const VIRTUAL_SESSION_SQL: &str = r#"
+    SELECT s.id,s.title,s.start_at,s.end_at,now() AS server_time,
+           CASE WHEN s.archived_at IS NOT NULL THEN 'ARCHIVED'
+                WHEN now()<s.start_at THEN 'SCHEDULED'
+                WHEN now()<s.end_at THEN 'RUNNING'
+                ELSE 'ENDED' END AS status,
+           count(DISTINCT i.problem_id)
+               FILTER(WHERE problem.id IS NOT NULL AND bank.problem_id IS NOT NULL)::bigint
+               AS total_problems,
+           count(DISTINCT sub.problem_id)
+               FILTER(WHERE sub.status='ACCEPTED' AND problem.id IS NOT NULL
+                   AND bank.problem_id IS NOT NULL)::bigint
+               AS solved_problems
+    FROM practice_virtual_sessions s
+    JOIN practice_virtual_items i
+        ON i.session_id=s.id
+    LEFT JOIN problems problem
+        ON problem.id=i.problem_id AND problem.deleted_at IS NULL
+    LEFT JOIN problem_bank_entries bank
+        ON bank.problem_id=problem.id AND bank.visibility='PUBLIC'
+    LEFT JOIN submissions sub
+        ON sub.virtual_session_id=s.id AND sub.participant_user_id=s.user_id
+"#;
 
 #[utoipa::path(post,path="/api/practice/virtual-sessions",operation_id="createPracticeVirtualSession",tag="practice",request_body=CreateVirtualSessionRequest,responses((status=201,body=VirtualSessionResponse)),security(("session_cookie"=[],"csrf_cookie"=[],"csrf_header"=[])))]
 pub async fn create(
@@ -121,7 +143,7 @@ pub async fn list(
 ) -> Result<Json<Vec<VirtualSessionResponse>>, AppError> {
     context.require_password_ready()?;
     let sql = format!(
-        "{SESSION_SELECT} WHERE s.user_id=$1 GROUP BY s.id ORDER BY s.created_at DESC,s.id DESC"
+        "{VIRTUAL_SESSION_SQL} WHERE s.user_id=$1 GROUP BY s.id ORDER BY s.created_at DESC,s.id DESC"
     );
     Ok(Json(
         sqlx::query_as(sqlx::AssertSqlSafe(sql))
@@ -141,7 +163,26 @@ pub async fn get(
     context.require_password_ready()?;
     let session = load_session(&state, id, context.user().id).await?;
     let problems = sqlx::query_as::<_, VirtualProblemResponse>(
-        "SELECT i.problem_id,p.slug,p.title,i.position,EXISTS(SELECT 1 FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2 AND s.status='ACCEPTED') AS solved,(SELECT count(*) FROM submissions s WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id AND s.participant_user_id=$2)::bigint AS attempts FROM practice_virtual_items i JOIN problems p ON p.id=i.problem_id AND p.deleted_at IS NULL JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' WHERE i.session_id=$1 ORDER BY i.position",
+        r#"
+        SELECT i.problem_id,p.slug,p.title,i.position,
+               EXISTS(
+                   SELECT 1 FROM submissions s
+                   WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id
+                       AND s.participant_user_id=$2 AND s.status='ACCEPTED'
+               ) AS solved,
+               (
+                   SELECT count(*) FROM submissions s
+                   WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id
+                       AND s.participant_user_id=$2
+               )::bigint AS attempts
+        FROM practice_virtual_items i
+        JOIN problems p
+            ON p.id=i.problem_id AND p.deleted_at IS NULL
+        JOIN problem_bank_entries b
+            ON b.problem_id=p.id AND b.visibility='PUBLIC'
+        WHERE i.session_id=$1
+        ORDER BY i.position
+        "#,
     )
     .bind(id)
     .bind(context.user().id)
@@ -177,7 +218,7 @@ async fn load_session(
     id: i64,
     user: i64,
 ) -> Result<VirtualSessionResponse, AppError> {
-    let sql = format!("{SESSION_SELECT} WHERE s.id=$1 AND s.user_id=$2 GROUP BY s.id");
+    let sql = format!("{VIRTUAL_SESSION_SQL} WHERE s.id=$1 AND s.user_id=$2 GROUP BY s.id");
     sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .bind(user)
@@ -201,11 +242,19 @@ async fn count_active_public_problems(
     .await
 }
 
+/// Routes owned by this feature, assembled by the root router.
+pub fn routes() -> axum::Router<crate::state::AppState> {
+    axum::Router::new()
+        .route("/api/practice/virtual-sessions", axum::routing::get(list).post(create))
+        .route("/api/practice/virtual-sessions/{session_id}", axum::routing::get(get))
+        .route("/api/practice/virtual-sessions/{session_id}/archive", axum::routing::post(archive))
+}
+
 #[cfg(test)]
 mod tests {
     use sqlx::PgPool;
 
-    use super::count_active_public_problems;
+    use crate::features::virtual_practice::count_active_public_problems;
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]

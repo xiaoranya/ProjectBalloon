@@ -3,8 +3,8 @@ use std::net::IpAddr;
 use crate::error::AppError;
 use crate::features::auth::{hash_password, model::AuthUser};
 
-use super::TeamService;
-use super::helpers::{record_audit, require_manage_team};
+use crate::features::teams::service::TeamService;
+use crate::features::teams::service::helpers::{record_audit, require_manage_team};
 
 impl TeamService {
     pub async fn reset_password(

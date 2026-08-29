@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 
-use super::{
+use crate::features::training::{
     BankProblem, BankProblemRow, BankQuery, ProgressRequest, SetItemRequest, SetRequest,
     load_public_training_items, load_public_training_set, load_public_training_sets, validate_page,
     validate_progress_request, validate_set_request, write_set,
@@ -159,7 +159,16 @@ async fn private_problem_publication_response_allows_missing_published_at(pool: 
     .expect("insert private publication");
 
     let row = sqlx::query_as::<_, BankProblemRow>(
-        "SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at,p.languages FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.id=$1",
+        r#"
+        SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,
+               b.tags::jsonb AS tags,b.published_at,p.languages
+        FROM problems p
+        JOIN problem_bank_entries b
+            ON b.problem_id=p.id
+        LEFT JOIN problem_statements s
+            ON s.problem_id=p.id AND s.lang_code=p.default_lang_code
+        WHERE p.id=$1
+        "#,
     )
     .bind(problem_id)
     .fetch_one(&pool)

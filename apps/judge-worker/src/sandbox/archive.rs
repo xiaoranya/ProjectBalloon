@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::Path};
 
-use super::{
+use crate::sandbox::{
     MAX_TESTDATA_ARCHIVE_BYTES, MAX_TESTDATA_EXTRACTED_BYTES, MAX_TESTDATA_FILES, SandboxError,
 };
 

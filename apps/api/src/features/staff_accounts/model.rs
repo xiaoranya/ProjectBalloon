@@ -245,7 +245,7 @@ fn validate_password(field: &'static str, value: &str) -> Result<(), AppError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
+    use crate::features::staff_accounts::model::{
         CreateStaffAccountRequest, PageQuery, ResetStaffPasswordRequest, UpdateStaffAccountRequest,
     };
     #[test]

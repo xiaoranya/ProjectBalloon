@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use sqlx::PgPool;
 
-use super::model::{CreateRequest, estimate_pages};
-use super::service::PrintingService;
+use crate::features::printing::model::{CreateRequest, estimate_pages};
+use crate::features::printing::service::PrintingService;
 use crate::{
     features::auth::model::{AuthUser, UserType},
     object_storage::{ObjectStorage, ObjectStorageError, ObjectStorageHandle},

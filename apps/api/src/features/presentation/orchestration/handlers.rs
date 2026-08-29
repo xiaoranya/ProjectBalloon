@@ -8,11 +8,11 @@ use axum::{
 
 use crate::{error::AppError, features::auth::AuthContext, state::AppState};
 
-use super::super::service::require_screen_operator;
-use super::model::{
+use crate::features::presentation::orchestration::model::{
     GroupControlRequest, GroupRequest, GroupResponse, PlaylistRequest, PlaylistResponse,
 };
-use super::service::OrchestrationService;
+use crate::features::presentation::orchestration::service::OrchestrationService;
+use crate::features::presentation::service::require_screen_operator;
 
 fn orchestration(state: &AppState) -> OrchestrationService {
     OrchestrationService::new(state.database().clone())
