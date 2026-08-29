@@ -9,7 +9,7 @@ use crate::{
     error::AppError, features::auth::SuperAdminContext, pagination::PageResponse, state::AppState,
 };
 
-use super::model::{
+use crate::features::staff_accounts::model::{
     CreateStaffAccountRequest, PageQuery, ResetStaffPasswordRequest, StaffAccountResponse,
     UpdateStaffAccountRequest,
 };

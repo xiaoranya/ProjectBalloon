@@ -2,8 +2,8 @@ use sqlx::{Postgres, Transaction};
 
 use crate::error::AppError;
 
-use super::super::model::UserRow;
-use super::{AuthService, USER_COLUMNS};
+use crate::features::auth::model::UserRow;
+use crate::features::auth::service::{AuthService, USER_COLUMNS};
 
 impl AuthService {
     pub(super) async fn load_user_by_username(

@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use sqlx::PgPool;
 
-use super::ContestManagementScopeService;
+use crate::features::contest_management_scopes::ContestManagementScopeService;
 
 fn audit_ip() -> IpAddr {
     Ipv4Addr::new(10, 0, 0, 9).into()

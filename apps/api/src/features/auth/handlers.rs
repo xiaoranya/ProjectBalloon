@@ -9,7 +9,7 @@ use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 
 use crate::{error::AppError, state::AppState};
 
-use super::{
+use crate::features::auth::{
     SESSION_COOKIE_NAME,
     context::AuthContext,
     model::{

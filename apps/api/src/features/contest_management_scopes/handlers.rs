@@ -7,7 +7,9 @@ use axum::{
 
 use crate::{error::AppError, features::auth::SuperAdminContext, state::AppState};
 
-use super::model::{ContestManagementScopeResponse, ReplaceContestManagementScopeRequest};
+use crate::features::contest_management_scopes::model::{
+    ContestManagementScopeResponse, ReplaceContestManagementScopeRequest,
+};
 
 #[utoipa::path(get, path = "/api/admin/contest-managers", operation_id = "listContestManagementScopes", tag = "admin-scopes", responses((status = 200, body = [ContestManagementScopeResponse]), (status = 401, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
 pub async fn list(

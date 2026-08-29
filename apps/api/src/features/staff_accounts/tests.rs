@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 
-use super::StaffAccountService;
 use crate::features::auth::model::UserType;
+use crate::features::staff_accounts::StaffAccountService;
 use crate::features::staff_accounts::model::ValidatedCreate;
 
 fn create_request(username: &str) -> ValidatedCreate {

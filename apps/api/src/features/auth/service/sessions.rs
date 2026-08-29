@@ -5,8 +5,7 @@ use time::OffsetDateTime;
 use crate::error::AppError;
 use crate::features::competition::model::{CompetitionSessionResponse, WorkstationLoginGrant};
 
-use super::super::{model::LoginRequest, password};
-use super::{
+use crate::features::auth::service::{
     AuthService, AuthenticatedSession, LOGIN_ATTEMPT_LIMIT, LoginOutcome,
     crypto::{
         access_fingerprint, constant_time_equal, digest, invalid_credentials, not_authenticated,
@@ -14,6 +13,7 @@ use super::{
     },
     internal::record_audit,
 };
+use crate::features::auth::{model::LoginRequest, password};
 
 impl AuthService {
     pub async fn login(

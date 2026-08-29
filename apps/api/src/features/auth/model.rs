@@ -237,7 +237,9 @@ impl UserRow {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChangePasswordRequest, LoginRequest, ProfileRequest, UserType};
+    use crate::features::auth::model::{
+        ChangePasswordRequest, LoginRequest, ProfileRequest, UserType,
+    };
 
     #[test]
     fn user_type_wire_names_are_stable() {

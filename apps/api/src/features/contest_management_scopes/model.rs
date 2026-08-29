@@ -37,7 +37,7 @@ pub struct ContestManagementScopeResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::ReplaceContestManagementScopeRequest;
+    use crate::features::contest_management_scopes::model::ReplaceContestManagementScopeRequest;
 
     #[test]
     fn scope_ids_are_sorted_and_deduplicated() {

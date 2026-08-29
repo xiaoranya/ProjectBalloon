@@ -8,7 +8,7 @@ use axum_extra::extract::cookie::CookieJar;
 
 use crate::{error::AppError, state::AppState};
 
-use super::{
+use crate::features::auth::{
     SESSION_COOKIE_NAME,
     model::{AuthUser, CurrentUserResponse},
     service::AuthenticatedSession,

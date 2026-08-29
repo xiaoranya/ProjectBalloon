@@ -5,7 +5,7 @@ use subtle::ConstantTimeEq;
 use crate::error::AppError;
 use crate::features::auth::model::AuthUser;
 
-use super::SESSION_TOKEN_BYTES;
+use crate::features::auth::service::SESSION_TOKEN_BYTES;
 
 pub(super) fn random_token() -> Result<String, AppError> {
     let mut bytes = [0_u8; SESSION_TOKEN_BYTES];
