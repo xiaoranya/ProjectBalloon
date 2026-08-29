@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use tokio::time::timeout;
 use tracing::warn;
 
-use super::model::{ScoreboardResponse, ValidatedScoreboardQuery};
+use crate::features::scoreboard::model::{ScoreboardResponse, ValidatedScoreboardQuery};
 
 #[derive(Clone)]
 pub struct ScoreboardCache {
@@ -113,7 +113,7 @@ fn cache_key(
 mod tests {
     use std::{process::Command, time::Duration};
 
-    use super::cache_key;
+    use crate::features::scoreboard::cache::cache_key;
     use crate::features::scoreboard::model::ValidatedScoreboardQuery;
 
     #[test]

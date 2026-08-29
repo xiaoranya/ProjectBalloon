@@ -4,7 +4,7 @@ use time::OffsetDateTime;
 
 use crate::error::AppError;
 
-use super::model::{
+use crate::features::scoreboard::model::{
     CellRow, RosterRow, ScoreboardCell, ScoreboardProblem, ScoreboardResponse, ScoreboardRow,
     SubmissionScoreRow, ValidatedScoreboardQuery,
 };

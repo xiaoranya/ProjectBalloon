@@ -2,9 +2,9 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use sqlx::PgPool;
 
-use super::model::{AskRequest, ConvertRequest, ReplyRequest};
-use super::service::ClarificationService;
 use crate::features::auth::model::{AuthUser, UserType};
+use crate::features::clarifications::model::{AskRequest, ConvertRequest, ReplyRequest};
+use crate::features::clarifications::service::ClarificationService;
 
 #[test]
 fn scope_problem_shape_and_reply_visibility_are_closed() {

@@ -10,12 +10,12 @@ use crate::features::{
     scoreboard::{ScoreboardCache, projection::rebuild_cell},
 };
 
-use super::helpers::{assemble, csv_field, score_submissions, to_csv};
-use super::model::{
+use crate::features::scoreboard::helpers::{assemble, csv_field, score_submissions, to_csv};
+use crate::features::scoreboard::model::{
     CellRow, RosterRow, ScoreboardProblem, SubmissionScoreRow, ValidatedScoreboardQuery,
     ValidatedSnapshotSelector,
 };
-use super::service::ScoreboardService;
+use crate::features::scoreboard::service::ScoreboardService;
 
 #[test]
 fn scoreboard_csv_blocks_spreadsheet_formulas() {

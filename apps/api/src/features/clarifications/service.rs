@@ -15,7 +15,9 @@ use crate::{
     },
 };
 
-use super::model::{ClarificationResponse, ConvertRequest, ValidatedAsk, ValidatedReply};
+use crate::features::clarifications::model::{
+    ClarificationResponse, ConvertRequest, ValidatedAsk, ValidatedReply,
+};
 
 const RATE_LIMIT_MINUTES: i64 = 5;
 

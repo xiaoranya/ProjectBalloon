@@ -7,7 +7,7 @@ use sqlx::{Postgres, Transaction};
 use crate::error::AppError;
 use crate::features::scoreboard::{ScoreboardResponse, ScoreboardRow};
 
-use super::model::{ResolverState, Reveal};
+use crate::features::resolver::model::{ResolverState, Reveal};
 
 pub(super) struct SourceSnapshot {
     pub(super) contest_id: i64,

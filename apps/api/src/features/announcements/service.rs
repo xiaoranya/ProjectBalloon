@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::{error::AppError, features::auth::model::AuthUser};
 
-use super::model::{AnnouncementResponse, CreateRequest, UpdateRequest};
+use crate::features::announcements::model::{AnnouncementResponse, CreateRequest, UpdateRequest};
 
 pub struct AnnouncementService {
     database: PgPool,

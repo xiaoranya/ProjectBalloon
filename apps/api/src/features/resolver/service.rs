@@ -9,11 +9,11 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::features::auth::model::AuthUser;
 
-use super::model::{
+use crate::features::resolver::model::{
     AutoPlayRequest, CreateRequest, ResolverEventResponse, ResolverPublicStateResponse,
     ResolverRunResponse, ResolverSourceSnapshotResponse, ResolverSourcesResponse, RunRow,
 };
-use super::plan::{build_states, encode_state, load_source_snapshot};
+use crate::features::resolver::plan::{build_states, encode_state, load_source_snapshot};
 
 pub struct ResolverService {
     database: PgPool,

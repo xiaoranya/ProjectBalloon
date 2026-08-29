@@ -9,7 +9,7 @@ use crate::error::AppError;
 use crate::features::auth::AuthContext;
 use crate::state::AppState;
 
-use super::model::{
+use crate::features::resolver::model::{
     AutoPlayRequest, CommandRequest, CreateRequest, ResolverEventResponse,
     ResolverPublicStateResponse, ResolverRunResponse, ResolverSourcesResponse,
 };

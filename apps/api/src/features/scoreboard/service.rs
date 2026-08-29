@@ -6,9 +6,11 @@ use time::OffsetDateTime;
 
 use crate::{error::AppError, features::auth::model::AuthUser};
 
-use super::ScoreboardCache;
-use super::helpers::{apply_scoreboard_filter, assemble, contest_not_found, score_submissions};
-use super::model::{
+use crate::features::scoreboard::ScoreboardCache;
+use crate::features::scoreboard::helpers::{
+    apply_scoreboard_filter, assemble, contest_not_found, score_submissions,
+};
+use crate::features::scoreboard::model::{
     CellRow, ContestBoardRow, RosterRow, ScoreboardProblem, ScoreboardResponse,
     ScoreboardSnapshotResponse, SnapshotRow, SubmissionScoreRow, ValidatedScoreboardQuery,
     ValidatedSnapshotSelector,
