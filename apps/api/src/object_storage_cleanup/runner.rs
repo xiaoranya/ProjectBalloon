@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::object_storage::ObjectStorageHandle;
 
-use super::{
+use crate::object_storage_cleanup::{
     ClaimedCleanup, IntegrityScanError, ORPHAN_SCAN_GRACE, ORPHAN_SCAN_INTERVAL,
     ObjectStorageCleanupConfig, ObjectStorageCleanupRunner, SOURCE_PURGE_INTERVAL,
     referenced_object_keys, scan_object_integrity,

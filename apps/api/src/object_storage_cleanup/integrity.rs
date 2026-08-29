@@ -4,7 +4,7 @@ use sqlx::PgPool;
 
 use crate::object_storage::{ObjectStorageError, ObjectStorageHandle, ObjectStorageObject};
 
-use super::enqueue_cleanup_batch;
+use crate::object_storage_cleanup::enqueue_cleanup_batch;
 
 /// Distinguishes the two failure domains of an integrity scan so that a
 /// PostgreSQL outage is not reported as an object-storage outage and

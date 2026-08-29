@@ -8,12 +8,12 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use sqlx::PgPool;
 
-use super::{
-    ObjectStorageCleanupConfig, ObjectStorageCleanupRunner, enqueue_cleanup, is_orphan_candidate,
-    missing_object_keys, reconcile_missing_references, retry_delay,
-};
 use crate::object_storage::{
     ObjectStorage, ObjectStorageError, ObjectStorageHandle, ObjectStorageObject,
+};
+use crate::object_storage_cleanup::{
+    ObjectStorageCleanupConfig, ObjectStorageCleanupRunner, enqueue_cleanup, is_orphan_candidate,
+    missing_object_keys, reconcile_missing_references, retry_delay,
 };
 
 #[test]
