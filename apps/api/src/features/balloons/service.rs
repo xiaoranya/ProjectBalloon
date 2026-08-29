@@ -118,9 +118,27 @@ impl BalloonService {
                     .map_err(|error| AppError::internal("cancel balloon task", error))?;
             }
             "REOPEN" if status == "CANCELLED" => {
-                sqlx::query("UPDATE balloon_tasks SET status = 'PENDING', claimed_by = NULL, claimed_at = NULL, delivered_at = NULL, cancelled_at = NULL, cancelled_reason = NULL, dispatch_attempts = 0, last_dispatched_at = NULL, reopened_count = reopened_count + 1, updated_at = now(), version = version + 1 WHERE id = $1")
-                    .bind(id).execute(&mut *tx).await
-                    .map_err(|error| AppError::internal("reopen balloon task", error))?;
+                sqlx::query(
+                    r#"
+                    UPDATE balloon_tasks
+                    SET status = 'PENDING',
+                        claimed_by = NULL,
+                        claimed_at = NULL,
+                        delivered_at = NULL,
+                        cancelled_at = NULL,
+                        cancelled_reason = NULL,
+                        dispatch_attempts = 0,
+                        last_dispatched_at = NULL,
+                        reopened_count = reopened_count + 1,
+                        updated_at = now(),
+                        version = version + 1
+                    WHERE id = $1
+                    "#,
+                )
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|error| AppError::internal("reopen balloon task", error))?;
             }
             _ => {
                 return Err(AppError::conflict(
@@ -155,7 +173,16 @@ impl BalloonService {
             .await
             .map_err(|error| AppError::internal("begin balloon note update", error))?;
         let contest_id = sqlx::query_scalar::<_, i64>(
-            "UPDATE balloon_tasks task SET note = $2, updated_at = now(), version = version + 1 WHERE task.id = $1 AND task.version = $3 AND EXISTS (SELECT 1 FROM contests contest WHERE contest.id = task.contest_id AND contest.deleted_at IS NULL) RETURNING task.contest_id",
+            r#"
+            UPDATE balloon_tasks task
+            SET note = $2, updated_at = now(), version = version + 1
+            WHERE task.id = $1 AND task.version = $3
+                AND EXISTS (
+                    SELECT 1 FROM contests contest
+                    WHERE contest.id = task.contest_id AND contest.deleted_at IS NULL
+                )
+            RETURNING task.contest_id
+            "#,
         )
         .bind(id)
         .bind(note)
@@ -228,8 +255,29 @@ impl BalloonService {
         }
         let zones = serde_json::to_string(&request.zone_order)
             .map_err(|e| AppError::internal("encode balloon zones", e))?;
-        sqlx::query("INSERT INTO balloon_dispatch_policies(contest_id,strategy,max_batch,cooldown_seconds,zone_order,updated_by_user_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(contest_id) DO UPDATE SET strategy=EXCLUDED.strategy,max_batch=EXCLUDED.max_batch,cooldown_seconds=EXCLUDED.cooldown_seconds,zone_order=EXCLUDED.zone_order,updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=now()")
-            .bind(contest_id).bind(request.strategy).bind(request.max_batch).bind(request.cooldown_seconds).bind(zones).bind(actor.id).execute(&self.database).await.map_err(|e|AppError::internal("save balloon dispatch policy",e))?;
+        sqlx::query(
+            r#"
+            INSERT INTO balloon_dispatch_policies
+                (contest_id,strategy,max_batch,cooldown_seconds,zone_order,updated_by_user_id)
+            VALUES($1,$2,$3,$4,$5,$6)
+            ON CONFLICT(contest_id) DO UPDATE
+                SET strategy=EXCLUDED.strategy,
+                    max_batch=EXCLUDED.max_batch,
+                    cooldown_seconds=EXCLUDED.cooldown_seconds,
+                    zone_order=EXCLUDED.zone_order,
+                    updated_by_user_id=EXCLUDED.updated_by_user_id,
+                    updated_at=now()
+            "#,
+        )
+        .bind(contest_id)
+        .bind(request.strategy)
+        .bind(request.max_batch)
+        .bind(request.cooldown_seconds)
+        .bind(zones)
+        .bind(actor.id)
+        .execute(&self.database)
+        .await
+        .map_err(|e| AppError::internal("save balloon dispatch policy", e))?;
         self.dispatch_policy(contest_id, actor).await
     }
 
@@ -252,7 +300,32 @@ impl BalloonService {
         let zones: Vec<String> =
             serde_json::from_value(policy.zone_order.clone()).unwrap_or_default();
         let sql = format!(
-            "WITH candidates AS (SELECT id FROM balloon_tasks WHERE contest_id=$1 AND status='PENDING' AND ($2::text IS NULL OR delivery_zone=$2) AND (last_dispatched_at IS NULL OR last_dispatched_at<=now()-make_interval(secs=>$3)) ORDER BY CASE WHEN $4='ZONE' THEN coalesce(array_position($5::text[],delivery_zone),2147483647) ELSE 0 END, CASE WHEN $4='PRIORITY' THEN priority ELSE 0 END DESC, is_first_blood DESC, created_at,id LIMIT $6 FOR UPDATE SKIP LOCKED), claimed AS (UPDATE balloon_tasks SET status='CLAIMED',claimed_by=$7,claimed_at=now(),last_dispatched_at=now(),dispatch_attempts=dispatch_attempts+1,updated_at=now(),version=version+1 WHERE id IN(SELECT id FROM candidates) RETURNING id) {BALLOON_TASK_SQL} JOIN claimed ON claimed.id=task.id ORDER BY task.priority DESC,task.created_at,task.id"
+            r#"
+            WITH candidates AS (
+                SELECT id FROM balloon_tasks
+                WHERE contest_id=$1 AND status='PENDING'
+                    AND ($2::text IS NULL OR delivery_zone=$2)
+                    AND (last_dispatched_at IS NULL
+                        OR last_dispatched_at<=now()-make_interval(secs=>$3))
+                ORDER BY CASE WHEN $4='ZONE'
+                        THEN coalesce(array_position($5::text[],delivery_zone),2147483647)
+                        ELSE 0 END,
+                    CASE WHEN $4='PRIORITY' THEN priority ELSE 0 END DESC,
+                    is_first_blood DESC, created_at,id
+                LIMIT $6
+                FOR UPDATE SKIP LOCKED
+            ),
+            claimed AS (
+                UPDATE balloon_tasks
+                SET status='CLAIMED',claimed_by=$7,claimed_at=now(),last_dispatched_at=now(),
+                    dispatch_attempts=dispatch_attempts+1,updated_at=now(),version=version+1
+                WHERE id IN(SELECT id FROM candidates)
+                RETURNING id
+            )
+            {BALLOON_TASK_SQL}
+            JOIN claimed ON claimed.id=task.id
+            ORDER BY task.priority DESC,task.created_at,task.id
+            "#
         );
         sqlx::query_as::<_, BalloonTaskResponse>(sqlx::AssertSqlSafe(sql))
             .bind(contest_id)

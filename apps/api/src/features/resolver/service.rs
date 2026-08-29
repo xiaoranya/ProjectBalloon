@@ -235,11 +235,25 @@ impl ResolverService {
     ) -> Result<Vec<ResolverEventResponse>, AppError> {
         require_operator(actor)?;
         sqlx::query_as::<_, EventRow>(
-            "SELECT event.id, event.event_type, event.payload, event.sequence, event.actor_user_id, event.created_at FROM resolver_events event JOIN resolver_runs run ON run.id = event.run_id JOIN contests contest ON contest.id = run.contest_id AND contest.deleted_at IS NULL WHERE event.run_id = $1 ORDER BY event.sequence",
+            r#"
+            SELECT event.id, event.event_type, event.payload, event.sequence,
+                   event.actor_user_id, event.created_at
+            FROM resolver_events event
+            JOIN resolver_runs run
+                ON run.id = event.run_id
+            JOIN contests contest
+                ON contest.id = run.contest_id AND contest.deleted_at IS NULL
+            WHERE event.run_id = $1
+            ORDER BY event.sequence
+            "#,
         )
-        .bind(id).fetch_all(&self.database).await
+        .bind(id)
+        .fetch_all(&self.database)
+        .await
         .map_err(|error| AppError::internal("list resolver events", error))?
-        .into_iter().map(EventRow::response).collect()
+        .into_iter()
+        .map(EventRow::response)
+        .collect()
     }
 
     pub(crate) async fn command(

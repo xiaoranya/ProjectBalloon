@@ -333,7 +333,14 @@ async fn lock_context(
     id: i64,
 ) -> Result<(i64, i64, String), AppError> {
     sqlx::query_as(
-        "SELECT clarification.contest_id, clarification.team_id, clarification.status FROM clarifications clarification JOIN contests contest ON contest.id = clarification.contest_id AND contest.deleted_at IS NULL WHERE clarification.id = $1 FOR UPDATE OF clarification",
+        r#"
+        SELECT clarification.contest_id, clarification.team_id, clarification.status
+        FROM clarifications clarification
+        JOIN contests contest
+            ON contest.id = clarification.contest_id AND contest.deleted_at IS NULL
+        WHERE clarification.id = $1
+        FOR UPDATE OF clarification
+        "#,
     )
     .bind(id)
     .fetch_optional(&mut **tx)
