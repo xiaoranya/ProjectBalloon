@@ -45,7 +45,7 @@ pub async fn get_bank(
 
 #[utoipa::path(put, path = "/api/admin/problems/{problem_id}/publication", operation_id = "updateProblemPublication", tag = "training", params(("problem_id" = i64, Path)), request_body = PublicationRequest, responses((status = 200, body = ProblemPublication), (status = 400, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
 pub async fn update_publication(
-    context: SuperAdminContext,
+    _context: SuperAdminContext,
     State(state): State<AppState>,
     Path(problem_id): Path<i64>,
     payload: Result<Json<PublicationRequest>, JsonRejection>,
@@ -84,17 +84,15 @@ pub async fn update_publication(
         .commit()
         .await
         .map_err(|e| AppError::internal("commit problem publication update", e))?;
-    let _ = context;
     load_publication(&state, problem_id).await.map(Json)
 }
 
 #[utoipa::path(get, path = "/api/admin/problems/{problem_id}/publication", operation_id = "getProblemPublication", tag = "training", params(("problem_id" = i64, Path)), responses((status = 200, body = ProblemPublication), (status = 404, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
 pub async fn get_publication(
-    context: SuperAdminContext,
+    _context: SuperAdminContext,
     State(state): State<AppState>,
     Path(problem_id): Path<i64>,
 ) -> Result<Json<ProblemPublication>, AppError> {
-    let _ = context;
     if problem_id <= 0 {
         return Err(AppError::not_found("PROBLEM_NOT_FOUND", "Problem not found"));
     }
