@@ -7,11 +7,11 @@ use time::OffsetDateTime;
 
 use crate::{error::AppError, features::auth::model::AuthUser};
 
-use super::model::{
+use crate::features::presentation::model::{
     CommandRequest, CommandResponse, ConfigRequest, ConfigResponse, HeartbeatRequest,
     HeartbeatResponse, InstanceResponse, RegisterRequest, RegistrationResponse,
 };
-use super::orchestration::playback_for_instance;
+use crate::features::presentation::orchestration::playback_for_instance;
 
 const SCREEN_VIEWS: &[&str] = &[
     "SCOREBOARD",

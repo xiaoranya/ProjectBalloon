@@ -18,7 +18,7 @@ use crate::{
     state::AppState,
 };
 
-use super::hub::RealtimeEnvelope;
+use crate::features::realtime::hub::RealtimeEnvelope;
 
 #[utoipa::path(get, path = "/api/public/events/contests/{contest_id}", operation_id = "subscribePublicContestEvents", tag = "realtime", params(("contest_id" = i64, Path)), responses((status = 200, description = "Server-sent public contest events", content_type = "text/event-stream", body = String), (status = 404, body = crate::error::ApiErrorBody)))]
 pub async fn subscribe_public(

@@ -14,7 +14,7 @@ use crate::{
     state::AppState,
 };
 
-use super::model::{PrintRequestResponse, ValidatedContent};
+use crate::features::printing::model::{PrintRequestResponse, ValidatedContent};
 
 pub struct PrintingService {
     database: PgPool,

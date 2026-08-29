@@ -8,12 +8,12 @@ use axum::{
 
 use crate::{error::AppError, features::auth::AuthContext, state::AppState};
 
-use super::model::{
+use crate::features::presentation::model::{
     CommandRequest, CommandResponse, ConfigRequest, ConfigResponse, HeartbeatRequest,
     HeartbeatResponse, InstanceResponse, ModeQuery, PresentationTemplateRequest,
     PresentationTemplateResponse, RegisterRequest, RegistrationResponse,
 };
-use super::service::require_presentation_operator;
+use crate::features::presentation::service::require_presentation_operator;
 
 #[utoipa::path(get, path = "/api/presentation-configs/{contest_id}", operation_id = "getPresentationConfig", tag = "presentation", params(("contest_id" = i64, Path), ("mode" = String, Query)), responses((status = 200, body = ConfigResponse), (status = 400, body = crate::error::ApiErrorBody), (status = 401, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
 pub async fn get_config(

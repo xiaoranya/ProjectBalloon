@@ -12,8 +12,10 @@ use axum::{
 
 use crate::{error::AppError, features::auth::AuthContext, state::AppState};
 
-use super::model::{CreateRequest, ListQuery, PrintRequestResponse, RejectRequest};
-use super::service::storage;
+use crate::features::printing::model::{
+    CreateRequest, ListQuery, PrintRequestResponse, RejectRequest,
+};
+use crate::features::printing::service::storage;
 
 #[utoipa::path(post, path = "/api/contests/{contest_id}/print-requests", operation_id = "createPrintRequest", tag = "printing",
     params(("contest_id" = i64, Path)), request_body = CreateRequest,

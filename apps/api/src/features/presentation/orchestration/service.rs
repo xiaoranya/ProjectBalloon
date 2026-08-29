@@ -8,10 +8,12 @@ use time::OffsetDateTime;
 
 use crate::{error::AppError, features::auth::model::AuthUser};
 
-use super::super::service::{audit, require_contest, require_screen_operator, validate_view};
-use super::model::{
+use crate::features::presentation::orchestration::model::{
     GroupControlRequest, GroupPlaybackResponse, GroupRequest, GroupResponse, PlaylistItemRequest,
     PlaylistItemResponse, PlaylistRequest, PlaylistResponse,
+};
+use crate::features::presentation::service::{
+    audit, require_contest, require_screen_operator, validate_view,
 };
 
 pub struct OrchestrationService {

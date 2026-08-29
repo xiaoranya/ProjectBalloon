@@ -9,7 +9,7 @@ use tokio::sync::watch;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use super::hub::{RealtimeEnvelope, RealtimeHub};
+use crate::features::realtime::hub::{RealtimeEnvelope, RealtimeHub};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -193,7 +193,7 @@ mod tests {
     use project_balloon_contracts::{RealtimeEvent, RealtimeScope};
     use uuid::Uuid;
 
-    use super::{RedisMessage, reconnect_delay};
+    use crate::features::realtime::fanout::{RedisMessage, reconnect_delay};
 
     #[test]
     fn redis_wire_message_matches_the_previous_java_shape() {

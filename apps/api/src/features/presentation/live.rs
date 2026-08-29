@@ -21,8 +21,8 @@ use crate::{
     state::AppState,
 };
 
-use super::model::ConfigResponse;
-use super::service::{audit, require_contest};
+use crate::features::presentation::model::ConfigResponse;
+use crate::features::presentation::service::{audit, require_contest};
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PublishedQuery {

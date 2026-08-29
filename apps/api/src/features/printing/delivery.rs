@@ -605,7 +605,7 @@ mod tests {
     use bytes::Bytes;
     use sqlx::PgPool;
 
-    use super::{
+    use crate::features::printing::delivery::{
         CommandLineCupsGateway, CupsDeliveryRunner, CupsGateway, CupsJobStatus, SanitizedError,
         contains_job, parse_job_id,
     };

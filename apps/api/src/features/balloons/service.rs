@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::{error::AppError, features::auth::model::AuthUser};
 
-use super::model::{
+use crate::features::balloons::model::{
     BalloonStatsResponse, BalloonTaskResponse, DispatchPolicyRequest, DispatchPolicyResponse,
     DispatchQuery, NoteRequest,
 };
