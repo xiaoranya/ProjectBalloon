@@ -493,7 +493,7 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{retry_count, retry_nack_options, validate_handler_result};
+    use crate::rabbit::{retry_count, retry_nack_options, validate_handler_result};
 
     #[test]
     fn retry_rejection_enters_dead_letter_flow() {

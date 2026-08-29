@@ -214,7 +214,7 @@ impl WorkerHeartbeatPublisher {
 
 #[cfg(test)]
 mod tests {
-    use super::WorkerActivity;
+    use crate::heartbeat::WorkerActivity;
 
     #[test]
     fn task_guards_track_parallel_activity_and_release_on_drop() {
