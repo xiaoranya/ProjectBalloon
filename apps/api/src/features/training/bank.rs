@@ -116,7 +116,7 @@ pub async fn get_publication(
     .ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem not found"))?;
     let (visibility, difficulty, tags, published_at) = row;
     let tags = tags
-        .map(|value| serde_json::from_value::<Vec<String>>(value))
+        .map(serde_json::from_value::<Vec<String>>)
         .transpose()
         .map_err(|e| AppError::internal("decode problem publication tags", e))?
         .unwrap_or_default();
