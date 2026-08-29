@@ -190,13 +190,21 @@ impl PrintingService {
             .map_err(|error| AppError::internal("begin print transition", error))?;
         let (contest_id, team_id, status, delivery_in_progress) =
             sqlx::query_as::<_, (i64, i64, String, bool)>(
-                "SELECT request.contest_id, request.team_id, request.status, coalesce(request.delivery_lease_until > now(), false) FROM print_requests request JOIN contests contest ON contest.id = request.contest_id AND contest.deleted_at IS NULL WHERE request.id = $1 FOR UPDATE OF request",
+                r#"
+                SELECT request.contest_id, request.team_id, request.status,
+                       coalesce(request.delivery_lease_until > now(), false)
+                FROM print_requests request
+                JOIN contests contest
+                    ON contest.id = request.contest_id AND contest.deleted_at IS NULL
+                WHERE request.id = $1
+                FOR UPDATE OF request
+                "#,
             )
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|error| AppError::internal("lock print request", error))?
-        .ok_or_else(print_not_found)?;
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|error| AppError::internal("lock print request", error))?
+            .ok_or_else(print_not_found)?;
         if action == "CANCEL" && status == "QUEUED" && delivery_in_progress {
             return Err(AppError::conflict(
                 "PRINTING_DELIVERY_IN_PROGRESS",
@@ -219,8 +227,27 @@ impl PrintingService {
                 ));
             }
         };
-        sqlx::query("UPDATE print_requests SET status = $2, failed_reason = $3, operator_user_id = $4, cancellation_pending = CASE WHEN $5 = 'CANCEL' AND cups_job_id IS NOT NULL THEN true ELSE false END, printer_id = CASE WHEN $5 = 'RETRY' THEN NULL ELSE printer_id END, cups_job_id = CASE WHEN $5 = 'RETRY' THEN NULL ELSE cups_job_id END, submitted_at = CASE WHEN $5 = 'RETRY' THEN NULL ELSE submitted_at END, delivery_attempts = CASE WHEN $5 = 'RETRY' THEN 0 ELSE delivery_attempts END, delivery_lease_owner = CASE WHEN $5 = 'RETRY' THEN NULL ELSE delivery_lease_owner END, delivery_lease_until = CASE WHEN $5 = 'RETRY' THEN NULL ELSE delivery_lease_until END, last_delivery_error = NULL, updated_at = now(), version = version + 1 WHERE id = $1")
-            .bind(id).bind(next).bind(failed_reason).bind(actor.id).bind(action).execute(&mut *tx).await
+        sqlx::query(
+            r#"
+            UPDATE print_requests
+            SET status = $2,
+                failed_reason = $3,
+                operator_user_id = $4,
+                cancellation_pending = CASE WHEN $5 = 'CANCEL' AND cups_job_id IS NOT NULL
+                    THEN true ELSE false END,
+                printer_id = CASE WHEN $5 = 'RETRY' THEN NULL ELSE printer_id END,
+                cups_job_id = CASE WHEN $5 = 'RETRY' THEN NULL ELSE cups_job_id END,
+                submitted_at = CASE WHEN $5 = 'RETRY' THEN NULL ELSE submitted_at END,
+                delivery_attempts = CASE WHEN $5 = 'RETRY' THEN 0 ELSE delivery_attempts END,
+                delivery_lease_owner = CASE WHEN $5 = 'RETRY' THEN NULL ELSE delivery_lease_owner END,
+                delivery_lease_until = CASE WHEN $5 = 'RETRY' THEN NULL ELSE delivery_lease_until END,
+                last_delivery_error = NULL,
+                updated_at = now(),
+                version = version + 1
+            WHERE id = $1
+            "#,
+        )
+        .bind(id).bind(next).bind(failed_reason).bind(actor.id).bind(action).execute(&mut *tx).await
             .map_err(|error| AppError::internal("transition print request", error))?;
         audit(
             &mut tx,
