@@ -15,7 +15,7 @@ use tokio::{sync::watch, time::timeout};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use super::{heartbeat_processor::WorkerHeartbeatProcessor, topology};
+use super::{error::JudgeDispatchError, heartbeat_processor::WorkerHeartbeatProcessor, topology};
 
 pub struct RabbitWorkerHeartbeatConsumer {
     database: PgPool,
@@ -56,20 +56,19 @@ impl RabbitWorkerHeartbeatConsumer {
         info!("Worker heartbeat consumer stopped");
     }
 
-    async fn consume_session(&self, mut shutdown: watch::Receiver<bool>) -> Result<(), String> {
+    async fn consume_session(
+        &self,
+        mut shutdown: watch::Receiver<bool>,
+    ) -> Result<(), JudgeDispatchError> {
         let connection = timeout(
             self.request_timeout,
             Connection::connect(&self.uri, ConnectionProperties::default()),
         )
         .await
-        .map_err(|_| "RabbitMQ heartbeat consumer connection timed out".to_owned())?
-        .map_err(|error| error.to_string())?;
-        let channel = connection.create_channel().await.map_err(|error| error.to_string())?;
-        topology::declare(&channel).await.map_err(|error| error.to_string())?;
-        channel
-            .basic_qos(self.prefetch, BasicQosOptions::default())
-            .await
-            .map_err(|error| error.to_string())?;
+        .map_err(|_| JudgeDispatchError::Timeout("heartbeat consumer connection"))??;
+        let channel = connection.create_channel().await?;
+        topology::declare(&channel).await?;
+        channel.basic_qos(self.prefetch, BasicQosOptions::default()).await?;
         let mut consumer = channel
             .basic_consume(
                 JUDGE_HEARTBEATS_QUEUE.into(),
@@ -77,14 +76,14 @@ impl RabbitWorkerHeartbeatConsumer {
                 BasicConsumeOptions::default(),
                 FieldTable::default(),
             )
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
         let processor = WorkerHeartbeatProcessor::new(self.database.clone());
         loop {
             tokio::select! {
                 delivery = consumer.next() => {
-                    let Some(delivery) = delivery else { return Err("RabbitMQ cancelled the Worker heartbeat consumer".to_owned()); };
-                    process_delivery(&processor, &delivery.map_err(|error| error.to_string())?).await?;
+                    let Some(delivery) = delivery
+                    else { return Err(JudgeDispatchError::ConsumerCancelled("Worker heartbeat")); };
+                    process_delivery(&processor, &delivery?).await?;
                 }
                 changed = shutdown.changed() => {
                     if changed.is_err() || *shutdown.borrow() { return Ok(()); }
@@ -97,7 +96,7 @@ impl RabbitWorkerHeartbeatConsumer {
 async fn process_delivery(
     processor: &WorkerHeartbeatProcessor,
     delivery: &Delivery,
-) -> Result<(), String> {
+) -> Result<(), JudgeDispatchError> {
     let heartbeat = match serde_json::from_slice::<WorkerHeartbeat>(&delivery.data) {
         Ok(value) if value.validate().is_ok() => value,
         Ok(value) => {
@@ -123,22 +122,19 @@ async fn process_delivery(
             .ack(BasicAckOptions::default())
             .await
             .map(|_| ())
-            .map_err(|error| error.to_string()),
+            .map_err(JudgeDispatchError::from),
         Err(error) => {
             warn!(%error, worker_id = %heartbeat.worker_id, "requeueing Worker heartbeat after database failure");
-            delivery
-                .nack(BasicNackOptions { multiple: false, requeue: true })
-                .await
-                .map_err(|ack_error| ack_error.to_string())?;
-            Err(error.to_string())
+            delivery.nack(BasicNackOptions { multiple: false, requeue: true }).await?;
+            Err(JudgeDispatchError::from(error))
         }
     }
 }
 
-async fn reject(delivery: &Delivery) -> Result<(), String> {
+async fn reject(delivery: &Delivery) -> Result<(), JudgeDispatchError> {
     delivery
         .reject(BasicRejectOptions { requeue: false })
         .await
         .map(|_| ())
-        .map_err(|error| error.to_string())
+        .map_err(JudgeDispatchError::from)
 }

@@ -9,7 +9,7 @@ use lapin::{
 use tokio::{sync::Mutex, time::timeout};
 use uuid::Uuid;
 
-use super::{dispatcher::JudgeTaskPublisher, topology};
+use super::{dispatcher::JudgeTaskPublisher, error::JudgeDispatchError, topology};
 
 pub struct RabbitJudgeTaskPublisher {
     uri: String,
@@ -29,27 +29,23 @@ impl RabbitJudgeTaskPublisher {
         Arc::new(Self { uri, timeout, channel: Mutex::new(None) })
     }
 
-    async fn connect(&self) -> Result<Channel, String> {
+    async fn connect(&self) -> Result<Channel, JudgeDispatchError> {
         let connection =
             timeout(self.timeout, Connection::connect(&self.uri, ConnectionProperties::default()))
                 .await
-                .map_err(|_| "RabbitMQ connection timed out".to_owned())?
-                .map_err(|error| error.to_string())?;
-        let channel = connection.create_channel().await.map_err(|error| error.to_string())?;
-        topology::declare(&channel).await.map_err(|error| error.to_string())?;
-        channel
-            .confirm_select(ConfirmSelectOptions::default())
-            .await
-            .map_err(|error| error.to_string())?;
+                .map_err(|_| JudgeDispatchError::Timeout("connection"))??;
+        let channel = connection.create_channel().await?;
+        topology::declare(&channel).await?;
+        channel.confirm_select(ConfirmSelectOptions::default()).await?;
         Ok(channel)
     }
 
-    pub async fn probe(&self) -> Result<RabbitJudgeProbe, String> {
+    pub async fn probe(&self) -> Result<RabbitJudgeProbe, JudgeDispatchError> {
         let mut guard = self.channel.lock().await;
         if guard.as_ref().is_none_or(|channel| !channel.status().connected()) {
             *guard = Some(self.connect().await?);
         }
-        let channel = guard.as_ref().ok_or_else(|| "RabbitMQ channel is unavailable".to_owned())?;
+        let channel = guard.as_ref().ok_or(JudgeDispatchError::ChannelUnavailable)?;
         let passive = lapin::options::QueueDeclareOptions {
             passive: true,
             durable: true,
@@ -57,16 +53,13 @@ impl RabbitJudgeTaskPublisher {
         };
         let tasks = channel
             .queue_declare(topology::TASKS_QUEUE.into(), passive, FieldTable::default())
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
         let dead = channel
             .queue_declare(topology::DEAD_QUEUE.into(), passive, FieldTable::default())
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
         let results = channel
             .queue_declare(topology::RESULTS_QUEUE.into(), passive, FieldTable::default())
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
         Ok(RabbitJudgeProbe {
             queued_tasks: tasks.message_count(),
             queued_results: results.message_count(),
@@ -79,7 +72,7 @@ impl RabbitJudgeTaskPublisher {
         channel: &Channel,
         message_id: Uuid,
         payload: &[u8],
-    ) -> Result<(), String> {
+    ) -> Result<(), JudgeDispatchError> {
         let message_id = message_id.to_string();
         let mut headers = FieldTable::default();
         headers.insert(
@@ -102,35 +95,33 @@ impl RabbitJudgeTaskPublisher {
             ),
         )
         .await
-        .map_err(|_| "RabbitMQ publish timed out".to_owned())?
-        .map_err(|error| error.to_string())?;
+        .map_err(|_| JudgeDispatchError::Timeout("publish"))??;
         let confirmation = timeout(self.timeout, confirm)
             .await
-            .map_err(|_| "RabbitMQ publisher confirm timed out".to_owned())?
-            .map_err(|error| error.to_string())?;
+            .map_err(|_| JudgeDispatchError::Timeout("publisher confirm"))??;
         let acknowledged = confirmation.is_ack();
         let routed = confirmation.take_message().is_none();
         if acknowledged && routed {
             Ok(())
         } else {
-            Err("RabbitMQ rejected or returned the Judge task".to_owned())
+            Err(JudgeDispatchError::Rejected("Judge task"))
         }
     }
 }
 
 #[async_trait]
 impl JudgeTaskPublisher for RabbitJudgeTaskPublisher {
-    async fn publish(&self, message_id: Uuid, payload: &[u8]) -> Result<(), String> {
+    async fn publish(&self, message_id: Uuid, payload: &[u8]) -> Result<(), JudgeDispatchError> {
         let mut guard = self.channel.lock().await;
         if guard.as_ref().is_none_or(|channel| !channel.status().connected()) {
             *guard = Some(self.connect().await?);
         }
-        let first = guard.as_ref().ok_or_else(|| "RabbitMQ channel is unavailable".to_owned())?;
+        let first = guard.as_ref().ok_or(JudgeDispatchError::ChannelUnavailable)?;
         if self.publish_on(first, message_id, payload).await.is_ok() {
             return Ok(());
         }
         *guard = Some(self.connect().await?);
-        let retry = guard.as_ref().ok_or_else(|| "RabbitMQ channel is unavailable".to_owned())?;
+        let retry = guard.as_ref().ok_or(JudgeDispatchError::ChannelUnavailable)?;
         self.publish_on(retry, message_id, payload).await
     }
 }

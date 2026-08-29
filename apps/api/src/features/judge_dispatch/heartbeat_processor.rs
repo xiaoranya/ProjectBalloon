@@ -1,6 +1,18 @@
 use project_balloon_contracts::WorkerHeartbeat;
 use sqlx::PgPool;
 
+/// Separates PostgreSQL failures from the local serialization/range failures
+/// of a heartbeat payload instead of disguising them as `sqlx::Error`.
+#[derive(Debug, thiserror::Error)]
+pub enum HeartbeatProcessError {
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+    #[error(transparent)]
+    Serialization(#[from] serde_json::Error),
+    #[error("heartbeat {0} does not fit smallint: {1}")]
+    SmallintRange(&'static str, #[source] std::num::TryFromIntError),
+}
+
 #[derive(Clone)]
 pub struct WorkerHeartbeatProcessor {
     database: PgPool,
@@ -12,11 +24,9 @@ impl WorkerHeartbeatProcessor {
         Self { database }
     }
 
-    pub async fn apply(&self, heartbeat: &WorkerHeartbeat) -> Result<(), sqlx::Error> {
-        let languages = serde_json::to_value(&heartbeat.languages)
-            .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
-        let runtime_versions = serde_json::to_value(&heartbeat.runtime_versions)
-            .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    pub async fn apply(&self, heartbeat: &WorkerHeartbeat) -> Result<(), HeartbeatProcessError> {
+        let languages = serde_json::to_value(&heartbeat.languages)?;
+        let runtime_versions = serde_json::to_value(&heartbeat.runtime_versions)?;
         sqlx::query(
             r#"
             INSERT INTO judge_workers (
@@ -42,14 +52,15 @@ impl WorkerHeartbeatProcessor {
         .bind(heartbeat.instance_id)
         .bind(heartbeat.started_at)
         .bind(heartbeat.occurred_at)
-        .bind(i16::try_from(heartbeat.capacity).map_err(|error| {
-            sqlx::Error::Protocol(format!("heartbeat capacity does not fit smallint: {error}"))
-        })?)
-        .bind(i16::try_from(heartbeat.active_tasks).map_err(|error| {
-            sqlx::Error::Protocol(format!(
-                "heartbeat active task count does not fit smallint: {error}"
-            ))
-        })?)
+        .bind(
+            i16::try_from(heartbeat.capacity)
+                .map_err(|error| HeartbeatProcessError::SmallintRange("capacity", error))?,
+        )
+        .bind(
+            i16::try_from(heartbeat.active_tasks).map_err(|error| {
+                HeartbeatProcessError::SmallintRange("active task count", error)
+            })?,
+        )
         .bind(languages)
         .bind(runtime_versions)
         .bind(&heartbeat.sandbox_runtime)

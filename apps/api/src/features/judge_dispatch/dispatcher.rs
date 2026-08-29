@@ -6,9 +6,11 @@ use tokio::sync::watch;
 use tracing::{error, info};
 use uuid::Uuid;
 
+use super::error::JudgeDispatchError;
+
 #[async_trait]
 pub trait JudgeTaskPublisher: Send + Sync {
-    async fn publish(&self, message_id: Uuid, payload: &[u8]) -> Result<(), String>;
+    async fn publish(&self, message_id: Uuid, payload: &[u8]) -> Result<(), JudgeDispatchError>;
 }
 
 #[derive(Clone, Copy)]
@@ -76,7 +78,8 @@ impl SubmissionOutboxDispatcher {
                     }
                 }
                 Err(publish_error) => {
-                    if let Err(error) = self.mark_failed(row.id, row.attempts, &publish_error).await
+                    if let Err(error) =
+                        self.mark_failed(row.id, row.attempts, &publish_error.to_string()).await
                     {
                         error!(outbox_id = row.id, %error, "failed to mark judge task failed; continuing dispatch batch");
                     }
@@ -240,6 +243,7 @@ mod tests {
     use sqlx::PgPool;
     use uuid::Uuid;
 
+    use super::JudgeDispatchError;
     use super::{
         JudgeTaskPublisher, SubmissionOutboxDispatcher, SubmissionOutboxDispatcherConfig,
         retry_delay,
@@ -261,10 +265,14 @@ mod tests {
 
     #[async_trait]
     impl JudgeTaskPublisher for FakePublisher {
-        async fn publish(&self, message_id: Uuid, _payload: &[u8]) -> Result<(), String> {
+        async fn publish(
+            &self,
+            message_id: Uuid,
+            _payload: &[u8],
+        ) -> Result<(), JudgeDispatchError> {
             self.calls.lock().expect("publisher calls lock").push(message_id);
             if self.fail_once.lock().expect("publisher failures lock").remove(&message_id) {
-                Err("broker unavailable".into())
+                Err(JudgeDispatchError::Rejected("Judge task"))
             } else {
                 Ok(())
             }

@@ -15,7 +15,7 @@ use tokio::{sync::watch, time::timeout};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use super::topology;
+use super::{error::JudgeDispatchError, topology};
 
 /// Consumes the `judge.dead` queue so dead-lettered tasks and permanently
 /// rejected results never leave a submission stuck in `JUDGING`. Each dead
@@ -64,20 +64,19 @@ impl RabbitDeadLetterConsumer {
         info!("Judge dead-letter consumer stopped");
     }
 
-    async fn consume_session(&self, mut shutdown: watch::Receiver<bool>) -> Result<(), String> {
+    async fn consume_session(
+        &self,
+        mut shutdown: watch::Receiver<bool>,
+    ) -> Result<(), JudgeDispatchError> {
         let connection = timeout(
             self.request_timeout,
             Connection::connect(&self.uri, ConnectionProperties::default()),
         )
         .await
-        .map_err(|_| "RabbitMQ dead-letter consumer connection timed out".to_owned())?
-        .map_err(|error| error.to_string())?;
-        let channel = connection.create_channel().await.map_err(|error| error.to_string())?;
-        topology::declare(&channel).await.map_err(|error| error.to_string())?;
-        channel
-            .basic_qos(self.prefetch, BasicQosOptions::default())
-            .await
-            .map_err(|error| error.to_string())?;
+        .map_err(|_| JudgeDispatchError::Timeout("dead-letter consumer connection"))??;
+        let channel = connection.create_channel().await?;
+        topology::declare(&channel).await?;
+        channel.basic_qos(self.prefetch, BasicQosOptions::default()).await?;
         let consumer_tag = format!("project-balloon-api-dead-{}", Uuid::new_v4());
         let mut consumer = channel
             .basic_consume(
@@ -86,15 +85,14 @@ impl RabbitDeadLetterConsumer {
                 BasicConsumeOptions::default(),
                 FieldTable::default(),
             )
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
         loop {
             tokio::select! {
                 delivery = consumer.next() => {
                     let Some(delivery) = delivery else {
-                        return Err("RabbitMQ cancelled the Judge dead-letter consumer".to_owned());
+                        return Err(JudgeDispatchError::ConsumerCancelled("Judge dead-letter"));
                     };
-                    let delivery = delivery.map_err(|error| error.to_string())?;
+                    let delivery = delivery?;
                     process_delivery(&self.database, &delivery).await?;
                 }
                 changed = shutdown.changed() => {
@@ -108,7 +106,7 @@ impl RabbitDeadLetterConsumer {
 }
 
 #[derive(Debug, Error)]
-enum DeadLetterError {
+pub enum DeadLetterError {
     #[error("dead-letter cannot be recovered: {0}")]
     Permanent(String),
     #[error("database error while recovering dead-letter: {0}")]
@@ -132,15 +130,18 @@ struct DeadLetterContext {
     status: String,
 }
 
-async fn process_delivery(database: &PgPool, delivery: &Delivery) -> Result<(), String> {
+async fn process_delivery(
+    database: &PgPool,
+    delivery: &Delivery,
+) -> Result<(), JudgeDispatchError> {
     let Some((judgement_id, submission_id)) = parse_dead_letter(&delivery.data) else {
         warn!("judge.dead message is neither a JudgeTask nor a JudgeResult; acknowledging");
-        delivery.ack(BasicAckOptions::default()).await.map_err(|error| error.to_string())?;
+        delivery.ack(BasicAckOptions::default()).await?;
         return Ok(());
     };
     match recover_stuck_submission(database, judgement_id, submission_id).await {
         Ok(()) => {
-            delivery.ack(BasicAckOptions::default()).await.map_err(|error| error.to_string())?;
+            delivery.ack(BasicAckOptions::default()).await?;
             info!(
                 %judgement_id,
                 submission_id,
@@ -155,7 +156,7 @@ async fn process_delivery(database: &PgPool, delivery: &Delivery) -> Result<(), 
                 %error,
                 "dead-letter cannot be recovered; acknowledging"
             );
-            delivery.ack(BasicAckOptions::default()).await.map_err(|error| error.to_string())?;
+            delivery.ack(BasicAckOptions::default()).await?;
             Ok(())
         }
         Err(error) => {
@@ -165,11 +166,8 @@ async fn process_delivery(database: &PgPool, delivery: &Delivery) -> Result<(), 
                 %error,
                 "requeueing dead-letter after transient database failure"
             );
-            delivery
-                .nack(BasicNackOptions { multiple: false, requeue: true })
-                .await
-                .map_err(|ack_error| ack_error.to_string())?;
-            Err(error.to_string())
+            delivery.nack(BasicNackOptions { multiple: false, requeue: true }).await?;
+            Err(JudgeDispatchError::from(error))
         }
     }
 }
