@@ -1,6 +1,6 @@
 use super::*;
 
-use super::service::require_operator;
+use crate::features::awards::service::require_operator;
 
 #[utoipa::path(get, path = "/api/admin/contests/{contest_id}/award-categories", operation_id = "listAwardCategories", tag = "awards", params(("contest_id" = i64, Path)), responses((status = 200, body = [CategoryResponse]), (status = 401, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
 pub async fn list_categories(

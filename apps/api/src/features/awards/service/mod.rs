@@ -4,7 +4,9 @@ use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::{error::AppError, features::auth::model::AuthUser};
 
-use super::model::{CategoryRequest, CategoryResponse, RuleRequest, UpdateCategoryRequest};
+use crate::features::awards::model::{
+    CategoryRequest, CategoryResponse, RuleRequest, UpdateCategoryRequest,
+};
 
 mod presentation;
 mod recipients;

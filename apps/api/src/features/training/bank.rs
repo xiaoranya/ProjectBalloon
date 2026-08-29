@@ -4,7 +4,7 @@ use axum::{
 };
 use sqlx::PgPool;
 
-use super::model::{
+use crate::features::training::model::{
     BankProblem, BankProblemRow, BankQuery, ProblemPublication, PublicationRequest, TrainingItem,
     TrainingSet, validate_page,
 };

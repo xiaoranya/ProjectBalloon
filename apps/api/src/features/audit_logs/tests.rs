@@ -1,8 +1,8 @@
 use sqlx::PgPool;
 use time::{Duration, OffsetDateTime};
 
-use super::model::AuditLogQuery;
-use super::service::AuditLogService;
+use crate::features::audit_logs::model::AuditLogQuery;
+use crate::features::audit_logs::service::AuditLogService;
 
 async fn seed_log(
     pool: &PgPool,

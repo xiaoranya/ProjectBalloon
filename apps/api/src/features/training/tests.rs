@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 
-use super::{
+use crate::features::training::{
     BankProblem, BankProblemRow, BankQuery, ProgressRequest, SetItemRequest, SetRequest,
     load_public_training_items, load_public_training_set, load_public_training_sets, validate_page,
     validate_progress_request, validate_set_request, write_set,

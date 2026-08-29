@@ -9,7 +9,7 @@ use crate::{
     features::auth::{hash_password, model::AuthUser},
 };
 
-use super::super::model::ValidatedCreateTeam;
+use crate::features::teams::model::ValidatedCreateTeam;
 
 pub(super) async fn prepare_team(request: ValidatedCreateTeam) -> Result<PreparedTeam, AppError> {
     let password_hash = match &request.account {

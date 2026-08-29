@@ -6,9 +6,11 @@ use sqlx::{Postgres, Transaction};
 use crate::error::AppError;
 use crate::features::auth::model::AuthUser;
 
-use super::super::model::{ContestTeamResponse, ParticipationType, ValidatedContestTeamAssignment};
-use super::TeamService;
-use super::helpers::{enqueue_realtime, record_audit, team_not_found};
+use crate::features::teams::model::{
+    ContestTeamResponse, ParticipationType, ValidatedContestTeamAssignment,
+};
+use crate::features::teams::service::TeamService;
+use crate::features::teams::service::helpers::{enqueue_realtime, record_audit, team_not_found};
 
 impl TeamService {
     pub async fn assign_to_contest(

@@ -5,11 +5,13 @@ use time::OffsetDateTime;
 
 use crate::{error::AppError, features::auth::model::AuthUser};
 
-use super::super::model::{
+use crate::features::awards::model::{
     HostScriptRequest, HostScriptResponse, HostScriptSectionResponse, PresentationCategory,
     PresentationRecipient, PresentationRequest, PresentationResponse,
 };
-use super::{AwardService, audit, require_active_contest, require_operator};
+use crate::features::awards::service::{
+    AwardService, audit, require_active_contest, require_operator,
+};
 
 impl AwardService {
     pub async fn presentation(&self, contest: i64) -> Result<PresentationResponse, AppError> {

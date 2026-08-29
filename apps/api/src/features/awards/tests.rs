@@ -4,9 +4,9 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use time::OffsetDateTime;
 
-use super::handlers::{csv_field, percent_encode_filename};
-use super::service::{certificate_value, select_rows, validate_category};
 use super::*;
+use crate::features::awards::handlers::{csv_field, percent_encode_filename};
+use crate::features::awards::service::{certificate_value, select_rows, validate_category};
 use crate::features::{
     auth::model::{AuthUser, UserType},
     scoreboard::{ScoreboardResponse, ScoreboardRow},

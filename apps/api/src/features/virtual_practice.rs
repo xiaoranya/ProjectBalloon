@@ -254,7 +254,7 @@ pub fn routes() -> axum::Router<crate::state::AppState> {
 mod tests {
     use sqlx::PgPool;
 
-    use super::count_active_public_problems;
+    use crate::features::virtual_practice::count_active_public_problems;
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]

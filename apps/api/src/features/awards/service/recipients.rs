@@ -9,11 +9,11 @@ use crate::{
     features::scoreboard::{ScoreboardResponse, ScoreboardRow},
 };
 
-use super::super::model::{
+use crate::features::awards::model::{
     AwardCandidateResponse, AwardConflict, AwardResolverRunResponse, AwardSetResponse,
     CategoryResponse, CertificateRow, ManualRecipientRequest, RecipientResponse,
 };
-use super::{
+use crate::features::awards::service::{
     AwardService, audit, category_query_tx, require_active_contest, require_active_contest_tx,
     require_operator, stale,
 };

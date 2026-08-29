@@ -5,10 +5,12 @@ use axum::{
 use sqlx::{Postgres, QueryBuilder, Transaction};
 use std::collections::HashSet;
 
-use super::bank::{
+use crate::features::training::bank::{
     load_public_training_items, load_public_training_set, load_public_training_sets, team_for_user,
 };
-use super::model::{Enrollment, ProgressRequest, SetRequest, TrainingSet, TrainingSetDetail};
+use crate::features::training::model::{
+    Enrollment, ProgressRequest, SetRequest, TrainingSet, TrainingSetDetail,
+};
 use crate::{
     error::AppError,
     features::auth::{AuthContext, SuperAdminContext},

@@ -2,7 +2,7 @@ use sqlx::PgPool;
 
 use crate::{error::AppError, pagination::PageResponse};
 
-use super::model::{AuditLogResponse, ValidatedAuditLogQuery};
+use crate::features::audit_logs::model::{AuditLogResponse, ValidatedAuditLogQuery};
 
 pub struct AuditLogService {
     database: PgPool,

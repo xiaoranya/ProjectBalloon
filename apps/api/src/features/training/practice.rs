@@ -3,7 +3,7 @@ use axum::{
     extract::{Path, Query, State, rejection::JsonRejection},
 };
 
-use super::model::{
+use crate::features::training::model::{
     BankProblem, BankProblemRow, EditorialRequest, EditorialResponse, FavoriteRequest,
     FavoriteResponse, PracticeSettingsRequest, PracticeSettingsResponse,
 };

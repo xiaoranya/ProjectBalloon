@@ -549,7 +549,9 @@ fn validate_password(field: &'static str, value: &str) -> Result<(), AppError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{BatchImportRequest, CreateTeamRequest, ParticipationType, UpdateTeamRequest};
+    use crate::features::teams::model::{
+        BatchImportRequest, CreateTeamRequest, ParticipationType, UpdateTeamRequest,
+    };
 
     #[test]
     fn account_credentials_must_be_complete() {

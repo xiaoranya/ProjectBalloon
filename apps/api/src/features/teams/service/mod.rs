@@ -8,7 +8,7 @@ use crate::{
     pagination::PageResponse,
 };
 
-use super::model::{
+use crate::features::teams::model::{
     TeamResponse, TeamRow, ValidatedCreateTeam, ValidatedTeamListQuery, ValidatedUpdateTeam,
 };
 use contest_roster::enqueue_for_team_contests;
