@@ -248,9 +248,15 @@ async function save() {
   saving.value = true;
   try {
     await presentationApi.update(contestId.value, 'LIVE', {
-      ...form,
+      enabled: form.enabled,
       title: form.title.trim() || null,
       subtitle: form.subtitle.trim() || null,
+      accentColor: form.accentColor,
+      rowLimit: form.rowLimit,
+      showAnnouncements: form.showAnnouncements,
+      announcementIntervalSeconds: form.announcementIntervalSeconds,
+      template: form.template,
+      customTemplateId: form.customTemplateId,
     });
     ElMessage.success(t('直播配置已保存'));
   } catch (error) {
