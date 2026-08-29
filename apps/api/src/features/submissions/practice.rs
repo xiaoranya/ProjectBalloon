@@ -159,8 +159,34 @@ impl SubmissionService {
         .fetch_optional(&mut *tx)
         .await
         .map_err(|e| AppError::internal("load optional practice team", e))?;
-        let (submission_id,submitted_at)=sqlx::query_as::<_,(i64,OffsetDateTime)>("INSERT INTO submissions(contest_id,problem_id,team_id,language,source_object_key,source_size_bytes,source_sha256,source_fingerprint,source_simhash,source_token_count,status,submission_scope,participant_user_id,training_enrollment_id,virtual_session_id) VALUES(NULL,$1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING','PRACTICE',$10,$11,$12) RETURNING id,submitted_at")
-            .bind(command.problem_id).bind(team_id).bind(&command.language).bind(object_key).bind(i32::try_from(command.source.len()).map_err(|e|AppError::internal("convert source size",e))?).bind(source_sha256).bind(fingerprint).bind(simhash).bind(token_count).bind(actor.id).bind(training_enrollment_id).bind(virtual_session_id).fetch_one(&mut *tx).await.map_err(|e|AppError::internal("insert practice submission",e))?;
+        let (submission_id, submitted_at) = sqlx::query_as::<_, (i64, OffsetDateTime)>(
+            r#"
+            INSERT INTO submissions
+                (contest_id,problem_id,team_id,language,source_object_key,source_size_bytes,
+                 source_sha256,source_fingerprint,source_simhash,source_token_count,status,
+                 submission_scope,participant_user_id,training_enrollment_id,virtual_session_id)
+            VALUES(NULL,$1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING','PRACTICE',$10,$11,$12)
+            RETURNING id,submitted_at
+            "#,
+        )
+        .bind(command.problem_id)
+        .bind(team_id)
+        .bind(&command.language)
+        .bind(object_key)
+        .bind(
+            i32::try_from(command.source.len())
+                .map_err(|e| AppError::internal("convert source size", e))?,
+        )
+        .bind(source_sha256)
+        .bind(fingerprint)
+        .bind(simhash)
+        .bind(token_count)
+        .bind(actor.id)
+        .bind(training_enrollment_id)
+        .bind(virtual_session_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| AppError::internal("insert practice submission", e))?;
         let judgement_id = Uuid::new_v4();
         sqlx::query("INSERT INTO judgements(id,submission_id) VALUES($1,$2)")
             .bind(judgement_id)
@@ -216,7 +242,37 @@ impl SubmissionService {
             ));
         }
         let total=sqlx::query_scalar::<_,i64>("SELECT count(*) FROM submissions WHERE submission_scope='PRACTICE' AND participant_user_id=$1 AND ($2::bigint IS NULL OR problem_id=$2) AND ($3::text IS NULL OR status=$3) AND ($4::text IS NULL OR language=$4)").bind(actor.id).bind(query.problem_id).bind(query.status.as_deref()).bind(query.language.as_deref()).fetch_one(&self.database).await.map_err(|e|AppError::internal("count practice submissions",e))?;
-        let rows=sqlx::query_as::<_,PracticeSubmissionSummary>("SELECT s.id,s.problem_id,p.slug AS problem_slug,p.title AS problem_title,s.training_enrollment_id,s.language,s.source_size_bytes,s.status,s.submitted_at,s.judged_at,j.id AS active_judgement_id,j.verdict,j.total_time_ms,j.peak_memory_kb,CASE WHEN j.verdict='ACCEPTED' THEN 100 WHEN j.completed_at IS NOT NULL THEN 0 ELSE NULL END AS score FROM submissions s JOIN problems p ON p.id=s.problem_id LEFT JOIN judgements j ON j.submission_id=s.id AND j.active_marker IS TRUE WHERE s.submission_scope='PRACTICE' AND s.participant_user_id=$1 AND ($2::bigint IS NULL OR s.problem_id=$2) AND ($3::text IS NULL OR s.status=$3) AND ($4::text IS NULL OR s.language=$4) ORDER BY s.submitted_at DESC,s.id DESC LIMIT $5 OFFSET $6").bind(actor.id).bind(query.problem_id).bind(query.status.as_deref()).bind(query.language.as_deref()).bind(i64::from(query.size)).bind(query.offset).fetch_all(&self.database).await.map_err(|e|AppError::internal("list practice submissions",e))?;
+        let rows = sqlx::query_as::<_, PracticeSubmissionSummary>(
+            r#"
+            SELECT s.id,s.problem_id,p.slug AS problem_slug,p.title AS problem_title,
+                   s.training_enrollment_id,s.language,s.source_size_bytes,s.status,
+                   s.submitted_at,s.judged_at,j.id AS active_judgement_id,j.verdict,
+                   j.total_time_ms,j.peak_memory_kb,
+                   CASE WHEN j.verdict='ACCEPTED' THEN 100
+                        WHEN j.completed_at IS NOT NULL THEN 0
+                        ELSE NULL END AS score
+            FROM submissions s
+            JOIN problems p
+                ON p.id=s.problem_id
+            LEFT JOIN judgements j
+                ON j.submission_id=s.id AND j.active_marker IS TRUE
+            WHERE s.submission_scope='PRACTICE' AND s.participant_user_id=$1
+                AND ($2::bigint IS NULL OR s.problem_id=$2)
+                AND ($3::text IS NULL OR s.status=$3)
+                AND ($4::text IS NULL OR s.language=$4)
+            ORDER BY s.submitted_at DESC,s.id DESC
+            LIMIT $5 OFFSET $6
+            "#,
+        )
+        .bind(actor.id)
+        .bind(query.problem_id)
+        .bind(query.status.as_deref())
+        .bind(query.language.as_deref())
+        .bind(i64::from(query.size))
+        .bind(query.offset)
+        .fetch_all(&self.database)
+        .await
+        .map_err(|e| AppError::internal("list practice submissions", e))?;
         Ok(PageResponse::new(rows, query.page, query.size, total))
     }
 
@@ -233,7 +289,31 @@ impl SubmissionService {
         actor: &AuthUser,
         storage: &ObjectStorageHandle,
     ) -> Result<PracticeSubmissionDetail, AppError> {
-        let summary=sqlx::query_as::<_,PracticeSubmissionSummary>("SELECT s.id,s.problem_id,p.slug AS problem_slug,p.title AS problem_title,s.training_enrollment_id,s.language,s.source_size_bytes,s.status,s.submitted_at,s.judged_at,j.id AS active_judgement_id,j.verdict,j.total_time_ms,j.peak_memory_kb,CASE WHEN j.verdict='ACCEPTED' THEN 100 WHEN j.completed_at IS NOT NULL THEN 0 ELSE NULL END AS score FROM submissions s JOIN problems p ON p.id=s.problem_id LEFT JOIN judgements j ON j.submission_id=s.id AND j.active_marker IS TRUE WHERE s.id=$1 AND s.submission_scope='PRACTICE' AND s.participant_user_id=$2").bind(submission_id).bind(actor.id).fetch_optional(&self.database).await.map_err(|e|AppError::internal("load practice submission",e))?.ok_or_else(||AppError::not_found("SUBMISSION_NOT_FOUND","Practice submission not found"))?;
+        let summary = sqlx::query_as::<_, PracticeSubmissionSummary>(
+            r#"
+            SELECT s.id,s.problem_id,p.slug AS problem_slug,p.title AS problem_title,
+                   s.training_enrollment_id,s.language,s.source_size_bytes,s.status,
+                   s.submitted_at,s.judged_at,j.id AS active_judgement_id,j.verdict,
+                   j.total_time_ms,j.peak_memory_kb,
+                   CASE WHEN j.verdict='ACCEPTED' THEN 100
+                        WHEN j.completed_at IS NOT NULL THEN 0
+                        ELSE NULL END AS score
+            FROM submissions s
+            JOIN problems p
+                ON p.id=s.problem_id
+            LEFT JOIN judgements j
+                ON j.submission_id=s.id AND j.active_marker IS TRUE
+            WHERE s.id=$1 AND s.submission_scope='PRACTICE' AND s.participant_user_id=$2
+            "#,
+        )
+        .bind(submission_id)
+        .bind(actor.id)
+        .fetch_optional(&self.database)
+        .await
+        .map_err(|e| AppError::internal("load practice submission", e))?
+        .ok_or_else(|| {
+            AppError::not_found("SUBMISSION_NOT_FOUND", "Practice submission not found")
+        })?;
         let (key, hash, source_size_bytes, deleted_at) = sqlx::query_as::<
             _,
             (String, Option<String>, i32, Option<OffsetDateTime>),
@@ -326,7 +406,27 @@ async fn validate_enrollment_pool(
     user: i64,
 ) -> Result<(), AppError> {
     if let Some(id) = id {
-        let valid=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM training_enrollments e JOIN training_set_items i ON i.set_id=e.set_id AND i.problem_id=$2 WHERE e.id=$1 AND e.status IN('ACTIVE','COMPLETED') AND (e.user_id=$3 OR EXISTS(SELECT 1 FROM team_accounts a WHERE a.team_id=e.team_id AND a.user_id=$3)))").bind(id).bind(problem).bind(user).fetch_one(database).await.map_err(|e|AppError::internal("validate training enrollment",e))?;
+        let valid = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM training_enrollments e
+                JOIN training_set_items i
+                    ON i.set_id=e.set_id AND i.problem_id=$2
+                WHERE e.id=$1 AND e.status IN('ACTIVE','COMPLETED')
+                    AND (e.user_id=$3
+                        OR EXISTS(
+                            SELECT 1 FROM team_accounts a
+                            WHERE a.team_id=e.team_id AND a.user_id=$3
+                        ))
+            )
+            "#,
+        )
+        .bind(id)
+        .bind(problem)
+        .bind(user)
+        .fetch_one(database)
+        .await
+        .map_err(|e| AppError::internal("validate training enrollment", e))?;
         if !valid {
             return Err(AppError::conflict(
                 "TRAINING_ENROLLMENT_INVALID",
@@ -343,7 +443,27 @@ async fn validate_enrollment_tx(
     user: i64,
 ) -> Result<(), AppError> {
     if let Some(id) = id {
-        let valid=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM training_enrollments e JOIN training_set_items i ON i.set_id=e.set_id AND i.problem_id=$2 WHERE e.id=$1 AND e.status IN('ACTIVE','COMPLETED') AND (e.user_id=$3 OR EXISTS(SELECT 1 FROM team_accounts a WHERE a.team_id=e.team_id AND a.user_id=$3)))").bind(id).bind(problem).bind(user).fetch_one(&mut **tx).await.map_err(|e|AppError::internal("revalidate training enrollment",e))?;
+        let valid = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM training_enrollments e
+                JOIN training_set_items i
+                    ON i.set_id=e.set_id AND i.problem_id=$2
+                WHERE e.id=$1 AND e.status IN('ACTIVE','COMPLETED')
+                    AND (e.user_id=$3
+                        OR EXISTS(
+                            SELECT 1 FROM team_accounts a
+                            WHERE a.team_id=e.team_id AND a.user_id=$3
+                        ))
+            )
+            "#,
+        )
+        .bind(id)
+        .bind(problem)
+        .bind(user)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| AppError::internal("revalidate training enrollment", e))?;
         if !valid {
             return Err(AppError::conflict(
                 "TRAINING_ENROLLMENT_INVALID",
