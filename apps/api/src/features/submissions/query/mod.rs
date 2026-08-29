@@ -154,8 +154,14 @@ pub(super) async fn require_admin_access(
     if !active {
         return Err(submission_not_found());
     }
+    if actor.is_super_admin() {
+        return Ok(());
+    }
+    if !actor.has_permission(crate::features::auth::permissions::CONTEST_MANAGE) {
+        return Err(submission_not_found());
+    }
     let assigned = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM contest_staff WHERE contest_id = $1 AND user_id = $2)",
+        "SELECT EXISTS (SELECT 1 FROM contest_management_assignments WHERE contest_id = $1 AND user_id = $2)",
     )
     .bind(contest_id)
     .bind(actor.id)
