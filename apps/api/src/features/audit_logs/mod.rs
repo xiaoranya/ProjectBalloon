@@ -2,6 +2,9 @@ pub(crate) mod handlers;
 mod model;
 mod service;
 
+#[cfg(test)]
+mod tests;
+
 pub use handlers::list;
 pub use service::AuditLogService;
 
