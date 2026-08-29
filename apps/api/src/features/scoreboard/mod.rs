@@ -4,6 +4,17 @@ mod helpers;
 mod model;
 mod projection;
 mod service;
+/// Routes owned by this feature, assembled by the root router.
+pub fn routes() -> axum::Router<crate::state::AppState> {
+    axum::Router::new()
+        .route("/api/contests/{contest_id}/scoreboard", get(public))
+        .route("/api/contests/{contest_id}/scoreboard.csv", get(public_csv))
+        .route("/api/admin/contests/{contest_id}/scoreboard", get(admin))
+        .route("/api/admin/contests/{contest_id}/scoreboard.csv", get(admin_csv))
+        .route("/api/admin/contests/{contest_id}/scoreboard/snapshots", post(create_snapshot))
+        .route("/api/admin/contests/{contest_id}/scoreboard/snapshots/latest", get(latest_snapshot))
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -14,3 +25,5 @@ pub use model::{
 };
 pub(crate) use projection::rebuild_cell;
 pub use service::ScoreboardService;
+
+use axum::routing::{get, post};

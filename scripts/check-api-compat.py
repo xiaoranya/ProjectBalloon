@@ -60,14 +60,16 @@ def route_calls(source: str) -> list[str]:
 
 def rust_operations() -> set[tuple[str, str]]:
     operations: set[tuple[str, str]] = set()
-    source = (ROOT / "apps/api/src/lib.rs").read_text()
-    for call in route_calls(source):
-        path_match = re.search(r'\.route\(\s*"([^"]+)"', call)
-        if not path_match:
-            continue
-        path = normalize(path_match.group(1))
-        for method in re.findall(r"\b(get|post|put|patch|delete)\s*\(", call):
-            operations.add((method.upper(), path))
+    # Routes are registered inside each feature module's routes() function and
+    # merged by the root router, so scan the whole API source tree.
+    for source_file in sorted((ROOT / "apps/api/src").rglob("*.rs")):
+        for call in route_calls(source_file.read_text()):
+            path_match = re.search(r'\.route\(\s*"([^"]+)"', call)
+            if not path_match:
+                continue
+            path = normalize(path_match.group(1))
+            for method in re.findall(r"\b(get|post|put|patch|delete)\s*\(", call):
+                operations.add((method.upper(), path))
     return operations
 
 

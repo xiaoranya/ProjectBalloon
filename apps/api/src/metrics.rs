@@ -6,6 +6,7 @@ use axum::{
 use sqlx::FromRow;
 
 use crate::{error::AppError, state::AppState};
+use axum::routing::get;
 
 #[derive(Debug, FromRow)]
 struct MetricsSnapshot {
@@ -152,6 +153,11 @@ fn render(value: &MetricsSnapshot) -> String {
         output.push('\n');
     }
     output
+}
+
+/// Routes owned by this feature, assembled by the root router.
+pub fn routes() -> axum::Router<crate::state::AppState> {
+    axum::Router::new().route("/metrics", get(prometheus))
 }
 
 #[cfg(test)]

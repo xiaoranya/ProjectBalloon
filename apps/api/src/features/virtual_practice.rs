@@ -201,6 +201,14 @@ async fn count_active_public_problems(
     .await
 }
 
+/// Routes owned by this feature, assembled by the root router.
+pub fn routes() -> axum::Router<crate::state::AppState> {
+    axum::Router::new()
+        .route("/api/practice/virtual-sessions", axum::routing::get(list).post(create))
+        .route("/api/practice/virtual-sessions/{session_id}", axum::routing::get(get))
+        .route("/api/practice/virtual-sessions/{session_id}/archive", axum::routing::post(archive))
+}
+
 #[cfg(test)]
 mod tests {
     use sqlx::PgPool;
