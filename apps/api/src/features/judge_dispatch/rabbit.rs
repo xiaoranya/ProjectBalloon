@@ -9,7 +9,9 @@ use lapin::{
 use tokio::{sync::Mutex, time::timeout};
 use uuid::Uuid;
 
-use super::{dispatcher::JudgeTaskPublisher, error::JudgeDispatchError, topology};
+use crate::features::judge_dispatch::{
+    dispatcher::JudgeTaskPublisher, error::JudgeDispatchError, topology,
+};
 
 pub struct RabbitJudgeTaskPublisher {
     uri: String,

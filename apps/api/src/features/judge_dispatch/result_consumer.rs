@@ -15,7 +15,9 @@ use tokio::{sync::watch, time::timeout};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use super::{error::JudgeDispatchError, result_processor::JudgeResultProcessor, topology};
+use crate::features::judge_dispatch::{
+    error::JudgeDispatchError, result_processor::JudgeResultProcessor, topology,
+};
 
 pub struct RabbitJudgeResultConsumer {
     database: PgPool,

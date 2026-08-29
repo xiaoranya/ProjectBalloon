@@ -6,7 +6,7 @@ use tokio::sync::watch;
 use tracing::{error, info};
 use uuid::Uuid;
 
-use super::error::JudgeDispatchError;
+use crate::features::judge_dispatch::error::JudgeDispatchError;
 
 #[async_trait]
 pub trait JudgeTaskPublisher: Send + Sync {
@@ -243,8 +243,8 @@ mod tests {
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    use super::JudgeDispatchError;
-    use super::{
+    use crate::features::judge_dispatch::dispatcher::JudgeDispatchError;
+    use crate::features::judge_dispatch::dispatcher::{
         JudgeTaskPublisher, SubmissionOutboxDispatcher, SubmissionOutboxDispatcherConfig,
         retry_delay,
     };

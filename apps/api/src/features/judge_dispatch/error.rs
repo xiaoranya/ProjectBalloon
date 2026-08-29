@@ -6,7 +6,7 @@
 
 use thiserror::Error;
 
-use super::{
+use crate::features::judge_dispatch::{
     dead_letter_consumer::DeadLetterError, heartbeat_processor::HeartbeatProcessError,
     result_processor::ApplyResultError,
 };

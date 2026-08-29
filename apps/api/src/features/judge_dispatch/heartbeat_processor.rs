@@ -80,7 +80,7 @@ mod tests {
     use time::{Duration, OffsetDateTime};
     use uuid::Uuid;
 
-    use super::WorkerHeartbeatProcessor;
+    use crate::features::judge_dispatch::heartbeat_processor::WorkerHeartbeatProcessor;
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]

@@ -354,7 +354,9 @@ mod tests {
     use time::{Duration, OffsetDateTime};
     use uuid::Uuid;
 
-    use super::{ApplyResultError, ApplyResultOutcome, JudgeResultProcessor};
+    use crate::features::judge_dispatch::result_processor::{
+        ApplyResultError, ApplyResultOutcome, JudgeResultProcessor,
+    };
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]

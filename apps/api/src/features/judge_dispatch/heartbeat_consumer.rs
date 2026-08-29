@@ -15,7 +15,9 @@ use tokio::{sync::watch, time::timeout};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use super::{error::JudgeDispatchError, heartbeat_processor::WorkerHeartbeatProcessor, topology};
+use crate::features::judge_dispatch::{
+    error::JudgeDispatchError, heartbeat_processor::WorkerHeartbeatProcessor, topology,
+};
 
 pub struct RabbitWorkerHeartbeatConsumer {
     database: PgPool,

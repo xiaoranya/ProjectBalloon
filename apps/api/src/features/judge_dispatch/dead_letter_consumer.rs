@@ -15,7 +15,7 @@ use tokio::{sync::watch, time::timeout};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use super::{error::JudgeDispatchError, topology};
+use crate::features::judge_dispatch::{error::JudgeDispatchError, topology};
 
 /// Consumes the `judge.dead` queue so dead-lettered tasks and permanently
 /// rejected results never leave a submission stuck in `JUDGING`. Each dead
@@ -289,7 +289,9 @@ mod tests {
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    use super::{DeadLetterError, parse_dead_letter, recover_stuck_submission};
+    use crate::features::judge_dispatch::dead_letter_consumer::{
+        DeadLetterError, parse_dead_letter, recover_stuck_submission,
+    };
 
     #[test]
     fn dead_letter_parser_recovers_ids_from_invalid_payloads() {
