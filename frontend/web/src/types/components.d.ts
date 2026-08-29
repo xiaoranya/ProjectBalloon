@@ -79,6 +79,7 @@ declare module 'vue' {
     LanguageSwitcher: typeof import('./../components/LanguageSwitcher.vue')['default']
     OverviewTab: typeof import('./../components/contest-detail/OverviewTab.vue')['default']
     ProblemsTab: typeof import('./../components/contest-detail/ProblemsTab.vue')['default']
+    PublicationPanel: typeof import('./../components/problem-editor/PublicationPanel.vue')['default']
     RejudgeConfirmPanel: typeof import('./../components/bulk-rejudge/RejudgeConfirmPanel.vue')['default']
     RejudgeFilterPanel: typeof import('./../components/bulk-rejudge/RejudgeFilterPanel.vue')['default']
     RejudgeTaskDetailDialog: typeof import('./../components/bulk-rejudge/RejudgeTaskDetailDialog.vue')['default']

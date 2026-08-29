@@ -56,6 +56,41 @@ describe('Rust problem administration API contract', () => {
     );
   });
 
+  it('reads publication status and PUTs visibility to the admin publication endpoint', async () => {
+    const publication = { visibility: 'PRIVATE', difficulty: null, tags: [], publishedAt: null };
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(publication));
+    await adminProblemApi.getPublication(7);
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe('/api/admin/problems/7/publication');
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          visibility: 'PUBLIC',
+          difficulty: 3,
+          tags: ['dp'],
+          publishedAt: '2026-08-29T00:00:00Z',
+        }),
+      );
+
+    const published = await adminProblemApi.updatePublication(7, {
+      visibility: 'PUBLIC',
+      difficulty: 3,
+      tags: ['dp'],
+    });
+
+    expect(vi.mocked(fetch).mock.calls[2][0]).toBe('/api/admin/problems/7/publication');
+    expect(vi.mocked(fetch).mock.calls[2][1]).toEqual(
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ visibility: 'PUBLIC', difficulty: 3, tags: ['dp'] }),
+      }),
+    );
+    expect(published.visibility).toBe('PUBLIC');
+  });
+
   it('uses exact attachment multipart fields and refreshes the Problem afterward', async () => {
     const attachment = { id: 11, problemId: 7, kind: 'SAMPLE', originalFilename: 'sample.txt' };
     vi.mocked(fetch)

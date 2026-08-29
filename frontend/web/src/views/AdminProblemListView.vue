@@ -55,10 +55,13 @@
           <ElTableColumn :label="t('版本')" width="90"
             ><template #default="{ row }">{{ row.version }}</template></ElTableColumn
           >
-          <ElTableColumn :label="t('操作')" width="150" fixed="right">
+          <ElTableColumn :label="t('操作')" width="200" fixed="right">
             <template #default="{ row }">
               <ElButton link type="primary" @click.stop="editProblem(row as Problem)">{{
                 t('编辑')
+              }}</ElButton>
+              <ElButton link type="success" @click.stop="openPublication(row as Problem)">{{
+                t('发布')
               }}</ElButton>
               <ElButton link type="danger" @click.stop="removeProblem(row as Problem)">{{
                 t('删除')
@@ -77,6 +80,19 @@
           />
         </ElRow>
       </ElCard>
+
+      <ElDialog
+        v-model="publicationVisible"
+        :title="t('发布题目：{title}', { title: publicationProblem?.title ?? '' })"
+        width="min(880px, 94%)"
+        destroy-on-hide
+      >
+        <PublicationPanel
+          v-if="publicationProblem"
+          :key="publicationProblem.id"
+          :problem-id="publicationProblem.id"
+        />
+      </ElDialog>
     </el-main>
   </el-container>
 </template>
@@ -88,6 +104,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRouter } from 'vue-router';
 import { adminProblemApi } from '../api/admin-problems';
 import { getErrorMessage } from '../api/client';
+import PublicationPanel from '../components/problem-editor/PublicationPanel.vue';
 import type { PageResponse, Problem } from '../api/types';
 import { languageLabel } from '../utils/format';
 import { useI18n } from '../i18n';
@@ -104,6 +121,8 @@ const page = ref<PageResponse<Problem>>({
 const currentPage = ref(1);
 const loading = ref(false);
 const errorMessage = ref('');
+const publicationVisible = ref(false);
+const publicationProblem = ref<Problem | null>(null);
 
 let loadGeneration = 0;
 async function loadProblems() {
@@ -127,6 +146,11 @@ function createProblem() {
 
 function editProblem(row: unknown) {
   void router.push(`/admin/problems/${(row as Problem).id}`);
+}
+
+function openPublication(problem: Problem) {
+  publicationProblem.value = problem;
+  publicationVisible.value = true;
 }
 
 async function removeProblem(problem: Problem) {

@@ -90,7 +90,10 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         .route("/api/deployment", get(competition::deployment))
         .route("/api/public/problem-bank", get(training::list_bank))
         .route("/api/public/problem-bank/{slug}", get(training::get_bank))
-        .route("/api/admin/problems/{problem_id}/publication", put(training::update_publication))
+        .route(
+            "/api/admin/problems/{problem_id}/publication",
+            get(training::get_publication).put(training::update_publication),
+        )
         .route("/api/admin/training/sets", post(training::create_set))
         .route("/api/admin/training/sets/{set_id}", put(training::update_set))
         .route(

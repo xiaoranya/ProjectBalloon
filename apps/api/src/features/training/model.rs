@@ -31,6 +31,15 @@ pub struct BankProblem {
     pub languages: Vec<String>,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProblemPublication {
+    pub visibility: String,
+    pub difficulty: Option<i16>,
+    pub tags: Vec<String>,
+    pub published_at: Option<time::OffsetDateTime>,
+}
+
 #[derive(Debug, FromRow)]
 pub(super) struct BankProblemRow {
     pub id: i64,
