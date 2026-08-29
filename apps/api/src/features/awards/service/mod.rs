@@ -220,7 +220,14 @@ async fn insert_rule(
     sqlx::query("INSERT INTO award_rules(category_id,rule_type,ratio,fixed_count,rank_from,rank_to) VALUES($1,$2,$3,$4,$5,$6)").bind(category).bind(&r.rule_type).bind(r.ratio).bind(r.fixed_count).bind(r.rank_from).bind(r.rank_to).execute(&mut**tx).await.map(|_|()).map_err(|e|AppError::internal("insert award rule",e))
 }
 
-const CATEGORY_SQL: &str = "SELECT c.id,c.contest_id,c.code,c.name,c.display_order,c.include_star,c.group_name,c.participation_type,c.first_blood,c.version,r.rule_type,r.ratio::float8 AS ratio,r.fixed_count,r.rank_from,r.rank_to FROM award_categories c JOIN award_rules r ON r.category_id=c.id";
+const CATEGORY_SQL: &str = r#"
+    SELECT c.id,c.contest_id,c.code,c.name,c.display_order,c.include_star,c.group_name,
+           c.participation_type,c.first_blood,c.version,r.rule_type,
+           r.ratio::float8 AS ratio,r.fixed_count,r.rank_from,r.rank_to
+    FROM award_categories c
+    JOIN award_rules r
+        ON r.category_id=c.id
+"#;
 async fn category_query(db: &PgPool, c: i64) -> Result<Vec<CategoryResponse>, AppError> {
     sqlx::query_as(safe_sql!("{CATEGORY_SQL} WHERE c.contest_id=$1 ORDER BY c.display_order,c.id"))
         .bind(c)

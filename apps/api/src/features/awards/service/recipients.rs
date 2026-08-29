@@ -94,10 +94,31 @@ impl AwardService {
                 "must configure at least one award category",
             ));
         }
-        let set_id = sqlx::query_scalar::<_, i64>("INSERT INTO award_sets (contest_id, resolver_run_id, final_scoreboard_snapshot_id, generated_by_user_id) VALUES ($1,$2,$3,$4) ON CONFLICT (contest_id) DO UPDATE SET resolver_run_id=excluded.resolver_run_id, final_scoreboard_snapshot_id=excluded.final_scoreboard_snapshot_id, generated_by_user_id=excluded.generated_by_user_id, generated_at=now(), version=award_sets.version+1 WHERE award_sets.status='DRAFT' RETURNING id")
-            .bind(contest).bind(run_id).bind(snapshot_id).bind(actor.id).fetch_optional(&mut *tx).await
-            .map_err(|e| AppError::internal("persist award set", e))?
-            .ok_or_else(|| AppError::conflict("AWARD_SET_FROZEN", "Frozen awards cannot be regenerated"))?;
+        let set_id = sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO award_sets
+                (contest_id, resolver_run_id, final_scoreboard_snapshot_id, generated_by_user_id)
+            VALUES ($1,$2,$3,$4)
+            ON CONFLICT (contest_id) DO UPDATE
+                SET resolver_run_id=excluded.resolver_run_id,
+                    final_scoreboard_snapshot_id=excluded.final_scoreboard_snapshot_id,
+                    generated_by_user_id=excluded.generated_by_user_id,
+                    generated_at=now(),
+                    version=award_sets.version+1
+                WHERE award_sets.status='DRAFT'
+            RETURNING id
+            "#,
+        )
+        .bind(contest)
+        .bind(run_id)
+        .bind(snapshot_id)
+        .bind(actor.id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| AppError::internal("persist award set", e))?
+        .ok_or_else(|| {
+            AppError::conflict("AWARD_SET_FROZEN", "Frozen awards cannot be regenerated")
+        })?;
         sqlx::query("DELETE FROM award_recipients WHERE contest_id=$1 AND NOT is_manual")
             .bind(contest)
             .execute(&mut *tx)
@@ -233,9 +254,25 @@ impl AwardService {
         require_active_contest(&self.database, contest).await?;
         let mut tx =
             self.database.begin().await.map_err(|e| AppError::internal("begin award freeze", e))?;
-        let changed = sqlx::query("UPDATE award_sets SET status=CASE WHEN $3 THEN 'FROZEN' ELSE 'DRAFT' END, frozen_at=CASE WHEN $3 THEN now() ELSE NULL END, frozen_by_user_id=CASE WHEN $3 THEN $4 ELSE NULL END, version=version+1 WHERE contest_id=$1 AND version=$2 AND status=CASE WHEN $3 THEN 'DRAFT' ELSE 'FROZEN' END")
-            .bind(contest).bind(expected).bind(frozen).bind(actor.id).execute(&mut *tx).await
-            .map_err(|e| AppError::internal("freeze award set", e))?.rows_affected();
+        let changed = sqlx::query(
+            r#"
+            UPDATE award_sets
+            SET status=CASE WHEN $3 THEN 'FROZEN' ELSE 'DRAFT' END,
+                frozen_at=CASE WHEN $3 THEN now() ELSE NULL END,
+                frozen_by_user_id=CASE WHEN $3 THEN $4 ELSE NULL END,
+                version=version+1
+            WHERE contest_id=$1 AND version=$2
+                AND status=CASE WHEN $3 THEN 'DRAFT' ELSE 'FROZEN' END
+            "#,
+        )
+        .bind(contest)
+        .bind(expected)
+        .bind(frozen)
+        .bind(actor.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::internal("freeze award set", e))?
+        .rows_affected();
         if changed != 1 {
             return Err(stale());
         }
@@ -313,7 +350,14 @@ impl AwardService {
             snapshot_certificates(&mut tx, contest).await?;
         }
         let rows = sqlx::query_as::<_, CertificateRow>(
-            "SELECT certificate_no,contest_id,contest_name,award_code,award_name,problem_alias,team_id,team_name,school,source_member_id,recipient_name,recipient_role,seat_no,group_name,participation_type,rank FROM award_certificate_rows WHERE contest_id=$1 ORDER BY export_order",
+            r#"
+            SELECT certificate_no,contest_id,contest_name,award_code,award_name,problem_alias,
+                   team_id,team_name,school,source_member_id,recipient_name,recipient_role,
+                   seat_no,group_name,participation_type,rank
+            FROM award_certificate_rows
+            WHERE contest_id=$1
+            ORDER BY export_order
+            "#,
         )
         .bind(contest)
         .fetch_all(&mut *tx)
@@ -494,10 +538,56 @@ async fn insert_recipient(
     snapshot: i64,
     manual: bool,
 ) -> Result<(), AppError> {
-    sqlx::query("INSERT INTO award_recipients(contest_id,category_id,team_id,rank,solved,penalty_minutes,team_name,school,group_name,is_star,is_manual,participation_type,source_scoreboard_snapshot_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(contest_id,category_id,team_id,award_key) DO UPDATE SET rank=excluded.rank,solved=excluded.solved,penalty_minutes=excluded.penalty_minutes,team_name=excluded.team_name,school=excluded.school,group_name=excluded.group_name,is_star=excluded.is_star,is_manual=award_recipients.is_manual OR excluded.is_manual,participation_type=excluded.participation_type,source_scoreboard_snapshot_id=excluded.source_scoreboard_snapshot_id,updated_at=now(),version=award_recipients.version+1").bind(contest).bind(category).bind(row.team_id).bind(i32::try_from(row.rank).unwrap_or(i32::MAX)).bind(row.solved_count).bind(row.penalty_minutes).bind(&row.team_name).bind(row.school.as_deref()).bind(row.group_name.as_deref()).bind(row.is_star).bind(manual).bind(&row.participation_type).bind(snapshot).execute(&mut**tx).await.map(|_|()).map_err(|e|AppError::internal("insert award recipient",e))
+    sqlx::query(
+        r#"
+        INSERT INTO award_recipients
+            (contest_id,category_id,team_id,rank,solved,penalty_minutes,team_name,school,
+             group_name,is_star,is_manual,participation_type,source_scoreboard_snapshot_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        ON CONFLICT(contest_id,category_id,team_id,award_key) DO UPDATE
+            SET rank=excluded.rank,
+                solved=excluded.solved,
+                penalty_minutes=excluded.penalty_minutes,
+                team_name=excluded.team_name,
+                school=excluded.school,
+                group_name=excluded.group_name,
+                is_star=excluded.is_star,
+                is_manual=award_recipients.is_manual OR excluded.is_manual,
+                participation_type=excluded.participation_type,
+                source_scoreboard_snapshot_id=excluded.source_scoreboard_snapshot_id,
+                updated_at=now(),
+                version=award_recipients.version+1
+        "#,
+    )
+    .bind(contest)
+    .bind(category)
+    .bind(row.team_id)
+    .bind(i32::try_from(row.rank).unwrap_or(i32::MAX))
+    .bind(row.solved_count)
+    .bind(row.penalty_minutes)
+    .bind(&row.team_name)
+    .bind(row.school.as_deref())
+    .bind(row.group_name.as_deref())
+    .bind(row.is_star)
+    .bind(manual)
+    .bind(&row.participation_type)
+    .bind(snapshot)
+    .execute(&mut **tx)
+    .await
+    .map(|_| ())
+    .map_err(|e| AppError::internal("insert award recipient", e))
 }
 
-const RECIPIENT_SQL: &str = "SELECT r.id,r.category_id,c.code AS category_code,c.name AS category_name,r.team_id,coalesce(r.team_name,'') AS team_name,r.school,r.rank,r.solved,r.penalty_minutes,r.participation_type,r.group_name,r.is_star,r.is_manual FROM award_recipients r JOIN award_categories c ON c.id=r.category_id WHERE r.contest_id=$1 ORDER BY c.display_order,r.rank NULLS LAST,r.team_id";
+const RECIPIENT_SQL: &str = r#"
+    SELECT r.id,r.category_id,c.code AS category_code,c.name AS category_name,r.team_id,
+           coalesce(r.team_name,'') AS team_name,r.school,r.rank,r.solved,r.penalty_minutes,
+           r.participation_type,r.group_name,r.is_star,r.is_manual
+    FROM award_recipients r
+    JOIN award_categories c
+        ON c.id=r.category_id
+    WHERE r.contest_id=$1
+    ORDER BY c.display_order,r.rank NULLS LAST,r.team_id
+"#;
 async fn recipient_query(db: &PgPool, c: i64) -> Result<Vec<RecipientResponse>, AppError> {
     sqlx::query_as(RECIPIENT_SQL)
         .bind(c)

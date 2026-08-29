@@ -165,9 +165,31 @@ impl AwardService {
                 "AWARD_PRESENTATION_CATEGORY_NOT_FROZEN",
             ));
         }
-        sqlx::query("INSERT INTO award_presentation_states(contest_id,current_category_id,status,auto_rotate,interval_seconds,updated_by_user_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(contest_id) DO UPDATE SET current_category_id=excluded.current_category_id,status=excluded.status,auto_rotate=excluded.auto_rotate,interval_seconds=excluded.interval_seconds,updated_by_user_id=excluded.updated_by_user_id,updated_at=now(),version=award_presentation_states.version+1")
-            .bind(contest).bind(category_id).bind(&request.status).bind(request.auto_rotate).bind(request.interval_seconds).bind(actor.id)
-            .execute(&mut *tx).await.map_err(|error| AppError::internal("save award presentation state", error))?;
+        sqlx::query(
+            r#"
+            INSERT INTO award_presentation_states
+                (contest_id,current_category_id,status,auto_rotate,interval_seconds,
+                 updated_by_user_id)
+            VALUES($1,$2,$3,$4,$5,$6)
+            ON CONFLICT(contest_id) DO UPDATE
+                SET current_category_id=excluded.current_category_id,
+                    status=excluded.status,
+                    auto_rotate=excluded.auto_rotate,
+                    interval_seconds=excluded.interval_seconds,
+                    updated_by_user_id=excluded.updated_by_user_id,
+                    updated_at=now(),
+                    version=award_presentation_states.version+1
+            "#,
+        )
+        .bind(contest)
+        .bind(category_id)
+        .bind(&request.status)
+        .bind(request.auto_rotate)
+        .bind(request.interval_seconds)
+        .bind(actor.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| AppError::internal("save award presentation state", error))?;
         audit(&mut tx, actor.id, "AWARD_PRESENTATION_UPDATED", contest, ip).await?;
         sqlx::query("INSERT INTO realtime_outbox(event_id,contest_id,event_type,scope,payload_json) VALUES($1,$2,'AWARDS_UPDATED','PUBLIC',$3)")
             .bind(uuid::Uuid::new_v4()).bind(contest).bind(serde_json::json!({"categoryId":category_id,"status":request.status}))

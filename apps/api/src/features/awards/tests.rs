@@ -166,9 +166,31 @@ async fn awards_use_official_resolver_snapshot_and_freeze(pool: PgPool) {
     };
     let payload = serde_json::to_string(&board).expect("board");
     let sha = hex::encode(Sha256::digest(payload.as_bytes()));
-    let final_id = sqlx::query_scalar::<_, i64>("INSERT INTO scoreboard_snapshots(contest_id,variant,version,frozen,generated_at,payload_json,payload_sha256,created_by,created_by_user_id) VALUES($1,'ADMIN',1,false,now(),$2,$3,'award-op',$4) RETURNING id").bind(contest).bind(&payload).bind(&sha).bind(user).fetch_one(&pool).await.expect("final");
-    let public_id = sqlx::query_scalar::<_, i64>("INSERT INTO scoreboard_snapshots(contest_id,variant,version,frozen,generated_at,payload_json,payload_sha256,created_by,created_by_user_id) VALUES($1,'PUBLIC',1,true,now(),$2,$3,'award-op',$4) RETURNING id").bind(contest).bind(&payload).bind(&sha).bind(user).fetch_one(&pool).await.expect("public");
-    let run = sqlx::query_scalar::<_, i64>("INSERT INTO resolver_runs(contest_id,official,status,current_step,total_steps,source_public_snapshot_id,source_final_snapshot_id,plan_sha256,created_by_user_id,started_at,completed_at) VALUES($1,true,'COMPLETED',0,0,$2,$3,$4,$5,now(),now()) RETURNING id").bind(contest).bind(public_id).bind(final_id).bind("a".repeat(64)).bind(user).fetch_one(&pool).await.expect("resolver");
+    let final_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO scoreboard_snapshots(contest_id,variant,version,frozen,generated_at,payload_json,payload_sha256,created_by,created_by_user_id) VALUES($1,'ADMIN',1,false,now(),$2,$3,'award-op',$4) RETURNING id",
+    )
+    .bind(contest).bind(&payload).bind(&sha).bind(user).fetch_one(&pool).await.expect("final");
+    let public_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO scoreboard_snapshots(contest_id,variant,version,frozen,generated_at,payload_json,payload_sha256,created_by,created_by_user_id) VALUES($1,'PUBLIC',1,true,now(),$2,$3,'award-op',$4) RETURNING id",
+    )
+    .bind(contest).bind(&payload).bind(&sha).bind(user).fetch_one(&pool).await.expect("public");
+    let run = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO resolver_runs
+            (contest_id,official,status,current_step,total_steps,source_public_snapshot_id,
+             source_final_snapshot_id,plan_sha256,created_by_user_id,started_at,completed_at)
+        VALUES($1,true,'COMPLETED',0,0,$2,$3,$4,$5,now(),now())
+        RETURNING id
+        "#,
+    )
+    .bind(contest)
+    .bind(public_id)
+    .bind(final_id)
+    .bind("a".repeat(64))
+    .bind(user)
+    .fetch_one(&pool)
+    .await
+    .expect("resolver");
     let actor = AuthUser {
         id: user,
         username: "award-op".into(),
