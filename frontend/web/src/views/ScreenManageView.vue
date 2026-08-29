@@ -221,9 +221,14 @@ async function saveConfig() {
   saving.value = true;
   try {
     await presentationApi.update(contestId.value, 'SCREEN', {
-      ...form,
+      enabled: form.enabled,
       title: form.title.trim() || null,
       subtitle: form.subtitle.trim() || null,
+      accentColor: form.accentColor,
+      rowLimit: form.rowLimit,
+      showAnnouncements: form.showAnnouncements,
+      announcementIntervalSeconds: form.announcementIntervalSeconds,
+      template: form.template,
     });
     ElMessage.success(t('大屏配置已保存'));
   } catch (error) {

@@ -43,13 +43,13 @@ pub async fn get_bank(
     Ok(Json(problem))
 }
 
-#[utoipa::path(put, path = "/api/admin/problems/{problem_id}/publication", operation_id = "updateProblemPublication", tag = "training", params(("problem_id" = i64, Path)), request_body = PublicationRequest, responses((status = 200, body = BankProblem), (status = 400, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
+#[utoipa::path(put, path = "/api/admin/problems/{problem_id}/publication", operation_id = "updateProblemPublication", tag = "training", params(("problem_id" = i64, Path)), request_body = PublicationRequest, responses((status = 200, body = ProblemPublication), (status = 400, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
 pub async fn update_publication(
     context: SuperAdminContext,
     State(state): State<AppState>,
     Path(problem_id): Path<i64>,
     payload: Result<Json<PublicationRequest>, JsonRejection>,
-) -> Result<Json<BankProblem>, AppError> {
+) -> Result<Json<ProblemPublication>, AppError> {
     let Json(request) =
         payload.map_err(|_| AppError::validation("request", "invalid publication"))?;
     if problem_id <= 0 || !matches!(request.visibility.as_str(), "PRIVATE" | "PUBLIC") {
@@ -80,14 +80,12 @@ pub async fn update_publication(
     .ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem not found"))?;
     sqlx::query("INSERT INTO problem_bank_entries(problem_id,visibility,difficulty,tags,published_at,updated_at) VALUES($1,$2,$3,$4,CASE WHEN $2='PUBLIC' THEN coalesce((SELECT published_at FROM problem_bank_entries WHERE problem_id=$1),now()) ELSE NULL END,now()) ON CONFLICT(problem_id) DO UPDATE SET visibility=EXCLUDED.visibility,difficulty=EXCLUDED.difficulty,tags=EXCLUDED.tags,published_at=EXCLUDED.published_at,updated_at=now()")
         .bind(problem_id).bind(&request.visibility).bind(request.difficulty).bind(tags).execute(&mut *transaction).await.map_err(|e| AppError::internal("update problem publication", e))?;
-    let row = sqlx::query_as::<_, BankProblemRow>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at,p.languages FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.id=$1 AND p.deleted_at IS NULL").bind(problem_id).fetch_one(&mut *transaction).await.map_err(|e| AppError::internal("load problem publication", e))?;
-    let problem: BankProblem = row.try_into()?;
     transaction
         .commit()
         .await
         .map_err(|e| AppError::internal("commit problem publication update", e))?;
     let _ = context;
-    Ok(Json(problem))
+    load_publication(&state, problem_id).await.map(Json)
 }
 
 #[utoipa::path(get, path = "/api/admin/problems/{problem_id}/publication", operation_id = "getProblemPublication", tag = "training", params(("problem_id" = i64, Path)), responses((status = 200, body = ProblemPublication), (status = 404, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
@@ -100,6 +98,13 @@ pub async fn get_publication(
     if problem_id <= 0 {
         return Err(AppError::not_found("PROBLEM_NOT_FOUND", "Problem not found"));
     }
+    load_publication(&state, problem_id).await.map(Json)
+}
+
+async fn load_publication(
+    state: &AppState,
+    problem_id: i64,
+) -> Result<ProblemPublication, AppError> {
     let row = sqlx::query_as::<
         _,
         (Option<String>, Option<i16>, Option<serde_json::Value>, Option<time::OffsetDateTime>),
@@ -120,12 +125,12 @@ pub async fn get_publication(
         .transpose()
         .map_err(|e| AppError::internal("decode problem publication tags", e))?
         .unwrap_or_default();
-    Ok(Json(ProblemPublication {
+    Ok(ProblemPublication {
         visibility: visibility.unwrap_or_else(|| "PRIVATE".to_owned()),
         difficulty,
         tags,
         published_at,
-    }))
+    })
 }
 
 pub(super) async fn team_for_user(state: &AppState, user_id: i64) -> Result<Option<i64>, AppError> {
