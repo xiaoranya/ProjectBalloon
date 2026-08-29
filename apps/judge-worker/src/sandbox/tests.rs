@@ -1,8 +1,8 @@
 use std::io::Write;
 
-use super::archive::extract_output_cases_blocking;
-use super::compare::standard_output_matches;
-use super::metrics::{GnuTimeMetrics, extract_gnu_time_metrics};
+use crate::sandbox::archive::extract_output_cases_blocking;
+use crate::sandbox::compare::standard_output_matches;
+use crate::sandbox::metrics::{GnuTimeMetrics, extract_gnu_time_metrics};
 
 #[test]
 fn standard_comparison_normalizes_line_endings_and_trailing_line_space() {
