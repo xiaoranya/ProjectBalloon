@@ -8,7 +8,7 @@ use time::OffsetDateTime;
 
 use crate::{config::DeploymentMode, error::AppError, features::auth::model::AuthUser};
 
-use super::model::{
+use crate::features::competition::model::{
     ActiveContestResponse, BindWorkstationRequest, CompetitionSessionResponse,
     CreateWorkstationRequest, DeploymentInfoResponse, UpdateWorkstationRequest,
     WorkstationBindingResponse, WorkstationLoginGrant, WorkstationResponse,
@@ -535,7 +535,7 @@ mod tests {
 
     use sqlx::PgPool;
 
-    use super::{CompetitionService, validate_workstation_input};
+    use crate::features::competition::service::{CompetitionService, validate_workstation_input};
     use crate::{
         config::DeploymentMode,
         features::{

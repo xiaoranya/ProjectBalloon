@@ -12,7 +12,7 @@ use crate::{
     state::AppState,
 };
 
-use super::model::{
+use crate::features::contest_problems::model::{
     AssignProblemRequest, ContestProblemDetailResponse, ContestProblemListQuery,
     ContestProblemResponse, ReorderEntry, UpdateContestProblemRequest, validate_reorder,
 };

@@ -10,7 +10,7 @@ use crate::{
     features::auth::model::{AuthUser, UserType},
 };
 
-use super::model::{ContestRow, ContestSchedule};
+use crate::features::contests::model::{ContestRow, ContestSchedule};
 
 pub(super) const CONTEST_COLUMNS: &str = r#"
     id,

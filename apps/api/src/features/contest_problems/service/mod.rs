@@ -9,7 +9,7 @@ use sqlx::PgPool;
 
 use crate::{error::AppError, features::auth::model::AuthUser};
 
-use super::model::{
+use crate::features::contest_problems::model::{
     ContestProblemDetailResponse, ContestProblemDetailRow, ContestProblemResponse,
     ValidatedAssignment, ValidatedAssignmentUpdate, ValidatedReorderEntry,
 };

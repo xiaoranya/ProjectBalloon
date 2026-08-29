@@ -429,7 +429,7 @@ fn validate_complete_schedule(
 
 #[cfg(test)]
 mod tests {
-    use super::{
+    use crate::features::contests::model::{
         ContestListQuery, ContestSchedule, ContestStatus, ContestVisibility, CreateContestRequest,
     };
     use time::{Duration, OffsetDateTime};
