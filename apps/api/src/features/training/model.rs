@@ -27,6 +27,7 @@ pub struct BankProblem {
     pub statement: Option<String>,
     pub difficulty: Option<i16>,
     pub tags: serde_json::Value,
+    #[serde(default, with = "time::serde::rfc3339::option")]
     pub published_at: Option<time::OffsetDateTime>,
     pub languages: Vec<String>,
 }
@@ -37,6 +38,7 @@ pub struct ProblemPublication {
     pub visibility: String,
     pub difficulty: Option<i16>,
     pub tags: Vec<String>,
+    #[serde(default, with = "time::serde::rfc3339::option")]
     pub published_at: Option<time::OffsetDateTime>,
 }
 
