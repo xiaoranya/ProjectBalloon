@@ -12,10 +12,7 @@ mod runner;
 #[cfg(test)]
 mod tests;
 
-pub use integrity::{
-    ObjectStorageIntegrityReport, referenced_object_keys, scan_object_integrity,
-    scan_orphaned_objects,
-};
+pub use integrity::{ObjectStorageIntegrityReport, referenced_object_keys, scan_object_integrity};
 #[cfg(test)]
 pub(crate) use integrity::{
     is_orphan_candidate, missing_object_keys, reconcile_missing_references,

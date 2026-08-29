@@ -6,19 +6,6 @@ use crate::object_storage::{ObjectStorageHandle, ObjectStorageObject};
 
 use super::enqueue_cleanup_batch;
 
-pub async fn scan_orphaned_objects(
-    database: &PgPool,
-    storage: &ObjectStorageHandle,
-    bucket: &str,
-    prefixes: &[&str],
-    referenced_keys: &HashSet<String>,
-    grace: Duration,
-) -> Result<usize, sqlx::Error> {
-    scan_object_integrity(database, storage, bucket, prefixes, referenced_keys, grace)
-        .await
-        .map(|report| report.queued_orphans)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObjectStorageIntegrityReport {
     pub queued_orphans: usize,
