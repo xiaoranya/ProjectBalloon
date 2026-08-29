@@ -119,59 +119,41 @@ pub(crate) fn is_orphan_candidate(
             .is_some_and(|modified| modified.elapsed().is_ok_and(|age| age >= grace))
 }
 
+/// Every object key referenced by the database for one bucket class. The
+/// `$2`/`$3` booleans gate the problem-domain and source-domain branches so a
+/// single statement covers the problem bucket, the source bucket, and a shared
+/// bucket (both flags true) without three copies of the UNION.
+const REFERENCED_OBJECT_KEYS_SQL: &str = r#"
+    SELECT object_key FROM problem_attachments WHERE $2
+    UNION SELECT object_key FROM problem_testdata_versions WHERE $2
+    UNION SELECT testdata_object_key FROM problems
+    WHERE $2 AND testdata_object_key IS NOT NULL
+    UNION SELECT interactor_object_key FROM problems
+    WHERE $2 AND interactor_object_key IS NOT NULL
+    UNION SELECT source_object_key FROM submissions
+    WHERE $3 AND source_deleted_at IS NULL
+    UNION SELECT pdf_object_key FROM print_requests
+    WHERE $3 AND pdf_bucket = $1 AND pdf_object_key IS NOT NULL
+    UNION SELECT output_object_key FROM submission_export_tasks
+    WHERE output_bucket = $1 AND output_object_key IS NOT NULL
+      AND status = 'SUCCEEDED' AND expires_at > now()
+"#;
+
 pub async fn referenced_object_keys(
     database: &PgPool,
     storage: &ObjectStorageHandle,
     bucket: &str,
 ) -> Result<std::collections::HashSet<String>, IntegrityScanError> {
-    let keys: Vec<String> =
-        if bucket == storage.problem_bucket() && bucket == storage.source_bucket() {
-            sqlx::query_scalar(
-                "SELECT object_key FROM problem_attachments
-             UNION SELECT object_key FROM problem_testdata_versions
-             UNION SELECT testdata_object_key FROM problems
-             WHERE testdata_object_key IS NOT NULL
-             UNION SELECT interactor_object_key FROM problems
-             WHERE interactor_object_key IS NOT NULL
-             UNION SELECT source_object_key FROM submissions WHERE source_deleted_at IS NULL
-             UNION SELECT pdf_object_key FROM print_requests
-             WHERE pdf_bucket = $1 AND pdf_object_key IS NOT NULL
-             UNION SELECT output_object_key FROM submission_export_tasks
-             WHERE output_bucket = $1 AND output_object_key IS NOT NULL
-               AND status = 'SUCCEEDED' AND expires_at > now()",
-            )
-            .bind(bucket)
-            .fetch_all(database)
-            .await?
-        } else if bucket == storage.problem_bucket() {
-            sqlx::query_scalar(
-                "SELECT object_key FROM problem_attachments
-             UNION SELECT object_key FROM problem_testdata_versions
-             UNION SELECT testdata_object_key FROM problems
-             WHERE testdata_object_key IS NOT NULL
-             UNION SELECT interactor_object_key FROM problems
-             WHERE interactor_object_key IS NOT NULL
-             UNION SELECT output_object_key FROM submission_export_tasks
-             WHERE output_bucket = $1 AND output_object_key IS NOT NULL
-               AND status = 'SUCCEEDED' AND expires_at > now()",
-            )
-            .bind(bucket)
-            .fetch_all(database)
-            .await?
-        } else if bucket == storage.source_bucket() {
-            sqlx::query_scalar(
-                "SELECT source_object_key FROM submissions WHERE source_deleted_at IS NULL
-             UNION SELECT pdf_object_key FROM print_requests
-             WHERE pdf_bucket = $1 AND pdf_object_key IS NOT NULL
-             UNION SELECT output_object_key FROM submission_export_tasks
-             WHERE output_bucket = $1 AND output_object_key IS NOT NULL
-               AND status = 'SUCCEEDED' AND expires_at > now()",
-            )
-            .bind(bucket)
-            .fetch_all(database)
-            .await?
-        } else {
-            return Ok(std::collections::HashSet::new());
-        };
+    let is_problem_bucket = bucket == storage.problem_bucket();
+    let is_source_bucket = bucket == storage.source_bucket();
+    if !is_problem_bucket && !is_source_bucket {
+        return Ok(std::collections::HashSet::new());
+    }
+    let keys: Vec<String> = sqlx::query_scalar(REFERENCED_OBJECT_KEYS_SQL)
+        .bind(bucket)
+        .bind(is_problem_bucket)
+        .bind(is_source_bucket)
+        .fetch_all(database)
+        .await?;
     Ok(keys.into_iter().collect())
 }
