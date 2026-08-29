@@ -86,9 +86,7 @@ pub(super) fn enforce_sync_source_limit(rows: &[ExportRow]) -> Result<(), AppErr
 }
 
 pub(super) fn metadata_csv(rows: &[ExportRow]) -> Result<String, AppError> {
-    let mut output = String::from(
-        "\u{feff}submissionId,contestId,problemId,problemAlias,teamId,teamName,language,sourceSizeBytes,sourceSha256,status,verdict,totalTimeMs,peakMemoryKb,submittedAt,judgedAt,activeJudgementId\r\n",
-    );
+    let mut output = "\u{feff}submissionId,contestId,problemId,problemAlias,teamId,teamName,language,sourceSizeBytes,sourceSha256,status,verdict,totalTimeMs,peakMemoryKb,submittedAt,judgedAt,activeJudgementId\r\n".to_string();
     for row in rows {
         let fields = [
             row.id.to_string(),
@@ -117,9 +115,8 @@ pub(super) fn source_manifest_csv(
     rows: &[ExportRow],
     files: &[SourceFile],
 ) -> Result<String, AppError> {
-    let mut output = String::from(
-        "\u{feff}submissionId,teamId,problemAlias,language,submittedAt,path,sha256\r\n",
-    );
+    let mut output =
+        "\u{feff}submissionId,teamId,problemAlias,language,submittedAt,path,sha256\r\n".to_string();
     for (row, file) in rows.iter().zip(files) {
         append_csv_row(
             &mut output,
@@ -141,9 +138,8 @@ pub(super) fn source_manifest_entries_csv(
     rows: &[ExportRow],
     entries: &[SourceManifestEntry],
 ) -> Result<String, AppError> {
-    let mut output = String::from(
-        "\u{feff}submissionId,teamId,problemAlias,language,submittedAt,path,sha256\r\n",
-    );
+    let mut output =
+        "\u{feff}submissionId,teamId,problemAlias,language,submittedAt,path,sha256\r\n".to_string();
     for (row, entry) in rows.iter().zip(entries) {
         append_csv_row(
             &mut output,

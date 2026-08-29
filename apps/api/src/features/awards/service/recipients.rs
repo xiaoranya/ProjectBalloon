@@ -411,9 +411,7 @@ async fn snapshot_certificates(
 }
 
 fn certificate_csv(rows: &[CertificateRow]) -> String {
-    let mut output = String::from(
-        "\u{feff}证书编号,比赛编号,比赛名称,奖项代码,奖项名称,题目标识,队伍编号,队伍名称,学校,成员编号,获奖人,成员角色,座位号,组别,参赛类型,名次\r\n",
-    );
+    let mut output = "\u{feff}证书编号,比赛编号,比赛名称,奖项代码,奖项名称,题目标识,队伍编号,队伍名称,学校,成员编号,获奖人,成员角色,座位号,组别,参赛类型,名次\r\n".to_string();
     for row in rows {
         let fields = [
             certificate_value(Some(&row.certificate_no)),

@@ -78,7 +78,23 @@ pub async fn update_publication(
     .await
     .map_err(|e| AppError::internal("lock problem for publication update", e))?
     .ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem not found"))?;
-    sqlx::query("INSERT INTO problem_bank_entries(problem_id,visibility,difficulty,tags,published_at,updated_at) VALUES($1,$2,$3,$4,CASE WHEN $2='PUBLIC' THEN coalesce((SELECT published_at FROM problem_bank_entries WHERE problem_id=$1),now()) ELSE NULL END,now()) ON CONFLICT(problem_id) DO UPDATE SET visibility=EXCLUDED.visibility,difficulty=EXCLUDED.difficulty,tags=EXCLUDED.tags,published_at=EXCLUDED.published_at,updated_at=now()")
+    sqlx::query(
+        r#"
+        INSERT INTO problem_bank_entries
+            (problem_id, visibility, difficulty, tags, published_at, updated_at)
+        VALUES($1, $2, $3, $4,
+            CASE WHEN $2 = 'PUBLIC'
+                THEN coalesce((SELECT published_at FROM problem_bank_entries WHERE problem_id = $1), now())
+                ELSE NULL END,
+            now())
+        ON CONFLICT(problem_id) DO UPDATE SET
+            visibility = EXCLUDED.visibility,
+            difficulty = EXCLUDED.difficulty,
+            tags = EXCLUDED.tags,
+            published_at = EXCLUDED.published_at,
+            updated_at = now()
+        "#,
+    )
         .bind(problem_id).bind(&request.visibility).bind(request.difficulty).bind(tags).execute(&mut *transaction).await.map_err(|e| AppError::internal("update problem publication", e))?;
     transaction
         .commit()

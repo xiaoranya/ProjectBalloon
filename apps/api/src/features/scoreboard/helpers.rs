@@ -237,9 +237,7 @@ pub(super) fn contest_not_found() -> AppError {
 }
 
 pub(super) fn to_csv(board: &ScoreboardResponse) -> String {
-    let mut output = String::from(
-        "rank,officialRank,teamId,teamName,school,participationType,groupName,solvedCount,penaltyMinutes",
-    );
+    let mut output = "rank,officialRank,teamId,teamName,school,participationType,groupName,solvedCount,penaltyMinutes".to_string();
     for problem in &board.problems {
         output.push(',');
         output.push_str(&csv_field(&problem.alias));

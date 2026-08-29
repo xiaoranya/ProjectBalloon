@@ -126,7 +126,7 @@ impl ClarificationService {
             ));
         }
         sqlx::query_as::<_, ClarificationResponse>(safe_sql!(
-            "{SELECT_COLUMNS} JOIN team_accounts account ON account.team_id = clarification.team_id JOIN contest_teams roster ON roster.team_id = clarification.team_id AND roster.contest_id = clarification.contest_id WHERE clarification.contest_id = $1 AND account.user_id = $2 ORDER BY clarification.created_at DESC LIMIT 1000"
+            "{CLARIFICATION_SQL} JOIN team_accounts account ON account.team_id = clarification.team_id JOIN contest_teams roster ON roster.team_id = clarification.team_id AND roster.contest_id = clarification.contest_id WHERE clarification.contest_id = $1 AND account.user_id = $2 ORDER BY clarification.created_at DESC LIMIT 1000"
         )).bind(contest_id).bind(actor.id).fetch_all(&self.database).await
             .map_err(|error| AppError::internal("list team clarifications", error))
     }
@@ -139,7 +139,7 @@ impl ClarificationService {
     ) -> Result<Vec<ClarificationResponse>, AppError> {
         require_staff_access_pool(&self.database, contest_id, actor).await?;
         sqlx::query_as::<_, ClarificationResponse>(safe_sql!(
-            "{SELECT_COLUMNS} WHERE clarification.contest_id = $1 AND ($2::text IS NULL OR clarification.status = $2) ORDER BY clarification.created_at DESC LIMIT 1000"
+            "{CLARIFICATION_SQL} WHERE clarification.contest_id = $1 AND ($2::text IS NULL OR clarification.status = $2) ORDER BY clarification.created_at DESC LIMIT 1000"
         )).bind(contest_id).bind(status.as_deref()).fetch_all(&self.database).await
             .map_err(|error| AppError::internal("list contest clarifications", error))
     }
@@ -301,7 +301,7 @@ impl ClarificationService {
     }
 }
 
-const SELECT_COLUMNS: &str = r#"
+const CLARIFICATION_SQL: &str = r#"
     SELECT clarification.id, clarification.contest_id, clarification.team_id,
            clarification.team_name, clarification.scope, clarification.problem_id,
            clarification.problem_alias, clarification.question, clarification.status,
@@ -319,7 +319,7 @@ async fn load(database: &PgPool, id: i64) -> Result<ClarificationResponse, AppEr
         return Err(clarification_not_found());
     }
     sqlx::query_as::<_, ClarificationResponse>(safe_sql!(
-        "{SELECT_COLUMNS} WHERE clarification.id = $1"
+        "{CLARIFICATION_SQL} WHERE clarification.id = $1"
     ))
     .bind(id)
     .fetch_optional(database)

@@ -155,7 +155,7 @@ impl ResolverService {
         require_operator(actor)?;
         require_active_contest(&self.database, contest_id).await?;
         sqlx::query_as::<_, RunRow>(safe_sql!(
-            "{RUN_SELECT} WHERE run.contest_id = $1 ORDER BY run.official DESC, run.created_at DESC"
+            "{RESOLVER_RUN_SQL} WHERE run.contest_id = $1 ORDER BY run.official DESC, run.created_at DESC"
         ))
         .bind(contest_id)
         .fetch_all(&self.database)
@@ -398,7 +398,7 @@ impl ResolverService {
         load_run(&self.database, id).await
     }
 }
-const RUN_SELECT: &str = r#"SELECT run.id, run.contest_id, run.official, run.status,
+const RESOLVER_RUN_SQL: &str = r#"SELECT run.id, run.contest_id, run.official, run.status,
  run.current_step, run.total_steps, run.source_public_snapshot_id,
  run.source_final_snapshot_id, run.plan_sha256, run.created_by_user_id,
  run.started_at, run.completed_at, run.auto_play_enabled, run.auto_play_interval_ms,
@@ -417,7 +417,7 @@ async fn require_active_contest(database: &PgPool, contest_id: i64) -> Result<()
 }
 
 async fn load_run(database: &PgPool, id: i64) -> Result<ResolverRunResponse, AppError> {
-    sqlx::query_as::<_, RunRow>(safe_sql!("{RUN_SELECT} WHERE run.id = $1"))
+    sqlx::query_as::<_, RunRow>(safe_sql!("{RESOLVER_RUN_SQL} WHERE run.id = $1"))
         .bind(id)
         .fetch_optional(database)
         .await

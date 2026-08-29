@@ -48,7 +48,7 @@ pub struct VirtualSessionDetail {
     problems: Vec<VirtualProblemResponse>,
 }
 
-const SESSION_SELECT: &str = "SELECT s.id,s.title,s.start_at,s.end_at,now() AS server_time,CASE WHEN s.archived_at IS NOT NULL THEN 'ARCHIVED' WHEN now()<s.start_at THEN 'SCHEDULED' WHEN now()<s.end_at THEN 'RUNNING' ELSE 'ENDED' END AS status,count(DISTINCT i.problem_id) FILTER(WHERE problem.id IS NOT NULL AND bank.problem_id IS NOT NULL)::bigint AS total_problems,count(DISTINCT sub.problem_id) FILTER(WHERE sub.status='ACCEPTED' AND problem.id IS NOT NULL AND bank.problem_id IS NOT NULL)::bigint AS solved_problems FROM practice_virtual_sessions s JOIN practice_virtual_items i ON i.session_id=s.id LEFT JOIN problems problem ON problem.id=i.problem_id AND problem.deleted_at IS NULL LEFT JOIN problem_bank_entries bank ON bank.problem_id=problem.id AND bank.visibility='PUBLIC' LEFT JOIN submissions sub ON sub.virtual_session_id=s.id AND sub.participant_user_id=s.user_id";
+const VIRTUAL_SESSION_SQL: &str = "SELECT s.id,s.title,s.start_at,s.end_at,now() AS server_time,CASE WHEN s.archived_at IS NOT NULL THEN 'ARCHIVED' WHEN now()<s.start_at THEN 'SCHEDULED' WHEN now()<s.end_at THEN 'RUNNING' ELSE 'ENDED' END AS status,count(DISTINCT i.problem_id) FILTER(WHERE problem.id IS NOT NULL AND bank.problem_id IS NOT NULL)::bigint AS total_problems,count(DISTINCT sub.problem_id) FILTER(WHERE sub.status='ACCEPTED' AND problem.id IS NOT NULL AND bank.problem_id IS NOT NULL)::bigint AS solved_problems FROM practice_virtual_sessions s JOIN practice_virtual_items i ON i.session_id=s.id LEFT JOIN problems problem ON problem.id=i.problem_id AND problem.deleted_at IS NULL LEFT JOIN problem_bank_entries bank ON bank.problem_id=problem.id AND bank.visibility='PUBLIC' LEFT JOIN submissions sub ON sub.virtual_session_id=s.id AND sub.participant_user_id=s.user_id";
 
 #[utoipa::path(post,path="/api/practice/virtual-sessions",operation_id="createPracticeVirtualSession",tag="practice",request_body=CreateVirtualSessionRequest,responses((status=201,body=VirtualSessionResponse)),security(("session_cookie"=[],"csrf_cookie"=[],"csrf_header"=[])))]
 pub async fn create(
@@ -121,7 +121,7 @@ pub async fn list(
 ) -> Result<Json<Vec<VirtualSessionResponse>>, AppError> {
     context.require_password_ready()?;
     let sql = format!(
-        "{SESSION_SELECT} WHERE s.user_id=$1 GROUP BY s.id ORDER BY s.created_at DESC,s.id DESC"
+        "{VIRTUAL_SESSION_SQL} WHERE s.user_id=$1 GROUP BY s.id ORDER BY s.created_at DESC,s.id DESC"
     );
     Ok(Json(
         sqlx::query_as(sqlx::AssertSqlSafe(sql))
@@ -177,7 +177,7 @@ async fn load_session(
     id: i64,
     user: i64,
 ) -> Result<VirtualSessionResponse, AppError> {
-    let sql = format!("{SESSION_SELECT} WHERE s.id=$1 AND s.user_id=$2 GROUP BY s.id");
+    let sql = format!("{VIRTUAL_SESSION_SQL} WHERE s.id=$1 AND s.user_id=$2 GROUP BY s.id");
     sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .bind(user)
