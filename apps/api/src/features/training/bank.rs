@@ -101,7 +101,10 @@ pub async fn get_publication(
     load_publication(&state, problem_id).await.map(Json)
 }
 
-async fn load_publication(state: &AppState, problem_id: i64) -> Result<ProblemPublication, AppError> {
+async fn load_publication(
+    state: &AppState,
+    problem_id: i64,
+) -> Result<ProblemPublication, AppError> {
     let row = sqlx::query_as::<
         _,
         (Option<String>, Option<i16>, Option<serde_json::Value>, Option<time::OffsetDateTime>),
