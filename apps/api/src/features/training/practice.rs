@@ -20,7 +20,25 @@ pub async fn list_favorites(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<BankProblem>>, AppError> {
     context.require_password_ready()?;
-    let rows=sqlx::query_as::<_,BankProblemRow>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at,p.languages FROM practice_problem_favorites f JOIN problems p ON p.id=f.problem_id AND p.deleted_at IS NULL JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE f.user_id=$1 ORDER BY f.created_at DESC").bind(context.user().id).fetch_all(state.database()).await.map_err(|e|AppError::internal("list practice favorites",e))?;
+    let rows = sqlx::query_as::<_, BankProblemRow>(
+        r#"
+        SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,
+               b.tags::jsonb AS tags,b.published_at,p.languages
+        FROM practice_problem_favorites f
+        JOIN problems p
+            ON p.id=f.problem_id AND p.deleted_at IS NULL
+        JOIN problem_bank_entries b
+            ON b.problem_id=p.id AND b.visibility='PUBLIC'
+        LEFT JOIN problem_statements s
+            ON s.problem_id=p.id AND s.lang_code=p.default_lang_code
+        WHERE f.user_id=$1
+        ORDER BY f.created_at DESC
+        "#,
+    )
+    .bind(context.user().id)
+    .fetch_all(state.database())
+    .await
+    .map_err(|e| AppError::internal("list practice favorites", e))?;
     let problems = rows.into_iter().map(BankProblem::try_from).collect::<Result<Vec<_>, _>>()?;
     Ok(Json(problems))
 }
@@ -36,7 +54,25 @@ pub async fn set_favorite(
     let Json(request) =
         payload.map_err(|_| AppError::validation("request", "invalid favorite state"))?;
     if request.favorite {
-        let changed=sqlx::query("INSERT INTO practice_problem_favorites(user_id,problem_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM problem_bank_entries b JOIN problems p ON p.id=b.problem_id AND p.deleted_at IS NULL WHERE b.problem_id=$2 AND b.visibility='PUBLIC') ON CONFLICT DO NOTHING").bind(context.user().id).bind(problem_id).execute(state.database()).await.map_err(|e|AppError::internal("favorite problem",e))?.rows_affected();
+        let changed = sqlx::query(
+            r#"
+            INSERT INTO practice_problem_favorites(user_id,problem_id)
+            SELECT $1,$2
+            WHERE EXISTS(
+                SELECT 1 FROM problem_bank_entries b
+                JOIN problems p
+                    ON p.id=b.problem_id AND p.deleted_at IS NULL
+                WHERE b.problem_id=$2 AND b.visibility='PUBLIC'
+            )
+            ON CONFLICT DO NOTHING
+            "#,
+        )
+        .bind(context.user().id)
+        .bind(problem_id)
+        .execute(state.database())
+        .await
+        .map_err(|e| AppError::internal("favorite problem", e))?
+        .rows_affected();
         if changed == 0 {
             let public=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM problem_bank_entries b JOIN problems p ON p.id=b.problem_id AND p.deleted_at IS NULL WHERE b.problem_id=$1 AND b.visibility='PUBLIC')").bind(problem_id).fetch_one(state.database()).await.map_err(|e|AppError::internal("check favorite problem",e))?;
             if !public {
@@ -63,7 +99,25 @@ pub async fn get_editorial(
 ) -> Result<Json<EditorialResponse>, AppError> {
     context.require_password_ready()?;
     let lang = query.get("lang").map_or("en", String::as_str);
-    let row=sqlx::query_as::<_,(String,String,String,time::OffsetDateTime)>("SELECT editorial.title,editorial.body,editorial.unlock_policy,editorial.updated_at FROM problem_editorials editorial JOIN problems problem ON problem.id=editorial.problem_id AND problem.deleted_at IS NULL JOIN problem_bank_entries bank ON bank.problem_id=problem.id AND bank.visibility='PUBLIC' WHERE editorial.problem_id=$1 AND editorial.lang_code=$2 AND editorial.published").bind(problem_id).bind(lang).fetch_optional(state.database()).await.map_err(|e|AppError::internal("load practice editorial",e))?.ok_or_else(||AppError::not_found("EDITORIAL_NOT_FOUND","Editorial not found"))?;
+    let row = sqlx::query_as::<_, (String, String, String, time::OffsetDateTime)>(
+        r#"
+        SELECT editorial.title,editorial.body,editorial.unlock_policy,editorial.updated_at
+        FROM problem_editorials editorial
+        JOIN problems problem
+            ON problem.id=editorial.problem_id AND problem.deleted_at IS NULL
+        JOIN problem_bank_entries bank
+            ON bank.problem_id=problem.id AND bank.visibility='PUBLIC'
+        WHERE editorial.problem_id=$1
+            AND editorial.lang_code=$2
+            AND editorial.published
+        "#,
+    )
+    .bind(problem_id)
+    .bind(lang)
+    .fetch_optional(state.database())
+    .await
+    .map_err(|e| AppError::internal("load practice editorial", e))?
+    .ok_or_else(|| AppError::not_found("EDITORIAL_NOT_FOUND", "Editorial not found"))?;
     let progress = sqlx::query_as::<_, (i32, bool)>(
         "SELECT attempts,solved FROM practice_problem_progress WHERE user_id=$1 AND problem_id=$2",
     )
@@ -120,7 +174,32 @@ pub async fn upsert_editorial(
             "invalid language, content, or unlock policy",
         ));
     }
-    let updated=sqlx::query_as::<_,(time::OffsetDateTime,)>("INSERT INTO problem_editorials(problem_id,lang_code,title,body,unlock_policy,published,updated_by_user_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(problem_id,lang_code) DO UPDATE SET title=EXCLUDED.title,body=EXCLUDED.body,unlock_policy=EXCLUDED.unlock_policy,published=EXCLUDED.published,updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=now() RETURNING updated_at").bind(problem_id).bind(lang_code.trim()).bind(request.title.trim()).bind(&request.body).bind(&request.unlock_policy).bind(request.published).bind(context.user().id).fetch_one(state.database()).await.map_err(|e|AppError::internal("save problem editorial",e))?.0;
+    let updated = sqlx::query_as::<_, (time::OffsetDateTime,)>(
+        r#"
+        INSERT INTO problem_editorials
+            (problem_id,lang_code,title,body,unlock_policy,published,updated_by_user_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT(problem_id,lang_code) DO UPDATE
+            SET title=EXCLUDED.title,
+                body=EXCLUDED.body,
+                unlock_policy=EXCLUDED.unlock_policy,
+                published=EXCLUDED.published,
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=now()
+        RETURNING updated_at
+        "#,
+    )
+    .bind(problem_id)
+    .bind(lang_code.trim())
+    .bind(request.title.trim())
+    .bind(&request.body)
+    .bind(&request.unlock_policy)
+    .bind(request.published)
+    .bind(context.user().id)
+    .fetch_one(state.database())
+    .await
+    .map_err(|e| AppError::internal("save problem editorial", e))?
+    .0;
     Ok(Json(EditorialResponse {
         problem_id,
         lang_code: lang_code.trim().to_owned(),
@@ -191,7 +270,17 @@ pub async fn update_practice_settings(
         return Err(AppError::validation("sourceRetentionDays", "must be between 1 and 3650"));
     }
     let settings = sqlx::query_as::<_, PracticeSettingsResponse>(
-        "UPDATE practice_platform_settings SET daily_submission_limit=$1,concurrent_judging_limit=$2,source_retention_days=$3,updated_by_user_id=$4,updated_at=now() WHERE singleton=true RETURNING daily_submission_limit,concurrent_judging_limit,source_retention_days,updated_at",
+        r#"
+        UPDATE practice_platform_settings
+        SET daily_submission_limit=$1,
+            concurrent_judging_limit=$2,
+            source_retention_days=$3,
+            updated_by_user_id=$4,
+            updated_at=now()
+        WHERE singleton=true
+        RETURNING daily_submission_limit,concurrent_judging_limit,
+            source_retention_days,updated_at
+        "#,
     )
     .bind(request.daily_submission_limit)
     .bind(request.concurrent_judging_limit)

@@ -21,8 +21,46 @@ pub async fn list_bank(
     let Query(query) = query.map_err(|_| AppError::validation("query", "invalid query"))?;
     let (size, offset) = validate_page(&query)?;
     let tag = query.tag.as_deref().map(str::trim).filter(|v| !v.is_empty());
-    let total = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM problem_bank_entries b JOIN problems p ON p.id=b.problem_id AND p.deleted_at IS NULL WHERE b.visibility='PUBLIC' AND ($1::text IS NULL OR b.tags::jsonb ? $1) AND ($2::smallint IS NULL OR b.difficulty=$2)").bind(tag).bind(query.difficulty).fetch_one(state.database()).await.map_err(|e| AppError::internal("count public problem bank", e))?;
-    let rows = sqlx::query_as::<_, BankProblemRow>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at,p.languages FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.deleted_at IS NULL AND b.visibility='PUBLIC' AND ($1::text IS NULL OR b.tags::jsonb ? $1) AND ($2::smallint IS NULL OR b.difficulty=$2) ORDER BY b.published_at DESC,b.problem_id DESC LIMIT $3 OFFSET $4").bind(tag).bind(query.difficulty).bind(size).bind(offset).fetch_all(state.database()).await.map_err(|e| AppError::internal("list public problem bank", e))?;
+    let total = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)
+        FROM problem_bank_entries b
+        JOIN problems p
+            ON p.id=b.problem_id AND p.deleted_at IS NULL
+        WHERE b.visibility='PUBLIC'
+            AND ($1::text IS NULL OR b.tags::jsonb ? $1)
+            AND ($2::smallint IS NULL OR b.difficulty=$2)
+        "#,
+    )
+    .bind(tag)
+    .bind(query.difficulty)
+    .fetch_one(state.database())
+    .await
+    .map_err(|e| AppError::internal("count public problem bank", e))?;
+    let rows = sqlx::query_as::<_, BankProblemRow>(
+        r#"
+        SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,
+               b.tags::jsonb AS tags,b.published_at,p.languages
+        FROM problems p
+        JOIN problem_bank_entries b
+            ON b.problem_id=p.id
+        LEFT JOIN problem_statements s
+            ON s.problem_id=p.id AND s.lang_code=p.default_lang_code
+        WHERE p.deleted_at IS NULL
+            AND b.visibility='PUBLIC'
+            AND ($1::text IS NULL OR b.tags::jsonb ? $1)
+            AND ($2::smallint IS NULL OR b.difficulty=$2)
+        ORDER BY b.published_at DESC,b.problem_id DESC
+        LIMIT $3 OFFSET $4
+        "#,
+    )
+    .bind(tag)
+    .bind(query.difficulty)
+    .bind(size)
+    .bind(offset)
+    .fetch_all(state.database())
+    .await
+    .map_err(|e| AppError::internal("list public problem bank", e))?;
     let mut problems =
         rows.into_iter().map(BankProblem::try_from).collect::<Result<Vec<_>, _>>()?;
     for problem in &mut problems {
@@ -37,7 +75,25 @@ pub async fn get_bank(
     State(state): State<AppState>,
     Path(slug): Path<String>,
 ) -> Result<Json<BankProblem>, AppError> {
-    let row = sqlx::query_as::<_, BankProblemRow>("SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,b.tags::jsonb AS tags,b.published_at,p.languages FROM problems p JOIN problem_bank_entries b ON b.problem_id=p.id LEFT JOIN problem_statements s ON s.problem_id=p.id AND s.lang_code=p.default_lang_code WHERE p.slug=$1 AND p.deleted_at IS NULL AND b.visibility='PUBLIC'").bind(slug).fetch_optional(state.database()).await.map_err(|e| AppError::internal("get public problem bank problem", e))?.ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem is not public"))?;
+    let row = sqlx::query_as::<_, BankProblemRow>(
+        r#"
+        SELECT p.id,p.slug,p.title,s.body AS statement,b.difficulty,
+               b.tags::jsonb AS tags,b.published_at,p.languages
+        FROM problems p
+        JOIN problem_bank_entries b
+            ON b.problem_id=p.id
+        LEFT JOIN problem_statements s
+            ON s.problem_id=p.id AND s.lang_code=p.default_lang_code
+        WHERE p.slug=$1
+            AND p.deleted_at IS NULL
+            AND b.visibility='PUBLIC'
+        "#,
+    )
+    .bind(slug)
+    .fetch_optional(state.database())
+    .await
+    .map_err(|e| AppError::internal("get public problem bank problem", e))?
+    .ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem is not public"))?;
     let mut problem: BankProblem = row.try_into()?;
     problem.statement = problem.statement.take().map(|statement| render_safe_statement(&statement));
     Ok(Json(problem))
@@ -160,7 +216,20 @@ pub(super) async fn load_public_training_sets(
     database: &PgPool,
 ) -> Result<Vec<TrainingSet>, sqlx::Error> {
     sqlx::query_as::<_, TrainingSet>(
-        "SELECT s.id,s.slug,s.title,s.description,s.visibility,count(b.problem_id)::bigint AS item_count FROM training_sets s LEFT JOIN training_set_items i ON i.set_id=s.id LEFT JOIN problems p ON p.id=i.problem_id AND p.deleted_at IS NULL LEFT JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' WHERE s.visibility='PUBLIC' GROUP BY s.id ORDER BY s.updated_at DESC,s.id DESC",
+        r#"
+        SELECT s.id,s.slug,s.title,s.description,s.visibility,
+               count(b.problem_id)::bigint AS item_count
+        FROM training_sets s
+        LEFT JOIN training_set_items i
+            ON i.set_id=s.id
+        LEFT JOIN problems p
+            ON p.id=i.problem_id AND p.deleted_at IS NULL
+        LEFT JOIN problem_bank_entries b
+            ON b.problem_id=p.id AND b.visibility='PUBLIC'
+        WHERE s.visibility='PUBLIC'
+        GROUP BY s.id
+        ORDER BY s.updated_at DESC,s.id DESC
+        "#,
     )
     .fetch_all(database)
     .await
@@ -171,7 +240,19 @@ pub(super) async fn load_public_training_set(
     set_id: i64,
 ) -> Result<Option<TrainingSet>, sqlx::Error> {
     sqlx::query_as::<_, TrainingSet>(
-        "SELECT s.id,s.slug,s.title,s.description,s.visibility,count(b.problem_id)::bigint AS item_count FROM training_sets s LEFT JOIN training_set_items i ON i.set_id=s.id LEFT JOIN problems p ON p.id=i.problem_id AND p.deleted_at IS NULL LEFT JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' WHERE s.id=$1 AND s.visibility='PUBLIC' GROUP BY s.id",
+        r#"
+        SELECT s.id,s.slug,s.title,s.description,s.visibility,
+               count(b.problem_id)::bigint AS item_count
+        FROM training_sets s
+        LEFT JOIN training_set_items i
+            ON i.set_id=s.id
+        LEFT JOIN problems p
+            ON p.id=i.problem_id AND p.deleted_at IS NULL
+        LEFT JOIN problem_bank_entries b
+            ON b.problem_id=p.id AND b.visibility='PUBLIC'
+        WHERE s.id=$1 AND s.visibility='PUBLIC'
+        GROUP BY s.id
+        "#,
     )
     .bind(set_id)
     .fetch_optional(database)
@@ -183,7 +264,17 @@ pub(super) async fn load_public_training_items(
     set_id: i64,
 ) -> Result<Vec<TrainingItem>, sqlx::Error> {
     sqlx::query_as::<_, TrainingItem>(
-        "SELECT i.problem_id,p.slug,p.title,i.position,i.required,b.difficulty,b.tags::jsonb AS tags FROM training_set_items i JOIN problems p ON p.id=i.problem_id AND p.deleted_at IS NULL JOIN problem_bank_entries b ON b.problem_id=p.id AND b.visibility='PUBLIC' WHERE i.set_id=$1 ORDER BY i.position",
+        r#"
+        SELECT i.problem_id,p.slug,p.title,i.position,i.required,
+               b.difficulty,b.tags::jsonb AS tags
+        FROM training_set_items i
+        JOIN problems p
+            ON p.id=i.problem_id AND p.deleted_at IS NULL
+        JOIN problem_bank_entries b
+            ON b.problem_id=p.id AND b.visibility='PUBLIC'
+        WHERE i.set_id=$1
+        ORDER BY i.position
+        "#,
     )
     .bind(set_id)
     .fetch_all(database)
