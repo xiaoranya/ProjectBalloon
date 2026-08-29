@@ -91,7 +91,10 @@ impl SnapshotRow {
             frozen: self.frozen,
             generated_at: self.generated_at,
             payload_sha256: self.payload_sha256.ok_or_else(|| {
-                AppError::internal("load scoreboard snapshot", "snapshot has no payload SHA-256")
+                AppError::internal_message(
+                    "load scoreboard snapshot",
+                    "snapshot has no payload SHA-256",
+                )
             })?,
             payload,
         })

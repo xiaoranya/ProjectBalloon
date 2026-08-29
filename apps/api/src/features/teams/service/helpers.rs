@@ -69,7 +69,12 @@ pub(super) async fn create_team_in_transaction(
             Some((user_id, account.username))
         }
         (None, None) => None,
-        _ => return Err(AppError::internal("create team account", "incomplete prepared account")),
+        _ => {
+            return Err(AppError::internal_message(
+                "create team account",
+                "incomplete prepared account",
+            ));
+        }
     };
     Ok((team_id, account))
 }

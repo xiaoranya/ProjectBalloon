@@ -62,7 +62,7 @@ impl FromStr for ContestStatus {
             "PAUSED" => Ok(Self::Paused),
             "ENDED" => Ok(Self::Ended),
             "ARCHIVED" => Ok(Self::Archived),
-            invalid => Err(AppError::internal("invalid contests.status", invalid)),
+            invalid => Err(AppError::internal_message("invalid contests.status", invalid)),
         }
     }
 }
@@ -91,7 +91,7 @@ impl FromStr for ContestVisibility {
         match value {
             "PRIVATE" => Ok(Self::Private),
             "PUBLIC" => Ok(Self::Public),
-            invalid => Err(AppError::internal("invalid contests.visibility", invalid)),
+            invalid => Err(AppError::internal_message("invalid contests.visibility", invalid)),
         }
     }
 }

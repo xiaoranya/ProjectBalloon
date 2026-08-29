@@ -286,7 +286,7 @@ pub(super) fn parse_judge_mode(value: &str) -> Result<JudgeMode, AppError> {
         "STANDARD" => Ok(JudgeMode::Standard),
         "INTERACTIVE" => Ok(JudgeMode::Interactive),
         "OUTPUT_ONLY" => Ok(JudgeMode::OutputOnly),
-        invalid => Err(AppError::internal("invalid problems.judge_mode", invalid)),
+        invalid => Err(AppError::internal_message("invalid problems.judge_mode", invalid)),
     }
 }
 

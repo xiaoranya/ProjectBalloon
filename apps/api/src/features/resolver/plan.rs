@@ -33,7 +33,7 @@ pub(super) async fn load_source_snapshot(
         board: serde_json::from_str(&row.3)
             .map_err(|error| AppError::internal("decode Resolver source snapshot", error))?,
         sha256: row.4.ok_or_else(|| {
-            AppError::internal("load Resolver source snapshot", "snapshot has no SHA-256")
+            AppError::internal_message("load Resolver source snapshot", "snapshot has no SHA-256")
         })?,
     })
 }
@@ -86,17 +86,16 @@ pub(super) fn build_states(
             (std::cmp::Reverse(rank), *team_id, *problem_id)
         });
         let (team_id, problem_id) = pending.remove(0);
-        let row =
-            current.rows.iter_mut().find(|row| row.team_id == team_id).ok_or_else(|| {
-                AppError::internal("build resolver plan", "current team disappeared")
-            })?;
+        let row = current.rows.iter_mut().find(|row| row.team_id == team_id).ok_or_else(|| {
+            AppError::internal_message("build resolver plan", "current team disappeared")
+        })?;
         let final_row = final_rows[&team_id];
         let cell = row.problems.iter_mut().find(|cell| cell.problem_id == problem_id).ok_or_else(
-            || AppError::internal("build resolver plan", "current problem disappeared"),
+            || AppError::internal_message("build resolver plan", "current problem disappeared"),
         )?;
         let final_cell =
             final_row.problems.iter().find(|cell| cell.problem_id == problem_id).ok_or_else(
-                || AppError::internal("build resolver plan", "final problem disappeared"),
+                || AppError::internal_message("build resolver plan", "final problem disappeared"),
             )?;
         let before = cell.clone();
         *cell = final_cell.clone();

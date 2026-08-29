@@ -264,7 +264,10 @@ impl ScoreboardService {
                 contest_id,
                 start_at,
                 contest.freeze_at.ok_or_else(|| {
-                    AppError::internal("load frozen scoreboard", "freeze timestamp disappeared")
+                    AppError::internal_message(
+                        "load frozen scoreboard",
+                        "freeze timestamp disappeared",
+                    )
                 })?,
                 &contest.scoring_mode,
                 &contest.score_aggregation,

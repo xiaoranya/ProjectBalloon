@@ -41,7 +41,7 @@ impl FromStr for UserType {
             "STAFF" => Ok(Self::Staff),
             "TEAM" => Ok(Self::Team),
             "INDIVIDUAL" => Ok(Self::Individual),
-            invalid => Err(AppError::internal("invalid users.user_type", invalid)),
+            invalid => Err(AppError::internal_message("invalid users.user_type", invalid)),
         }
     }
 }

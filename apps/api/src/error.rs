@@ -79,11 +79,10 @@ impl AppError {
         Self::public(StatusCode::SERVICE_UNAVAILABLE, code, message)
     }
 
-    pub fn internal(context: &'static str, source: impl std::fmt::Display) -> Self {
-        let source = source.to_string();
+    pub fn internal(context: &'static str, source: impl std::error::Error + 'static) -> Self {
         if is_archived_read_only_database_error(&source) {
             return Self::conflict(
-                "CONTEST_ARCHIVED_READ_ONLY",
+                ARCHIVED_READ_ONLY_MESSAGE,
                 "Archived contest data is read-only",
             )
             .with_internal_detail(format!("{context}: {source}"));
@@ -96,6 +95,21 @@ impl AppError {
                 field_errors: Vec::new(),
             },
             internal_detail: Some(format!("{context}: {source}")),
+        }
+    }
+
+    /// Internal failure raised from a non-`Error` payload, such as an
+    /// unexpected in-memory value. Database-backed failures must go through
+    /// [`AppError::internal`] so archived-contest conflicts stay typed.
+    pub fn internal_message(context: &'static str, message: impl std::fmt::Display) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            body: ApiErrorBody {
+                code: Cow::Borrowed("INTERNAL_ERROR"),
+                message: Cow::Borrowed("An internal error occurred while processing the request"),
+                field_errors: Vec::new(),
+            },
+            internal_detail: Some(format!("{context}: {message}")),
         }
     }
 
@@ -117,15 +131,14 @@ impl AppError {
     }
 }
 
-fn is_archived_read_only_database_error(source: &str) -> bool {
-    let source = source.trim();
-    source == "CONTEST_ARCHIVED_READ_ONLY"
-        || source
-            .strip_prefix("database error: ")
-            .is_some_and(|message| message.trim() == "CONTEST_ARCHIVED_READ_ONLY")
-        || source
-            .strip_prefix("error returned from database: ")
-            .is_some_and(|message| message.trim() == "CONTEST_ARCHIVED_READ_ONLY")
+const ARCHIVED_READ_ONLY_MESSAGE: &str = "CONTEST_ARCHIVED_READ_ONLY";
+
+fn is_archived_read_only_database_error(error: &(impl std::error::Error + 'static)) -> bool {
+    let error: &dyn std::any::Any = error;
+    error
+        .downcast_ref::<sqlx::Error>()
+        .and_then(|error| error.as_database_error())
+        .is_some_and(|database_error| database_error.message().trim() == ARCHIVED_READ_ONLY_MESSAGE)
 }
 
 impl IntoResponse for AppError {
@@ -142,23 +155,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn archived_database_rejection_is_exposed_as_conflict() {
-        let error =
-            AppError::internal("update child row", "database error: CONTEST_ARCHIVED_READ_ONLY");
+    fn non_database_sqlx_error_stays_internal() {
+        let error = AppError::internal("query", sqlx::Error::RowNotFound);
 
-        assert_eq!(error.status, StatusCode::CONFLICT);
-        assert_eq!(error.code(), "CONTEST_ARCHIVED_READ_ONLY");
+        assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(error.code(), "INTERNAL_ERROR");
         assert_eq!(
             error.internal_detail.as_deref(),
-            Some("update child row: database error: CONTEST_ARCHIVED_READ_ONLY")
+            Some("query: no rows returned by a query that expected to return at least one row")
         );
     }
 
     #[test]
-    fn unrelated_error_containing_archived_marker_stays_internal() {
-        let error =
-            AppError::internal("query", "constraint mentions CONTEST_ARCHIVED_READ_ONLY_SUFFIX");
+    fn internal_message_stays_internal() {
+        let error = AppError::internal_message("build plan", "snapshot has no SHA-256");
+
         assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(error.code(), "INTERNAL_ERROR");
+        assert_eq!(error.internal_detail.as_deref(), Some("build plan: snapshot has no SHA-256"));
     }
 }

@@ -399,7 +399,7 @@ async fn render_pdf(content: &str) -> Result<Bytes, AppError> {
     let mut stdin = child
         .stdin
         .take()
-        .ok_or_else(|| AppError::internal("open PDF renderer stdin", "missing pipe"))?;
+        .ok_or_else(|| AppError::internal_message("open PDF renderer stdin", "missing pipe"))?;
     stdin
         .write_all(content.as_bytes())
         .await
