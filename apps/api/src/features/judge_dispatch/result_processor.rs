@@ -4,7 +4,10 @@ use sqlx::PgPool;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::features::{balloons, scoreboard, scoring};
+use crate::features::{
+    submissions::SubmissionStatus,
+    {balloons, scoreboard, scoring},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyResultOutcome {
@@ -41,6 +44,7 @@ struct ResultContext {
     result_message_id: Option<Uuid>,
     completed: bool,
     superseded: bool,
+    status: String,
     submission_scope: String,
     contest_id: Option<i64>,
     team_id: Option<i64>,
@@ -67,6 +71,7 @@ impl JudgeResultProcessor {
                    j.result_message_id,
                    j.completed_at IS NOT NULL AS completed,
                    j.superseded,
+                   s.status,
                    s.submission_scope,
                    s.contest_id,
                    s.team_id,
@@ -106,6 +111,20 @@ impl JudgeResultProcessor {
             return Err(ApplyResultError::Conflict(format!(
                 "judgement {} already has a different final result",
                 result.judgement_id
+            )));
+        }
+
+        let current = SubmissionStatus::parse(&context.status).ok_or_else(|| {
+            ApplyResultError::Conflict(format!(
+                "submission {} has unknown status {}",
+                context.submission_id, context.status
+            ))
+        })?;
+        if current.domain().is_terminal() {
+            return Err(ApplyResultError::Conflict(format!(
+                "submission {} already ended as {}",
+                context.submission_id,
+                current.as_str()
             )));
         }
 

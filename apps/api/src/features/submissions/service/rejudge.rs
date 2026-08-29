@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::features::submissions::SubmissionStatus;
+
 impl SubmissionService {
     pub async fn rejudge(
         &self,
@@ -90,7 +92,7 @@ impl SubmissionService {
                     submission_id,
                     previous_judgement_id,
                     judgement_id,
-                    status: "PENDING",
+                    status: SubmissionStatus::Pending.as_str(),
                     queued_at,
                 });
             }
@@ -200,8 +202,12 @@ impl SubmissionService {
             .fetch_one(&mut *transaction)
             .await
             .map_err(|error| AppError::internal("insert rejudge judgement", error))?;
-        sqlx::query("UPDATE submissions SET status = 'PENDING', judged_at = NULL WHERE id = $1")
+        // Rejudging is the documented administrative exemption to the
+        // submission state machine: any state resets to Pending while the
+        // previous judgement is superseded.
+        sqlx::query("UPDATE submissions SET status = $2, judged_at = NULL WHERE id = $1")
             .bind(submission_id)
+            .bind(SubmissionStatus::Pending.as_str())
             .execute(&mut *transaction)
             .await
             .map_err(|error| AppError::internal("reset submission for rejudge", error))?;
@@ -255,7 +261,7 @@ impl SubmissionService {
                 "submissionId": submission_id,
                 "previousJudgementId": context.active_judgement_id,
                 "judgementId": judgement_id,
-                "status": "PENDING"
+                "status": SubmissionStatus::Pending.as_str()
             }))
             .execute(&mut *transaction)
             .await
@@ -282,7 +288,7 @@ impl SubmissionService {
             submission_id,
             previous_judgement_id: context.active_judgement_id,
             judgement_id,
-            status: "PENDING",
+            status: SubmissionStatus::Pending.as_str(),
             queued_at,
         })
     }

@@ -1,48 +1,4 @@
-use std::fmt;
-
 use thiserror::Error;
-use uuid::Uuid;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ContestId(i64);
-
-impl TryFrom<i64> for ContestId {
-    type Error = InvalidId;
-
-    fn try_from(value: i64) -> Result<Self, Self::Error> {
-        if value <= 0 {
-            return Err(InvalidId(value));
-        }
-        Ok(Self(value))
-    }
-}
-
-impl From<ContestId> for i64 {
-    fn from(value: ContestId) -> Self {
-        value.0
-    }
-}
-
-impl fmt::Display for ContestId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(formatter)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct JudgementId(Uuid);
-
-impl JudgementId {
-    #[must_use]
-    pub const fn new(value: Uuid) -> Self {
-        Self(value)
-    }
-
-    #[must_use]
-    pub const fn into_inner(self) -> Uuid {
-        self.0
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubmissionState {
@@ -139,6 +95,15 @@ pub fn validate_contest_end_extension(
 }
 
 impl SubmissionState {
+    /// Final verdicts and cancellation end the judging lifecycle. Rejudging
+    /// deliberately bypasses this machine: an operator resets a submission
+    /// from any state back to `Pending` and supersedes its judgement, which is
+    /// an administrative action rather than a judged transition.
+    #[must_use]
+    pub const fn is_terminal(self) -> bool {
+        !matches!(self, Self::Pending | Self::Judging)
+    }
+
     #[must_use]
     pub const fn can_transition_to(self, next: Self) -> bool {
         use SubmissionState::{
@@ -165,10 +130,6 @@ impl SubmissionState {
         }
     }
 }
-
-#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
-#[error("ID must be positive, got {0}")]
-pub struct InvalidId(i64);
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum ContestScheduleError {
@@ -203,17 +164,10 @@ pub enum ContestExtensionError {
 #[cfg(test)]
 mod tests {
     use super::{
-        ContestExtensionError, ContestId, ContestSchedule, ContestState, ContestTransitionError,
+        ContestExtensionError, ContestSchedule, ContestState, ContestTransitionError,
         SubmissionState, validate_contest_end_extension, validate_contest_transition,
     };
     use time::{Duration, OffsetDateTime};
-
-    #[test]
-    fn contest_id_rejects_non_positive_values() {
-        assert!(ContestId::try_from(0).is_err());
-        assert!(ContestId::try_from(-1).is_err());
-        assert_eq!(i64::from(ContestId::try_from(1).expect("positive ID")), 1);
-    }
 
     #[test]
     fn terminal_submission_state_cannot_transition() {

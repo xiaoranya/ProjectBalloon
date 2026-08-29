@@ -41,18 +41,8 @@ impl BatchRejudgeFilter {
         }
         self.verdict = self.verdict.map(|value| value.trim().to_ascii_uppercase());
         if self.verdict.as_ref().is_some_and(|value| {
-            !matches!(
-                value.as_str(),
-                "ACCEPTED"
-                    | "WRONG_ANSWER"
-                    | "COMPILE_ERROR"
-                    | "RUNTIME_ERROR"
-                    | "TIME_LIMIT_EXCEEDED"
-                    | "MEMORY_LIMIT_EXCEEDED"
-                    | "OUTPUT_LIMIT_EXCEEDED"
-                    | "SYSTEM_ERROR"
-                    | "CANCELLED"
-            )
+            !crate::features::submissions::SubmissionStatus::parse(value)
+                .is_some_and(|status| status.domain().is_terminal())
         }) {
             return Err(AppError::validation("verdict", "contains an unsupported final verdict"));
         }

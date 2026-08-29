@@ -24,3 +24,5 @@ pub use handlers::{
     submit_practice,
 };
 pub use service::SubmissionService;
+
+pub(crate) use model::SubmissionStatus;

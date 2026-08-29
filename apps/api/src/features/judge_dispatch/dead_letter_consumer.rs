@@ -219,7 +219,8 @@ async fn recover_stuck_submission(
     // or the submission already moved past judging — nothing is stuck.
     if context.completed
         || context.superseded
-        || !matches!(context.status.as_str(), "PENDING" | "JUDGING")
+        || crate::features::submissions::SubmissionStatus::parse(&context.status)
+            .is_none_or(|status| status.domain().is_terminal())
     {
         transaction.commit().await?;
         return Ok(());
