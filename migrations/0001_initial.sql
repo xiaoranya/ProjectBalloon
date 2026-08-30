@@ -5123,3 +5123,40 @@ ALTER TABLE submissions
             'TIME_LIMIT_EXCEEDED', 'MEMORY_LIMIT_EXCEEDED',
             'OUTPUT_LIMIT_EXCEEDED', 'SYSTEM_ERROR'
         ));
+
+-- ============================================================================
+-- Post-amalgamation: split submissions.status (lifecycle) from verdict
+-- submissions.status historically overloaded the judging lifecycle
+-- (PENDING/JUDGING) with the final verdict string written by
+-- result_processor. status now only carries the lifecycle
+-- (PENDING -> JUDGING -> COMPLETED) and the new verdict column carries the
+-- JudgeVerdict (null until the submission completes). CANCELLED remains a
+-- verdict, not a lifecycle state.
+-- ============================================================================
+ALTER TABLE submissions DROP CONSTRAINT submission_status_known;
+
+ALTER TABLE submissions ADD COLUMN verdict varchar(32) NULL;
+
+ALTER TABLE submissions
+    ADD CONSTRAINT submission_verdict_known CHECK (
+        verdict IN ('ACCEPTED','WRONG_ANSWER','COMPILE_ERROR','RUNTIME_ERROR',
+                    'TIME_LIMIT_EXCEEDED','MEMORY_LIMIT_EXCEEDED',
+                    'OUTPUT_LIMIT_EXCEEDED','SYSTEM_ERROR','CANCELLED'));
+
+ALTER TABLE submissions
+    ADD CONSTRAINT submission_status_verdict_consistent CHECK (
+        (status = 'COMPLETED' AND verdict IS NOT NULL)
+        OR (status IN ('PENDING','JUDGING') AND verdict IS NULL));
+
+-- Backfill: verdict literals historically lived in the status column.
+UPDATE submissions SET verdict = status
+  WHERE status IN ('ACCEPTED','WRONG_ANSWER','COMPILE_ERROR','RUNTIME_ERROR',
+                   'TIME_LIMIT_EXCEEDED','MEMORY_LIMIT_EXCEEDED',
+                   'OUTPUT_LIMIT_EXCEEDED','SYSTEM_ERROR','CANCELLED');
+UPDATE submissions SET status = 'COMPLETED' WHERE verdict IS NOT NULL;
+
+ALTER TABLE submissions
+    ADD CONSTRAINT submission_status_known
+        CHECK (status IN ('PENDING','JUDGING','COMPLETED'));
+
+CREATE INDEX idx_submissions_verdict ON submissions (verdict) WHERE verdict IS NOT NULL;
