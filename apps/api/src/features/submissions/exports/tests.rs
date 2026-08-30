@@ -131,8 +131,8 @@ async fn administrator_exports_verified_sources_and_audits_both_formats(pool: Pg
         r#"
         INSERT INTO submissions
             (contest_id, problem_id, team_id, language, source_object_key,
-             source_size_bytes, source_sha256, status, judged_at)
-        VALUES ($1, $2, $3, 'cpp', 'sources/export.cpp', $4, $5, 'ACCEPTED', now())
+             source_size_bytes, source_sha256, status, verdict, judged_at)
+        VALUES ($1, $2, $3, 'cpp', 'sources/export.cpp', $4, $5, 'COMPLETED', 'ACCEPTED', now())
         RETURNING id
         "#,
     )

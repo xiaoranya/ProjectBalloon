@@ -241,18 +241,20 @@ impl SubmissionService {
         // Rejudging is the documented administrative exemption to the
         // submission state machine: any state resets to Pending while the
         // previous judgement is superseded.
-        sqlx::query("UPDATE submissions SET status = $2, judged_at = NULL WHERE id = $1")
-            .bind(submission_id)
-            .bind(SubmissionStatus::Pending.as_str())
-            .execute(&mut *transaction)
-            .await
-            .map_err(|error| {
-                AppError::internal("reset submission for rejudge", error)
-                    .with_contest_id(contest_id)
-                    .with_submission_id(submission_id)
-                    .with_judgement_id(judgement_id)
-                    .with_user_id(actor.id)
-            })?;
+        sqlx::query(
+            "UPDATE submissions SET status = $2, verdict = NULL, judged_at = NULL WHERE id = $1",
+        )
+        .bind(submission_id)
+        .bind(SubmissionStatus::Pending.as_str())
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            AppError::internal("reset submission for rejudge", error)
+                .with_contest_id(contest_id)
+                .with_submission_id(submission_id)
+                .with_judgement_id(judgement_id)
+                .with_user_id(actor.id)
+        })?;
         scoreboard::rebuild_cell(&mut transaction, contest_id, context.team_id, context.problem_id)
             .await
             .map_err(|error| {

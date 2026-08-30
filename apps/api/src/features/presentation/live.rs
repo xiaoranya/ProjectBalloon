@@ -298,9 +298,9 @@ async fn load_metrics(database: &PgPool, contest: i64) -> Result<PresentationMet
     .await
     .map_err(|e| AppError::internal("load balloon presentation metrics", e))?;
     let colors = sqlx::query_as("SELECT coalesce(color,'未设置') AS name,count(*) AS total FROM balloon_tasks WHERE contest_id=$1 AND upper(status)<>'CANCELLED' GROUP BY color ORDER BY total DESC,name").bind(contest).fetch_all(database).await.map_err(|e| AppError::internal("load balloon colors", e))?;
-    let submission = sqlx::query_as::<_, (i64,i64,i64)>("SELECT count(*),count(*) FILTER(WHERE status IN('AC','ACCEPTED')),count(*) FILTER(WHERE status IN('PENDING','JUDGING')) FROM submissions WHERE contest_id=$1").bind(contest).fetch_one(database).await.map_err(|e| AppError::internal("load submission presentation metrics", e))?;
+    let submission = sqlx::query_as::<_, (i64,i64,i64)>("SELECT count(*),count(*) FILTER(WHERE verdict='ACCEPTED'),count(*) FILTER(WHERE status IN('PENDING','JUDGING')) FROM submissions WHERE contest_id=$1").bind(contest).fetch_one(database).await.map_err(|e| AppError::internal("load submission presentation metrics", e))?;
     let languages = sqlx::query_as("SELECT language AS name,count(*) AS total FROM submissions WHERE contest_id=$1 GROUP BY language ORDER BY total DESC,name").bind(contest).fetch_all(database).await.map_err(|e| AppError::internal("load submission languages", e))?;
-    let trend = sqlx::query_as("SELECT date_trunc('hour',submitted_at) AS bucket,count(*) AS total,count(*) FILTER(WHERE status IN('AC','ACCEPTED')) AS accepted FROM submissions WHERE contest_id=$1 AND submitted_at>=now()-interval '24 hours' GROUP BY bucket ORDER BY bucket").bind(contest).fetch_all(database).await.map_err(|e| AppError::internal("load submission trend", e))?;
+    let trend = sqlx::query_as("SELECT date_trunc('hour',submitted_at) AS bucket,count(*) AS total,count(*) FILTER(WHERE verdict='ACCEPTED') AS accepted FROM submissions WHERE contest_id=$1 AND submitted_at>=now()-interval '24 hours' GROUP BY bucket ORDER BY bucket").bind(contest).fetch_all(database).await.map_err(|e| AppError::internal("load submission trend", e))?;
     Ok(PresentationMetrics {
         balloons: BalloonMetrics {
             total: balloon.0,

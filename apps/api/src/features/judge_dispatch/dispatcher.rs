@@ -215,7 +215,7 @@ impl SubmissionOutboxDispatcher {
         .await?;
         if terminal && let Some(submission_id) = submission_id {
             let context = sqlx::query_as::<_, (i64, i64)>(
-                    "UPDATE submissions SET status='SYSTEM_ERROR', judged_at=now() WHERE id=$1 AND status='PENDING' RETURNING contest_id, team_id",
+                    "UPDATE submissions SET status='COMPLETED', verdict='SYSTEM_ERROR', judged_at=now() WHERE id=$1 AND status='PENDING' RETURNING contest_id, team_id",
                 )
                 .bind(submission_id)
                 .fetch_optional(&mut *transaction)
@@ -229,7 +229,8 @@ impl SubmissionOutboxDispatcher {
                     .bind(team_id)
                     .bind(serde_json::json!({
                         "submissionId": submission_id,
-                        "status": "SYSTEM_ERROR"
+                        "status": "SYSTEM_ERROR",
+                        "verdict": "SYSTEM_ERROR"
                     }))
                     .execute(&mut *transaction)
                     .await?;

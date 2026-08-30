@@ -260,7 +260,7 @@ impl SubmissionService {
                 "is not supported for practice submissions",
             ));
         }
-        let total=sqlx::query_scalar::<_,i64>("SELECT count(*) FROM submissions WHERE submission_scope='PRACTICE' AND participant_user_id=$1 AND ($2::bigint IS NULL OR problem_id=$2) AND ($3::text IS NULL OR status=$3) AND ($4::text IS NULL OR language=$4)").bind(actor.id).bind(query.problem_id).bind(query.status.as_deref()).bind(query.language.as_deref()).fetch_one(&self.database).await.map_err(|e|AppError::internal("count practice submissions",e).with_user_id(actor.id))?;
+        let total=sqlx::query_scalar::<_,i64>("SELECT count(*) FROM submissions WHERE submission_scope='PRACTICE' AND participant_user_id=$1 AND ($2::bigint IS NULL OR problem_id=$2) AND ($3::text IS NULL OR status=$3) AND ($4::text IS NULL OR verdict=$4) AND ($5::text IS NULL OR language=$5)").bind(actor.id).bind(query.problem_id).bind(query.status.as_deref()).bind(query.verdict.as_deref()).bind(query.language.as_deref()).fetch_one(&self.database).await.map_err(|e|AppError::internal("count practice submissions",e).with_user_id(actor.id))?;
         let rows = sqlx::query_as::<_, PracticeSubmissionSummary>(
             r#"
             SELECT s.id,s.problem_id,p.slug AS problem_slug,p.title AS problem_title,
@@ -278,14 +278,16 @@ impl SubmissionService {
             WHERE s.submission_scope='PRACTICE' AND s.participant_user_id=$1
                 AND ($2::bigint IS NULL OR s.problem_id=$2)
                 AND ($3::text IS NULL OR s.status=$3)
-                AND ($4::text IS NULL OR s.language=$4)
+                AND ($4::text IS NULL OR s.verdict=$4)
+                AND ($5::text IS NULL OR s.language=$5)
             ORDER BY s.submitted_at DESC,s.id DESC
-            LIMIT $5 OFFSET $6
+            LIMIT $6 OFFSET $7
             "#,
         )
         .bind(actor.id)
         .bind(query.problem_id)
         .bind(query.status.as_deref())
+        .bind(query.verdict.as_deref())
         .bind(query.language.as_deref())
         .bind(i64::from(query.size))
         .bind(query.offset)

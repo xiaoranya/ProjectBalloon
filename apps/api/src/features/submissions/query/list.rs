@@ -120,7 +120,8 @@ async fn list(
           AND ($3::bigint IS NULL OR submission.team_id = $3)
           AND ($4::bigint IS NULL OR submission.problem_id = $4)
           AND ($5::text IS NULL OR submission.status = $5)
-          AND ($6::text IS NULL OR submission.language = $6)
+          AND ($6::text IS NULL OR submission.verdict = $6)
+          AND ($7::text IS NULL OR submission.language = $7)
         "#,
     )
     .bind(contest_id)
@@ -128,6 +129,7 @@ async fn list(
     .bind(query.team_id)
     .bind(query.problem_id)
     .bind(query.status.as_deref())
+    .bind(query.verdict.as_deref())
     .bind(query.language.as_deref())
     .fetch_one(database)
     .await
@@ -143,10 +145,10 @@ async fn list(
                submission.language,
                submission.source_size_bytes,
                submission.status,
+               submission.verdict,
                submission.submitted_at,
                submission.judged_at,
                judgement.id AS active_judgement_id,
-               judgement.verdict,
                judgement.total_time_ms,
                judgement.peak_memory_kb,
                judgement.score_milli
@@ -163,9 +165,10 @@ async fn list(
           AND ($3::bigint IS NULL OR submission.team_id = $3)
           AND ($4::bigint IS NULL OR submission.problem_id = $4)
           AND ($5::text IS NULL OR submission.status = $5)
-          AND ($6::text IS NULL OR submission.language = $6)
+          AND ($6::text IS NULL OR submission.verdict = $6)
+          AND ($7::text IS NULL OR submission.language = $7)
         ORDER BY submission.submitted_at DESC, submission.id DESC
-        LIMIT $7 OFFSET $8
+        LIMIT $8 OFFSET $9
         "#,
     )
     .bind(contest_id)
@@ -173,6 +176,7 @@ async fn list(
     .bind(query.team_id)
     .bind(query.problem_id)
     .bind(query.status.as_deref())
+    .bind(query.verdict.as_deref())
     .bind(query.language.as_deref())
     .bind(i64::from(query.size))
     .bind(query.offset)

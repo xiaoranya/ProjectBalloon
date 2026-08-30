@@ -120,7 +120,7 @@ impl JudgeResultProcessor {
                 context.submission_id, context.status
             ))
         })?;
-        if current.domain().is_terminal() {
+        if current.is_terminal() {
             return Err(ApplyResultError::Conflict(format!(
                 "submission {} already ended as {}",
                 context.submission_id,
@@ -202,7 +202,7 @@ impl JudgeResultProcessor {
         sqlx::query(
             r#"
             UPDATE submissions
-            SET status = $2, judged_at = $3
+            SET status = 'COMPLETED', verdict = $2, judged_at = $3
             WHERE id = $1
             "#,
         )
@@ -243,6 +243,7 @@ impl JudgeResultProcessor {
                 "submissionId": context.submission_id,
                 "judgementId": result.judgement_id,
                 "status": result.verdict.as_str(),
+                "verdict": result.verdict.as_str(),
                 "totalTimeMs": result.total_time_ms,
                 "peakMemoryKb": result.peak_memory_kb
                 ,"scoreMilli": score_milli
@@ -397,9 +398,9 @@ mod tests {
                 r#"
                 INSERT INTO submissions
                     (contest_id, problem_id, team_id, language, source_object_key,
-                     source_size_bytes, source_sha256, status, submitted_at, judged_at)
+                     source_size_bytes, source_sha256, status, verdict, submitted_at, judged_at)
                 VALUES (
-                    $1, $2, $3, 'cpp', $4, 10, $5, $6,
+                    $1, $2, $3, 'cpp', $4, 10, $5, 'COMPLETED', $6,
                     (SELECT start_at + make_interval(mins => $7) FROM contests WHERE id = $1),
                     now()
                 )
@@ -524,7 +525,7 @@ mod tests {
         assert_eq!(persisted.0, "ACCEPTED");
         assert_eq!(persisted.1, Some(result.message_id));
         assert_eq!(persisted.2, 2);
-        assert_eq!(persisted.3, "ACCEPTED");
+        assert_eq!(persisted.3, "COMPLETED");
         assert_eq!(persisted.4, 1);
         let scoreboard = sqlx::query_as::<_, (i32, bool, i64, i32, i64)>(
             r#"
@@ -687,7 +688,7 @@ mod tests {
         assert_eq!(persisted.2, None, "the superseded judgement must stay without a verdict");
         assert_eq!(persisted.3, None, "the superseded judgement must stay without a completion");
         assert_eq!(
-            persisted.4, "WRONG_ANSWER",
+            persisted.4, "COMPLETED",
             "the submission must reflect exactly the active judgement"
         );
         let outbox_events = sqlx::query_scalar::<_, i64>(

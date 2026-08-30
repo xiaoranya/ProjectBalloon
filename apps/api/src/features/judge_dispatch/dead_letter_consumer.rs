@@ -220,7 +220,7 @@ async fn recover_stuck_submission(
     if context.completed
         || context.superseded
         || crate::features::submissions::SubmissionStatus::parse(&context.status)
-            .is_none_or(|status| status.domain().is_terminal())
+            .is_some_and(crate::features::submissions::SubmissionStatus::is_terminal)
     {
         transaction.commit().await?;
         return Ok(());
@@ -237,7 +237,9 @@ async fn recover_stuck_submission(
     .bind(completed_at)
     .execute(&mut *transaction)
     .await?;
-    sqlx::query("UPDATE submissions SET status = 'SYSTEM_ERROR', judged_at = $2 WHERE id = $1")
+    sqlx::query(
+        "UPDATE submissions SET status = 'COMPLETED', verdict = 'SYSTEM_ERROR', judged_at = $2 WHERE id = $1",
+    )
         .bind(submission_id)
         .bind(completed_at)
         .execute(&mut *transaction)
@@ -262,7 +264,8 @@ async fn recover_stuck_submission(
         .bind(json!({
             "submissionId": submission_id,
             "judgementId": judgement_id,
-            "status": "SYSTEM_ERROR"
+            "status": "SYSTEM_ERROR",
+            "verdict": "SYSTEM_ERROR"
         }))
         .execute(&mut *transaction)
         .await?;
@@ -394,7 +397,7 @@ mod tests {
             .expect("load recovered state");
         assert_eq!(verdict, "SYSTEM_ERROR");
         assert!(completed_at);
-        assert_eq!(submission_status, "SYSTEM_ERROR");
+        assert_eq!(submission_status, "COMPLETED");
 
         let outbox = sqlx::query_scalar::<_, i64>(
             r#"
@@ -478,7 +481,7 @@ mod tests {
                 .fetch_one(&pool)
                 .await
                 .expect("load recovered practice submission");
-        assert_eq!(submission_status, "SYSTEM_ERROR");
+        assert_eq!(submission_status, "COMPLETED");
         let outbox_events = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM realtime_outbox")
             .fetch_one(&pool)
             .await

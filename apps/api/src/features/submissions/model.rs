@@ -1,4 +1,3 @@
-use project_balloon_contracts::JudgeVerdict;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -358,6 +357,7 @@ pub struct SubmissionListQuery {
     pub team_id: Option<i64>,
     pub problem_id: Option<i64>,
     pub status: Option<String>,
+    pub verdict: Option<String>,
     pub language: Option<String>,
     #[serde(default)]
     pub page: u32,
@@ -374,30 +374,25 @@ pub struct ValidatedSubmissionListQuery {
     pub team_id: Option<i64>,
     pub problem_id: Option<i64>,
     pub status: Option<String>,
+    pub verdict: Option<String>,
     pub language: Option<String>,
     pub page: u32,
     pub size: u32,
     pub offset: i64,
 }
 
-/// The lifecycle state of a submission as persisted in `submissions.status`,
-/// mapped onto the domain state machine in
-/// [`project_balloon_domain::SubmissionState`]. Every Rust-side branch on a
+/// The lifecycle state of a submission as persisted in `submissions.status`:
+/// PENDING -> JUDGING -> COMPLETED. The judging outcome is a separate
+/// `submissions.verdict` column holding a
+/// [`project_balloon_contracts::JudgeVerdict`] (null until COMPLETED), so
+/// status no longer doubles as the verdict. Every Rust-side branch on a
 /// submission status must go through this enum; the bare strings only remain
 /// inside SQL text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubmissionStatus {
     Pending,
     Judging,
-    Accepted,
-    WrongAnswer,
-    CompileError,
-    RuntimeError,
-    TimeLimitExceeded,
-    MemoryLimitExceeded,
-    OutputLimitExceeded,
-    SystemError,
-    Cancelled,
+    Completed,
 }
 
 impl SubmissionStatus {
@@ -406,15 +401,7 @@ impl SubmissionStatus {
         match self {
             Self::Pending => "PENDING",
             Self::Judging => "JUDGING",
-            Self::Accepted => "ACCEPTED",
-            Self::WrongAnswer => "WRONG_ANSWER",
-            Self::CompileError => "COMPILE_ERROR",
-            Self::RuntimeError => "RUNTIME_ERROR",
-            Self::TimeLimitExceeded => "TIME_LIMIT_EXCEEDED",
-            Self::MemoryLimitExceeded => "MEMORY_LIMIT_EXCEEDED",
-            Self::OutputLimitExceeded => "OUTPUT_LIMIT_EXCEEDED",
-            Self::SystemError => "SYSTEM_ERROR",
-            Self::Cancelled => "CANCELLED",
+            Self::Completed => "COMPLETED",
         }
     }
 
@@ -423,54 +410,16 @@ impl SubmissionStatus {
         Some(match value {
             "PENDING" => Self::Pending,
             "JUDGING" => Self::Judging,
-            "ACCEPTED" => Self::Accepted,
-            "WRONG_ANSWER" => Self::WrongAnswer,
-            "COMPILE_ERROR" => Self::CompileError,
-            "RUNTIME_ERROR" => Self::RuntimeError,
-            "TIME_LIMIT_EXCEEDED" => Self::TimeLimitExceeded,
-            "MEMORY_LIMIT_EXCEEDED" => Self::MemoryLimitExceeded,
-            "OUTPUT_LIMIT_EXCEEDED" => Self::OutputLimitExceeded,
-            "SYSTEM_ERROR" => Self::SystemError,
-            "CANCELLED" => Self::Cancelled,
+            "COMPLETED" => Self::Completed,
             _ => return None,
         })
     }
 
+    /// A submission is finished exactly when its lifecycle reached COMPLETED;
+    /// the specific outcome lives in the verdict column.
     #[must_use]
-    pub const fn domain(self) -> project_balloon_domain::SubmissionState {
-        match self {
-            Self::Pending => project_balloon_domain::SubmissionState::Pending,
-            Self::Judging => project_balloon_domain::SubmissionState::Judging,
-            Self::Accepted => project_balloon_domain::SubmissionState::Accepted,
-            Self::WrongAnswer => project_balloon_domain::SubmissionState::WrongAnswer,
-            Self::CompileError => project_balloon_domain::SubmissionState::CompileError,
-            Self::RuntimeError => project_balloon_domain::SubmissionState::RuntimeError,
-            Self::TimeLimitExceeded => project_balloon_domain::SubmissionState::TimeLimitExceeded,
-            Self::MemoryLimitExceeded => {
-                project_balloon_domain::SubmissionState::MemoryLimitExceeded
-            }
-            Self::OutputLimitExceeded => {
-                project_balloon_domain::SubmissionState::OutputLimitExceeded
-            }
-            Self::SystemError => project_balloon_domain::SubmissionState::SystemError,
-            Self::Cancelled => project_balloon_domain::SubmissionState::Cancelled,
-        }
-    }
-}
-
-impl From<JudgeVerdict> for SubmissionStatus {
-    fn from(verdict: JudgeVerdict) -> Self {
-        match verdict {
-            JudgeVerdict::Accepted => Self::Accepted,
-            JudgeVerdict::WrongAnswer => Self::WrongAnswer,
-            JudgeVerdict::TimeLimitExceeded => Self::TimeLimitExceeded,
-            JudgeVerdict::MemoryLimitExceeded => Self::MemoryLimitExceeded,
-            JudgeVerdict::RuntimeError => Self::RuntimeError,
-            JudgeVerdict::CompileError => Self::CompileError,
-            JudgeVerdict::OutputLimitExceeded => Self::OutputLimitExceeded,
-            JudgeVerdict::SystemError => Self::SystemError,
-            JudgeVerdict::Cancelled => Self::Cancelled,
-        }
+    pub const fn is_terminal(self) -> bool {
+        matches!(self, Self::Completed)
     }
 }
 
@@ -495,6 +444,23 @@ impl SubmissionListQuery {
                 "contains an unsupported submission status",
             ));
         }
+        let verdict = self.verdict.map(|value| value.trim().to_ascii_uppercase());
+        if verdict.as_ref().is_some_and(|value| {
+            !matches!(
+                value.as_str(),
+                "ACCEPTED"
+                    | "WRONG_ANSWER"
+                    | "COMPILE_ERROR"
+                    | "RUNTIME_ERROR"
+                    | "TIME_LIMIT_EXCEEDED"
+                    | "MEMORY_LIMIT_EXCEEDED"
+                    | "OUTPUT_LIMIT_EXCEEDED"
+                    | "SYSTEM_ERROR"
+                    | "CANCELLED"
+            )
+        }) {
+            return Err(AppError::validation("verdict", "contains an unsupported judge verdict"));
+        }
         let language = self.language.map(|value| value.trim().to_ascii_lowercase());
         if language.as_ref().is_some_and(|value| {
             !matches!(value.as_str(), "c" | "cpp" | "java" | "python" | "output")
@@ -508,6 +474,7 @@ impl SubmissionListQuery {
             team_id: self.team_id,
             problem_id: self.problem_id,
             status: status.filter(|value| !value.is_empty()),
+            verdict: verdict.filter(|value| !value.is_empty()),
             language: language.filter(|value| !value.is_empty()),
             page: self.page,
             size: self.size,
@@ -657,42 +624,28 @@ mod tests {
         const VALUES: &[(&str, SubmissionStatus, bool)] = &[
             ("PENDING", SubmissionStatus::Pending, false),
             ("JUDGING", SubmissionStatus::Judging, false),
-            ("ACCEPTED", SubmissionStatus::Accepted, true),
-            ("WRONG_ANSWER", SubmissionStatus::WrongAnswer, true),
-            ("COMPILE_ERROR", SubmissionStatus::CompileError, true),
-            ("RUNTIME_ERROR", SubmissionStatus::RuntimeError, true),
-            ("TIME_LIMIT_EXCEEDED", SubmissionStatus::TimeLimitExceeded, true),
-            ("MEMORY_LIMIT_EXCEEDED", SubmissionStatus::MemoryLimitExceeded, true),
-            ("OUTPUT_LIMIT_EXCEEDED", SubmissionStatus::OutputLimitExceeded, true),
-            ("SYSTEM_ERROR", SubmissionStatus::SystemError, true),
-            ("CANCELLED", SubmissionStatus::Cancelled, true),
+            ("COMPLETED", SubmissionStatus::Completed, true),
         ];
         for (text, expected, terminal) in VALUES {
             let parsed = SubmissionStatus::parse(text).expect("parse persisted status");
             assert_eq!(parsed, *expected);
             assert_eq!(parsed.as_str(), *text);
-            assert_eq!(parsed.domain().is_terminal(), *terminal, "terminal for {text}");
+            assert_eq!(parsed.is_terminal(), *terminal, "terminal for {text}");
             assert_eq!(SubmissionStatus::parse(text.to_lowercase().as_str()), None);
         }
     }
 
     #[test]
-    fn judge_verdicts_map_onto_submission_statuses() {
-        for verdict in [
-            JudgeVerdict::Accepted,
-            JudgeVerdict::WrongAnswer,
-            JudgeVerdict::TimeLimitExceeded,
-            JudgeVerdict::MemoryLimitExceeded,
-            JudgeVerdict::RuntimeError,
-            JudgeVerdict::CompileError,
-            JudgeVerdict::OutputLimitExceeded,
-            JudgeVerdict::SystemError,
-            JudgeVerdict::Cancelled,
-        ] {
-            let status = SubmissionStatus::from(verdict);
-            assert_eq!(status.as_str(), verdict.as_str());
-            assert!(status.domain().is_terminal());
-        }
+    fn verdict_as_str_matches_the_nine_persisted_verdict_values() {
+        assert_eq!(JudgeVerdict::Accepted.as_str(), "ACCEPTED");
+        assert_eq!(JudgeVerdict::WrongAnswer.as_str(), "WRONG_ANSWER");
+        assert_eq!(JudgeVerdict::TimeLimitExceeded.as_str(), "TIME_LIMIT_EXCEEDED");
+        assert_eq!(JudgeVerdict::MemoryLimitExceeded.as_str(), "MEMORY_LIMIT_EXCEEDED");
+        assert_eq!(JudgeVerdict::RuntimeError.as_str(), "RUNTIME_ERROR");
+        assert_eq!(JudgeVerdict::CompileError.as_str(), "COMPILE_ERROR");
+        assert_eq!(JudgeVerdict::OutputLimitExceeded.as_str(), "OUTPUT_LIMIT_EXCEEDED");
+        assert_eq!(JudgeVerdict::SystemError.as_str(), "SYSTEM_ERROR");
+        assert_eq!(JudgeVerdict::Cancelled.as_str(), "CANCELLED");
     }
 
     #[test]
@@ -753,7 +706,8 @@ mod tests {
         let valid = SubmissionListQuery {
             team_id: Some(1),
             problem_id: Some(2),
-            status: Some(" accepted ".into()),
+            status: Some(" judging ".into()),
+            verdict: Some(" wrong_answer ".into()),
             language: Some(" CPP ".into()),
             page: 1,
             size: 25,
@@ -761,7 +715,8 @@ mod tests {
         }
         .validate()
         .expect("valid submission filters");
-        assert_eq!(valid.status.as_deref(), Some("ACCEPTED"));
+        assert_eq!(valid.status.as_deref(), Some("JUDGING"));
+        assert_eq!(valid.verdict.as_deref(), Some("WRONG_ANSWER"));
         assert_eq!(valid.language.as_deref(), Some("cpp"));
         assert_eq!(valid.offset, 25);
         assert!(
@@ -769,6 +724,21 @@ mod tests {
                 team_id: None,
                 problem_id: None,
                 status: Some("UNKNOWN".into()),
+                verdict: None,
+                language: None,
+                page: 0,
+                size: 25,
+                sort: None,
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            SubmissionListQuery {
+                team_id: None,
+                problem_id: None,
+                status: None,
+                verdict: Some("NOT_A_VERDICT".into()),
                 language: None,
                 page: 0,
                 size: 25,

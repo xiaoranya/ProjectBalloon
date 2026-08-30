@@ -435,8 +435,8 @@ async fn insert_scored_submission(
         r#"
         INSERT INTO submissions
             (contest_id, problem_id, team_id, language, source_object_key,
-             source_size_bytes, source_sha256, status, submitted_at, judged_at)
-        VALUES ($1, $2, $3, 'cpp', $4, 10, $5, $6, $7, now())
+             source_size_bytes, source_sha256, status, verdict, submitted_at, judged_at)
+        VALUES ($1, $2, $3, 'cpp', $4, 10, $5, 'COMPLETED', $6, $7, now())
         RETURNING id
         "#,
     )
