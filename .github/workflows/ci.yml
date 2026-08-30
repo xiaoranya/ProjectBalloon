@@ -27,7 +27,8 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo check-all
       - run: cargo lint
-      # Environment-backed tests run in the scheduled/manual Docker workflow.
+      # Environment-backed tests run in the Integration checks job; the
+      # Docker-image suites stay in the scheduled/manual Docker workflow.
       - run: cargo test-all
       - name: Check committed OpenAPI runtime document is fresh
         run: |
@@ -48,10 +49,204 @@ jobs:
             echo 'SQLx metadata check skipped because the workspace uses runtime SQLx queries.'
           fi
 
+  integration:
+    name: Integration checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16.6
+        env:
+          POSTGRES_USER: project_balloon_test
+          POSTGRES_PASSWORD: test-postgres-password
+          POSTGRES_DB: project_balloon_test
+        ports:
+          - '5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U project_balloon_test -d project_balloon_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4.2
+        ports:
+          - '6379:6379'
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      rabbitmq:
+        image: rabbitmq:3.13.7-management
+        env:
+          RABBITMQ_DEFAULT_USER: test
+          RABBITMQ_DEFAULT_PASS: test-rabbit
+          RABBITMQ_DEFAULT_VHOST: test
+        ports:
+          - '5672:5672'
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 12
+      rustfs:
+        image: rustfs/rustfs:1.0.0-beta.8
+        env:
+          RUSTFS_ACCESS_KEY: test
+          RUSTFS_SECRET_KEY: test-rustfs
+        ports:
+          - '9000:9000'
+    env:
+      DATABASE_URL: postgresql://project_balloon_test:test-postgres-password@127.0.0.1:5432/project_balloon_test
+      PROJECT_BALLOON_TEST_REDIS_URL: redis://127.0.0.1:6379
+      PROJECT_BALLOON_TEST_AMQP_URL: amqp://test:test-rabbit@127.0.0.1:5672/test
+      PROJECT_BALLOON_TEST_S3_ENDPOINT: http://127.0.0.1:9000
+      PROJECT_BALLOON_TEST_S3_REGION: us-east-1
+      PROJECT_BALLOON_TEST_S3_ACCESS_KEY: test
+      PROJECT_BALLOON_TEST_S3_SECRET_KEY: test-rustfs
+      PROJECT_BALLOON_TEST_S3_BUCKET: project-balloon-integration
+      PROJECT_BALLOON_TEST_S3_PROBLEM_BUCKET: xcpc-problems
+      PROJECT_BALLOON_TEST_S3_SOURCE_BUCKET: xcpc-sources
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: 1.94.0
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      - name: Resolve Docker-backed test container names
+        run: |
+          redis_container="$(docker ps --filter ancestor=redis:7.4.2 --format '{{.Names}}' | head -n1)"
+          rabbit_container="$(docker ps --filter ancestor=rabbitmq:3.13.7-management --format '{{.Names}}' | head -n1)"
+          if [ -z "$redis_container" ] || [ -z "$rabbit_container" ]; then
+            echo "Failed to discover service containers: redis='$redis_container' rabbitmq='$rabbit_container'" >&2
+            docker ps --format '{{.Names}} {{.Image}}' >&2
+            exit 1
+          fi
+          {
+            echo "PROJECT_BALLOON_TEST_REDIS_CONTAINER=$redis_container"
+            echo "PROJECT_BALLOON_TEST_RABBITMQ_CONTAINER=$rabbit_container"
+          } >> "$GITHUB_ENV"
+      - name: Create object storage test buckets
+        run: |
+          export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test-rustfs
+          ready=0
+          for _ in $(seq 1 30); do
+            if aws --endpoint-url "$PROJECT_BALLOON_TEST_S3_ENDPOINT" s3api list-buckets >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          [ "$ready" -eq 1 ] || { echo 'S3 endpoint did not become ready within 60 seconds' >&2; exit 1; }
+          for bucket in "$PROJECT_BALLOON_TEST_S3_BUCKET" \
+            "$PROJECT_BALLOON_TEST_S3_PROBLEM_BUCKET" "$PROJECT_BALLOON_TEST_S3_SOURCE_BUCKET"; do
+            aws --endpoint-url "$PROJECT_BALLOON_TEST_S3_ENDPOINT" s3 mb "s3://$bucket" 2>/dev/null \
+              || aws --endpoint-url "$PROJECT_BALLOON_TEST_S3_ENDPOINT" s3api head-bucket --bucket "$bucket"
+          done
+      # The Docker-image suites (sandbox_docker, pipeline_docker) stay in
+      # docker-integration; everything environment-backed runs here. The two
+      # RabbitMQ tests run alone and serially because the restart test bounces
+      # the broker underneath any concurrently running consumer.
+      - name: Workspace and API integration tests
+        run: >-
+          cargo test --workspace --all-features --locked
+          --lib --bins
+          --test archived_contest_readonly --test bootstrap_postgres --test migration_freeze
+          --test object_storage_docker --test practice_postgres --test schema_status_constraints
+          -- --include-ignored
+      # The RabbitMQ tests publish through the reviewed Judge topology, which
+      # only the API declares on startup (see judge_dispatch/topology.rs);
+      # mirror docker-integration.sh by running the API briefly first. The
+      # binary is started directly so the kill targets the API process itself
+      # (cargo run would leave the child orphaned, still consuming results).
+      - name: Declare RabbitMQ Judge topology with a brief API run
+        run: |
+          set -euo pipefail
+          cargo build --quiet -p project-balloon-api --bin project-balloon-api
+          PROJECT_BALLOON_API_BIND=127.0.0.1:18080 \
+          PROJECT_BALLOON_RUN_MIGRATIONS=true \
+          PROJECT_BALLOON_SECURE_COOKIES=false \
+          PROJECT_BALLOON_CSRF_SECRET=test-csrf-secret-012345678901234567890123 \
+          PROJECT_BALLOON_REALTIME_REDIS_ENABLED=true \
+          REDIS_URL="$PROJECT_BALLOON_TEST_REDIS_URL" \
+          PROJECT_BALLOON_SCOREBOARD_CACHE_ENABLED=false \
+          PROJECT_BALLOON_OBJECT_STORAGE_ENABLED=true \
+          PROJECT_BALLOON_OBJECT_STORAGE_ENDPOINT="$PROJECT_BALLOON_TEST_S3_ENDPOINT" \
+          PROJECT_BALLOON_OBJECT_STORAGE_REGION=us-east-1 \
+          PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY=test \
+          PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY=test-rustfs \
+          PROJECT_BALLOON_RABBITMQ_ENABLED=true \
+          PROJECT_BALLOON_RABBITMQ_URL="$PROJECT_BALLOON_TEST_AMQP_URL" \
+            target/debug/project-balloon-api &
+          api_pid=$!
+          for _ in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:18080/livez >/dev/null 2>&1; then break; fi
+            kill -0 "$api_pid" 2>/dev/null || { echo 'API exited before becoming live' >&2; exit 1; }
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:18080/livez >/dev/null
+          health_status=000
+          for _ in $(seq 1 30); do
+            health_status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18080/api/health)"
+            [ "$health_status" = 200 ] && break
+            sleep 1
+          done
+          [ "$health_status" = 200 ] || { echo "API readiness returned HTTP $health_status" >&2; exit 1; }
+          kill -INT "$api_pid"
+          wait "$api_pid"
+      - name: RabbitMQ worker capacity test
+        run: cargo test -p project-balloon-judge-worker --all-features --locked --test rabbit_concurrency capacity_two_runs_in_parallel_and_shutdown_drains_in_flight_tasks -- --ignored --exact --test-threads=1
+      - name: Purge judge queues
+        run: |
+          docker exec "$PROJECT_BALLOON_TEST_RABBITMQ_CONTAINER" rabbitmqctl purge_queue judge.tasks -p test >/dev/null
+          docker exec "$PROJECT_BALLOON_TEST_RABBITMQ_CONTAINER" rabbitmqctl purge_queue judge.results -p test >/dev/null
+      - name: RabbitMQ broker restart test
+        run: cargo test -p project-balloon-judge-worker --all-features --locked --test rabbit_concurrency broker_restart_requeues_unacknowledged_in_flight_task -- --ignored --exact --test-threads=1
+
   coverage:
     name: Coverage summary
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16.6
+        env:
+          POSTGRES_USER: project_balloon_test
+          POSTGRES_PASSWORD: test-postgres-password
+          POSTGRES_DB: project_balloon_test
+        ports:
+          - '5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U project_balloon_test -d project_balloon_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4.2
+        ports:
+          - '6379:6379'
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      rustfs:
+        image: rustfs/rustfs:1.0.0-beta.8
+        env:
+          RUSTFS_ACCESS_KEY: test
+          RUSTFS_SECRET_KEY: test-rustfs
+        ports:
+          - '9000:9000'
+    env:
+      DATABASE_URL: postgresql://project_balloon_test:test-postgres-password@127.0.0.1:5432/project_balloon_test
+      PROJECT_BALLOON_TEST_REDIS_URL: redis://127.0.0.1:6379
+      PROJECT_BALLOON_TEST_S3_ENDPOINT: http://127.0.0.1:9000
+      PROJECT_BALLOON_TEST_S3_REGION: us-east-1
+      PROJECT_BALLOON_TEST_S3_ACCESS_KEY: test
+      PROJECT_BALLOON_TEST_S3_SECRET_KEY: test-rustfs
+      PROJECT_BALLOON_TEST_S3_BUCKET: project-balloon-integration
+      PROJECT_BALLOON_TEST_S3_PROBLEM_BUCKET: xcpc-problems
+      PROJECT_BALLOON_TEST_S3_SOURCE_BUCKET: xcpc-sources
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
@@ -61,9 +256,42 @@ jobs:
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
-      # Environment-backed tests stay ignored here (see docker-integration);
-      # the summary quantifies the CI-visible coverage after every PR.
-      - run: cargo llvm-cov --workspace --all-features --locked --summary-only
+      - name: Resolve Docker-backed test container names
+        run: |
+          redis_container="$(docker ps --filter ancestor=redis:7.4.2 --format '{{.Names}}' | head -n1)"
+          if [ -z "$redis_container" ]; then
+            echo 'Failed to discover the Redis service container' >&2
+            docker ps --format '{{.Names}} {{.Image}}' >&2
+            exit 1
+          fi
+          echo "PROJECT_BALLOON_TEST_REDIS_CONTAINER=$redis_container" >> "$GITHUB_ENV"
+      - name: Create object storage test buckets
+        run: |
+          export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test-rustfs
+          ready=0
+          for _ in $(seq 1 30); do
+            if aws --endpoint-url "$PROJECT_BALLOON_TEST_S3_ENDPOINT" s3api list-buckets >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          [ "$ready" -eq 1 ] || { echo 'S3 endpoint did not become ready within 60 seconds' >&2; exit 1; }
+          for bucket in "$PROJECT_BALLOON_TEST_S3_BUCKET" \
+            "$PROJECT_BALLOON_TEST_S3_PROBLEM_BUCKET" "$PROJECT_BALLOON_TEST_S3_SOURCE_BUCKET"; do
+            aws --endpoint-url "$PROJECT_BALLOON_TEST_S3_ENDPOINT" s3 mb "s3://$bucket" 2>/dev/null \
+              || aws --endpoint-url "$PROJECT_BALLOON_TEST_S3_ENDPOINT" s3api head-bucket --bucket "$bucket"
+          done
+      # Counts every environment-backed suite except the Docker-image ones
+      # (sandbox_docker, pipeline_docker) and the RabbitMQ broker-restart pair,
+      # which stay exclusive to the Integration checks and Docker workflows;
+      # the summary quantifies total CI-visible coverage after every PR.
+      - run: >-
+          cargo llvm-cov --workspace --all-features --locked --summary-only
+          --lib --bins
+          --test archived_contest_readonly --test bootstrap_postgres --test migration_freeze
+          --test object_storage_docker --test practice_postgres --test schema_status_constraints
+          -- --include-ignored
 
   frontend:
     name: Frontend checks
@@ -108,8 +336,10 @@ jobs:
           rust-version: 1.94.0
 
   containers:
+    # On PRs this job is skipped at the step level, not the job level, so the
+    # check runs still show the expanded matrix name instead of the literal
+    # ${{ matrix.name }} (skipped jobs never expand their matrix).
     name: Judge runtime build (${{ matrix.name }})
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -135,13 +365,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        if: github.event_name != 'pull_request'
       - name: Build image
+        if: github.event_name != 'pull_request'
         run: >-
           docker buildx build --load --pull=false
           --tag "${{ matrix.image }}"
           --file "${{ matrix.context }}/${{ matrix.dockerfile }}"
           "${{ matrix.context }}"
       - name: Scan image for critical vulnerabilities
+        if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ matrix.image }}
@@ -151,7 +384,7 @@ jobs:
           vuln-type: os,library
           severity: CRITICAL
       - name: Verify judge runtime image
-        if: startsWith(matrix.name, 'judge-runtime-')
+        if: github.event_name != 'pull_request'
         run: docker run --rm --entrypoint /usr/bin/time "${{ matrix.image }}" --version
 
   compose:
