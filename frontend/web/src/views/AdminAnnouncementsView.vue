@@ -116,7 +116,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { ArrowLeft, Refresh } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRoute, useRouter } from 'vue-router';
@@ -128,7 +128,7 @@ import { useI18n } from '../i18n';
 const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
-const contestId = Number(route.params.contestId);
+const contestId = computed(() => Number(route.params.contestId));
 const announcements = ref<Announcement[]>([]);
 const loading = ref(false);
 const saving = ref(false);
@@ -177,7 +177,7 @@ async function load() {
   loading.value = true;
   errorMessage.value = '';
   try {
-    announcements.value = await announcementApi.list(contestId, true);
+    announcements.value = await announcementApi.list(contestId.value, true);
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   } finally {
@@ -226,7 +226,7 @@ async function save() {
         expectedVersion: editing.value.version,
       });
     } else {
-      await announcementApi.create(contestId, payload);
+      await announcementApi.create(contestId.value, payload);
     }
     editorVisible.value = false;
     ElMessage.success(
@@ -278,7 +278,7 @@ async function withdraw(tableRow: Record<string, unknown>) {
   }
 }
 
-onMounted(load);
+watch(contestId, () => void load(), { immediate: true });
 </script>
 
 <style scoped>

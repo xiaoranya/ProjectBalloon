@@ -130,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Refresh } from '@element-plus/icons-vue';
@@ -151,7 +151,7 @@ import { formatDateTime } from '../utils/format';
 import { useI18n } from '../i18n';
 
 const route = useRoute();
-const contestId = Number(route.params.contestId);
+const contestId = computed(() => Number(route.params.contestId));
 const { t } = useI18n();
 const problems = ref<ContestProblem[]>([]);
 const clarifications = ref<Clarification[]>([]);
@@ -181,7 +181,7 @@ function statusType(status: ClarificationStatus): 'warning' | 'success' | 'info'
 async function loadClarifications(silent = true) {
   if (!silent) loading.value = true;
   try {
-    clarifications.value = await clarificationApi.listMine(contestId);
+    clarifications.value = await clarificationApi.listMine(contestId.value);
     errorMessage.value = '';
   } catch (error) {
     if (!silent) errorMessage.value = getErrorMessage(error);
@@ -199,7 +199,7 @@ async function submitQuestion() {
       form.scope === 'GENERAL'
         ? { scope: 'GENERAL' as const, problemId: null, question }
         : { scope: 'PROBLEM' as const, problemId: form.problemId!, question };
-    const created = await clarificationApi.ask(contestId, request);
+    const created = await clarificationApi.ask(contestId.value, request);
     clarifications.value = [
       created,
       ...clarifications.value.filter((item) => item.id !== created.id),
@@ -216,26 +216,36 @@ async function submitQuestion() {
   }
 }
 
-onMounted(async () => {
+async function loadAll() {
   loading.value = true;
   const [problemResult] = await Promise.allSettled([
-    contestApi.listProblems(contestId),
+    contestApi.listProblems(contestId.value),
     loadClarifications(false),
   ]);
   if (problemResult.status === 'fulfilled') problems.value = problemResult.value;
   else errorMessage.value = getErrorMessage(problemResult.reason);
   loading.value = false;
-  realtime = subscribeContestEvents({
-    contestId,
-    scope: 'TEAM',
-    eventTypes: ['CLARIFICATION_UPDATED'],
-    onEvent: () => void loadClarifications(),
-    onConnectionChange: (connected) => {
-      realtimeConnected.value = connected;
-    },
-    poll: () => loadClarifications(),
-  });
-});
+}
+
+watch(
+  contestId,
+  () => {
+    realtime?.stop();
+    realtime = undefined;
+    void loadAll();
+    realtime = subscribeContestEvents({
+      contestId: contestId.value,
+      scope: 'TEAM',
+      eventTypes: ['CLARIFICATION_UPDATED'],
+      onEvent: () => void loadClarifications(),
+      onConnectionChange: (connected) => {
+        realtimeConnected.value = connected;
+      },
+      poll: () => loadClarifications(),
+    });
+  },
+  { immediate: true },
+);
 
 onUnmounted(() => realtime?.stop());
 </script>

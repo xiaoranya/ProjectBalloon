@@ -73,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { ArrowLeft, Refresh } from '@element-plus/icons-vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -98,7 +98,7 @@ import { useI18n } from '../i18n';
 const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
-const contestId = Number(route.params.contestId);
+const contestId = computed(() => Number(route.params.contestId));
 const contest = ref<Contest | null>(null);
 const contestProblems = ref<ContestProblem[]>([]);
 const contestTeams = ref<ContestTeam[]>([]);
@@ -170,16 +170,16 @@ const canCreate = computed(() =>
 const polling = computed(() => tasks.value.some((task) => isActiveTask(task.status)));
 
 function regenerateIdempotencyKey() {
-  idempotencyKey.value = `batch-rejudge-${contestId}-${crypto.randomUUID()}`;
+  idempotencyKey.value = `batch-rejudge-${contestId.value}-${crypto.randomUUID()}`;
 }
 
 async function loadContext() {
   errorMessage.value = '';
   try {
     const [contestValue, problemValues, teamValues] = await Promise.all([
-      adminContestApi.getContest(contestId),
-      adminContestApi.listContestProblems(contestId),
-      adminContestApi.listContestTeams(contestId),
+      adminContestApi.getContest(contestId.value),
+      adminContestApi.listContestProblems(contestId.value),
+      adminContestApi.listContestTeams(contestId.value),
     ]);
     contest.value = contestValue;
     contestProblems.value = [...problemValues].sort((a, b) => a.displayOrder - b.displayOrder);
@@ -196,7 +196,7 @@ async function preview() {
   errorMessage.value = '';
   try {
     const request = filterRequest.value;
-    previewResult.value = await bulkRejudgeApi.preview(contestId, request);
+    previewResult.value = await bulkRejudgeApi.preview(contestId.value, request);
     previewFingerprint.value = JSON.stringify(request);
     confirmationText.value = '';
   } catch (error) {
@@ -211,7 +211,7 @@ async function createTask() {
   creating.value = true;
   errorMessage.value = '';
   try {
-    const task = await bulkRejudgeApi.create(contestId, {
+    const task = await bulkRejudgeApi.create(contestId.value, {
       filter: filterRequest.value,
       expectedCount: previewResult.value.matchedSubmissions,
       confirmationText: confirmationText.value,
@@ -241,9 +241,9 @@ async function createTask() {
 async function loadTasks(silent = true) {
   if (!silent) tasksLoading.value = true;
   try {
-    tasks.value = await bulkRejudgeApi.list(contestId);
+    tasks.value = await bulkRejudgeApi.list(contestId.value);
     if (detailVisible.value && selectedTask.value) {
-      selectedTask.value = await bulkRejudgeApi.get(contestId, selectedTask.value.id);
+      selectedTask.value = await bulkRejudgeApi.get(contestId.value, selectedTask.value.id);
     }
     schedulePolling();
   } catch (error) {
@@ -259,7 +259,7 @@ async function selectTask(taskId: number) {
   detailLoading.value = true;
   selectedTask.value = null;
   try {
-    selectedTask.value = await bulkRejudgeApi.get(contestId, taskId);
+    selectedTask.value = await bulkRejudgeApi.get(contestId.value, taskId);
   } catch (error) {
     detailVisible.value = false;
     ElMessage.error(getErrorMessage(error));
@@ -280,7 +280,7 @@ async function pauseTask(task: BatchRejudgeTask) {
   }
   mutatingTaskId.value = task.id;
   try {
-    const updated = await bulkRejudgeApi.pause(contestId, task.id);
+    const updated = await bulkRejudgeApi.pause(contestId.value, task.id);
     replaceTask(updated);
     ElMessage.success(t('任务 #{id} 已暂停', { id: task.id }));
   } catch (error) {
@@ -293,7 +293,7 @@ async function pauseTask(task: BatchRejudgeTask) {
 async function resumeTask(task: BatchRejudgeTask) {
   mutatingTaskId.value = task.id;
   try {
-    const updated = await bulkRejudgeApi.resume(contestId, task.id);
+    const updated = await bulkRejudgeApi.resume(contestId.value, task.id);
     replaceTask(updated);
     ElMessage.success(t('任务 #{id} 已恢复', { id: task.id }));
     schedulePolling(0);
@@ -324,11 +324,18 @@ function isActiveTask(status: BatchRejudgeTaskStatus) {
   return status === 'PENDING' || status === 'RUNNING';
 }
 
-onMounted(async () => {
-  regenerateIdempotencyKey();
+onMounted(() => {
   document.addEventListener('visibilitychange', handleVisibility);
-  await Promise.all([loadContext(), loadTasks(false)]);
 });
+
+watch(
+  contestId,
+  () => {
+    regenerateIdempotencyKey();
+    void Promise.all([loadContext(), loadTasks(false)]);
+  },
+  { immediate: true },
+);
 
 onUnmounted(() => {
   if (pollTimer) window.clearTimeout(pollTimer);

@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { reactive } from 'vue';
 import AdminContestDetailView from './AdminContestDetailView.vue';
 import { setLocale } from '../i18n';
 
@@ -20,6 +21,7 @@ const api = vi.hoisted(() => ({
   isSuperAdmin: { value: false },
   push: vi.fn(),
 }));
+const route = reactive({ params: { contestId: '42' } });
 vi.mock('../api/admin-contests', () => ({ adminContestApi: api }));
 vi.mock('../auth/session', () => ({ useSession: () => ({ isSuperAdmin: api.isSuperAdmin }) }));
 vi.mock('../components/CodeEditor.vue', () => ({
@@ -32,27 +34,30 @@ vi.mock('../components/CodeEditor.vue', () => ({
   },
 }));
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: { contestId: '42' } }),
+  useRoute: () => route,
   useRouter: () => ({ push: api.push }),
 }));
+
+const contest = (id: number, name: string) => ({
+  id,
+  name,
+  status: 'RUNNING',
+  visibility: 'PRIVATE',
+  startAt: '2026-07-20T08:00:00Z',
+  freezeAt: '2026-07-20T12:00:00Z',
+  endAt: '2026-07-20T13:00:00Z',
+  version: 3,
+  createdAt: '2026-07-20T00:00:00Z',
+  updatedAt: '2026-07-20T00:00:00Z',
+  deletedAt: null,
+});
 
 describe('AdminContestDetailView', () => {
   beforeEach(() => {
     setLocale('zh-CN');
+    route.params.contestId = '42';
     api.isSuperAdmin.value = false;
-    api.getContest.mockResolvedValue({
-      id: 42,
-      name: 'Rust Regional',
-      status: 'RUNNING',
-      visibility: 'PRIVATE',
-      startAt: '2026-07-20T08:00:00Z',
-      freezeAt: '2026-07-20T12:00:00Z',
-      endAt: '2026-07-20T13:00:00Z',
-      version: 3,
-      createdAt: '2026-07-20T00:00:00Z',
-      updatedAt: '2026-07-20T00:00:00Z',
-      deletedAt: null,
-    });
+    api.getContest.mockResolvedValue(contest(42, 'Rust Regional'));
     api.listTeams.mockResolvedValue({ content: [] });
     api.listContestTeams.mockResolvedValue([]);
     api.listAllProblems.mockResolvedValue([]);
@@ -181,5 +186,69 @@ describe('AdminContestDetailView', () => {
     const superAdminWrapper = mount(AdminContestDetailView);
     await flushPromises();
     expect(superAdminWrapper.text()).toContain('克隆比赛');
+  });
+
+  it('reloads for the cloned contest when the route param changes after cloning', async () => {
+    api.isSuperAdmin.value = true;
+    const wrapper = mount(AdminContestDetailView);
+    await flushPromises();
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('克隆比赛'))!
+      .trigger('click');
+
+    api.getContest.mockResolvedValue(contest(2, 'Rust Regional 副本'));
+    api.cloneContest.mockResolvedValue({ contest: { id: 2 }, problemsCopied: 3, teamsCopied: 2 });
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('创建副本'))!
+      .trigger('click');
+    await flushPromises();
+
+    expect(api.cloneContest).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ name: 'Rust Regional 副本' }),
+    );
+    expect(api.push).toHaveBeenCalledWith('/admin/contests/2');
+
+    route.params.contestId = '2';
+    await flushPromises();
+
+    expect(api.getContest).toHaveBeenLastCalledWith(2);
+    expect(wrapper.text()).toContain('Rust Regional 副本');
+  });
+
+  it('drops the stale load when contestId changes before the response settles', async () => {
+    let resolveContest2!: () => void;
+    let resolveContest3!: () => void;
+    api.getContest.mockImplementation((contestId: number) => {
+      if (contestId === 42) return Promise.resolve(contest(42, 'Rust Regional'));
+      if (contestId === 2) {
+        return new Promise((resolve) => {
+          resolveContest2 = () => resolve(contest(2, 'Contest Two'));
+        });
+      }
+      return new Promise((resolve) => {
+        resolveContest3 = () => resolve(contest(3, 'Contest Three'));
+      });
+    });
+
+    const wrapper = mount(AdminContestDetailView);
+    await flushPromises();
+    expect(wrapper.text()).toContain('Rust Regional');
+
+    route.params.contestId = '2';
+    await flushPromises();
+    route.params.contestId = '3';
+    await flushPromises();
+
+    resolveContest2();
+    await flushPromises();
+    expect(wrapper.text()).not.toContain('Contest Two');
+
+    resolveContest3();
+    await flushPromises();
+    expect(wrapper.text()).toContain('Contest Three');
   });
 });
