@@ -635,4 +635,19 @@ mod tests {
         assert!(!validated.require_password_reset);
         assert_eq!(validated.new_password, "brand-new-password");
     }
+
+    #[test]
+    fn usernames_are_trimmed_and_lowercased() {
+        assert_eq!(super::validate_username("  Alice ".to_owned()).expect("valid"), "alice");
+    }
+
+    #[test]
+    fn username_length_and_charset_bounds_are_enforced() {
+        for value in ["ab", "x".repeat(65).as_str(), "中文", "has space", "no!"] {
+            assert!(super::validate_username(value.to_owned()).is_err(), "{value:?}");
+        }
+        for value in ["abc", "a.b_c-d", "x".repeat(64).as_str()] {
+            assert!(super::validate_username(value.to_owned()).is_ok(), "{value:?}");
+        }
+    }
 }

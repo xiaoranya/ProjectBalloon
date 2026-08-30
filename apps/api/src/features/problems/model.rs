@@ -667,4 +667,50 @@ mod tests {
             UpsertStatementRequest { body: "body".into() }.validate("../../en".into()).is_err()
         );
     }
+
+    #[test]
+    fn attachment_filenames_keep_only_the_basename() {
+        assert_eq!(
+            super::validate_attachment_filename("../../etc/passwd".to_owned()).expect("basename"),
+            "passwd"
+        );
+        assert_eq!(
+            super::validate_attachment_filename("C:\\evil\\report.pdf".to_owned())
+                .expect("basename"),
+            "report.pdf"
+        );
+    }
+
+    #[test]
+    fn attachment_filenames_reject_empty_and_dot_names() {
+        for value in ["", "   ", ".", ".."] {
+            assert!(
+                super::validate_attachment_filename(value.to_owned()).is_err(),
+                "{value:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn attachment_filenames_strip_control_characters() {
+        assert_eq!(
+            super::validate_attachment_filename("re\x00port\nfinal.pdf".to_owned())
+                .expect("cleaned"),
+            "reportfinal.pdf"
+        );
+    }
+
+    #[test]
+    fn attachment_filenames_allow_unicode_names() {
+        assert_eq!(
+            super::validate_attachment_filename("题-图.png".to_owned()).expect("unicode name"),
+            "题-图.png"
+        );
+    }
+
+    #[test]
+    fn attachment_filenames_enforce_the_255_character_limit() {
+        assert!(super::validate_attachment_filename("a".repeat(255)).is_ok());
+        assert!(super::validate_attachment_filename("a".repeat(256)).is_err());
+    }
 }

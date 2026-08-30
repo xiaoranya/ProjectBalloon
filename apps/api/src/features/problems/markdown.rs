@@ -35,4 +35,46 @@ mod tests {
         assert!(!rendered.contains("href=\"javascript:"));
         assert!(rendered.contains("https://example.invalid/problem"));
     }
+
+    #[test]
+    fn dangerous_embed_elements_are_removed() {
+        let rendered = render_safe(
+            r#"# Sum
+
+<iframe src="https://evil.invalid"></iframe>
+<svg onload="alert(1)"><circle r="1"></circle></svg>
+<style>body { display: none }</style>
+"#,
+        );
+
+        assert!(!rendered.contains("<iframe"));
+        assert!(!rendered.contains("<svg"));
+        assert!(!rendered.contains("<style"));
+    }
+
+    #[test]
+    fn exotic_url_schemes_are_stripped() {
+        let rendered = render_safe(
+            r#"[data](data:text/html;base64,PHNjcmlwdD4=)
+[vbscript](vbscript:msgbox(1))
+[mixed case](JaVaScRiPt:alert(1))
+[entity](javascript&#58;alert(1))
+[file](file:///etc/passwd)
+"#,
+        );
+
+        assert!(!rendered.contains("data:text/html"));
+        assert!(!rendered.contains("vbscript:"));
+        assert!(!rendered.contains("file://"));
+        assert!(!rendered.contains("alert(1)"), "scheme payload survived: {rendered}");
+    }
+
+    #[test]
+    fn rendered_links_carry_noopener_rel() {
+        let rendered = render_safe("[site](https://example.invalid/page)");
+        assert!(
+            rendered.contains("rel=\"noopener noreferrer\""),
+            "links must keep the noopener rel: {rendered}"
+        );
+    }
 }

@@ -237,3 +237,61 @@ pub(super) fn format_rfc3339(value: OffsetDateTime) -> Result<String, AppError> 
 pub(super) fn contest_not_found() -> AppError {
     AppError::not_found("CONTEST_NOT_FOUND", "Contest was not found")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{ReadAccess, can_read_all};
+    use crate::features::auth::model::{UserType, user_for_test};
+    use crate::features::auth::permissions;
+
+    #[test]
+    fn every_operational_manage_permission_grants_read_all() {
+        for permission in [
+            permissions::CLARIFICATION_MANAGE,
+            permissions::PRINTING_MANAGE,
+            permissions::BALLOON_MANAGE,
+            permissions::RESOLVER_MANAGE,
+            permissions::AWARD_MANAGE,
+            permissions::SCREEN_MANAGE,
+            permissions::LIVE_MANAGE,
+        ] {
+            let user = user_for_test(UserType::Staff, &[permission]);
+            assert!(can_read_all(&user), "{permission} must grant read-all");
+        }
+    }
+
+    #[test]
+    fn contest_manage_alone_scopes_but_does_not_grant_read_all() {
+        let user = user_for_test(UserType::Staff, &[permissions::CONTEST_MANAGE]);
+        assert!(!can_read_all(&user));
+        let access = ReadAccess::for_user(Some(&user));
+        assert!(!access.read_all);
+        assert_eq!(access.contest_manager_id, Some(1));
+    }
+
+    #[test]
+    fn super_admins_read_everything_without_manager_scope() {
+        let user = user_for_test(UserType::SuperAdmin, &[]);
+        let access = ReadAccess::for_user(Some(&user));
+        assert!(access.super_admin);
+        assert!(access.read_all);
+        assert_eq!(access.contest_manager_id, None);
+    }
+
+    #[test]
+    fn team_users_get_team_scope_only() {
+        let user = user_for_test(UserType::Team, &[]);
+        let access = ReadAccess::for_user(Some(&user));
+        assert!(!access.read_all);
+        assert_eq!(access.team_user_id, Some(1));
+    }
+
+    #[test]
+    fn anonymous_requests_have_no_access() {
+        let access = ReadAccess::for_user(None);
+        assert!(!access.super_admin);
+        assert!(!access.read_all);
+        assert_eq!(access.contest_manager_id, None);
+        assert_eq!(access.team_user_id, None);
+    }
+}

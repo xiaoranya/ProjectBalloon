@@ -523,3 +523,26 @@ async fn event_tx(
 fn task_not_found() -> AppError {
     AppError::not_found("BALLOON_TASK_NOT_FOUND", "Balloon task was not found")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::require_operator;
+    use crate::features::auth::model::{UserType, user_for_test};
+    use crate::features::auth::permissions;
+
+    #[test]
+    fn balloon_gate_accepts_super_admins_and_balloon_managers() {
+        assert!(require_operator(&user_for_test(UserType::SuperAdmin, &[])).is_ok());
+        assert!(
+            require_operator(&user_for_test(UserType::Staff, &[permissions::BALLOON_MANAGE]))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn balloon_gate_rejects_operators_without_the_permission() {
+        let error = require_operator(&user_for_test(UserType::Staff, &[]))
+            .expect_err("missing permission must be rejected");
+        assert_eq!(error.code(), "BALLOON_PERMISSION_REQUIRED");
+    }
+}

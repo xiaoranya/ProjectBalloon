@@ -535,7 +535,7 @@ mod tests {
     use bytes::Bytes;
     use futures_util::{StreamExt, TryStreamExt};
 
-    use crate::object_storage::{ObjectStorage, ObjectStorageError, keys};
+    use crate::object_storage::{ObjectStorage, ObjectStorageError, S3ObjectStorage, keys};
 
     struct BufferedStorage;
 
@@ -605,5 +605,25 @@ mod tests {
             .expect("create rejecting object stream");
         assert!(stream.next().await.expect("oversized chunk").is_err());
         assert!(stream.next().await.is_none());
+    }
+
+    #[test]
+    fn object_key_parsing_rejects_relative_navigation_and_empty_segments() {
+        for key in ["../escape", "a/../b", "a/./b", "a//b", "bad\x00key"] {
+            assert!(S3ObjectStorage::path(key).is_err(), "key {key:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn object_key_parsing_normalizes_leading_slashes_and_empty_keys() {
+        // object_store normalises these instead of rejecting them; the stripped
+        // result always stays inside the bucket namespace, so a leading slash
+        // or an empty key cannot escape it.
+        assert_eq!(S3ObjectStorage::path("/absolute").expect("leading slash").as_ref(), "absolute");
+        assert_eq!(S3ObjectStorage::path("").expect("empty key").as_ref(), "");
+        assert_eq!(
+            S3ObjectStorage::path("problems/7/testdata/v1.zip").expect("valid key").as_ref(),
+            "problems/7/testdata/v1.zip"
+        );
     }
 }

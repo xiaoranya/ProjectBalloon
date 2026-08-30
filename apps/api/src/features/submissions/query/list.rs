@@ -197,3 +197,39 @@ fn mask_summary_feedback(summary: &mut SubmissionSummary, policy: &str) {
         summary.score_milli = None;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::mask_summary_feedback;
+    use crate::features::submissions::query::restricted_submission_summary;
+
+    #[test]
+    fn full_feedback_keeps_summary_fields_visible() {
+        let mut summary = restricted_submission_summary();
+        mask_summary_feedback(&mut summary, "FULL");
+        assert_eq!(summary.verdict.as_deref(), Some("WRONG_ANSWER"));
+        assert_eq!(summary.total_time_ms, Some(12));
+        assert_eq!(summary.peak_memory_kb, Some(2048));
+        assert_eq!(summary.score_milli, Some(100_000));
+    }
+
+    #[test]
+    fn score_feedback_hides_verdict_and_timing_but_keeps_the_score() {
+        let mut summary = restricted_submission_summary();
+        mask_summary_feedback(&mut summary, "SCORE");
+        assert_eq!(summary.verdict, None);
+        assert_eq!(summary.total_time_ms, None);
+        assert_eq!(summary.peak_memory_kb, None);
+        assert_eq!(summary.score_milli, Some(100_000));
+    }
+
+    #[test]
+    fn none_feedback_hides_everything_including_the_score() {
+        let mut summary = restricted_submission_summary();
+        mask_summary_feedback(&mut summary, "NONE");
+        assert_eq!(summary.verdict, None);
+        assert_eq!(summary.total_time_ms, None);
+        assert_eq!(summary.peak_memory_kb, None);
+        assert_eq!(summary.score_milli, None);
+    }
+}

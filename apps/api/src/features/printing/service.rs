@@ -516,3 +516,26 @@ pub(super) fn storage(state: &AppState) -> Result<&ObjectStorageHandle, AppError
         )
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::require_operator;
+    use crate::features::auth::model::{UserType, user_for_test};
+    use crate::features::auth::permissions;
+
+    #[test]
+    fn printing_gate_accepts_super_admins_and_printing_managers() {
+        assert!(require_operator(&user_for_test(UserType::SuperAdmin, &[])).is_ok());
+        assert!(
+            require_operator(&user_for_test(UserType::Staff, &[permissions::PRINTING_MANAGE]))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn printing_gate_rejects_operators_without_the_permission() {
+        let error = require_operator(&user_for_test(UserType::Staff, &[]))
+            .expect_err("missing permission must be rejected");
+        assert_eq!(error.code(), "PRINTING_PERMISSION_REQUIRED");
+    }
+}

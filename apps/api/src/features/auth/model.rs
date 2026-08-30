@@ -236,10 +236,23 @@ impl UserRow {
 }
 
 #[cfg(test)]
+pub(crate) fn user_for_test(user_type: UserType, permissions: &[&str]) -> AuthUser {
+    AuthUser {
+        id: 1,
+        username: "tester".to_owned(),
+        display_name: "Tester".to_owned(),
+        user_type,
+        permissions: permissions.iter().map(|code| (*code).to_owned()).collect(),
+        password_reset_required: false,
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use crate::features::auth::model::{
-        ChangePasswordRequest, LoginRequest, ProfileRequest, UserType,
+        ChangePasswordRequest, LoginRequest, ProfileRequest, UserType, user_for_test,
     };
+    use crate::features::auth::permissions;
 
     #[test]
     fn user_type_wire_names_are_stable() {
@@ -267,5 +280,28 @@ mod tests {
         let request = ProfileRequest { display_name: "  Daily User  ".to_owned() };
         assert_eq!(request.validate().expect("valid profile"), "Daily User");
         assert!(ProfileRequest { display_name: " ".to_owned() }.validate().is_err());
+    }
+
+    #[test]
+    fn super_admin_passes_arbitrary_permissions() {
+        let user = user_for_test(UserType::SuperAdmin, &[]);
+        assert!(user.has_permission("ANY_UNKNOWN_PERMISSION"));
+    }
+
+    #[test]
+    fn permissions_must_match_exactly() {
+        let user = user_for_test(UserType::Staff, &[permissions::CONTEST_MANAGE]);
+        assert!(user.has_permission(permissions::CONTEST_MANAGE));
+        assert!(!user.has_permission(permissions::BALLOON_MANAGE));
+    }
+
+    #[test]
+    fn users_without_the_permission_are_rejected() {
+        let user = user_for_test(UserType::Team, &[]);
+        assert!(!user.has_permission(permissions::CONTEST_MANAGE));
+        assert!(
+            user_for_test(UserType::Individual, &[permissions::CONTEST_MANAGE])
+                .has_permission(permissions::CONTEST_MANAGE)
+        );
     }
 }

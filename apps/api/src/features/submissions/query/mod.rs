@@ -176,6 +176,33 @@ fn submission_not_found() -> AppError {
 }
 
 #[cfg(test)]
+pub(crate) fn restricted_submission_summary() -> SubmissionSummary {
+    use time::OffsetDateTime;
+
+    SubmissionSummary {
+        id: 1,
+        contest_id: 7,
+        problem_id: 3,
+        problem_alias: "A".to_owned(),
+        team_id: 2,
+        team_name: "Team".to_owned(),
+        language: "cpp".to_owned(),
+        source_size_bytes: 128,
+        status: "COMPLETED".to_owned(),
+        submitted_at: OffsetDateTime::from_unix_timestamp(0).expect("epoch"),
+        judged_at: None,
+        active_judgement_id: None,
+        verdict: Some("WRONG_ANSWER".to_owned()),
+        total_time_ms: Some(12),
+        peak_memory_kb: Some(2048),
+        score_milli: Some(100_000),
+    }
+}
+
+#[cfg(test)]
+use crate::features::submissions::model::SubmissionSummary;
+
+#[cfg(test)]
 mod tests {
     use crate::features::submissions::query::{SimilarityPairQuery, SimilarityQuery};
 
