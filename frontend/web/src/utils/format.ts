@@ -47,6 +47,7 @@ export function submissionStatusLabel(status: string): string {
     {
       PENDING: '等待判题',
       JUDGING: '判题中',
+      COMPLETED: '已完成',
       ACCEPTED: '答案正确',
       WRONG_ANSWER: '答案错误',
       COMPILE_ERROR: '编译错误',
@@ -61,7 +62,7 @@ export function submissionStatusLabel(status: string): string {
 }
 
 export function isFinalSubmissionStatus(status: string): boolean {
-  return !['PENDING', 'JUDGING'].includes(status);
+  return status === 'COMPLETED';
 }
 
 export function statusTagType(
@@ -69,6 +70,7 @@ export function statusTagType(
 ): 'success' | 'danger' | 'warning' | 'info' | 'primary' {
   if (status === 'ACCEPTED') return 'success';
   if (['PENDING', 'JUDGING'].includes(status)) return 'warning';
+  if (status === 'COMPLETED') return 'info';
   if (
     [
       'WRONG_ANSWER',
