@@ -105,6 +105,11 @@ services:
       - ${XCPC_SANDBOX_SOCKET_GID:-${DOCKER_GID:-999}}
     networks: [project-balloon]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f project-balloon-judge-worker || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
 
   web:
     image: ${PROJECT_BALLOON_WEB_IMAGE:-project-balloon-web:0.1.0}
