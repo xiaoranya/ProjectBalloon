@@ -1,3 +1,5 @@
+import { apiRequest } from '../api/client';
+
 export type RealtimeScope = 'PUBLIC' | 'STAFF' | 'TEAM';
 
 export interface RealtimeEvent {
@@ -24,10 +26,14 @@ export interface ContestRealtimeSubscription {
   stop(): void;
 }
 
+const DEFAULT_POLL_INTERVAL_MS = 10_000;
+const MAX_POLL_INTERVAL_MS = 60_000;
+const MAX_SEEN_EVENT_IDS = 500;
+
 export function subscribeContestEvents(
   options: ContestRealtimeOptions,
 ): ContestRealtimeSubscription {
-  const pollIntervalMs = options.pollIntervalMs ?? 10_000;
+  const basePollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const path =
     options.scope === 'TEAM'
       ? `/api/team/events/contests/${options.contestId}`
@@ -38,11 +44,15 @@ export function subscribeContestEvents(
   let pollingTimer: number | undefined;
   let polling = false;
   let pollInFlight = false;
+  let pollIntervalMs = basePollIntervalMs;
+  let authProbeInFlight = false;
   let stopped = false;
+  const seenEventIds = new Set<string>();
+  const seenEventIdOrder: string[] = [];
 
   const stopPolling = () => {
     if (pollingTimer !== undefined) {
-      window.clearInterval(pollingTimer);
+      window.clearTimeout(pollingTimer);
       pollingTimer = undefined;
     }
     polling = false;
@@ -70,11 +80,56 @@ export function subscribeContestEvents(
     }
   };
 
+  const scheduleNextPoll = (delayMs: number) => {
+    pollingTimer = window.setTimeout(() => {
+      pollingTimer = undefined;
+      runPoll();
+      if (polling) scheduleNextPoll(delayMs);
+    }, delayMs);
+  };
+
   const startPolling = () => {
     if (polling || stopped) return;
     polling = true;
     runPoll();
-    pollingTimer = window.setInterval(runPoll, pollIntervalMs);
+    scheduleNextPoll(pollIntervalMs);
+  };
+
+  // SSE failure: keep fallback polling alive with exponential backoff so a
+  // long broker/API outage does not hammer the server, and probe the session
+  // once so a 401 reaches the shared unauthorized handler (which owns the
+  // redirect to login).
+  const handleConnectionLost = () => {
+    if (stopped) return;
+    options.onConnectionChange?.(false);
+    if (polling) {
+      if (pollingTimer !== undefined) window.clearTimeout(pollingTimer);
+      scheduleNextPoll(pollIntervalMs);
+    } else {
+      startPolling();
+    }
+    pollIntervalMs = Math.min(pollIntervalMs * 2, MAX_POLL_INTERVAL_MS);
+  };
+
+  const probeSession = () => {
+    if (authProbeInFlight || stopped) return;
+    authProbeInFlight = true;
+    void apiRequest('/api/auth/me')
+      .catch(() => {})
+      .finally(() => {
+        authProbeInFlight = false;
+      });
+  };
+
+  const isDuplicate = (id: string) => {
+    if (seenEventIds.has(id)) return true;
+    seenEventIds.add(id);
+    seenEventIdOrder.push(id);
+    if (seenEventIdOrder.length > MAX_SEEN_EVENT_IDS) {
+      const oldest = seenEventIdOrder.shift();
+      if (oldest !== undefined) seenEventIds.delete(oldest);
+    }
+    return false;
   };
 
   const handleMessage = (message: MessageEvent<string>) => {
@@ -87,14 +142,18 @@ export function subscribeContestEvents(
         event.scope !== options.scope
       )
         return;
+      pollIntervalMs = basePollIntervalMs;
       if (event.type === 'CONNECTED') {
         stopPolling();
         options.onConnectionChange?.(true);
         return;
       }
-      if (options.eventTypes.includes(event.type)) options.onEvent(event);
+      if (options.eventTypes.includes(event.type)) {
+        if (event.id && isDuplicate(event.id)) return;
+        options.onEvent(event);
+      }
     } catch {
-      startPolling();
+      handleConnectionLost();
     }
   };
 
@@ -109,9 +168,8 @@ export function subscribeContestEvents(
     source = new EventSource(path);
     source.addEventListener('message', handleMessage as EventListener);
     source.addEventListener('error', () => {
-      if (stopped) return;
-      options.onConnectionChange?.(false);
-      startPolling();
+      handleConnectionLost();
+      probeSession();
     });
   }
 
@@ -121,6 +179,8 @@ export function subscribeContestEvents(
       source?.close();
       source = null;
       stopPolling();
+      seenEventIds.clear();
+      seenEventIdOrder.length = 0;
       document.removeEventListener('visibilitychange', handleVisibility);
     },
   };
