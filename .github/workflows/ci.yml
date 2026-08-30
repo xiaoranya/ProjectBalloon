@@ -113,6 +113,13 @@ jobs:
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      - name: Install PDF rendering dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cups cups-filters
+          echo /usr/sbin >> "$GITHUB_PATH"
+          test -x /usr/sbin/cupsfilter
+          test -f /usr/share/ppd/cupsfilters/Generic-PDF_Printer-PDF.ppd
       - name: Resolve Docker-backed test container names
         run: |
           redis_container="$(docker ps --filter ancestor=redis:7.4.2 --format '{{.Names}}' | head -n1)"
@@ -256,6 +263,13 @@ jobs:
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
+      - name: Install PDF rendering dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cups cups-filters
+          echo /usr/sbin >> "$GITHUB_PATH"
+          test -x /usr/sbin/cupsfilter
+          test -f /usr/share/ppd/cupsfilters/Generic-PDF_Printer-PDF.ppd
       - name: Resolve Docker-backed test container names
         run: |
           redis_container="$(docker ps --filter ancestor=redis:7.4.2 --format '{{.Names}}' | head -n1)"
