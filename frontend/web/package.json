@@ -12,7 +12,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "openapi:gen": "node scripts/export-openapi.mjs && openapi-typescript ../../docs/api/openapi.runtime.json -o src/api/types.generated.ts",
+    "openapi:diff": "node scripts/openapi-diff.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.2",
@@ -30,6 +32,7 @@
     "eslint-plugin-vue": "10.10.0",
     "globals": "17.10.0",
     "jsdom": "30.0.1",
+    "openapi-typescript": "^7.13.0",
     "prettier": "3.9.6",
     "typescript": "5.7.2",
     "typescript-eslint": "8.68.0",

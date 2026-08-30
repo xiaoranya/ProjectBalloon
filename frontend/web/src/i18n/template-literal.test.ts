@@ -26,7 +26,10 @@ function findVueFiles(dir: string): string[] {
 function findSrcDir(): string {
   let dir = process.cwd();
   for (let depth = 0; depth < 6; depth += 1) {
-    if (statSync(join(dir, 'src')).isDirectory() && statSync(join(dir, 'src', 'views')).isDirectory()) {
+    if (
+      statSync(join(dir, 'src')).isDirectory() &&
+      statSync(join(dir, 'src', 'views')).isDirectory()
+    ) {
       return join(dir, 'src');
     }
     dir = dirname(dir);
@@ -79,7 +82,10 @@ describe('i18n template literal guard', () => {
   it('has no raw CJK text nodes outside the allowlist', () => {
     const srcDir = findSrcDir();
     const webRoot = dirname(srcDir);
-    const files = [...findVueFiles(join(srcDir, 'views')), ...findVueFiles(join(srcDir, 'components'))];
+    const files = [
+      ...findVueFiles(join(srcDir, 'views')),
+      ...findVueFiles(join(srcDir, 'components')),
+    ];
     expect(files.length).toBeGreaterThan(30);
 
     const violations: Violation[] = [];

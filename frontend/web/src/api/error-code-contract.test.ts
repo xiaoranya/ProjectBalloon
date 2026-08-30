@@ -67,12 +67,13 @@ describe('API business code contract', () => {
     expect(backendCodes.size).toBeGreaterThan(100);
 
     const mapped = extractMappedCodes();
-    const allowlist = new Set(
-      JSON.parse(readFileSync(allowlistPath, 'utf8')) as string[],
-    );
+    const allowlist = new Set(JSON.parse(readFileSync(allowlistPath, 'utf8')) as string[]);
 
     const unknown = [...backendCodes].filter((code) => !mapped.has(code) && !allowlist.has(code));
-    expect(unknown, 'new backend codes must be mapped in client.ts or added to the allowlist').toEqual([]);
+    expect(
+      unknown,
+      'new backend codes must be mapped in client.ts or added to the allowlist',
+    ).toEqual([]);
 
     const staleAllowlist = [...allowlist].filter(
       (code) => mapped.has(code) || !backendCodes.has(code),

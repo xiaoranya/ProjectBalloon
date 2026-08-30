@@ -1,0 +1,8 @@
+{
+  "note": "Differences between src/api/types.generated.ts (runtime OpenAPI) and src/api/types.ts that a human reviewed or deferred for triage. Entries are 'Entity.field'. See frontend/web/scripts/openapi-diff.mjs.",
+  "triage": "PENDING USER TRIAGE - baseline captured 2026-08-30 from the first run; every entry below is 'field-only-in-types' (defensive client fields the backend never sends).",
+  "entries": [
+    "ApiErrorBody.detail",
+    "ApiErrorBody.error"
+  ]
+}

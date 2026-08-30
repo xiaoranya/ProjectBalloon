@@ -173,7 +173,8 @@ export function subscribeContestEvents(
 
   const connect = () => {
     if (stopped) return;
-    const url = lastEventId !== null ? `${path}?lastEventId=${encodeURIComponent(lastEventId)}` : path;
+    const url =
+      lastEventId !== null ? `${path}?lastEventId=${encodeURIComponent(lastEventId)}` : path;
     source = new EventSource(url);
     source.addEventListener('message', handleMessage as EventListener);
     source.addEventListener('error', () => {
@@ -186,10 +187,13 @@ export function subscribeContestEvents(
       if (stopped || reconnectTimer !== undefined) return;
       source?.close();
       source = null;
-      reconnectTimer = window.setTimeout(() => {
-        reconnectTimer = undefined;
-        connect();
-      }, Math.max(MIN_RECONNECT_DELAY_MS, pollIntervalMs));
+      reconnectTimer = window.setTimeout(
+        () => {
+          reconnectTimer = undefined;
+          connect();
+        },
+        Math.max(MIN_RECONNECT_DELAY_MS, pollIntervalMs),
+      );
     });
   };
 
