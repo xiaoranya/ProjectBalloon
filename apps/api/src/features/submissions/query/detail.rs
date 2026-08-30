@@ -57,7 +57,11 @@ async fn detail(
     .bind(contest_id)
     .fetch_one(database)
     .await
-    .map_err(|error| AppError::internal("check submission contest", error))?;
+    .map_err(|error| {
+        AppError::internal("check submission contest", error)
+            .with_contest_id(contest_id)
+            .with_submission_id(submission_id)
+    })?;
     if !active {
         return Err(submission_not_found());
     }
@@ -96,7 +100,11 @@ async fn detail(
     .bind(required_team_id)
     .fetch_optional(database)
     .await
-    .map_err(|error| AppError::internal("load submission detail", error))?
+    .map_err(|error| {
+        AppError::internal("load submission detail", error)
+            .with_contest_id(contest_id)
+            .with_submission_id(submission_id)
+    })?
     .ok_or_else(submission_not_found)?;
     let (source_object_key, source_sha256, source_size_bytes) = sqlx::query_as::<
         _,
@@ -107,7 +115,10 @@ async fn detail(
     .bind(submission_id)
     .fetch_one(database)
     .await
-    .map_err(|error| AppError::internal("load submission source metadata", error))?;
+    .map_err(|error| {
+        AppError::internal("load submission source metadata", error)
+            .with_submission_id(submission_id)
+    })?;
     let expected_source_size = usize::try_from(source_size_bytes).unwrap_or(0);
     if expected_source_size == 0 || expected_source_size > super::super::model::MAX_SOURCE_BYTES {
         return Err(AppError::conflict(
@@ -119,7 +130,10 @@ async fn detail(
         .backend()
         .get_limited(storage.source_bucket(), &source_object_key, expected_source_size)
         .await
-        .map_err(|error| AppError::internal("download submission source", error))?;
+        .map_err(|error| {
+            AppError::internal("download submission source", error)
+                .with_submission_id(submission_id)
+        })?;
     if source.len() != expected_source_size {
         return Err(AppError::conflict(
             "SUBMISSION_SOURCE_SIZE_MISMATCH",
@@ -157,7 +171,9 @@ async fn detail(
     .bind(submission_id)
     .fetch_all(database)
     .await
-    .map_err(|error| AppError::internal("load submission judgements", error))?;
+    .map_err(|error| {
+        AppError::internal("load submission judgements", error).with_submission_id(submission_id)
+    })?;
     let judgement_ids: Vec<Uuid> = judgements.iter().map(|judgement| judgement.id).collect();
     let mut runs_by_judgement = HashMap::<Uuid, Vec<RunDetail>>::new();
     let mut scores_by_judgement = HashMap::<Uuid, Vec<JudgementSubtaskScore>>::new();
@@ -168,7 +184,9 @@ async fn detail(
         .bind(&judgement_ids)
         .fetch_all(database)
         .await
-        .map_err(|error| AppError::internal("load submission runs", error))?;
+        .map_err(|error| {
+            AppError::internal("load submission runs", error).with_submission_id(submission_id)
+        })?;
         for (judgement_id, test_index, verdict, time_ms, memory_kb, exit_code, stderr_tail) in runs
         {
             runs_by_judgement.entry(judgement_id).or_default().push(RunDetail {
@@ -192,7 +210,10 @@ async fn detail(
         .bind(&judgement_ids)
         .fetch_all(database)
         .await
-        .map_err(|error| AppError::internal("load submission subtask scores", error))?;
+        .map_err(|error| {
+            AppError::internal("load submission subtask scores", error)
+                .with_submission_id(submission_id)
+        })?;
         for (
             judgement_id,
             subtask_key,
@@ -230,7 +251,11 @@ async fn detail(
         .bind(contest_id)
         .fetch_one(database)
         .await
-        .map_err(|error| AppError::internal("load submission feedback policy", error))?;
+        .map_err(|error| {
+            AppError::internal("load submission feedback policy", error)
+                .with_contest_id(contest_id)
+                .with_submission_id(submission_id)
+        })?;
         if !matches!(status.as_str(), "ENDED" | "ARCHIVED") {
             apply_feedback_policy(&mut detail, &feedback_policy);
         }

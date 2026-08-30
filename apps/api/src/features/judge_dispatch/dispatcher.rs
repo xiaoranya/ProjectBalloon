@@ -25,6 +25,7 @@ pub struct SubmissionOutboxDispatcherConfig {
 #[derive(sqlx::FromRow)]
 struct ClaimedRow {
     id: i64,
+    submission_id: i64,
     judgement_id: Uuid,
     payload: String,
     attempts: i32,
@@ -74,14 +75,26 @@ impl SubmissionOutboxDispatcher {
             match self.publisher.publish(row.judgement_id, row.payload.as_bytes()).await {
                 Ok(()) => {
                     if let Err(error) = self.mark_sent(row.id).await {
-                        error!(outbox_id = row.id, %error, "failed to mark judge task sent; continuing dispatch batch");
+                        error!(
+                            outbox_id = row.id,
+                            submission_id = row.submission_id,
+                            judgement_id = %row.judgement_id,
+                            %error,
+                            "failed to mark judge task sent; continuing dispatch batch"
+                        );
                     }
                 }
                 Err(publish_error) => {
                     if let Err(error) =
                         self.mark_failed(row.id, row.attempts, &publish_error.to_string()).await
                     {
-                        error!(outbox_id = row.id, %error, "failed to mark judge task failed; continuing dispatch batch");
+                        error!(
+                            outbox_id = row.id,
+                            submission_id = row.submission_id,
+                            judgement_id = %row.judgement_id,
+                            %error,
+                            "failed to mark judge task failed; continuing dispatch batch"
+                        );
                     }
                 }
             }
@@ -116,7 +129,7 @@ impl SubmissionOutboxDispatcher {
                 version = outbox.version + 1
             FROM candidates
             WHERE outbox.id = candidates.id
-            RETURNING outbox.id, outbox.judgement_id, outbox.payload, outbox.attempts
+            RETURNING outbox.id, outbox.submission_id, outbox.judgement_id, outbox.payload, outbox.attempts
             "#,
         )
         .bind(self.config.max_attempts)
