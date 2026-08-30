@@ -98,7 +98,7 @@ import { awardsApi, type AwardPresentation, type AwardPresentationStatus } from 
 import { getErrorMessage } from '../api/client';
 import { useI18n } from '../i18n';
 const { t } = useI18n();
-import type { Contest } from '../api/types';
+import type { ContestResponse } from '../api/types';
 import {
   subscribeContestEvents,
   type ContestRealtimeSubscription,
@@ -106,7 +106,7 @@ import {
 
 const route = useRoute();
 const router = useRouter();
-const contests = ref<Contest[]>([]);
+const contests = ref<ContestResponse[]>([]);
 const contestId = ref<number | null>(null);
 const presentation = ref<AwardPresentation | null>(null);
 const loading = ref(false);

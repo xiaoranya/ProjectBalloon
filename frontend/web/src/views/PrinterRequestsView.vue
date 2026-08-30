@@ -236,7 +236,7 @@ import {
   type PrintRequestResponse,
   type PrintRequestStatus,
 } from '../api/printing';
-import type { Contest, HealthResponse } from '../api/types';
+import type { ContestResponse, HealthResponse } from '../api/types';
 import {
   subscribeContestEvents,
   type ContestRealtimeSubscription,
@@ -247,7 +247,7 @@ import { useI18n } from '../i18n';
 const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
-const contests = ref<Contest[]>([]);
+const contests = ref<ContestResponse[]>([]);
 const selectedContestId = ref<number | null>(null);
 const statusFilter = ref<PrintRequestStatus | 'ALL'>('ALL');
 const requests = ref<PrintRequestResponse[]>([]);

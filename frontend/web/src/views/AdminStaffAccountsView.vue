@@ -197,7 +197,7 @@ import { Plus, Refresh } from '@element-plus/icons-vue';
 import type { FormInstance, FormRules } from 'element-plus';
 import { adminApi } from '../api/admin';
 import { getErrorMessage } from '../api/client';
-import type { PermissionCode, StaffAccount } from '../api/types';
+import type { PermissionCode, StaffAccountResponse } from '../api/types';
 import { formatDateTime } from '../utils/format';
 import { useI18n } from '../i18n';
 
@@ -213,7 +213,7 @@ const permissionOptions = computed((): Array<{ value: PermissionCode; label: str
   { value: 'LIVE_MANAGE', label: t('直播管理') },
 ]);
 
-const accounts = ref<StaffAccount[]>([]);
+const accounts = ref<StaffAccountResponse[]>([]);
 const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref('');
@@ -221,7 +221,7 @@ const createVisible = ref(false);
 const editVisible = ref(false);
 const resetVisible = ref(false);
 const createFormRef = ref<FormInstance>();
-const selected = ref<StaffAccount | null>(null);
+const selected = ref<StaffAccountResponse | null>(null);
 const resetPassword = ref('');
 const createForm = reactive({
   username: '',
@@ -303,7 +303,7 @@ async function createAccount() {
 }
 
 function openEdit(row: unknown) {
-  const account = row as StaffAccount;
+  const account = row as StaffAccountResponse;
   selected.value = account;
   Object.assign(editForm, {
     displayName: account.displayName,
@@ -337,7 +337,7 @@ async function saveAccount() {
 }
 
 function openReset(row: unknown) {
-  const account = row as StaffAccount;
+  const account = row as StaffAccountResponse;
   selected.value = account;
   resetPassword.value = '';
   resetRequirePasswordReset.value = true;

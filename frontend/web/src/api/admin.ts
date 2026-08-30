@@ -1,11 +1,11 @@
 import { apiRequest } from './client';
 import type {
-  AuditLog,
-  Contest,
-  ContestManagementScope,
+  AuditLogResponse,
+  ContestResponse,
+  ContestManagementScopeResponse,
   HealthResponse,
   PageResponse,
-  StaffAccount,
+  StaffAccountResponse,
   PermissionCode,
 } from './types';
 
@@ -44,17 +44,17 @@ export const adminApi = {
     if (filters.result) params.set('result', filters.result);
     if (filters.from) params.set('from', filters.from);
     if (filters.to) params.set('to', filters.to);
-    return apiRequest<PageResponse<AuditLog>>(`/api/admin/audit-logs?${params}`);
+    return apiRequest<PageResponse<AuditLogResponse>>(`/api/admin/audit-logs?${params}`);
   },
 
   listStaffAccounts(page = 0, size = 100) {
-    return apiRequest<PageResponse<StaffAccount>>(
+    return apiRequest<PageResponse<StaffAccountResponse>>(
       `/api/admin/staff-accounts?page=${page}&size=${size}&sort=username,asc`,
     );
   },
 
   createStaffAccount(payload: StaffAccountPayload) {
-    return apiRequest<StaffAccount>('/api/admin/staff-accounts', {
+    return apiRequest<StaffAccountResponse>('/api/admin/staff-accounts', {
       method: 'POST',
       body: payload,
     });
@@ -62,32 +62,35 @@ export const adminApi = {
 
   updateStaffAccount(
     userId: number,
-    payload: Partial<Pick<StaffAccount, 'displayName' | 'permissions' | 'enabled'>> & {
+    payload: Partial<Pick<StaffAccountResponse, 'displayName' | 'permissions' | 'enabled'>> & {
       isSuperAdmin?: boolean;
     },
   ) {
-    return apiRequest<StaffAccount>(`/api/admin/staff-accounts/${userId}`, {
+    return apiRequest<StaffAccountResponse>(`/api/admin/staff-accounts/${userId}`, {
       method: 'PATCH',
       body: payload,
     });
   },
 
   resetStaffPassword(userId: number, newPassword: string, requirePasswordReset = true) {
-    return apiRequest<StaffAccount>(`/api/admin/staff-accounts/${userId}/reset-password`, {
+    return apiRequest<StaffAccountResponse>(`/api/admin/staff-accounts/${userId}/reset-password`, {
       method: 'POST',
       body: { newPassword, requirePasswordReset },
     });
   },
 
   listContestManagementScopes() {
-    return apiRequest<ContestManagementScope[]>('/api/admin/contest-managers');
+    return apiRequest<ContestManagementScopeResponse[]>('/api/admin/contest-managers');
   },
 
   updateContestManagementScope(userId: number, contestIds: number[]) {
-    return apiRequest<ContestManagementScope>(`/api/admin/contest-managers/${userId}/contests`, {
-      method: 'PUT',
-      body: { contestIds },
-    });
+    return apiRequest<ContestManagementScopeResponse>(
+      `/api/admin/contest-managers/${userId}/contests`,
+      {
+        method: 'PUT',
+        body: { contestIds },
+      },
+    );
   },
 
   listContests(page = 0, size = 100, manageableOnly = false) {
@@ -97,7 +100,7 @@ export const adminApi = {
       sort: 'updatedAt,desc',
     });
     if (manageableOnly) params.set('manageableOnly', 'true');
-    return apiRequest<PageResponse<Contest>>(`/api/contests?${params}`);
+    return apiRequest<PageResponse<ContestResponse>>(`/api/contests?${params}`);
   },
 
   async listAllManageableContests() {

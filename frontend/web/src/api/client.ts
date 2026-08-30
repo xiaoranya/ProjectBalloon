@@ -68,8 +68,8 @@ async function createApiError(response: Response): Promise<ApiError> {
     const text = await response.text();
     body = { message: text };
   }
-  const code = body.code ?? body.error ?? `HTTP_${response.status}`;
-  const message = body.message ?? body.detail ?? defaultMessage(response.status);
+  const code = body.code ?? `HTTP_${response.status}`;
+  const message = body.message ?? defaultMessage(response.status);
   return new ApiError(response.status, code, message, body.fieldErrors);
 }
 
@@ -313,12 +313,134 @@ const businessMessages: Record<string, string> = {
   BATCH_REJUDGE_COUNT_CHANGED: '符合条件的提交集合已变化，请重新预览',
   IDEMPOTENCY_KEY_REUSED: '该幂等键已用于其他批量重判请求',
   BATCH_REJUDGE_NOT_FOUND: '批量重判任务不存在或不可访问',
+  BALLOON_POLICY_ADMIN_REQUIRED: '此操作需要赛事管理员权限',
+  BATCH_REJUDGE_ACTOR_DISABLED: '任务创建者账号已停用',
+  BROADCAST_TOKEN_INVALID: '广播令牌无效或已过期',
+  BROADCAST_TOKEN_NOT_FOUND: '广播令牌不存在',
+  CONTEST_ARCHIVED: '已归档比赛的提交不能重判',
+  CONTEST_HAS_ACTIVE_TEAMS: '比赛已分配队伍，删除前请先移除队伍',
+  CONTEST_PROBLEM_ALIAS_TAKEN: '该题目别名在本场比赛中已被使用',
+  CONTEST_PROBLEM_HAS_SUBMISSIONS: '该题目已有提交记录，不能从比赛中移除',
+  CONTEST_PROBLEM_NOT_FOUND: '该题目未分配到当前比赛',
+  CONTEST_PROBLEM_ORDER_TAKEN: '该显示顺序在本场比赛中已被使用',
+  CONTEST_PROBLEM_REORDER_SET_MISMATCH: '排序请求必须包含且仅包含每道已分配题目一次',
+  CONTEST_SCHEDULE_REQUIRED: '比赛尚未配置赛程时间',
+  CONTEST_SCORING_CONFIG_FROZEN: '评分配置仅在草稿状态下可以修改',
+  CONTEST_TEAM_ALREADY_ASSIGNED: '该队伍已分配到本场比赛',
+  CONTEST_TEAM_NOT_FOUND: '该队伍未加入当前比赛',
+  CSRF_INVALID: '安全令牌缺失或无效，请刷新页面后重试',
+  DAILY_FEATURE_DISABLED: '竞赛模式下该功能已停用',
+  EDITORIAL_LOCKED: '题解尚未满足解锁条件',
+  EDITORIAL_NOT_FOUND: '题解不存在或不可访问',
+  ENROLLMENT_NOT_FOUND: '报名记录不存在或不可访问',
+  EXPORT_TASK_EXPIRED: '导出任务已过期，请重新发起导出',
+  EXPORT_TASK_NOT_FOUND: '导出任务不存在或不可访问',
+  INTERNAL_ERROR: '服务器处理请求时发生错误',
+  INVALID_CREDENTIALS: '用户名或密码错误',
+  JUDGEMENT_NOT_FINAL: '只有已完成的判定才能重判',
+  NOT_AUTHENTICATED: '登录状态已失效，请重新登录',
+  NO_ACTIVE_CONTEST: '当前没有进行中的比赛',
+  PAIRING_CODE_INVALID: '配对码无效或已过期',
+  PRACTICE_CONCURRENCY_LIMIT: '待评测的练习提交过多，请稍后再试',
+  PRACTICE_DAILY_QUOTA_EXCEEDED: '今日练习提交额度已用完',
+  PRACTICE_SUBMISSION_NOT_ALLOWED: '该题目未公开或没有可用的测试数据，不能提交',
+  PRACTICE_SUBMISSION_RATE_LIMITED: '练习提交过于频繁，请稍后再试',
+  PROBLEM_CONFIG_FROZEN: '题目已被冻结中或已开始的比赛使用，不能修改配置',
+  SCREEN_GROUP_NAME_TAKEN: '大屏分组名称已存在',
+  SCREEN_GROUP_NOT_FOUND: '大屏分组不存在或不可访问',
+  SCREEN_GROUP_NOT_PAUSED: '该大屏分组不在暂停状态',
+  SCREEN_GROUP_NOT_PLAYING: '该大屏分组不在播放状态',
+  SCREEN_GROUP_VERSION_CONFLICT: '大屏分组已被其他人修改，请刷新后重试',
+  SCREEN_INSTANCE_ALREADY_GROUPED: '该大屏已属于其他分组',
+  SCREEN_INSTANCE_NOT_FOUND: '大屏不存在或不可访问',
+  SCREEN_PLAYLIST_IN_USE: '播放列表正在被大屏使用，不能删除',
+  SCREEN_PLAYLIST_NAME_TAKEN: '播放列表名称已存在',
+  SCREEN_PLAYLIST_VERSION_CONFLICT: '播放列表已被其他人修改，请刷新后重试',
+  SCREEN_PRESENTATION_NOT_PUBLISHED: '展示内容尚未发布',
+  SCREEN_REGISTRATION_RATE_LIMITED: '大屏注册过于频繁，请稍后再试',
+  SCREEN_TOKEN_INVALID: '大屏令牌无效或已过期',
+  SCREEN_VERSION_REQUIRED: '请求缺少乐观锁版本号，请刷新后重试',
+  STATEMENT_NOT_FOUND: '题面不存在或不可访问',
+  SUBMISSION_NOT_ALLOWED: '当前比赛、名单、题目或测试数据状态不允许提交',
+  SUBMISSION_RATE_LIMITED: '提交过于频繁，请稍后再试',
+  SUBMISSION_SOURCE_UNAVAILABLE: '该提交缺少通过完整性校验的源码，无法重判',
+  TEAM_ACCOUNT_NOT_FOUND: '参赛队账号不存在',
+  TEAM_IN_USE: '队伍仍分配在比赛中，删除前请先移除',
+  TEAM_MEMBER_NOT_FOUND: '队伍成员不存在',
+  TEAM_VERSION_CONFLICT: '队伍信息已被其他请求修改，请刷新后重试',
+  TEAM_WORKSTATION_ALREADY_BOUND: '该队伍在本场比赛中已绑定工位',
+  TESTDATA_VERSION_EXHAUSTED: '测试数据版本号已达上限',
+  TRAINING_ENROLLMENT_INVALID: '当前训练报名不包含该题目',
+  TRAINING_SET_NOT_FOUND: '训练集不存在或不可访问',
+  VALIDATION_FAILED: '请求内容未通过校验',
+  VIRTUAL_PROBLEM_NOT_PUBLIC: '虚拟赛题目必须为公开题目',
+  VIRTUAL_SESSION_NOT_ACTIVE: '虚拟赛未进行中或不包含该题目',
+  VIRTUAL_SESSION_NOT_FOUND: '虚拟赛不存在或不可访问',
+  WORKSTATION_ALREADY_BOUND: '该工位在本场比赛中已被绑定',
+  WORKSTATION_BINDING_NOT_FOUND: '工位绑定记录不存在',
+  WORKSTATION_IDENTITY_TAKEN: '该 IP 地址或座位号已被登记',
+  WORKSTATION_NOT_BOUND: '当前 IP 地址未登记到进行中的比赛',
+  WORKSTATION_OR_TEAM_NOT_FOUND: '工位或参赛队不存在或未启用',
+  WORKSTATION_SESSION_RESTRICTED: '该操作需要登录账号后执行',
+  WORKSTATION_UPDATE_STALE: '工位信息已被其他人修改，请刷新后重试',
+};
+
+/**
+ * Translations keyed by the exact server message. Used for business codes whose
+ * server-side message varies by context (e.g. FORBIDDEN, SOURCE_EXPORT_TOO_LARGE)
+ * so every variant keeps its specificity while still displaying Chinese.
+ */
+const serverMessageTranslations: Record<string, string> = {
+  'A frozen award set is required': '需要先生成并锁定奖项名单',
+  'A frozen award set with categories is required': '需要先生成并锁定含奖项类别的奖项名单',
+  'Batch rejudge task cannot be paused in its current state': '批量重判任务当前状态不能暂停',
+  'Batch rejudge task cannot be resumed in its current state': '批量重判任务当前状态不能恢复',
+  'Competition management is disabled': '竞赛管理模式已停用，不能执行竞赛管理操作',
+  'Competition workstation login is disabled': '竞赛工位登录已停用',
+  'Contest schedules must not overlap in competition mode': '竞赛模式下比赛时间不能重叠',
+  'More than one contest is active': '竞赛模式下同时只能有一场进行中的比赛',
+  'Export task has no output object': '导出任务尚未生成输出文件',
+  'Export task is not ready for download': '导出任务尚未完成，暂时不能下载',
+  'Contest managers must provide a contest scope': '赛事管理员必须指定比赛范围',
+  'Insufficient permissions': '权限不足',
+  'Only contest managers may list manageable contests': '只有赛事管理员可以查看可管理的比赛',
+  'Only super administrators may include deleted contests': '只有超级管理员可以查看已删除的比赛',
+  'Only super administrators may include deleted teams': '只有超级管理员可以查看已删除的队伍',
+  'Only team administrators may list teams': '只有队伍管理员可以查看队伍列表',
+  'Custom template not found': '自定义展示模板不存在',
+  'Template not found': '展示模板不存在',
+  'Snapshot was not found': '榜单快照不存在',
+  'Source snapshot was not found': 'Resolver 所需的来源快照不存在',
+  'Screen playlist was not found': '播放列表不存在或不可访问',
+  'Screen playlist was not found or empty': '播放列表不存在或为空',
+  'Async source export is limited to 2 GiB': '异步源码导出最大支持 2 GiB',
+  'Source export size overflowed': '源码导出大小超出限制',
+  'Synchronous metadata export is limited to 10,000 submissions; use the async export task for larger contests':
+    '同步元数据导出最多 10,000 条提交；更大规模请使用异步导出任务',
+  'Synchronous source export is limited to 10,000 files and 128 MiB':
+    '同步源码导出最多 10,000 个文件且不超过 128 MiB',
+  'Synchronous source export is limited to 128 MiB': '同步源码导出最大支持 128 MiB',
+  'A stored submission source failed integrity verification': '存储的提交源码未通过完整性校验',
+  'Stored practice source failed integrity verification': '存储的练习提交源码未通过完整性校验',
+  'Stored submission source failed integrity verification': '存储的提交源码未通过完整性校验',
+  'Stored practice source is not UTF-8': '存储的练习提交源码不是有效的 UTF-8 文本',
+  'Stored submission source is not valid UTF-8': '存储的提交源码不是有效的 UTF-8 文本',
+  'A stored submission source does not match its recorded size': '存储的提交源码与记录大小不一致',
+  'Stored practice source does not match its recorded size': '存储的练习提交源码与记录大小不一致',
+  'Stored practice source has an unsupported recorded size': '练习提交源码的记录大小不受支持',
+  'Stored submission source does not match its recorded size': '存储的提交源码与记录大小不一致',
+  'Stored submission source has an unsupported recorded size': '提交源码的记录大小不受支持',
 };
 
 export function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (currentLocale() === 'en') return error.message;
-    return businessMessages[error.code] ?? businessMessages[error.message] ?? error.message;
+    return (
+      businessMessages[error.code] ??
+      businessMessages[error.message] ??
+      serverMessageTranslations[error.message] ??
+      error.message
+    );
   }
   if (error instanceof Error) {
     return error.message;

@@ -156,14 +156,14 @@ import { ElMessage } from 'element-plus';
 import { contestApi } from '../api/contest';
 import { awardsApi, type AwardHostScript } from '../api/awards';
 import { getErrorMessage } from '../api/client';
-import type { Contest } from '../api/types';
+import type { ContestResponse } from '../api/types';
 import {
   subscribeContestEvents,
   type ContestRealtimeSubscription,
 } from '../realtime/contest-events';
 import { useI18n } from '../i18n';
 const { t } = useI18n();
-const contests = ref<Contest[]>([]);
+const contests = ref<ContestResponse[]>([]);
 const contestId = ref<number | null>(null);
 const script = ref<AwardHostScript | null>(null);
 const loading = ref(false);

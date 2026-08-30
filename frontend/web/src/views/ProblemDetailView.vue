@@ -168,11 +168,11 @@ import { ArrowLeft } from '@element-plus/icons-vue';
 import CodeEditor from '../components/CodeEditor.vue';
 import { contestApi } from '../api/contest';
 import { getErrorMessage } from '../api/client';
-import type { Contest, ContestProblem } from '../api/types';
+import type { ContestResponse, ContestProblem } from '../api/types';
 import { languageLabel } from '../utils/format';
 import { useI18n } from '../i18n';
 
-const props = defineProps<{ contest: Contest | null }>();
+const props = defineProps<{ contest: ContestResponse | null }>();
 const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();

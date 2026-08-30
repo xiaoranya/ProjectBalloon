@@ -195,12 +195,12 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRouter } from 'vue-router';
 import { adminContestApi } from '../../api/admin-contests';
 import { getErrorMessage } from '../../api/client';
-import type { ContestProblem, Problem } from '../../api/types';
+import type { ContestProblem, ProblemResponse } from '../../api/types';
 import { useI18n } from '../../i18n';
 
 const props = defineProps<{
   contestId: number;
-  problems: Problem[];
+  problems: ProblemResponse[];
   contestProblems: ContestProblem[];
   scoringMode: string;
   canEditProblemConfiguration: boolean;

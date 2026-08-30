@@ -5,9 +5,7 @@ export interface FieldError {
 
 export interface ApiErrorBody {
   code?: string;
-  error?: string;
   message?: string;
-  detail?: string;
   fieldErrors?: FieldError[];
 }
 
@@ -33,7 +31,7 @@ export type PermissionCode =
 
 export type StaffUserType = Exclude<UserType, 'TEAM' | 'INDIVIDUAL'>;
 
-export interface AuditLog {
+export interface AuditLogResponse {
   id: number;
   actorUserId: number | null;
   action: string;
@@ -92,7 +90,7 @@ export interface HealthResponse {
   cups?: DependencyHealth;
 }
 
-export interface ContestManagementScope {
+export interface ContestManagementScopeResponse {
   userId: number;
   username: string;
   displayName: string;
@@ -100,17 +98,17 @@ export interface ContestManagementScope {
   contestIds: number[];
 }
 
-export interface CurrentUser {
+export interface CurrentUserResponse {
   id: number;
   username: string;
   displayName: string;
   userType: UserType;
   permissions: PermissionCode[];
   passwordResetRequired: boolean;
-  competition?: CompetitionSession;
+  competition?: CompetitionSessionResponse;
 }
 
-export interface CompetitionSession {
+export interface CompetitionSessionResponse {
   contestId: number;
   contestName: string;
   workstationId: number;
@@ -122,7 +120,7 @@ export interface DeploymentInfo {
   activeContest: { id: number; name: string; startAt: string; endAt: string } | null;
 }
 
-export interface StaffAccount {
+export interface StaffAccountResponse {
   id: number;
   username: string;
   displayName: string;
@@ -138,7 +136,7 @@ export interface StaffAccount {
 export type ContestStatus = 'DRAFT' | 'FROZEN_CONFIG' | 'RUNNING' | 'PAUSED' | 'ENDED' | 'ARCHIVED';
 export type ContestVisibility = 'PUBLIC' | 'PRIVATE';
 
-export interface Contest {
+export interface ContestResponse {
   id: number;
   name: string;
   status: ContestStatus;
@@ -152,7 +150,7 @@ export interface Contest {
   deletedAt: string | null;
 }
 
-export interface ContestExtension {
+export interface ContestExtensionResponse {
   contestId: number;
   previousEndAt: string;
   endAt: string;
@@ -160,7 +158,7 @@ export interface ContestExtension {
   updatedAt: string;
 }
 
-export interface LifecycleTransition {
+export interface LifecycleTransitionResponse {
   contestId: number;
   from: ContestStatus;
   to: ContestStatus;
@@ -168,7 +166,7 @@ export interface LifecycleTransition {
   transitionedAt: string;
 }
 
-export interface Team {
+export interface TeamResponse {
   id: number;
   name: string;
   school: string | null;
@@ -187,7 +185,7 @@ export interface Team {
   updatedAt: string;
 }
 
-export interface ContestTeam {
+export interface ContestTeamResponse {
   id: number;
   contestId: number;
   teamId: number;
@@ -200,7 +198,7 @@ export interface ContestTeam {
 export type JudgeLanguage = 'c' | 'cpp' | 'java' | 'python' | 'output';
 export type ProblemAttachmentKind = 'SAMPLE' | 'SUPPLEMENT';
 
-export interface Problem {
+export interface ProblemResponse {
   id: number;
   slug: string;
   title: string;
@@ -220,7 +218,7 @@ export interface Problem {
   interactorSha256: string | null;
 }
 
-export interface ProblemStatement {
+export interface ProblemStatementResponse {
   problemId: number;
   langCode: string;
   body: string;
@@ -228,7 +226,7 @@ export interface ProblemStatement {
   updatedAt: string;
 }
 
-export interface ProblemAttachment {
+export interface ProblemAttachmentResponse {
   id: number;
   problemId: number;
   kind: ProblemAttachmentKind;
@@ -239,7 +237,7 @@ export interface ProblemAttachment {
   createdAt: string;
 }
 
-export interface ProblemTestdata {
+export interface ProblemTestdataResponse {
   problemId: number;
   version: number;
   caseCount: number | null;
@@ -248,12 +246,22 @@ export interface ProblemTestdata {
   createdAt: string;
 }
 
-export interface ProblemTestdataVersion extends ProblemTestdata {
+/**
+ * Flattened (no `extends`) so the field set is compared against the OpenAPI
+ * schema of the same name by openapi-diff, which scans plain interface bodies.
+ */
+export interface ProblemTestdataVersionResponse {
+  problemId: number;
+  version: number;
+  caseCount: number | null;
+  bytes: number | null;
+  sha256: string;
+  createdAt: string;
   uploadedByUserId: number | null;
   active: boolean;
 }
 
-export interface RejudgeResult {
+export interface RejudgeResponse {
   submissionId: number;
   previousJudgementId: string;
   judgementId: string;
@@ -261,13 +269,13 @@ export interface RejudgeResult {
   queuedAt: string;
 }
 
-export interface PublishedStatement {
+export interface PublishedStatementResponse {
   langCode: string;
   renderedHtml: string;
   updatedAt: string;
 }
 
-export interface ContestProblemAssignment {
+export interface ContestProblemResponse {
   contestId: number;
   problemId: number;
   alias: string;
@@ -276,14 +284,14 @@ export interface ContestProblemAssignment {
   createdAt: string;
 }
 
-export interface ContestProblem extends Omit<ContestProblemAssignment, 'createdAt'> {
+export interface ContestProblem extends Omit<ContestProblemResponse, 'createdAt'> {
   slug: string;
   title: string;
   timeLimitMs: number;
   memoryLimitMb: number;
   outputLimitKb: number;
   languages: string[];
-  statement: PublishedStatement | null;
+  statement: PublishedStatementResponse | null;
 }
 
 /**
@@ -303,7 +311,7 @@ export type SubmissionVerdict =
   | 'SYSTEM_ERROR'
   | 'CANCELLED';
 
-export interface SubmitResult {
+export interface SubmitResponse {
   submissionId: number;
   judgementId: string;
   status: SubmissionLifecycleStatus;
@@ -329,7 +337,7 @@ export interface SubmissionSummary {
   scoreMilli: number | null;
 }
 
-export interface SubmissionSimilarityGroup {
+export interface SimilarityGroupResponse {
   problemId: number;
   language: string;
   fingerprint: string;
@@ -338,7 +346,7 @@ export interface SubmissionSimilarityGroup {
   submissionCount: number;
 }
 
-export interface SubmissionSimilarityPair {
+export interface SimilarityPairResponse {
   problemId: number;
   language: string;
   submissionId: number;
@@ -349,7 +357,7 @@ export interface SubmissionSimilarityPair {
   similarityPercent: number;
 }
 
-export interface SubmissionSimilarityBackfillResult {
+export interface SimilarityBackfillResponse {
   scanned: number;
   updated: number;
   failed: number;
@@ -431,7 +439,7 @@ export interface ScoreboardRow {
   problems: ScoreboardCell[];
 }
 
-export interface Scoreboard {
+export interface ScoreboardResponse {
   contestId: number;
   variant: string;
   frozen: boolean;

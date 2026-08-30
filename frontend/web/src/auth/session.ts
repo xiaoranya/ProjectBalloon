@@ -1,10 +1,10 @@
 import { computed, reactive, readonly } from 'vue';
 import { apiRequest, clearCsrfToken, setUnauthorizedHandler } from '../api/client';
-import type { CurrentUser, DeploymentInfo } from '../api/types';
+import type { CurrentUserResponse, DeploymentInfo } from '../api/types';
 import type { PermissionCode } from '../api/types';
 
 const state = reactive({
-  user: null as CurrentUser | null,
+  user: null as CurrentUserResponse | null,
   initialized: false,
   loading: false,
   deployment: { mode: 'standard', activeContest: null } as DeploymentInfo,
@@ -23,7 +23,7 @@ async function initialize() {
     state.loading = true;
     try {
       state.deployment = await apiRequest<DeploymentInfo>('/api/deployment');
-      state.user = await apiRequest<CurrentUser>('/api/auth/me');
+      state.user = await apiRequest<CurrentUserResponse>('/api/auth/me');
     } catch {
       state.user = null;
     } finally {
@@ -38,7 +38,7 @@ async function initialize() {
 async function workstationLogin(pairingCode: string) {
   state.loading = true;
   try {
-    state.user = await apiRequest<CurrentUser>('/api/auth/workstation', {
+    state.user = await apiRequest<CurrentUserResponse>('/api/auth/workstation', {
       method: 'POST',
       body: { pairingCode },
     });
@@ -52,7 +52,7 @@ async function workstationLogin(pairingCode: string) {
 async function login(username: string, password: string) {
   state.loading = true;
   try {
-    state.user = await apiRequest<CurrentUser>('/api/auth/login', {
+    state.user = await apiRequest<CurrentUserResponse>('/api/auth/login', {
       method: 'POST',
       body: { username, password },
     });
@@ -66,7 +66,7 @@ async function login(username: string, password: string) {
 async function register(username: string, password: string, displayName: string) {
   state.loading = true;
   try {
-    state.user = await apiRequest<CurrentUser>('/api/auth/register', {
+    state.user = await apiRequest<CurrentUserResponse>('/api/auth/register', {
       method: 'POST',
       body: { username, password, displayName },
     });
@@ -88,7 +88,7 @@ async function logout() {
 }
 
 async function changePassword(currentPassword: string, newPassword: string) {
-  state.user = await apiRequest<CurrentUser>('/api/auth/password', {
+  state.user = await apiRequest<CurrentUserResponse>('/api/auth/password', {
     method: 'POST',
     body: { currentPassword, newPassword },
   });
@@ -96,7 +96,7 @@ async function changePassword(currentPassword: string, newPassword: string) {
 }
 
 async function updateProfile(displayName: string) {
-  state.user = await apiRequest<CurrentUser>('/api/auth/profile', {
+  state.user = await apiRequest<CurrentUserResponse>('/api/auth/profile', {
     method: 'PATCH',
     body: { displayName },
   });

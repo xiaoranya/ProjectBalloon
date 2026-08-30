@@ -169,7 +169,7 @@
 import { onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { contestApi } from '../api/contest';
-import type { Contest } from '../api/types';
+import type { ContestResponse } from '../api/types';
 import { getErrorMessage } from '../api/client';
 import {
   presentationApi,
@@ -178,7 +178,7 @@ import {
 } from '../api/presentation';
 import { useI18n } from '../i18n';
 const { t } = useI18n();
-const contests = ref<Contest[]>([]);
+const contests = ref<ContestResponse[]>([]);
 const contestId = ref<number | null>(null);
 const tokens = ref<BroadcastToken[]>([]);
 const templates = ref<PresentationTemplate[]>([]);

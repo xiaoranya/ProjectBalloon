@@ -75,7 +75,7 @@ import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { contestApi } from '../api/contest';
 import { getErrorMessage } from '../api/client';
-import type { Contest, PageResponse } from '../api/types';
+import type { ContestResponse, PageResponse } from '../api/types';
 import { useSession } from '../auth/session';
 import { contestStatusLabel, formatDateTime } from '../utils/format';
 import { useI18n } from '../i18n';
@@ -83,7 +83,7 @@ import { useI18n } from '../i18n';
 const router = useRouter();
 const session = useSession();
 const { t } = useI18n();
-const page = ref<PageResponse<Contest>>({
+const page = ref<PageResponse<ContestResponse>>({
   content: [],
   page: 0,
   size: 50,

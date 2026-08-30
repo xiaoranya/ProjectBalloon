@@ -244,7 +244,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminApi } from '../api/admin';
 import { getErrorMessage } from '../api/client';
 import { teamImportApi } from '../api/team-import';
-import type { Contest } from '../api/types';
+import type { ContestResponse } from '../api/types';
 import CodeEditor from '../components/CodeEditor.vue';
 import type {
   ParticipationType,
@@ -287,7 +287,7 @@ interface CredentialResult {
 
 const session = useSession();
 const { t } = useI18n();
-const contests = ref<Contest[]>([]);
+const contests = ref<ContestResponse[]>([]);
 const contestId = ref<number | null>(null);
 const participationType = ref<ParticipationType>('OFFICIAL');
 const requirePasswordReset = ref(true);

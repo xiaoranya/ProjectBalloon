@@ -191,13 +191,13 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminContestApi, type ScoringPolicy } from '../../api/admin-contests';
 import { ApiError, getErrorMessage } from '../../api/client';
-import type { Contest, ContestStatus, ContestVisibility } from '../../api/types';
+import type { ContestResponse, ContestStatus, ContestVisibility } from '../../api/types';
 import { contestStatusLabel, formatDateTime } from '../../utils/format';
 import { useI18n } from '../../i18n';
 
 const props = defineProps<{
   contestId: number;
-  contest: Contest | null;
+  contest: ContestResponse | null;
 }>();
 const emit = defineEmits<{ 'scoring-changed': [mode: string]; 'contest-changed': [] }>();
 const { t } = useI18n();

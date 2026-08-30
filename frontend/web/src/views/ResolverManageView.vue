@@ -78,7 +78,7 @@ import {
   type ResolverRun,
   type ResolverSources,
 } from '../api/resolver';
-import type { Contest } from '../api/types';
+import type { ContestResponse } from '../api/types';
 import {
   subscribeContestEvents,
   type ContestRealtimeSubscription,
@@ -92,7 +92,7 @@ import ResolverWorkspaceRow from '../components/resolver-manage/ResolverWorkspac
 const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
-const contests = ref<Contest[]>([]);
+const contests = ref<ContestResponse[]>([]);
 const contestId = ref<number | null>(null);
 const runs = ref<ResolverRun[]>([]);
 const runId = ref<number | null>(null);

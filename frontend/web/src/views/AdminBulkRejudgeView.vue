@@ -91,7 +91,7 @@ import {
   type BatchRejudgeVerdict,
 } from '../api/bulk-rejudge';
 import { ApiError, getErrorMessage } from '../api/client';
-import type { Contest, ContestProblem, ContestTeam } from '../api/types';
+import type { ContestResponse, ContestProblem, ContestTeamResponse } from '../api/types';
 import { submissionStatusLabel } from '../utils/format';
 import { useI18n } from '../i18n';
 
@@ -99,9 +99,9 @@ const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
 const contestId = computed(() => Number(route.params.contestId));
-const contest = ref<Contest | null>(null);
+const contest = ref<ContestResponse | null>(null);
 const contestProblems = ref<ContestProblem[]>([]);
-const contestTeams = ref<ContestTeam[]>([]);
+const contestTeams = ref<ContestTeamResponse[]>([]);
 let filter = reactive({
   problemId: null as number | null,
   teamId: null as number | null,

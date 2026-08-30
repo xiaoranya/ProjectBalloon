@@ -149,7 +149,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { adminApi } from '../api/admin';
 import { getErrorMessage } from '../api/client';
-import type { AuditLog, HealthResponse, PageResponse } from '../api/types';
+import type { AuditLogResponse, HealthResponse, PageResponse } from '../api/types';
 import { useSession } from '../auth/session';
 import { formatDateTime } from '../utils/format';
 import { useI18n } from '../i18n';
@@ -170,7 +170,7 @@ const auditLoading = ref(false);
 const refreshing = ref(false);
 const errorMessage = ref('');
 const currentPage = ref(1);
-const auditPage = ref<PageResponse<AuditLog>>({
+const auditPage = ref<PageResponse<AuditLogResponse>>({
   content: [],
   page: 0,
   size: pageSize,

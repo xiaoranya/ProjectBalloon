@@ -51,21 +51,21 @@ import { computed, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminContestApi } from '../../api/admin-contests';
 import { getErrorMessage } from '../../api/client';
-import type { ContestTeam, Team } from '../../api/types';
+import type { ContestTeamResponse, TeamResponse } from '../../api/types';
 import { useI18n } from '../../i18n';
 
 const props = defineProps<{
   contestId: number;
-  teams: Team[];
-  contestTeams: ContestTeam[];
+  teams: TeamResponse[];
+  contestTeams: ContestTeamResponse[];
 }>();
-const emit = defineEmits<{ 'update:contest-teams': [value: ContestTeam[]] }>();
+const emit = defineEmits<{ 'update:contest-teams': [value: ContestTeamResponse[]] }>();
 const { t } = useI18n();
 
 const assigning = ref(false);
 const teamForm = reactive({
   teamId: null as number | null,
-  participationType: 'OFFICIAL' as ContestTeam['participationType'],
+  participationType: 'OFFICIAL' as ContestTeamResponse['participationType'],
   groupName: '',
 });
 

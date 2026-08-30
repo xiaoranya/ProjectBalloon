@@ -125,7 +125,7 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { Plus } from '@element-plus/icons-vue';
 import { adminContestApi } from '../api/admin-contests';
 import { getErrorMessage } from '../api/client';
-import type { Contest, ContestVisibility, PageResponse } from '../api/types';
+import type { ContestResponse, ContestVisibility, PageResponse } from '../api/types';
 import { useSession } from '../auth/session';
 import { contestStatusLabel, formatDateTime } from '../utils/format';
 import { useI18n } from '../i18n';
@@ -141,7 +141,7 @@ interface ContestForm {
 const router = useRouter();
 const session = useSession();
 const { t } = useI18n();
-const page = ref<PageResponse<Contest>>({
+const page = ref<PageResponse<ContestResponse>>({
   content: [],
   page: 0,
   size: 25,
@@ -154,7 +154,7 @@ const saving = ref(false);
 const errorMessage = ref('');
 const dialogError = ref('');
 const dialogVisible = ref(false);
-const editing = ref<Contest | null>(null);
+const editing = ref<ContestResponse | null>(null);
 const formRef = ref<FormInstance>();
 const form = reactive<ContestForm>({
   name: '',
@@ -179,7 +179,7 @@ async function loadContests() {
   }
 }
 
-function resetForm(contest?: Contest) {
+function resetForm(contest?: ContestResponse) {
   form.name = contest?.name ?? '';
   form.visibility = contest?.visibility ?? 'PRIVATE';
   form.startAt = contest?.startAt ? new Date(contest.startAt) : null;
@@ -193,13 +193,13 @@ function openCreate() {
   dialogVisible.value = true;
 }
 function openEdit(row: unknown) {
-  editing.value = row as Contest;
+  editing.value = row as ContestResponse;
   dialogError.value = '';
   resetForm(editing.value);
   dialogVisible.value = true;
 }
 function openContest(row: unknown) {
-  void router.push(`/admin/contests/${(row as Contest).id}`);
+  void router.push(`/admin/contests/${(row as ContestResponse).id}`);
 }
 
 async function save() {

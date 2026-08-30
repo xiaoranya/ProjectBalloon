@@ -232,7 +232,7 @@ import {
 } from '../api/clarifications';
 import { contestApi } from '../api/contest';
 import { getErrorMessage } from '../api/client';
-import type { Contest } from '../api/types';
+import type { ContestResponse } from '../api/types';
 import {
   subscribeContestEvents,
   type ContestRealtimeSubscription,
@@ -243,7 +243,7 @@ import { useI18n } from '../i18n';
 const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
-const contests = ref<Contest[]>([]);
+const contests = ref<ContestResponse[]>([]);
 const selectedContestId = ref<number | null>(null);
 const statusFilter = ref<ClarificationStatus | 'ALL'>('PENDING');
 const clarifications = ref<Clarification[]>([]);

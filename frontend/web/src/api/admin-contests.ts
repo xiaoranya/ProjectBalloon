@@ -1,22 +1,22 @@
 import { apiRequest } from './client';
 import type {
-  Contest,
-  ContestExtension,
+  ContestResponse,
+  ContestExtensionResponse,
   ContestProblem,
-  ContestProblemAssignment,
+  ContestProblemResponse,
   ContestStatus,
-  ContestTeam,
+  ContestTeamResponse,
   ContestVisibility,
-  LifecycleTransition,
+  LifecycleTransitionResponse,
   PageResponse,
-  Problem,
-  RejudgeResult,
+  ProblemResponse,
+  RejudgeResponse,
   SubmissionDetail,
   SubmissionSummary,
-  SubmissionSimilarityGroup,
-  SubmissionSimilarityPair,
-  SubmissionSimilarityBackfillResult,
-  Team,
+  SimilarityGroupResponse,
+  SimilarityPairResponse,
+  SimilarityBackfillResponse,
+  TeamResponse,
 } from './types';
 
 export interface ContestPayload {
@@ -28,7 +28,7 @@ export interface ContestPayload {
 }
 export interface ContestCloneResult {
   sourceContestId: number;
-  contest: Contest;
+  contest: ContestResponse;
   problemsCopied: number;
   teamsCopied: number;
 }
@@ -98,12 +98,12 @@ function submissionQuery(filters: SubmissionFilters): string {
 
 export const adminContestApi = {
   listContests(page = 0, size = 25) {
-    return apiRequest<PageResponse<Contest>>(
+    return apiRequest<PageResponse<ContestResponse>>(
       `/api/contests?page=${page}&size=${size}&sort=updatedAt,desc`,
     );
   },
   getContest(contestId: number) {
-    return apiRequest<Contest>(`/api/contests/${contestId}`);
+    return apiRequest<ContestResponse>(`/api/contests/${contestId}`);
   },
   getScoringPolicy(contestId: number) {
     return apiRequest<ScoringPolicy>(`/api/admin/contests/${contestId}/scoring-policy`);
@@ -136,7 +136,7 @@ export const adminContestApi = {
     );
   },
   createContest(payload: ContestPayload) {
-    return apiRequest<Contest>('/api/contests', { method: 'POST', body: payload });
+    return apiRequest<ContestResponse>('/api/contests', { method: 'POST', body: payload });
   },
   cloneContest(sourceContestId: number, payload: ContestPayload & { copyTeams: boolean }) {
     return apiRequest<ContestCloneResult>(`/api/contests/${sourceContestId}/clones`, {
@@ -145,31 +145,36 @@ export const adminContestApi = {
     });
   },
   updateContest(contestId: number, payload: Partial<ContestPayload>) {
-    return apiRequest<Contest>(`/api/contests/${contestId}`, { method: 'PATCH', body: payload });
+    return apiRequest<ContestResponse>(`/api/contests/${contestId}`, {
+      method: 'PATCH',
+      body: payload,
+    });
   },
   transitionContest(contestId: number, to: ContestStatus) {
-    return apiRequest<LifecycleTransition>(`/api/contests/${contestId}/transitions`, {
+    return apiRequest<LifecycleTransitionResponse>(`/api/contests/${contestId}/transitions`, {
       method: 'POST',
       body: { to },
     });
   },
   extendContest(contestId: number, expectedEndAt: string, newEndAt: string) {
-    return apiRequest<ContestExtension>(`/api/contests/${contestId}/extensions`, {
+    return apiRequest<ContestExtensionResponse>(`/api/contests/${contestId}/extensions`, {
       method: 'POST',
       body: { expectedEndAt, newEndAt },
     });
   },
   listTeams(page = 0, size = 500) {
-    return apiRequest<PageResponse<Team>>(`/api/teams?page=${page}&size=${size}&sort=name,asc`);
+    return apiRequest<PageResponse<TeamResponse>>(
+      `/api/teams?page=${page}&size=${size}&sort=name,asc`,
+    );
   },
   listContestTeams(contestId: number) {
-    return apiRequest<ContestTeam[]>(`/api/contests/${contestId}/teams`);
+    return apiRequest<ContestTeamResponse[]>(`/api/contests/${contestId}/teams`);
   },
   assignTeam(
     contestId: number,
-    payload: Pick<ContestTeam, 'teamId' | 'participationType' | 'groupName'>,
+    payload: Pick<ContestTeamResponse, 'teamId' | 'participationType' | 'groupName'>,
   ) {
-    return apiRequest<ContestTeam>(`/api/contests/${contestId}/teams`, {
+    return apiRequest<ContestTeamResponse>(`/api/contests/${contestId}/teams`, {
       method: 'POST',
       body: payload,
     });
@@ -181,7 +186,7 @@ export const adminContestApi = {
     const boundedSize = Math.min(100, Math.max(1, Math.trunc(size)));
     const params = new URLSearchParams({ page: String(page), size: String(boundedSize) });
     if (contestId !== undefined) params.set('contestId', String(contestId));
-    return apiRequest<PageResponse<Problem>>(`/api/problems?${params}`);
+    return apiRequest<PageResponse<ProblemResponse>>(`/api/problems?${params}`);
   },
   async listAllProblems(contestId: number) {
     const firstPage = await this.listProblems(0, 100, contestId);
@@ -199,7 +204,7 @@ export const adminContestApi = {
     contestId: number,
     payload: Pick<ContestProblem, 'problemId' | 'alias' | 'displayOrder' | 'color'>,
   ) {
-    return apiRequest<ContestProblemAssignment>(`/api/contests/${contestId}/problems`, {
+    return apiRequest<ContestProblemResponse>(`/api/contests/${contestId}/problems`, {
       method: 'POST',
       body: payload,
     });
@@ -207,15 +212,15 @@ export const adminContestApi = {
   updateProblemAssignment(
     contestId: number,
     problemId: number,
-    payload: Pick<ContestProblemAssignment, 'alias' | 'displayOrder' | 'color'>,
+    payload: Pick<ContestProblemResponse, 'alias' | 'displayOrder' | 'color'>,
   ) {
-    return apiRequest<ContestProblemAssignment>(
-      `/api/contests/${contestId}/problems/${problemId}`,
-      { method: 'PATCH', body: payload },
-    );
+    return apiRequest<ContestProblemResponse>(`/api/contests/${contestId}/problems/${problemId}`, {
+      method: 'PATCH',
+      body: payload,
+    });
   },
   reorderProblems(contestId: number, entries: Array<{ problemId: number; displayOrder: number }>) {
-    return apiRequest<ContestProblemAssignment[]>(`/api/contests/${contestId}/problems/reorder`, {
+    return apiRequest<ContestProblemResponse[]>(`/api/contests/${contestId}/problems/reorder`, {
       method: 'PUT',
       body: entries,
     });
@@ -237,7 +242,7 @@ export const adminContestApi = {
     if (filters.minGroupSize !== undefined)
       params.set('minGroupSize', String(filters.minGroupSize));
     const query = params.toString();
-    return apiRequest<SubmissionSimilarityGroup[]>(
+    return apiRequest<SimilarityGroupResponse[]>(
       '/api/admin/contests/' + contestId + '/submission-similarity' + (query ? '?' + query : ''),
     );
   },
@@ -248,7 +253,7 @@ export const adminContestApi = {
     if (filters.minSimilarityPercent !== undefined)
       params.set('minSimilarityPercent', String(filters.minSimilarityPercent));
     const query = params.toString();
-    return apiRequest<SubmissionSimilarityPair[]>(
+    return apiRequest<SimilarityPairResponse[]>(
       '/api/admin/contests/' +
         contestId +
         '/submission-similarity/pairs' +
@@ -256,7 +261,7 @@ export const adminContestApi = {
     );
   },
   backfillSubmissionSimilarity(contestId: number) {
-    return apiRequest<SubmissionSimilarityBackfillResult>(
+    return apiRequest<SimilarityBackfillResponse>(
       '/api/admin/contests/' + contestId + '/submission-similarity/backfill',
       { method: 'POST' },
     );
@@ -270,7 +275,7 @@ export const adminContestApi = {
     return apiRequest<JudgeQueueStatus>(`/api/admin/contests/${contestId}/judge-queue/status`);
   },
   rejudgeSubmission(contestId: number, submissionId: number, expectedJudgementId: string) {
-    return apiRequest<RejudgeResult>(
+    return apiRequest<RejudgeResponse>(
       `/api/admin/contests/${contestId}/submissions/${submissionId}/rejudge`,
       { method: 'POST', body: { expectedJudgementId } },
     );
