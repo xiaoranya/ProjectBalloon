@@ -58,6 +58,26 @@ fn client_training_progress_cannot_claim_a_solution_or_score() {
     );
 }
 
+#[test]
+fn bank_problem_try_from_renders_and_sanitizes_statement() {
+    let row = BankProblemRow {
+        id: 1,
+        slug: "sum".into(),
+        title: "Sum".into(),
+        statement: Some("# Hi\n\n<img src=x onerror=alert(1)><script>alert(2)</script>".into()),
+        difficulty: Some(1),
+        tags: serde_json::json!([]),
+        published_at: None,
+        languages: "[]".into(),
+    };
+    let html = BankProblem::try_from(row)
+        .expect("decode bank problem")
+        .statement
+        .expect("statement should be sanitized, not dropped");
+    assert!(!html.contains("onerror") && !html.contains("<script"));
+    assert!(html.contains("<h1>") || html.contains("<p>"));
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
 async fn public_training_sets_only_expose_active_public_problems(pool: PgPool) {

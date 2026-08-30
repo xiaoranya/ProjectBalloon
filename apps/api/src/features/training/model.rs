@@ -3,6 +3,7 @@ use sqlx::FromRow;
 use utoipa::ToSchema;
 
 use crate::error::AppError;
+use crate::features::problems::render_safe_statement;
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -64,7 +65,7 @@ impl TryFrom<BankProblemRow> for BankProblem {
             id: row.id,
             slug: row.slug,
             title: row.title,
-            statement: row.statement,
+            statement: row.statement.map(|s| render_safe_statement(&s)),
             difficulty: row.difficulty,
             tags: row.tags,
             published_at: row.published_at,
