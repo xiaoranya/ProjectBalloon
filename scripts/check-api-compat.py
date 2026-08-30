@@ -8,7 +8,10 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED = (147, 218, 108, 39, 110)
+# (legacy, rust, exact, missing-after-renames, rust-only). Every redesigned
+# legacy operation is registered in docs/api/renamed-routes.yaml, so nothing
+# is left unaccounted in `missing`.
+EXPECTED = (147, 218, 108, 0, 110)
 
 
 def normalize(path: str) -> str:
@@ -27,6 +30,16 @@ def legacy_operations() -> set[tuple[str, str]]:
         if path and match:
             operations.add((match.group(1).upper(), normalize(path)))
     return operations
+
+
+def renamed_operations() -> set[tuple[str, str]]:
+    """Legacy routes deliberately redesigned per docs/api/renamed-routes.yaml."""
+    renamed: set[tuple[str, str]] = set()
+    for line in (ROOT / "docs/api/renamed-routes.yaml").read_text().splitlines():
+        match = re.match(r"^\s*-\s*legacy:\s*(\S+)\s+(/api/\S+)\s*$", line)
+        if match:
+            renamed.add((match.group(1).upper(), normalize(match.group(2))))
+    return renamed
 
 
 def route_calls(source: str) -> list[str]:
@@ -79,18 +92,30 @@ def main() -> int:
     args = parser.parse_args()
     legacy = legacy_operations()
     rust = rust_operations()
+    renamed = renamed_operations()
     exact = legacy & rust
     missing = legacy - rust
+    unmatched = renamed - missing
+    remaining = missing - renamed
     extensions = rust - legacy
-    actual = (len(legacy), len(rust), len(exact), len(missing), len(extensions))
+    actual = (len(legacy), len(rust), len(exact), len(remaining), len(extensions))
     print(
-        "legacy={} rust={} exact={} redesigned-or-missing={} rust-only={}".format(*actual)
+        "legacy={} rust={} exact={} missing-after-renames={} rust-only={} registered-renames={}".format(
+            *actual, len(renamed)
+        )
     )
-    for method, path in sorted(missing, key=lambda item: (item[1], item[0])):
+    for method, path in sorted(remaining, key=lambda item: (item[1], item[0])):
         print(f"{method:6} {path}")
-    if args.check and actual != EXPECTED:
-        print(f"compatibility snapshot drifted: expected={EXPECTED} actual={actual}")
-        return 1
+    if args.check:
+        if unmatched:
+            print(
+                "renamed-routes.yaml lists operations that are not redesigned-and-missing: "
+                f"{sorted(unmatched)}"
+            )
+            return 1
+        if actual != EXPECTED:
+            print(f"compatibility snapshot drifted: expected={EXPECTED} actual={actual}")
+            return 1
     return 0
 
 

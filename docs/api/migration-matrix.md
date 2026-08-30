@@ -12,16 +12,16 @@ for new Rust behavior. Every operation moves through one of these states:
 
 ## Reviewed Route Inventory
 
-Snapshot date: 2026-08-09. Path-parameter names such as `{id}` and
+Snapshot date: 2026-08-30. Path-parameter names such as `{id}` and
 `{contest_id}` are treated as equivalent.
 
 | Inventory | Operations |
 |---|---:|
 | Legacy OpenAPI baseline | 147 |
-| Current Axum router | 208 |
+| Current Axum router | 218 |
 | Same method and normalized path | 108 |
 | Explicit Rust redesigns of legacy operations | 39 |
-| Rust-only replacement or extension operations | 100 |
+| Rust-only replacement or extension operations | 110 |
 | Unreviewed legacy operations | 0 |
 
 Run `python3 scripts/check-api-compat.py --check` after changing either the
@@ -41,6 +41,11 @@ The 39 non-identical legacy routes are accounted for as follows:
 | Resolver current state | 1 | REDESIGN: immutable source selection and public current state are run-scoped rather than an implicit contest singleton |
 | Problem overview | 1 | DEPRECATED: `GET /api/contests/{id}/problems` is the richer scoped projection and avoids a second inconsistent read model |
 | Administrator health | 1 | REDESIGN: `/api/health` is the deployment readiness contract and `/livez` is process liveness |
+
+These 39 operations are also registered machine-readably in
+`renamed-routes.yaml` (legacy method + path → current Rust path), which
+`check-api-compat.py` subtracts from the missing count so "already
+redesigned" is not confused with "lost".
 
 `GET /api/admin/contests/{contestId}/judge-queue/status` retains its legacy
 method, path, and response fields. Rust counts `PUBLISHING` together with
