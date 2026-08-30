@@ -598,4 +598,58 @@ mod tests {
 
         assert!(validate_handler_result(&task, &result).is_err());
     }
+
+    fn sample_task(judgement_id: Uuid) -> JudgeTask {
+        JudgeTask {
+            schema_version: 1,
+            judgement_id,
+            submission_id: 42,
+            problem_id: 7,
+            testdata_version: 1,
+            testdata_object_key: "problems/7/v1.zip".into(),
+            testdata_sha256: "a".repeat(64),
+            source_object_key: "submissions/42/main.cpp".into(),
+            source_sha256: "b".repeat(64),
+            language: "cpp".into(),
+            time_limit_ms: 1000,
+            memory_limit_mb: 256,
+            output_limit_kb: 64,
+            language_multiplier: 1.0,
+            judge_mode: Default::default(),
+            interactor_object_key: None,
+            interactor_sha256: None,
+        }
+    }
+
+    fn result_for(task: &JudgeTask, judgement_id: Uuid, submission_id: i64) -> JudgeResult {
+        let now = OffsetDateTime::now_utc();
+        JudgeResult {
+            schema_version: JUDGE_RESULT_SCHEMA_VERSION,
+            message_id: task.judgement_id,
+            judgement_id,
+            submission_id,
+            worker_id: "worker-1".into(),
+            verdict: JudgeVerdict::CompileError,
+            total_time_ms: 1,
+            peak_memory_kb: 1,
+            compile_log: Some("cc: error".into()),
+            started_at: now,
+            completed_at: now,
+            runs: Vec::<JudgeRunResult>::new(),
+        }
+    }
+
+    #[test]
+    fn handler_result_with_matching_identity_is_accepted() {
+        let judgement_id = Uuid::new_v4();
+        let task = sample_task(judgement_id);
+        assert!(validate_handler_result(&task, &result_for(&task, judgement_id, 42)).is_ok());
+    }
+
+    #[test]
+    fn handler_result_must_keep_the_submission_identity() {
+        let judgement_id = Uuid::new_v4();
+        let task = sample_task(judgement_id);
+        assert!(validate_handler_result(&task, &result_for(&task, judgement_id, 43)).is_err());
+    }
 }

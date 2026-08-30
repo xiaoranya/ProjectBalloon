@@ -64,7 +64,10 @@ pub(super) fn extract_output_cases_blocking(
     Ok(())
 }
 
-fn extract_cases_blocking(archive: &Path, destination: &Path) -> Result<usize, SandboxError> {
+pub(super) fn extract_cases_blocking(
+    archive: &Path,
+    destination: &Path,
+) -> Result<usize, SandboxError> {
     use std::io::Read;
 
     type CasePair = (Option<Vec<u8>>, Option<Vec<u8>>);

@@ -425,4 +425,19 @@ mod tests {
             tokio::fs::remove_dir_all(cache).await.expect("remove test cache");
         }
     }
+
+    #[test]
+    fn artifact_sizes_are_bounded_by_the_configured_maximum() {
+        let manager = ArtifactManager::new(
+            Arc::new(MemorySource { objects: HashMap::new(), reads: Mutex::default() }),
+            std::env::temp_dir().join(format!("project-balloon-sizes-{}", Uuid::new_v4())),
+            "problems".to_owned(),
+            "sources".to_owned(),
+            1024,
+        );
+        assert!(manager.validate_size_u64(0).is_ok());
+        assert!(manager.validate_size_u64(1024).is_ok());
+        assert!(matches!(manager.validate_size_u64(1025), Err(ArtifactError::TooLarge(1024))));
+        assert!(manager.validate_size_u64(u64::MAX).is_err());
+    }
 }

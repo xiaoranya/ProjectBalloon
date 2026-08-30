@@ -92,7 +92,7 @@ impl JudgeTaskHandler for JudgeEngine {
             Err(error @ (ArtifactError::HashMismatch { .. } | ArtifactError::TooLarge(_))) => {
                 return Ok(self.system_error_result(task, started_at, error.to_string()));
             }
-            Err(error) if retry_count >= MAX_TASK_RETRIES => {
+            Err(error) if retry_budget_exhausted(retry_count) => {
                 return Ok(self.system_error_result(task, started_at, error.to_string()));
             }
             Err(error) => return Err(TaskFailure::retry(error.to_string())),
@@ -111,10 +111,37 @@ impl JudgeTaskHandler for JudgeEngine {
             Err(error @ SandboxError::InvalidTestdata(_)) => {
                 Ok(self.system_error_result(task, started_at, error.to_string()))
             }
-            Err(error) if retry_count >= MAX_TASK_RETRIES => {
+            Err(error) if retry_budget_exhausted(retry_count) => {
                 Ok(self.system_error_result(task, started_at, error.to_string()))
             }
             Err(error) => Err(TaskFailure::retry(error.to_string())),
         }
+    }
+}
+
+/// The retry budget bounds how often a retryable failure may bounce back to
+/// the queue before the task degrades into a SystemError verdict.
+fn retry_budget_exhausted(retry_count: u32) -> bool {
+    retry_count >= MAX_TASK_RETRIES
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{retry_budget_exhausted, truncate_utf8};
+
+    #[test]
+    fn retry_budget_degrades_only_after_exhaustion() {
+        assert!(!retry_budget_exhausted(0));
+        assert!(!retry_budget_exhausted(7));
+        assert!(retry_budget_exhausted(8));
+        assert!(retry_budget_exhausted(9));
+    }
+
+    #[test]
+    fn truncate_utf8_cuts_on_char_boundaries() {
+        assert_eq!(truncate_utf8("hello", 5), "hello");
+        assert_eq!(truncate_utf8("hello", 4), "hell");
+        assert_eq!(truncate_utf8("中文消息", 7), "中文");
+        assert_eq!(truncate_utf8("中文", 0), "");
     }
 }
