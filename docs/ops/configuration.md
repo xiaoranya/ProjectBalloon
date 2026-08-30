@@ -144,6 +144,8 @@ an independently generated CSRF secret.
 | `JUDGE_TASK_QUEUE` | `judge.tasks` | Task queue to consume |
 | `JUDGE_TASK_PREFETCH` | `1` | Parallel execution capacity; graceful shutdown drains in-flight work |
 | `JUDGE_RECONNECT_MILLISECONDS` | `1000` | RabbitMQ reconnect delay |
+| `JUDGE_HEALTH_PORT` | `9101` | Loopback-only port for `GET /livez` (always 200) and `GET /readyz` (200 once a consume session is up and no recent session failure); the compose healthcheck probes `readyz` |
+| `JUDGE_HEALTH_SESSION_ERROR_WINDOW_SECONDS` | `60` | How long a recent broker-session failure keeps `readyz` at 503 |
 | `JUDGE_HEARTBEAT_INTERVAL_SECONDS` | `5` | Heartbeat publication interval |
 | `JUDGE_REQUEST_TIMEOUT_MILLISECONDS` | `10000` | Storage/sandbox request timeout |
 | `JUDGE_MAX_ARTIFACT_BYTES` | `314572800` | Maximum artifact size accepted per task |

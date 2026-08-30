@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+axum.workspace = true
 bollard.workspace = true
 bytes.workspace = true
 futures-util.workspace = true
@@ -31,6 +32,7 @@ project-balloon-domain.workspace = true
 
 [dev-dependencies]
 project-balloon-test-support.workspace = true
+tower.workspace = true
 
 [lints]
 workspace = true
