@@ -5,9 +5,7 @@ export interface FieldError {
 
 export interface ApiErrorBody {
   code?: string;
-  error?: string;
   message?: string;
-  detail?: string;
   fieldErrors?: FieldError[];
 }
 
