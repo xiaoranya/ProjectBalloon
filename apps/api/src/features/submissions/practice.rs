@@ -573,3 +573,357 @@ fn practice_not_allowed() -> AppError {
         "Problem is not public or has no active test data",
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::net::{IpAddr, Ipv4Addr};
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use bytes::Bytes;
+    use sqlx::PgPool;
+
+    use crate::features::auth::model::AuthUser;
+    use crate::features::submissions::SubmissionService;
+    use crate::features::submissions::model::{
+        ValidatedSubmission, ValidatedSubmissionListQuery, source_fingerprint,
+        source_similarity_signature,
+    };
+    use crate::object_storage::{ObjectStorage, ObjectStorageError, ObjectStorageHandle};
+
+    use super::{PRACTICE_LIMIT_PER_MINUTE, require_language};
+
+    const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+
+    #[derive(Default)]
+    struct MemoryStorage {
+        objects: Mutex<HashMap<(String, String), Bytes>>,
+    }
+
+    #[async_trait]
+    impl ObjectStorage for MemoryStorage {
+        async fn check_bucket(&self, _bucket: &str) -> Result<(), ObjectStorageError> {
+            Ok(())
+        }
+
+        async fn put(
+            &self,
+            bucket: &str,
+            key: &str,
+            _content_type: Option<&str>,
+            content: Bytes,
+        ) -> Result<(), ObjectStorageError> {
+            self.objects
+                .lock()
+                .expect("memory storage lock")
+                .insert((bucket.into(), key.into()), content);
+            Ok(())
+        }
+
+        async fn get(&self, bucket: &str, key: &str) -> Result<Bytes, ObjectStorageError> {
+            self.objects
+                .lock()
+                .expect("memory storage lock")
+                .get(&(bucket.into(), key.into()))
+                .cloned()
+                .ok_or_else(|| ObjectStorageError::Request("not found".into()))
+        }
+
+        async fn delete(&self, bucket: &str, key: &str) -> Result<(), ObjectStorageError> {
+            self.objects.lock().expect("memory storage lock").remove(&(bucket.into(), key.into()));
+            Ok(())
+        }
+    }
+
+    async fn seed_practicer(pool: &PgPool) -> AuthUser {
+        let user_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO users (username, password_hash, display_name, user_type)
+             VALUES ('practice-user', 'test-hash', 'Practice User', 'INDIVIDUAL') RETURNING id",
+        )
+        .fetch_one(pool)
+        .await
+        .expect("insert practice user");
+        AuthUser {
+            id: user_id,
+            username: "practice-user".into(),
+            display_name: "Practice User".into(),
+            user_type: crate::features::auth::model::UserType::Individual,
+            permissions: Vec::new(),
+            password_reset_required: false,
+        }
+    }
+
+    async fn seed_public_problem(pool: &PgPool, slug: &str, languages: &str) -> i64 {
+        let problem_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems (slug, title, languages, testdata_version, testdata_object_key,
+                                    testdata_sha256)
+             VALUES ($1, $2, $3, 1, 'problems/practice/v1.zip', $4) RETURNING id",
+        )
+        .bind(slug)
+        .bind("Practice Problem")
+        .bind(languages)
+        .bind("e".repeat(64))
+        .fetch_one(pool)
+        .await
+        .expect("insert practice problem");
+        sqlx::query(
+            "INSERT INTO problem_testdata_versions (problem_id, version, object_key, sha256, bytes, case_count)
+             VALUES ($1, 1, 'problems/practice/v1.zip', $2, 100, 1)",
+        )
+        .bind(problem_id)
+        .bind("e".repeat(64))
+        .execute(pool)
+        .await
+        .expect("insert practice testdata version");
+        sqlx::query(
+            "INSERT INTO problem_bank_entries (problem_id, visibility, tags, published_at)
+             VALUES ($1, 'PUBLIC', '[]', now())",
+        )
+        .bind(problem_id)
+        .execute(pool)
+        .await
+        .expect("publish practice problem");
+        problem_id
+    }
+
+    fn practice_command(problem_id: i64, language: &str) -> ValidatedSubmission {
+        ValidatedSubmission {
+            problem_id,
+            language: language.to_owned(),
+            extension: ".cpp",
+            source: Bytes::from_static(b"#include <iostream>\nint main(){return 0;}\n"),
+        }
+    }
+
+    async fn practice_harness(
+        pool: &PgPool,
+        languages: &str,
+    ) -> (AuthUser, ObjectStorageHandle, Arc<MemoryStorage>, i64) {
+        let actor = seed_practicer(pool).await;
+        let problem_id = seed_public_problem(pool, "practice-harness", languages).await;
+        let backend = Arc::new(MemoryStorage::default());
+        let storage =
+            ObjectStorageHandle::with_buckets(backend.clone(), "problems".into(), "sources".into());
+        (actor, storage, backend, problem_id)
+    }
+
+    #[test]
+    fn require_language_accepts_only_listed_languages() {
+        assert!(require_language(r#"["cpp","java"]"#, "cpp").is_ok());
+        let rejected = require_language(r#"["cpp"]"#, "brainfuck").expect_err("unknown language");
+        assert_eq!(rejected.code(), "LANGUAGE_NOT_ALLOWED");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn practice_submission_persists_task_simhash_and_audit(pool: PgPool) {
+        let (actor, storage, backend, problem_id) = practice_harness(&pool, r#"["cpp"]"#).await;
+        let command = practice_command(problem_id, "cpp");
+        let fingerprint = source_fingerprint(&command.source);
+        let similarity = source_similarity_signature(&command.source);
+        let service = SubmissionService::new(pool.clone());
+
+        let response = service
+            .submit_practice(command, None, None, &actor, LOCALHOST, &storage)
+            .await
+            .expect("practice submission accepted");
+
+        let row = sqlx::query_as::<_, (String, String, String, Option<i64>, Option<i32>, i64)>(
+            "SELECT status, submission_scope, source_fingerprint, source_simhash,
+                    source_token_count, count(j.id)
+             FROM submissions s
+             LEFT JOIN judgements j ON j.submission_id = s.id
+             WHERE s.id = $1 GROUP BY s.id, s.status, s.submission_scope,
+                   s.source_fingerprint, s.source_simhash, s.source_token_count",
+        )
+        .bind(response.submission_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load practice submission");
+        assert_eq!((row.0.as_str(), row.1.as_str()), ("PENDING", "PRACTICE"));
+        assert_eq!(row.2, fingerprint);
+        assert_eq!(row.3, Some(similarity.simhash));
+        assert_eq!(row.4, Some(similarity.token_count));
+        assert_eq!(row.5, 1, "a practice submission starts with one active judgement");
+        assert_eq!(
+            response.judgement_id,
+            uuid::Uuid::parse_str(
+                &sqlx::query_scalar::<_, String>(
+                    "SELECT id::text FROM judgements WHERE submission_id = $1",
+                )
+                .bind(response.submission_id)
+                .fetch_one(&pool)
+                .await
+                .expect("load judgement id"),
+            )
+            .expect("judgement id parses")
+        );
+
+        let payload = sqlx::query_scalar::<_, String>(
+            "SELECT payload FROM submission_outbox WHERE submission_id = $1",
+        )
+        .bind(response.submission_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load judge task payload");
+        let task: project_balloon_contracts::JudgeTask =
+            serde_json::from_str(&payload).expect("payload is a valid judge task");
+        assert_eq!(task.judgement_id, response.judgement_id);
+        assert_eq!(task.submission_id, response.submission_id);
+        assert_eq!(task.problem_id, problem_id);
+
+        let audits = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM audit_logs WHERE action = 'PRACTICE_SUBMISSION_CREATED'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count practice audits");
+        assert_eq!(audits, 1);
+
+        let objects = backend.objects.lock().expect("memory storage lock");
+        assert_eq!(objects.len(), 1, "exactly one source object must be stored");
+        for ((bucket, key), content) in objects.iter() {
+            assert_eq!(bucket, "sources");
+            assert!(key.starts_with(&format!("practice-submissions/{}/", actor.id)));
+            assert_eq!(content.as_ref(), b"#include <iostream>\nint main(){return 0;}\n");
+        }
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn disabled_languages_are_rejected_before_any_side_effect(pool: PgPool) {
+        let (actor, storage, backend, problem_id) = practice_harness(&pool, r#"["cpp"]"#).await;
+        let service = SubmissionService::new(pool.clone());
+
+        let rejected = service
+            .submit_practice(
+                practice_command(problem_id, "java"),
+                None,
+                None,
+                &actor,
+                LOCALHOST,
+                &storage,
+            )
+            .await
+            .expect_err("java must be rejected for a cpp-only problem");
+        assert_eq!(rejected.code(), "LANGUAGE_NOT_ALLOWED");
+
+        let submissions = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM submissions")
+            .fetch_one(&pool)
+            .await
+            .expect("count submissions");
+        assert_eq!(submissions, 0, "no submission may survive a language rejection");
+        assert!(
+            backend.objects.lock().expect("memory storage lock").is_empty(),
+            "a rejected language must not reach object storage"
+        );
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn practice_rate_limit_bounds_the_per_minute_burst(pool: PgPool) {
+        let (actor, storage, _backend, problem_id) = practice_harness(&pool, r#"["cpp"]"#).await;
+        let service = SubmissionService::new(pool.clone());
+        // Lift the concurrent-judging ceiling (default 3) so the burst below
+        // is bounded by the per-minute budget instead.
+        sqlx::query("UPDATE practice_platform_settings SET concurrent_judging_limit = 20")
+            .execute(&pool)
+            .await
+            .expect("raise concurrent practice budget");
+
+        for _ in 0..PRACTICE_LIMIT_PER_MINUTE {
+            service
+                .submit_practice(
+                    practice_command(problem_id, "cpp"),
+                    None,
+                    None,
+                    &actor,
+                    LOCALHOST,
+                    &storage,
+                )
+                .await
+                .expect("submissions within the burst budget");
+        }
+        let over_limit = service
+            .submit_practice(
+                practice_command(problem_id, "cpp"),
+                None,
+                None,
+                &actor,
+                LOCALHOST,
+                &storage,
+            )
+            .await
+            .expect_err("the burst beyond the budget must be rejected");
+        assert_eq!(over_limit.code(), "PRACTICE_SUBMISSION_RATE_LIMITED");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn practice_listings_round_trip_the_submitted_work(pool: PgPool) {
+        let (actor, storage, _backend, problem_id) = practice_harness(&pool, r#"["cpp"]"#).await;
+        let service = SubmissionService::new(pool.clone());
+        let first = service
+            .submit_practice(
+                practice_command(problem_id, "cpp"),
+                None,
+                None,
+                &actor,
+                LOCALHOST,
+                &storage,
+            )
+            .await
+            .expect("first practice submission");
+
+        let page = service
+            .list_practice(
+                &actor,
+                ValidatedSubmissionListQuery {
+                    team_id: None,
+                    problem_id: Some(problem_id),
+                    status: None,
+                    verdict: None,
+                    language: None,
+                    page: 1,
+                    size: 10,
+                    offset: 0,
+                },
+            )
+            .await
+            .expect("list practice submissions");
+        assert_eq!(page.total_elements, 1);
+        assert_eq!(page.content[0].id, first.submission_id);
+
+        let detail = service
+            .practice_detail(first.submission_id, &actor, &storage)
+            .await
+            .expect("practice detail");
+        assert_eq!(detail.summary.id, first.submission_id);
+        assert_eq!(detail.summary.active_judgement_id, Some(first.judgement_id));
+
+        let progress = service.practice_progress(&actor).await.expect("practice progress");
+        assert!(progress.is_empty(), "unjudged submissions do not produce progress rows");
+
+        let foreign = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO users (username, password_hash, display_name, user_type)
+             VALUES ('other-user', 'test-hash', 'Other User', 'INDIVIDUAL') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert other user");
+        let stranger = AuthUser {
+            id: foreign,
+            username: "other-user".into(),
+            display_name: "Other User".into(),
+            user_type: crate::features::auth::model::UserType::Individual,
+            permissions: Vec::new(),
+            password_reset_required: false,
+        };
+        let hidden = service
+            .practice_detail(first.submission_id, &stranger, &storage)
+            .await
+            .expect_err("other users cannot see foreign practice submissions");
+        assert_eq!(hidden.code(), "SUBMISSION_NOT_FOUND");
+    }
+}
