@@ -8,7 +8,14 @@
         <ElOption :label="t('样例附件')" value="SAMPLE" />
         <ElOption :label="t('补充材料')" value="SUPPLEMENT" />
       </ElSelect>
-      <input ref="attachmentInput" type="file" @change="selectAttachment" />
+      <input
+        ref="attachmentInput"
+        type="file"
+        class="visually-hidden-input"
+        @change="selectAttachment"
+      />
+      <ElButton @click="attachmentInput?.click()">{{ t('选择文件') }}</ElButton>
+      <span v-if="attachmentFile" class="file-upload-name">{{ attachmentFile.name }}</span>
       <ElButton
         type="primary"
         :disabled="!attachmentFile"
@@ -165,6 +172,18 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 .file-upload-row :deep(.el-select) {
   width: 160px;
+}
+.visually-hidden-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.file-upload-name {
+  color: var(--muted);
+  font-size: 13px;
 }
 @media (max-width: 680px) {
   .file-upload-row {

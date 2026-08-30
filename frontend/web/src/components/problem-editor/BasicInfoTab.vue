@@ -58,7 +58,14 @@
         :size="14"
         class="file-upload-row"
       >
-        <input type="file" @change="selectInteractor" />
+        <input
+          ref="interactorInput"
+          type="file"
+          class="visually-hidden-input"
+          @change="selectInteractor"
+        />
+        <ElButton @click="interactorInput?.click()">{{ t('选择文件') }}</ElButton>
+        <span v-if="interactorFile" class="file-upload-name">{{ interactorFile.name }}</span>
         <ElButton
           type="primary"
           :disabled="!interactorFile"
@@ -169,6 +176,7 @@ const form = reactive<ProblemForm>({
   interactorSha256: '',
 });
 const interactorFile = ref<File | null>(null);
+const interactorInput = ref<HTMLInputElement>();
 const uploadingInteractor = ref(false);
 const languageOptions: Array<{ value: JudgeLanguage; label: string }> = [
   { value: 'c', label: 'C' },
@@ -321,5 +329,17 @@ defineExpose({ save });
   width: 100%;
   flex-wrap: wrap;
   margin-bottom: 24px;
+}
+.visually-hidden-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.file-upload-name {
+  color: var(--muted);
+  font-size: 13px;
 }
 </style>
