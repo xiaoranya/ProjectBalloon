@@ -319,6 +319,73 @@ describe('Rust contest SSE client', () => {
     subscription.stop();
   });
 
+  it('reconnects manually after an error and carries the last seen event id', () => {
+    const subscription = subscribeContestEvents({
+      contestId: 7,
+      scope: 'TEAM',
+      eventTypes: ['CLARIFICATION_UPDATED'],
+      onEvent: vi.fn(),
+      poll: vi.fn(),
+      pollIntervalMs: 1_000,
+    });
+    const source = EventSourceMock.instances[0];
+    expect(source.url).toBe('/api/team/events/contests/7');
+
+    source.message({ ...baseEvent, type: 'CLARIFICATION_UPDATED' });
+    source.fail();
+
+    // The broken source is closed immediately; the resume connection opens
+    // once the backoff elapses and appends lastEventId to the path.
+    expect(source.close).toHaveBeenCalled();
+    // handleConnectionLost doubled the poll interval to 2s before scheduling.
+    vi.advanceTimersByTime(2_000);
+    expect(EventSourceMock.instances).toHaveLength(2);
+    expect(EventSourceMock.instances[1].url).toBe(
+      '/api/team/events/contests/7?lastEventId=00000000-0000-4000-8000-000000000001',
+    );
+    subscription.stop();
+  });
+
+  it('does not use the CONNECTED frame id as the resume anchor', () => {
+    const subscription = subscribeContestEvents({
+      contestId: 7,
+      scope: 'TEAM',
+      eventTypes: [],
+      onEvent: vi.fn(),
+      poll: vi.fn(),
+      pollIntervalMs: 1_000,
+    });
+    const source = EventSourceMock.instances[0];
+    source.message({ ...baseEvent, id: 'connected-frame-id', type: 'CONNECTED' });
+    source.fail();
+
+    vi.advanceTimersByTime(2_000);
+    expect(EventSourceMock.instances[1].url).toBe('/api/team/events/contests/7');
+    subscription.stop();
+  });
+
+  it('still deduplicates replayed events against already delivered ids', () => {
+    const onEvent = vi.fn();
+    const subscription = subscribeContestEvents({
+      contestId: 7,
+      scope: 'TEAM',
+      eventTypes: ['CLARIFICATION_UPDATED'],
+      onEvent,
+      poll: vi.fn(),
+      pollIntervalMs: 1_000,
+    });
+    const source = EventSourceMock.instances[0];
+    source.message({ ...baseEvent, type: 'CLARIFICATION_UPDATED' });
+    source.fail();
+    vi.advanceTimersByTime(2_000);
+
+    // The server replays event ...0001 on the resumed connection; the
+    // batch-1 duplicate guard must swallow it.
+    EventSourceMock.instances[1].message({ ...baseEvent, type: 'CLARIFICATION_UPDATED' });
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    subscription.stop();
+  });
+
   it('probes the session at most once while an auth probe is in flight', () => {
     mocks.apiRequest.mockImplementation(() => new Promise(() => {}));
     const subscription = subscribeContestEvents({

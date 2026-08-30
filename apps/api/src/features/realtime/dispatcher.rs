@@ -215,7 +215,7 @@ impl OutboxDispatcher {
     }
 }
 
-fn parse_scope(value: &str) -> Option<RealtimeScope> {
+pub(crate) fn parse_scope(value: &str) -> Option<RealtimeScope> {
     match value {
         "PUBLIC" => Some(RealtimeScope::Public),
         "STAFF" => Some(RealtimeScope::Staff),
