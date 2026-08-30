@@ -317,7 +317,16 @@ async fn process_delivery(
                 reject_for_retry(delivery).await?;
                 return Err(reason);
             }
-            delivery.ack(BasicAckOptions::default()).await?;
+            // The result is already broker-confirmed; treat the task as
+            // processed instead of propagating the ack failure, which would
+            // tear down the shared connection and redeliver live tasks.
+            if let Err(error) = delivery.ack(BasicAckOptions::default()).await {
+                warn!(
+                    judgement_id = %result.judgement_id,
+                    error = %error,
+                    "Judge result published and confirmed; ack failed, message may be redelivered (idempotent downstream)"
+                );
+            }
             info!(
                 judgement_id = %result.judgement_id,
                 verdict = result.verdict.as_str(),
@@ -423,8 +432,17 @@ async fn dead_letter_and_ack(
         reject_for_retry(delivery).await?;
         return Err(error);
     }
-    delivery.ack(BasicAckOptions::default()).await?;
-    warn!(%safe_reason, "Judge task moved to dead-letter queue");
+    // The dead-letter copy is broker-confirmed; an ack failure must not
+    // propagate or the redelivered task would be dead-lettered forever.
+    if let Err(error) = delivery.ack(BasicAckOptions::default()).await {
+        warn!(
+            %safe_reason,
+            %error,
+            "Judge task moved to dead-letter queue but ack failed; it may be redelivered and dead-lettered again"
+        );
+    } else {
+        warn!(%safe_reason, "Judge task moved to dead-letter queue");
+    }
     Ok(())
 }
 
