@@ -1,0 +1,105 @@
+# Machine-readable registry of legacy routes that were intentionally
+# redesigned instead of ported verbatim. This is the companion to the prose
+# table in migration-matrix.md ("The 39 non-identical legacy routes") and is
+# consumed by scripts/check-api-compat.py, which subtracts these from the
+# missing count so "already redesigned" is not confused with "lost".
+#
+# `legacy` lines are "<METHOD> <path>" pairs exactly as check-api-compat.py
+# reports them, with path parameters already normalized to "{}". Replacement
+# paths use the Rust router's parameter spelling. Deliberately kept free of
+# YAML-specific structure so the checker can parse it with plain regexes.
+
+renamed:
+  # Single and batch rejudge -> contest-scoped persistent tasks
+  - legacy: POST /api/admin/batch-rejudge/preview
+    replacement: POST /api/admin/contests/{contest_id}/rejudge-tasks/preview
+  - legacy: GET /api/admin/batch-rejudge/tasks
+    replacement: GET /api/admin/contests/{contest_id}/rejudge-tasks
+  - legacy: POST /api/admin/batch-rejudge/tasks
+    replacement: POST /api/admin/contests/{contest_id}/rejudge-tasks
+  - legacy: GET /api/admin/batch-rejudge/tasks/{}
+    replacement: GET /api/admin/contests/{contest_id}/rejudge-tasks/{task_id}
+  - legacy: POST /api/admin/batch-rejudge/tasks/{}/cancel
+    replacement: POST /api/admin/contests/{contest_id}/rejudge-tasks/{task_id}/pause
+  - legacy: POST /api/admin/contests/{}/rejudge
+    replacement: POST /api/admin/contests/{contest_id}/rejudge-tasks
+  - legacy: POST /api/admin/submissions/{}/rejudge
+    replacement: POST /api/admin/contests/{contest_id}/rejudge-tasks
+
+  # Award categories, generation, freeze, export, recipients -> /api/admin/*
+  - legacy: GET /api/contests/{}/award-categories
+    replacement: GET /api/admin/contests/{contest_id}/award-categories
+  - legacy: POST /api/contests/{}/award-categories
+    replacement: POST /api/admin/contests/{contest_id}/award-categories
+  - legacy: PUT /api/award-categories/{}
+    replacement: PUT /api/admin/award-categories/{id}
+  - legacy: DELETE /api/award-categories/{}
+    replacement: DELETE /api/admin/award-categories/{id}
+  - legacy: GET /api/contests/{}/awards
+    replacement: GET /api/admin/contests/{contest_id}/awards
+  - legacy: POST /api/contests/{}/awards/generate
+    replacement: POST /api/admin/contests/{contest_id}/awards
+  - legacy: GET /api/contests/{}/awards/teams
+    replacement: GET /api/admin/contests/{contest_id}/awards/candidates
+  - legacy: POST /api/contests/{}/awards/recipients
+    replacement: POST /api/admin/contests/{contest_id}/awards/manual
+  - legacy: DELETE /api/awards/recipients/{}
+    replacement: DELETE /api/admin/award-recipients/{id}
+  - legacy: POST /api/contests/{}/awards/freeze
+    replacement: POST /api/admin/contests/{contest_id}/awards/freeze
+  - legacy: POST /api/contests/{}/awards/unfreeze
+    replacement: POST /api/admin/contests/{contest_id}/awards/unfreeze
+  - legacy: GET /api/contests/{}/awards/export
+    replacement: GET /api/admin/contests/{contest_id}/awards.csv
+
+  # Contest-nested balloon item actions -> item-scoped /api/balloons/{id}/*
+  - legacy: GET /api/contests/{}/balloons/{}
+    replacement: GET /api/contests/{contest_id}/balloons
+  - legacy: POST /api/contests/{}/balloons/{}/claim
+    replacement: POST /api/balloons/{id}/claim
+  - legacy: POST /api/contests/{}/balloons/{}/note
+    replacement: PATCH /api/balloons/{id}/note
+  - legacy: POST /api/contests/{}/balloons/{}/reopen
+    replacement: POST /api/balloons/{id}/reopen
+  - legacy: POST /api/contests/{}/balloons/{}/status
+    replacement: POST /api/balloons/{id}/deliver
+
+  # Global submission detail and source -> contest-scoped projections
+  - legacy: GET /api/submissions/{}
+    replacement: GET /api/contests/{contest_id}/submissions/{submission_id}
+  - legacy: GET /api/submissions/{}/source
+    replacement: GET /api/contests/{contest_id}/submissions/{submission_id}
+
+  # Scoreboard admin/group reads and legacy export
+  - legacy: GET /api/contests/{}/scoreboard/admin
+    replacement: GET /api/admin/contests/{contest_id}/scoreboard
+  - legacy: GET /api/contests/{}/scoreboard/groups/{}
+    replacement: GET /api/contests/{contest_id}/scoreboard
+  - legacy: GET /api/admin/contests/{}/exports/scoreboard.csv
+    replacement: GET /api/admin/contests/{contest_id}/scoreboard.csv
+
+  # Resolver -> persistent runs under /api/admin/resolver-runs/*
+  - legacy: POST /api/contests/{}/resolver/preview
+    replacement: POST /api/admin/contests/{contest_id}/resolver-runs
+  - legacy: POST /api/contests/{}/resolver/start
+    replacement: POST /api/admin/resolver-runs/{id}/start
+  - legacy: POST /api/resolver/runs/{}/next
+    replacement: POST /api/admin/resolver-runs/{id}/next
+  - legacy: POST /api/resolver/runs/{}/step-back
+    replacement: POST /api/admin/resolver-runs/{id}/previous
+  - legacy: POST /api/resolver/runs/{}/pause
+    replacement: POST /api/admin/resolver-runs/{id}/pause
+  - legacy: POST /api/resolver/runs/{}/continue
+    replacement: POST /api/admin/resolver-runs/{id}/resume
+  - legacy: POST /api/resolver/runs/{}/complete
+    replacement: POST /api/admin/resolver-runs/{id}/complete
+  - legacy: GET /api/contests/{}/resolver/current
+    replacement: GET /api/public/resolver-runs/{id}/state
+
+  # DEPRECATED: the contest-scoped problem list is the single read model.
+  - legacy: GET /api/contests/{}/problems/overview
+    replacement: GET /api/contests/{contest_id}/problems
+
+  # Administrator health -> deployment readiness contract
+  - legacy: GET /api/admin/health
+    replacement: GET /api/health

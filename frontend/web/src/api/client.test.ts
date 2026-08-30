@@ -109,4 +109,54 @@ describe('apiRequest', () => {
       '源码文件不能超过 64 KiB',
     );
   });
+
+  it('falls back to the server message when the business code is unknown', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ code: 'FUTURE_UNKNOWN_CODE', message: '后端的新提示' }, 409),
+    );
+
+    const error = await apiRequest('/api/example').catch((reason: unknown) => reason);
+
+    expect(getErrorMessage(error)).toBe('后端的新提示');
+  });
+
+  it('falls back to the original text when neither code nor message is known', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      new Response('upstream exploded', { status: 502, headers: { 'content-type': 'text/plain' } }),
+    );
+
+    const error = await apiRequest('/api/example').catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({ code: 'HTTP_502' });
+    expect(getErrorMessage(error)).toBe('upstream exploded');
+  });
+
+  it('keeps the status default message when the body carries no message', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 429));
+
+    const error = await apiRequest('/api/example').catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({ code: 'HTTP_429' });
+    expect(getErrorMessage(error)).toBe('操作过于频繁，请稍后重试');
+  });
+
+  it('suppresses the unauthorized handler when the caller opts out', async () => {
+    const unauthorized = vi.fn();
+    setUnauthorizedHandler(unauthorized);
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ code: 'SESSION_EXPIRED', message: '登录已失效' }, 401),
+    );
+
+    await expect(
+      apiRequest('/api/example', { suppressUnauthorizedHandler: true }),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(unauthorized).not.toHaveBeenCalled();
+  });
+
+  it('describes non-Error rejection values', () => {
+    expect(getErrorMessage('boom')).toBe('发生未知错误');
+  });
 });

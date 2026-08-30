@@ -19,6 +19,7 @@ use project_balloon_contracts::{
 use tokio::{sync::watch, task::JoinSet, time::timeout};
 use tracing::{error, info, warn};
 
+use crate::health::HealthState;
 use crate::heartbeat::WorkerActivity;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,6 +86,7 @@ pub struct RabbitJudgeWorker {
     reconnect_delay: Duration,
     handler: Arc<dyn JudgeTaskHandler>,
     activity: WorkerActivity,
+    health: Option<HealthState>,
 }
 
 pub struct RabbitJudgeWorkerConfig {
@@ -94,6 +96,7 @@ pub struct RabbitJudgeWorkerConfig {
     pub prefetch: u16,
     pub request_timeout: Duration,
     pub reconnect_delay: Duration,
+    pub health: Option<HealthState>,
 }
 
 impl RabbitJudgeWorker {
@@ -112,6 +115,7 @@ impl RabbitJudgeWorker {
             reconnect_delay: config.reconnect_delay,
             handler,
             activity,
+            health: config.health,
         }
     }
 
@@ -123,6 +127,9 @@ impl RabbitJudgeWorker {
             }
             if let Err(reason) = self.consume_session(shutdown.clone()).await {
                 error!(%reason, "Judge task consumer session failed");
+                if let Some(health) = &self.health {
+                    health.record_session_failed(reason.to_string());
+                }
             }
             tokio::select! {
                 () = tokio::time::sleep(self.reconnect_delay) => {}
@@ -158,6 +165,9 @@ impl RabbitJudgeWorker {
                 FieldTable::default(),
             )
             .await?;
+        if let Some(health) = &self.health {
+            health.record_session_started();
+        }
         let mut in_flight = JoinSet::new();
         loop {
             tokio::select! {
@@ -317,7 +327,16 @@ async fn process_delivery(
                 reject_for_retry(delivery).await?;
                 return Err(reason);
             }
-            delivery.ack(BasicAckOptions::default()).await?;
+            // The result is already broker-confirmed; treat the task as
+            // processed instead of propagating the ack failure, which would
+            // tear down the shared connection and redeliver live tasks.
+            if let Err(error) = delivery.ack(BasicAckOptions::default()).await {
+                warn!(
+                    judgement_id = %result.judgement_id,
+                    error = %error,
+                    "Judge result published and confirmed; ack failed, message may be redelivered (idempotent downstream)"
+                );
+            }
             info!(
                 judgement_id = %result.judgement_id,
                 verdict = result.verdict.as_str(),
@@ -423,8 +442,17 @@ async fn dead_letter_and_ack(
         reject_for_retry(delivery).await?;
         return Err(error);
     }
-    delivery.ack(BasicAckOptions::default()).await?;
-    warn!(%safe_reason, "Judge task moved to dead-letter queue");
+    // The dead-letter copy is broker-confirmed; an ack failure must not
+    // propagate or the redelivered task would be dead-lettered forever.
+    if let Err(error) = delivery.ack(BasicAckOptions::default()).await {
+        warn!(
+            %safe_reason,
+            %error,
+            "Judge task moved to dead-letter queue but ack failed; it may be redelivered and dead-lettered again"
+        );
+    } else {
+        warn!(%safe_reason, "Judge task moved to dead-letter queue");
+    }
     Ok(())
 }
 

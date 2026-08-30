@@ -1,4 +1,5 @@
 pub mod artifacts;
+pub mod health;
 pub mod heartbeat;
 pub mod rabbit;
 pub mod sandbox;
@@ -32,6 +33,8 @@ pub struct WorkerConfig {
     pub cpp_image: String,
     pub java_image: String,
     pub python_image: String,
+    pub health_port: u16,
+    pub health_session_error_window: Duration,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -103,6 +106,18 @@ impl WorkerConfig {
             lookup("JUDGE_JAVA_IMAGE").unwrap_or_else(|| "judge-runtime-java:21".to_owned());
         let python_image = lookup("JUDGE_PYTHON_IMAGE")
             .unwrap_or_else(|| "judge-runtime-python:3.12.13".to_owned());
+        let health_port = parse_positive::<u64>(
+            "JUDGE_HEALTH_PORT",
+            lookup("JUDGE_HEALTH_PORT").unwrap_or_else(|| "9101".to_owned()),
+        )?;
+        let health_port = u16::try_from(health_port).map_err(|_| ConfigError::Invalid {
+            name: "JUDGE_HEALTH_PORT",
+            reason: "expected a value between 1 and 65535",
+        })?;
+        let health_session_error_window_seconds = parse_positive(
+            "JUDGE_HEALTH_SESSION_ERROR_WINDOW_SECONDS",
+            lookup("JUDGE_HEALTH_SESSION_ERROR_WINDOW_SECONDS").unwrap_or_else(|| "60".to_owned()),
+        )?;
 
         validate_text("WORKER_ID", &worker_id)?;
         validate_text("JUDGE_TASK_QUEUE", &task_queue)?;
@@ -159,6 +174,8 @@ impl WorkerConfig {
             cpp_image,
             java_image,
             python_image,
+            health_port,
+            health_session_error_window: Duration::from_secs(health_session_error_window_seconds),
         })
     }
 }

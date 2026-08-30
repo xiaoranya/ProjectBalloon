@@ -130,6 +130,7 @@ async fn process_delivery(
             delivery.ack(BasicAckOptions::default()).await?;
             info!(
                 message_id = %result.message_id,
+                submission_id = result.submission_id,
                 judgement_id = %result.judgement_id,
                 ?outcome,
                 "Judge result transaction committed and acknowledged"
@@ -139,6 +140,7 @@ async fn process_delivery(
         Err(error) if error.is_permanent() => {
             warn!(
                 message_id = %result.message_id,
+                submission_id = result.submission_id,
                 judgement_id = %result.judgement_id,
                 %error,
                 "rejecting permanent Judge result failure"
@@ -148,6 +150,7 @@ async fn process_delivery(
         Err(error) => {
             warn!(
                 message_id = %result.message_id,
+                submission_id = result.submission_id,
                 judgement_id = %result.judgement_id,
                 %error,
                 "requeueing Judge result after transient database failure"

@@ -87,8 +87,8 @@ async fn batch_rejudge_is_persistent_pausable_and_item_idempotent(pool: PgPool) 
         r#"
         INSERT INTO submissions
             (contest_id, problem_id, team_id, language, source_object_key,
-             source_size_bytes, source_sha256, status, judged_at)
-        VALUES ($1, $2, $3, 'cpp', 'sources/batch.cpp', 10, $4, 'ACCEPTED', now())
+             source_size_bytes, source_sha256, status, verdict, judged_at)
+        VALUES ($1, $2, $3, 'cpp', 'sources/batch.cpp', 10, $4, 'COMPLETED', 'ACCEPTED', now())
         RETURNING id
         "#,
     )

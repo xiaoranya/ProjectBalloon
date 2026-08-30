@@ -7,6 +7,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-project_balloon}
       POSTGRES_USER: ${POSTGRES_USER:-project_balloon}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      # Pin the cluster timezone so timestamptz rendering and now() are stable
+      # across hosts; the application stores UTC instants everywhere.
+      PGTZ: UTC
+      TZ: UTC
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:

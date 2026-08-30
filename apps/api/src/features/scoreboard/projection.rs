@@ -151,10 +151,10 @@ async fn rebuild_points_cell(
         )
         SELECT $1,$2,$3,
                coalesce(attempts.count,0)::integer,
-               effective.score_milli >= assignment.max_score_milli,
-               CASE WHEN effective.score_milli >= assignment.max_score_milli
+               coalesce(effective.score_milli,0) >= assignment.max_score_milli,
+               CASE WHEN coalesce(effective.score_milli,0) >= assignment.max_score_milli
                     THEN effective.submitted_at END,
-               CASE WHEN effective.score_milli >= assignment.max_score_milli
+               CASE WHEN coalesce(effective.score_milli,0) >= assignment.max_score_milli
                     THEN effective.id END,
                0,
                coalesce(effective.score_milli,0),

@@ -48,3 +48,27 @@ groups:
           severity: warning
         annotations:
           summary: Submission export tasks remain in retry state
+
+      - alert: SubmissionsStuckJudging
+        expr: project_balloon_submissions_stuck_judging > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Submissions remain in PENDING/JUDGING beyond 10 minutes
+
+      - alert: RealtimeOutboxFailed
+        expr: project_balloon_realtime_outbox_failed > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Realtime event delivery retries remain outstanding
+
+      - alert: ObjectReferencesMissing
+        expr: project_balloon_object_storage_missing_references > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Database references point at missing object-storage keys

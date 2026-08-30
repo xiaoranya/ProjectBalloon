@@ -106,15 +106,22 @@ impl SubmissionService {
                 command.source.clone(),
             )
             .await
-            .map_err(|error| AppError::internal("upload submission source", error))?;
+            .map_err(|error| {
+                AppError::internal("upload submission source", error)
+                    .with_contest_id(contest_id)
+                    .with_user_id(actor.id)
+            })?;
 
         let persisted = self
             .persist(
                 contest_id,
                 command.problem_id,
                 &command.language,
-                i32::try_from(command.source.len())
-                    .map_err(|error| AppError::internal("convert source size", error))?,
+                i32::try_from(command.source.len()).map_err(|error| {
+                    AppError::internal("convert source size", error)
+                        .with_contest_id(contest_id)
+                        .with_user_id(actor.id)
+                })?,
                 &source_object_key,
                 &source_sha256,
                 &source_fingerprint,
@@ -158,11 +165,11 @@ impl SubmissionService {
         actor: &AuthUser,
         request_ip: IpAddr,
     ) -> Result<SubmitResponse, AppError> {
-        let mut transaction = self
-            .database
-            .begin()
-            .await
-            .map_err(|error| AppError::internal("begin submission transaction", error))?;
+        let mut transaction = self.database.begin().await.map_err(|error| {
+            AppError::internal("begin submission transaction", error)
+                .with_contest_id(contest_id)
+                .with_user_id(actor.id)
+        })?;
         let context =
             load_context_transaction(&mut transaction, contest_id, problem_id, actor.id).await?;
         require_language(&context.languages, language)?;
@@ -190,14 +197,24 @@ impl SubmissionService {
         .bind(source_token_count)
         .fetch_one(&mut *transaction)
         .await
-        .map_err(|error| AppError::internal("insert submission", error))?;
+        .map_err(|error| {
+            AppError::internal("insert submission", error)
+                .with_contest_id(contest_id)
+                .with_user_id(actor.id)
+        })?;
         let judgement_id = Uuid::new_v4();
         sqlx::query("INSERT INTO judgements (id, submission_id) VALUES ($1, $2)")
             .bind(judgement_id)
             .bind(submission_id)
             .execute(&mut *transaction)
             .await
-            .map_err(|error| AppError::internal("insert initial judgement", error))?;
+            .map_err(|error| {
+                AppError::internal("insert initial judgement", error)
+                    .with_contest_id(contest_id)
+                    .with_submission_id(submission_id)
+                    .with_judgement_id(judgement_id)
+                    .with_user_id(actor.id)
+            })?;
         let task = JudgeTask {
             schema_version: JUDGE_TASK_SCHEMA_VERSION,
             judgement_id,
@@ -217,10 +234,16 @@ impl SubmissionService {
             interactor_object_key: context.interactor_object_key.clone(),
             interactor_sha256: context.interactor_sha256.clone(),
         };
-        task.validate()
-            .map_err(|error| AppError::internal("validate generated judge task", error))?;
-        let payload = serde_json::to_string(&task)
-            .map_err(|error| AppError::internal("serialize judge task", error))?;
+        task.validate().map_err(|error| {
+            AppError::internal("validate generated judge task", error)
+                .with_submission_id(submission_id)
+                .with_judgement_id(judgement_id)
+        })?;
+        let payload = serde_json::to_string(&task).map_err(|error| {
+            AppError::internal("serialize judge task", error)
+                .with_submission_id(submission_id)
+                .with_judgement_id(judgement_id)
+        })?;
         sqlx::query(
             r#"
             INSERT INTO submission_outbox (judgement_id, submission_id, payload)
@@ -232,7 +255,13 @@ impl SubmissionService {
         .bind(payload)
         .execute(&mut *transaction)
         .await
-        .map_err(|error| AppError::internal("enqueue judge task", error))?;
+        .map_err(|error| {
+            AppError::internal("enqueue judge task", error)
+                .with_contest_id(contest_id)
+                .with_submission_id(submission_id)
+                .with_judgement_id(judgement_id)
+                .with_user_id(actor.id)
+        })?;
         sqlx::query(
             r#"
             INSERT INTO realtime_outbox
@@ -250,7 +279,13 @@ impl SubmissionService {
         }))
         .execute(&mut *transaction)
         .await
-        .map_err(|error| AppError::internal("enqueue submission realtime event", error))?;
+        .map_err(|error| {
+            AppError::internal("enqueue submission realtime event", error)
+                .with_contest_id(contest_id)
+                .with_submission_id(submission_id)
+                .with_judgement_id(judgement_id)
+                .with_user_id(actor.id)
+        })?;
         sqlx::query(
             r#"
             INSERT INTO audit_logs
@@ -263,11 +298,18 @@ impl SubmissionService {
         .bind(request_ip.to_string())
         .execute(&mut *transaction)
         .await
-        .map_err(|error| AppError::internal("record submission audit", error))?;
-        transaction
-            .commit()
-            .await
-            .map_err(|error| AppError::internal("commit submission", error))?;
+        .map_err(|error| {
+            AppError::internal("record submission audit", error)
+                .with_contest_id(contest_id)
+                .with_submission_id(submission_id)
+                .with_user_id(actor.id)
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::internal("commit submission", error)
+                .with_contest_id(contest_id)
+                .with_submission_id(submission_id)
+                .with_user_id(actor.id)
+        })?;
         Ok(SubmitResponse { submission_id, judgement_id, status: "PENDING", submitted_at })
     }
 }
@@ -337,7 +379,11 @@ async fn load_context_pool(
         .bind(problem_id)
         .fetch_optional(database)
         .await
-        .map_err(|error| AppError::internal("validate submission context", error))?
+        .map_err(|error| {
+            AppError::internal("validate submission context", error)
+                .with_contest_id(contest_id)
+                .with_user_id(user_id)
+        })?
         .ok_or_else(submission_not_allowed)
 }
 
@@ -356,7 +402,11 @@ async fn load_context_transaction(
         .bind(problem_id)
         .fetch_optional(&mut **transaction)
         .await
-        .map_err(|error| AppError::internal("revalidate locked submission context", error))?
+        .map_err(|error| {
+            AppError::internal("revalidate locked submission context", error)
+                .with_contest_id(contest_id)
+                .with_user_id(user_id)
+        })?
         .ok_or_else(submission_not_allowed)
 }
 
@@ -369,7 +419,9 @@ async fn enforce_rate_limit(
         .bind(team_id)
         .execute(&mut **transaction)
         .await
-        .map_err(|error| AppError::internal("lock team submission rate limit", error))?;
+        .map_err(|error| {
+            AppError::internal("lock team submission rate limit", error).with_contest_id(contest_id)
+        })?;
     let recent = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT count(*) FROM submissions
@@ -381,7 +433,9 @@ async fn enforce_rate_limit(
     .bind(team_id)
     .fetch_one(&mut **transaction)
     .await
-    .map_err(|error| AppError::internal("check submission rate limit", error))?;
+    .map_err(|error| {
+        AppError::internal("check submission rate limit", error).with_contest_id(contest_id)
+    })?;
     if recent >= SUBMISSION_LIMIT_PER_MINUTE {
         Err(AppError::too_many_requests(
             "SUBMISSION_RATE_LIMITED",

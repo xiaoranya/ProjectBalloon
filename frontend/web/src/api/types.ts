@@ -286,10 +286,27 @@ export interface ContestProblem extends Omit<ContestProblemAssignment, 'createdA
   statement: PublishedStatement | null;
 }
 
+/**
+ * submissions.status now carries only the judging lifecycle; the outcome is
+ * submissions.verdict (null until the lifecycle reaches COMPLETED).
+ */
+export type SubmissionLifecycleStatus = 'PENDING' | 'JUDGING' | 'COMPLETED';
+
+export type SubmissionVerdict =
+  | 'ACCEPTED'
+  | 'WRONG_ANSWER'
+  | 'COMPILE_ERROR'
+  | 'RUNTIME_ERROR'
+  | 'TIME_LIMIT_EXCEEDED'
+  | 'MEMORY_LIMIT_EXCEEDED'
+  | 'OUTPUT_LIMIT_EXCEEDED'
+  | 'SYSTEM_ERROR'
+  | 'CANCELLED';
+
 export interface SubmitResult {
   submissionId: number;
   judgementId: string;
-  status: string;
+  status: SubmissionLifecycleStatus;
   submittedAt: string;
 }
 
@@ -302,11 +319,11 @@ export interface SubmissionSummary {
   teamName: string;
   language: string;
   sourceSizeBytes: number;
-  status: string;
+  status: SubmissionLifecycleStatus;
   submittedAt: string;
   judgedAt: string | null;
   activeJudgementId: string | null;
-  verdict: string | null;
+  verdict: SubmissionVerdict | null;
   totalTimeMs: number | null;
   peakMemoryKb: number | null;
   scoreMilli: number | null;

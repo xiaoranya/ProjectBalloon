@@ -12,20 +12,19 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "openapi:gen": "node scripts/export-openapi.mjs && openapi-typescript ../../docs/api/openapi.runtime.json -o src/api/types.generated.ts",
+    "openapi:diff": "node scripts/openapi-diff.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.2",
-    "dompurify": "3.4.14",
     "element-plus": "2.14.4",
-    "markdown-it": "15.0.0",
     "monaco-editor": "^0.56.0",
     "vue": "3.5.40",
     "vue-router": "5.2.0"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@types/markdown-it": "14.2.0",
     "@vitejs/plugin-vue": "6.0.8",
     "@vue/test-utils": "2.4.11",
     "eslint": "10.9.1",
@@ -33,6 +32,7 @@
     "eslint-plugin-vue": "10.10.0",
     "globals": "17.10.0",
     "jsdom": "30.0.1",
+    "openapi-typescript": "^7.13.0",
     "prettier": "3.9.6",
     "typescript": "5.7.2",
     "typescript-eslint": "8.68.0",

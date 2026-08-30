@@ -4,11 +4,13 @@ use anyhow::{Context, Result};
 use project_balloon_judge_worker::{
     WorkerConfig,
     artifacts::{ArtifactManager, S3ArtifactSource, S3ArtifactSourceConfig},
+    health::{HealthState, serve_health},
     heartbeat::{WorkerActivity, WorkerHeartbeatPublisher, WorkerHeartbeatPublisherConfig},
     rabbit::{RabbitJudgeWorker, RabbitJudgeWorkerConfig},
     sandbox::{DockerSandbox, DockerSandboxConfig},
     worker::JudgeEngine,
 };
+use std::net::SocketAddr;
 use tokio::sync::watch;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -63,6 +65,7 @@ async fn main() -> Result<()> {
         ("java".to_owned(), image_version(&config.java_image)),
         ("python".to_owned(), image_version(&config.python_image)),
     ]);
+    let health = HealthState::new(config.health_session_error_window);
     let worker = RabbitJudgeWorker::new(
         RabbitJudgeWorkerConfig {
             uri: config.amqp_url.clone(),
@@ -71,6 +74,7 @@ async fn main() -> Result<()> {
             prefetch: config.task_prefetch,
             request_timeout: config.request_timeout,
             reconnect_delay: config.reconnect_delay,
+            health: Some(health.clone()),
         },
         engine,
         activity.clone(),
@@ -89,13 +93,25 @@ async fn main() -> Result<()> {
         },
         activity,
     );
-    let worker_task = tokio::spawn(worker.run(shutdown_rx));
+    let worker_task = tokio::spawn(worker.run(shutdown_rx.clone()));
     let heartbeat_task = tokio::spawn(heartbeat.run(shutdown.subscribe()));
+    let health_addr = SocketAddr::from(([127, 0, 0, 1], config.health_port));
+    let health_task = tokio::spawn(serve_health(health_addr, health, shutdown_rx.clone()));
     shutdown_signal().await;
     info!("judge worker shutdown requested");
     let _sent = shutdown.send(true);
     worker_task.await.context("Judge worker task failed")?;
     heartbeat_task.await.context("Worker heartbeat task failed")?;
+    // The health server exits on the same shutdown watch; its own readiness
+    // promise ends with the process.
+    match health_task.await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => return Err(error).context("Judge worker health server failed"),
+        Err(join_error) => {
+            return Err(anyhow::Error::new(join_error))
+                .context("Judge worker health server task panicked");
+        }
+    }
     Ok(())
 }
 

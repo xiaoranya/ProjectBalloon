@@ -9,8 +9,7 @@ use crate::features::training::model::{
     TrainingSet, validate_page,
 };
 use crate::{
-    error::AppError, features::auth::SuperAdminContext, features::problems::render_safe_statement,
-    pagination::PageResponse, state::AppState,
+    error::AppError, features::auth::SuperAdminContext, pagination::PageResponse, state::AppState,
 };
 
 #[utoipa::path(get, path = "/api/public/problem-bank", operation_id = "listPublicProblemBank", tag = "training", params(("page" = Option<u32>, Query), ("size" = Option<u32>, Query), ("tag" = Option<String>, Query), ("difficulty" = Option<i16>, Query)), responses((status = 200, body = PageResponse<BankProblem>)))]
@@ -61,12 +60,7 @@ pub async fn list_bank(
     .fetch_all(state.database())
     .await
     .map_err(|e| AppError::internal("list public problem bank", e))?;
-    let mut problems =
-        rows.into_iter().map(BankProblem::try_from).collect::<Result<Vec<_>, _>>()?;
-    for problem in &mut problems {
-        problem.statement =
-            problem.statement.take().map(|statement| render_safe_statement(&statement));
-    }
+    let problems = rows.into_iter().map(BankProblem::try_from).collect::<Result<Vec<_>, _>>()?;
     Ok(Json(PageResponse::new(problems, query.page, query.size, total)))
 }
 
@@ -94,8 +88,7 @@ pub async fn get_bank(
     .await
     .map_err(|e| AppError::internal("get public problem bank problem", e))?
     .ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem is not public"))?;
-    let mut problem: BankProblem = row.try_into()?;
-    problem.statement = problem.statement.take().map(|statement| render_safe_statement(&statement));
+    let problem: BankProblem = row.try_into()?;
     Ok(Json(problem))
 }
 

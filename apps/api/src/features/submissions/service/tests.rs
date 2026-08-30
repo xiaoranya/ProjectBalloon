@@ -303,7 +303,7 @@ async fn submission_persists_authoritative_task_and_compensates_rejection(pool: 
     .execute(&pool)
     .await
     .expect("insert original judgement run");
-    sqlx::query("UPDATE submissions SET status = 'ACCEPTED', judged_at = now() WHERE id = $1")
+    sqlx::query("UPDATE submissions SET status = 'COMPLETED', verdict = 'ACCEPTED', judged_at = now() WHERE id = $1")
         .bind(response.submission_id)
         .execute(&pool)
         .await
@@ -368,7 +368,7 @@ async fn submission_persists_authoritative_task_and_compensates_rejection(pool: 
         pair.submission_id == response.submission_id
             && pair.other_submission_id == second_response.submission_id
     }));
-    sqlx::query("UPDATE submissions SET status = 'CANCELLED' WHERE id = $1")
+    sqlx::query("UPDATE submissions SET status = 'COMPLETED', verdict = 'CANCELLED' WHERE id = $1")
         .bind(second_response.submission_id)
         .execute(&pool)
         .await
@@ -464,6 +464,7 @@ async fn submission_persists_authoritative_task_and_compensates_rejection(pool: 
         team_id: None,
         problem_id: None,
         status: None,
+        verdict: None,
         language: None,
         page: 0,
         size: 25,
@@ -573,11 +574,13 @@ async fn submission_persists_authoritative_task_and_compensates_rejection(pool: 
         .execute(&pool)
         .await
         .expect("complete rejudgement");
-    sqlx::query("UPDATE submissions SET status='ACCEPTED',judged_at=now() WHERE id=$1")
-        .bind(response.submission_id)
-        .execute(&pool)
-        .await
-        .expect("complete rejudged submission");
+    sqlx::query(
+        "UPDATE submissions SET status='COMPLETED',verdict='ACCEPTED',judged_at=now() WHERE id=$1",
+    )
+    .bind(response.submission_id)
+    .execute(&pool)
+    .await
+    .expect("complete rejudged submission");
     assert!(
         service
             .judge_queue_status(contest_id, &admin)

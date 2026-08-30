@@ -11,7 +11,7 @@ FROM debian:bookworm-slim
 RUN set -eux; \
     export DEBIAN_FRONTEND=noninteractive; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates; \
+    apt-get install -y --no-install-recommends ca-certificates procps wget; \
     rm -rf /var/lib/apt/lists/*; \
     groupadd --gid 1000 judge; \
     useradd --uid 1000 --gid 1000 --create-home --shell /usr/sbin/nologin judge

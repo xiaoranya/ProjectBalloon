@@ -34,6 +34,7 @@ const DEFAULT_JUDGE_DISPATCH_LEASE_SECONDS: u64 = 30;
 const DEFAULT_JUDGE_DISPATCH_RETRY_BASE_MILLISECONDS: u64 = 1_000;
 const DEFAULT_JUDGE_DISPATCH_BATCH_SIZE: i64 = 50;
 const DEFAULT_JUDGE_DISPATCH_MAX_ATTEMPTS: i32 = 8;
+const DEFAULT_JUDGE_STUCK_REQUEUE_INTERVAL_SECONDS: u64 = 60;
 const DEFAULT_RABBITMQ_REQUEST_TIMEOUT_MILLISECONDS: u64 = 5_000;
 const DEFAULT_JUDGE_RESULT_PREFETCH: u16 = 32;
 const DEFAULT_JUDGE_RESULT_RECONNECT_MILLISECONDS: u64 = 1_000;
@@ -113,6 +114,7 @@ pub struct AppConfig {
     pub judge_dispatch_retry_base: Duration,
     pub judge_dispatch_batch_size: i64,
     pub judge_dispatch_max_attempts: i32,
+    pub judge_stuck_requeue_interval: std::time::Duration,
     pub judge_result_prefetch: u16,
     pub judge_result_reconnect_delay: Duration,
     pub cups_enabled: bool,

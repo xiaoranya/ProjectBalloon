@@ -8,7 +8,7 @@ use project_balloon_api::{
     features::judge_dispatch::{
         RabbitDeadLetterConsumer, RabbitJudgeResultConsumer, RabbitJudgeTaskPublisher,
         RabbitWorkerHeartbeatConsumer, SubmissionOutboxDispatcher,
-        SubmissionOutboxDispatcherConfig,
+        SubmissionOutboxDispatcherConfig, SubmissionStuckReaper,
     },
     features::printing::{CommandLineCupsGateway, CupsDeliveryRunner, CupsGateway},
     features::realtime::{DispatcherConfig, OutboxDispatcher, RealtimePublisher},
@@ -216,6 +216,7 @@ struct BackgroundRunners {
     dispatcher: Option<JoinHandle<()>>,
     redis_subscriber: Option<JoinHandle<()>>,
     judge_dispatcher: Option<JoinHandle<()>>,
+    judge_stuck_reaper: Option<JoinHandle<()>>,
     judge_result_consumer: Option<JoinHandle<()>>,
     worker_heartbeat_consumer: Option<JoinHandle<()>>,
     judge_dead_letter_consumer: Option<JoinHandle<()>>,
@@ -243,6 +244,10 @@ impl BackgroundRunners {
         };
         let judge_dispatcher_result = match self.judge_dispatcher {
             Some(task) => Some(task.await.context("submission outbox dispatcher task failed")),
+            None => None,
+        };
+        let judge_stuck_reaper_result = match self.judge_stuck_reaper {
+            Some(task) => Some(task.await.context("stuck-judging reaper task failed")),
             None => None,
         };
         let judge_result_consumer_result = match self.judge_result_consumer {
@@ -282,6 +287,9 @@ impl BackgroundRunners {
             result?;
         }
         if let Some(result) = judge_dispatcher_result {
+            result?;
+        }
+        if let Some(result) = judge_stuck_reaper_result {
             result?;
         }
         if let Some(result) = judge_result_consumer_result {
@@ -360,6 +368,18 @@ async fn spawn_background_runners(
                     batch_size: config.judge_dispatch_batch_size,
                     max_attempts: config.judge_dispatch_max_attempts,
                 },
+            )
+            .run(shutdown_rx.clone()),
+        )
+    });
+    // The reaper only makes sense when judge dispatch runs: without a
+    // publisher a requeued row could never be sent again.
+    let judge_stuck_reaper_task = judge_publisher.as_ref().map(|_| {
+        tokio::spawn(
+            SubmissionStuckReaper::new(
+                database.clone(),
+                config.judge_stuck_requeue_interval,
+                config.judge_dispatch_max_attempts,
             )
             .run(shutdown_rx.clone()),
         )
@@ -456,6 +476,7 @@ async fn spawn_background_runners(
         dispatcher: dispatcher_task,
         redis_subscriber: redis_subscriber_task,
         judge_dispatcher: judge_dispatcher_task,
+        judge_stuck_reaper: judge_stuck_reaper_task,
         judge_result_consumer: judge_result_consumer_task,
         worker_heartbeat_consumer: worker_heartbeat_consumer_task,
         judge_dead_letter_consumer: judge_dead_letter_consumer_task,
@@ -471,7 +492,7 @@ async fn spawn_background_runners(
 
 fn init_tracing() {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("project_balloon_api=info,tower_http=info"));
+        .unwrap_or_else(|_| EnvFilter::new("project_balloon_api=info"));
     tracing_subscriber::fmt().with_env_filter(filter).json().init();
 }
 

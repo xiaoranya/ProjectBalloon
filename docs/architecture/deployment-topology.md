@@ -77,6 +77,15 @@ project-balloon-vX.Y.Z-linux-amd64-judge-images.tar.gz
     SHA256SUMS
 ```
 
+Judge runtime images are loaded from tar archives (`docker load`/`podman
+load`), so registry digest references such as `image@sha256:...` cannot be
+used. Verification therefore happens at load time and is mandatory before
+any worker starts against the imported images: run
+`sha256sum -c SHA256SUMS` inside the extracted judge-images directory and
+treat any mismatch as a failed release. `install.sh --role worker`
+enforces this check automatically before loading the archives; manual or
+Compose-based imports must run the same verification themselves.
+
 The release workflow also builds `linux-arm64`, `macos-x86_64`,
 `macos-arm64`, and `windows-x86_64` binary archives. Linux arm64 receives the
 same deployment package shape, and Judge Runtime image archives are built for

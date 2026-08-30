@@ -29,6 +29,10 @@ jobs:
       - run: cargo lint
       # Environment-backed tests run in the scheduled/manual Docker workflow.
       - run: cargo test-all
+      - name: Check committed OpenAPI runtime document is fresh
+        run: |
+          cargo run --quiet -p project-balloon-api --bin export-openapi > docs/api/openapi.runtime.json
+          git diff --exit-code -- docs/api/openapi.runtime.json
       - name: Install SQLx CLI
         run: |
           if rg -q 'sqlx::(query|query_as|query_scalar|query_file)!' apps crates; then
@@ -62,6 +66,7 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm test -- --run
+      - run: npm run openapi:diff -- --check
       - run: npm run build
 
   compatibility:

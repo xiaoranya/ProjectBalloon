@@ -44,7 +44,7 @@ async fn balloon_workbench_enforces_claim_ownership_and_recovery(pool: PgPool) {
         .fetch_one(&pool)
         .await
         .expect("insert balloon team");
-        let submission_id = sqlx::query_scalar::<_, i64>("INSERT INTO submissions (contest_id, problem_id, team_id, language, source_object_key, source_size_bytes, source_sha256, status) VALUES ($1, $2, $3, 'cpp', $4, 10, $5, 'ACCEPTED') RETURNING id")
+        let submission_id = sqlx::query_scalar::<_, i64>("INSERT INTO submissions (contest_id, problem_id, team_id, language, source_object_key, source_size_bytes, source_sha256, status, verdict) VALUES ($1, $2, $3, 'cpp', $4, 10, $5, 'COMPLETED', 'ACCEPTED') RETURNING id")
             .bind(contest_id).bind(problem_id).bind(team_id)
             .bind(format!("sources/balloon-{index}.cpp")).bind(format!("{index}").repeat(64))
             .fetch_one(&pool).await.expect("insert balloon submission");

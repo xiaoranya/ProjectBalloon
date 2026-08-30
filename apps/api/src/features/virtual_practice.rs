@@ -58,7 +58,7 @@ const VIRTUAL_SESSION_SQL: &str = r#"
                FILTER(WHERE problem.id IS NOT NULL AND bank.problem_id IS NOT NULL)::bigint
                AS total_problems,
            count(DISTINCT sub.problem_id)
-               FILTER(WHERE sub.status='ACCEPTED' AND problem.id IS NOT NULL
+               FILTER(WHERE sub.verdict='ACCEPTED' AND problem.id IS NOT NULL
                    AND bank.problem_id IS NOT NULL)::bigint
                AS solved_problems
     FROM practice_virtual_sessions s
@@ -168,7 +168,7 @@ pub async fn get(
                EXISTS(
                    SELECT 1 FROM submissions s
                    WHERE s.virtual_session_id=i.session_id AND s.problem_id=i.problem_id
-                       AND s.participant_user_id=$2 AND s.status='ACCEPTED'
+                       AND s.participant_user_id=$2 AND s.verdict='ACCEPTED'
                ) AS solved,
                (
                    SELECT count(*) FROM submissions s

@@ -435,8 +435,8 @@ async fn insert_scored_submission(
         r#"
         INSERT INTO submissions
             (contest_id, problem_id, team_id, language, source_object_key,
-             source_size_bytes, source_sha256, status, submitted_at, judged_at)
-        VALUES ($1, $2, $3, 'cpp', $4, 10, $5, $6, $7, now())
+             source_size_bytes, source_sha256, status, verdict, submitted_at, judged_at)
+        VALUES ($1, $2, $3, 'cpp', $4, 10, $5, 'COMPLETED', $6, $7, now())
         RETURNING id
         "#,
     )
@@ -462,4 +462,89 @@ async fn insert_scored_submission(
     .execute(pool)
     .await
     .expect("insert scored judgement");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+#[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+async fn rebuild_cell_with_zero_submissions_writes_clean_cells(pool: PgPool) {
+    for scoring_mode in ["ICPC", "OI"] {
+        let contest_id = sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO contests (name, status, visibility, start_at, scoring_mode)
+            VALUES ($1, 'RUNNING', 'PRIVATE', date_trunc('second', now()) - interval '1 hour', $2)
+            RETURNING id
+            "#,
+        )
+        .bind(format!("Empty Board {scoring_mode}"))
+        .bind(scoring_mode)
+        .fetch_one(&pool)
+        .await
+        .expect("insert contest");
+        let team_id =
+            sqlx::query_scalar::<_, i64>("INSERT INTO teams (name) VALUES ($1) RETURNING id")
+                .bind(format!("Empty Board Team {scoring_mode}"))
+                .fetch_one(&pool)
+                .await
+                .expect("insert team");
+        let problem_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems (slug, title) VALUES ($1, $2) RETURNING id",
+        )
+        .bind(format!("empty-board-{}", scoring_mode.to_lowercase()))
+        .bind(format!("Empty Board {scoring_mode}"))
+        .fetch_one(&pool)
+        .await
+        .expect("insert problem");
+        sqlx::query(
+            "INSERT INTO contest_teams (contest_id, team_id, participation_type) VALUES ($1, $2, 'OFFICIAL')",
+        )
+        .bind(contest_id)
+        .bind(team_id)
+        .execute(&pool)
+        .await
+        .expect("roster team");
+        sqlx::query(
+            "INSERT INTO contest_problems (contest_id, problem_id, alias, display_order) VALUES ($1, $2, 'A', 1)",
+        )
+        .bind(contest_id)
+        .bind(problem_id)
+        .execute(&pool)
+        .await
+        .expect("assign problem");
+
+        let mut transaction = pool.begin().await.expect("begin empty projection");
+        rebuild_cell(&mut transaction, contest_id, team_id, problem_id).await.unwrap_or_else(
+            |error| {
+                panic!("rebuild_cell with zero submissions must not fail ({scoring_mode}): {error}")
+            },
+        );
+        transaction.commit().await.expect("commit empty projection");
+
+        let cell = sqlx::query_as::<_, (bool, i32, i64, i32)>(
+            r#"
+            SELECT solved, wrong_attempts, penalty_minutes, score_milli
+            FROM contest_scoreboard_cells
+            WHERE contest_id = $1 AND team_id = $2 AND problem_id = $3
+            "#,
+        )
+        .bind(contest_id)
+        .bind(team_id)
+        .bind(problem_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load empty cell");
+        assert_eq!((cell.0, cell.1, cell.2, cell.3), (false, 0, 0, 0), "{scoring_mode}");
+        let row = sqlx::query_as::<_, (i32, i64, i64)>(
+            r#"
+            SELECT solved_count, penalty_minutes, total_score_milli
+            FROM contest_scoreboard_rows
+            WHERE contest_id = $1 AND team_id = $2
+            "#,
+        )
+        .bind(contest_id)
+        .bind(team_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load empty row");
+        assert_eq!((row.0, row.1, row.2), (0, 0, 0), "{scoring_mode}");
+    }
 }

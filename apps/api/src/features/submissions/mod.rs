@@ -25,7 +25,7 @@ pub use handlers::{
 };
 pub use service::SubmissionService;
 
-pub(crate) use model::SubmissionStatus;
+pub use model::SubmissionStatus;
 
 /// Routes owned by this feature, assembled by the root router.
 pub fn routes() -> axum::Router<crate::state::AppState> {

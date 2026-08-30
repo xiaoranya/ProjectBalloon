@@ -45,11 +45,12 @@ impl SubmissionService {
         if contest_id <= 0 || submission_id <= 0 {
             return Err(rejudge_submission_not_found());
         }
-        let mut transaction = self
-            .database
-            .begin()
-            .await
-            .map_err(|error| AppError::internal("begin submission rejudge", error))?;
+        let mut transaction = self.database.begin().await.map_err(|error| {
+            AppError::internal("begin submission rejudge", error)
+                .with_contest_id(contest_id)
+                .with_submission_id(submission_id)
+                .with_user_id(actor.id)
+        })?;
         if !actor.is_super_admin() {
             let assigned = sqlx::query_scalar::<_, bool>(
                 r#"
@@ -63,7 +64,12 @@ impl SubmissionService {
             .bind(actor.id)
             .fetch_one(&mut *transaction)
             .await
-            .map_err(|error| AppError::internal("check rejudge administrator scope", error))?;
+            .map_err(|error| {
+                AppError::internal("check rejudge administrator scope", error)
+                    .with_contest_id(contest_id)
+                    .with_submission_id(submission_id)
+                    .with_user_id(actor.id)
+            })?;
             if !assigned {
                 return Err(rejudge_submission_not_found());
             }
@@ -82,12 +88,19 @@ impl SubmissionService {
             .bind(submission_id)
             .fetch_optional(&mut *transaction)
             .await
-            .map_err(|error| AppError::internal("recover completed batch rejudge item", error))?;
+            .map_err(|error| {
+                AppError::internal("recover completed batch rejudge item", error)
+                    .with_contest_id(contest_id)
+                    .with_submission_id(submission_id)
+                    .with_user_id(actor.id)
+            })?;
             if let Some((judgement_id, queued_at, previous_judgement_id)) = existing {
-                transaction
-                    .commit()
-                    .await
-                    .map_err(|error| AppError::internal("commit recovered batch rejudge", error))?;
+                transaction.commit().await.map_err(|error| {
+                    AppError::internal("commit recovered batch rejudge", error)
+                        .with_contest_id(contest_id)
+                        .with_submission_id(submission_id)
+                        .with_user_id(actor.id)
+                })?;
                 return Ok(RejudgeResponse {
                     submission_id,
                     previous_judgement_id,
@@ -141,7 +154,12 @@ impl SubmissionService {
         .bind(contest_id)
         .fetch_optional(&mut *transaction)
         .await
-        .map_err(|error| AppError::internal("lock submission for rejudge", error))?
+        .map_err(|error| {
+            AppError::internal("lock submission for rejudge", error)
+                .with_contest_id(contest_id)
+                .with_submission_id(submission_id)
+                .with_user_id(actor.id)
+        })?
         .ok_or_else(rejudge_submission_not_found)?;
         if context.contest_status == "ARCHIVED" {
             return Err(AppError::conflict(
@@ -179,7 +197,13 @@ impl SubmissionService {
         .bind(context.active_judgement_id)
         .execute(&mut *transaction)
         .await
-        .map_err(|error| AppError::internal("supersede previous judgement", error))?;
+        .map_err(|error| {
+            AppError::internal("supersede previous judgement", error)
+                .with_contest_id(contest_id)
+                .with_submission_id(submission_id)
+                .with_judgement_id(context.active_judgement_id)
+                .with_user_id(actor.id)
+        })?;
         sqlx::query(
             r#"
                 UPDATE submission_outbox
@@ -191,7 +215,13 @@ impl SubmissionService {
         .bind(context.active_judgement_id)
         .execute(&mut *transaction)
         .await
-        .map_err(|error| AppError::internal("cancel previous judge task", error))?;
+        .map_err(|error| {
+            AppError::internal("cancel previous judge task", error)
+                .with_contest_id(contest_id)
+                .with_submission_id(submission_id)
+                .with_judgement_id(context.active_judgement_id)
+                .with_user_id(actor.id)
+        })?;
         let judgement_id = Uuid::new_v4();
         let queued_at = sqlx::query_scalar::<_, OffsetDateTime>(
                 "INSERT INTO judgements (id, submission_id, batch_rejudge_item_id) VALUES ($1, $2, $3) RETURNING created_at",
@@ -201,19 +231,39 @@ impl SubmissionService {
             .bind(batch_item_id)
             .fetch_one(&mut *transaction)
             .await
-            .map_err(|error| AppError::internal("insert rejudge judgement", error))?;
+            .map_err(|error| {
+                AppError::internal("insert rejudge judgement", error)
+                    .with_contest_id(contest_id)
+                    .with_submission_id(submission_id)
+                    .with_judgement_id(judgement_id)
+                    .with_user_id(actor.id)
+            })?;
         // Rejudging is the documented administrative exemption to the
         // submission state machine: any state resets to Pending while the
         // previous judgement is superseded.
-        sqlx::query("UPDATE submissions SET status = $2, judged_at = NULL WHERE id = $1")
-            .bind(submission_id)
-            .bind(SubmissionStatus::Pending.as_str())
-            .execute(&mut *transaction)
-            .await
-            .map_err(|error| AppError::internal("reset submission for rejudge", error))?;
+        sqlx::query(
+            "UPDATE submissions SET status = $2, verdict = NULL, judged_at = NULL WHERE id = $1",
+        )
+        .bind(submission_id)
+        .bind(SubmissionStatus::Pending.as_str())
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            AppError::internal("reset submission for rejudge", error)
+                .with_contest_id(contest_id)
+                .with_submission_id(submission_id)
+                .with_judgement_id(judgement_id)
+                .with_user_id(actor.id)
+        })?;
         scoreboard::rebuild_cell(&mut transaction, contest_id, context.team_id, context.problem_id)
             .await
-            .map_err(|error| AppError::internal("rollback scoreboard for rejudge", error))?;
+            .map_err(|error| {
+                AppError::internal("rollback scoreboard for rejudge", error)
+                    .with_contest_id(contest_id)
+                    .with_submission_id(submission_id)
+                    .with_judgement_id(judgement_id)
+                    .with_user_id(actor.id)
+            })?;
         let task = JudgeTask {
             schema_version: JUDGE_TASK_SCHEMA_VERSION,
             judgement_id,
@@ -233,9 +283,16 @@ impl SubmissionService {
             interactor_object_key: context.interactor_object_key.clone(),
             interactor_sha256: context.interactor_sha256.clone(),
         };
-        task.validate().map_err(|error| AppError::internal("validate rejudge task", error))?;
-        let payload = serde_json::to_string(&task)
-            .map_err(|error| AppError::internal("serialize rejudge task", error))?;
+        task.validate().map_err(|error| {
+            AppError::internal("validate rejudge task", error)
+                .with_submission_id(submission_id)
+                .with_judgement_id(judgement_id)
+        })?;
+        let payload = serde_json::to_string(&task).map_err(|error| {
+            AppError::internal("serialize rejudge task", error)
+                .with_submission_id(submission_id)
+                .with_judgement_id(judgement_id)
+        })?;
         sqlx::query(
                 "INSERT INTO submission_outbox (judgement_id, submission_id, payload) VALUES ($1, $2, $3)",
             )
@@ -244,7 +301,13 @@ impl SubmissionService {
             .bind(payload)
             .execute(&mut *transaction)
             .await
-            .map_err(|error| AppError::internal("enqueue rejudge task", error))?;
+            .map_err(|error| {
+                AppError::internal("enqueue rejudge task", error)
+                    .with_contest_id(contest_id)
+                    .with_submission_id(submission_id)
+                    .with_judgement_id(judgement_id)
+                    .with_user_id(actor.id)
+            })?;
         for (scope, recipient) in [("TEAM", Some(context.team_id)), ("STAFF", None)] {
             sqlx::query(
                 r#"
@@ -265,7 +328,13 @@ impl SubmissionService {
             }))
             .execute(&mut *transaction)
             .await
-            .map_err(|error| AppError::internal("enqueue rejudge realtime event", error))?;
+            .map_err(|error| {
+                AppError::internal("enqueue rejudge realtime event", error)
+                    .with_contest_id(contest_id)
+                    .with_submission_id(submission_id)
+                    .with_judgement_id(judgement_id)
+                    .with_user_id(actor.id)
+            })?;
         }
         sqlx::query(
             r#"
@@ -279,11 +348,20 @@ impl SubmissionService {
         .bind(request_ip.to_string())
         .execute(&mut *transaction)
         .await
-        .map_err(|error| AppError::internal("record rejudge audit", error))?;
-        transaction
-            .commit()
-            .await
-            .map_err(|error| AppError::internal("commit submission rejudge", error))?;
+        .map_err(|error| {
+            AppError::internal("record rejudge audit", error)
+                .with_contest_id(contest_id)
+                .with_submission_id(submission_id)
+                .with_judgement_id(judgement_id)
+                .with_user_id(actor.id)
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::internal("commit submission rejudge", error)
+                .with_contest_id(contest_id)
+                .with_submission_id(submission_id)
+                .with_judgement_id(judgement_id)
+                .with_user_id(actor.id)
+        })?;
         Ok(RejudgeResponse {
             submission_id,
             previous_judgement_id: context.active_judgement_id,

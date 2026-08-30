@@ -36,8 +36,8 @@
         </ElTableColumn>
         <ElTableColumn :label="t('状态')" min-width="170">
           <template #default="{ row }">
-            <ElTag :type="statusTagType(row.status)" effect="light">
-              {{ submissionStatusLabel(row.status) }}
+            <ElTag :type="statusTagType(row.verdict ?? row.status)" effect="light">
+              {{ submissionStatusLabel(row.verdict ?? row.status) }}
             </ElTag>
           </template>
         </ElTableColumn>

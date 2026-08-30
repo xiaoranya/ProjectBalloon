@@ -144,6 +144,7 @@ async fn rabbit_rustfs_cpp_pipeline_publishes_confirmed_result() {
             prefetch: 1,
             request_timeout: Duration::from_secs(5),
             reconnect_delay: Duration::from_millis(100),
+            health: None,
         },
         engine,
         WorkerActivity::new(1),

@@ -2504,6 +2504,7 @@ version = "0.1.0-alpha.3"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum",
  "bollard",
  "bytes",
  "futures-util",
@@ -2519,6 +2520,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "uuid",

@@ -46,7 +46,9 @@ impl BatchRejudgeService {
         .bind(&request.idempotency_key)
         .fetch_optional(&self.database)
         .await
-        .map_err(|error| AppError::internal("load idempotent batch rejudge", error))?
+        .map_err(|error| {
+            AppError::internal("load idempotent batch rejudge", error).with_contest_id(contest_id).with_user_id(actor.id)
+        })?
         {
             if existing_contest_id == contest_id && existing_creator_id == actor.id {
                 return self.get(contest_id, existing_id, actor).await;
@@ -56,16 +58,20 @@ impl BatchRejudgeService {
                 "Idempotency key is already used by another batch rejudge request",
             ));
         }
-        let mut transaction = self
-            .database
-            .begin()
-            .await
-            .map_err(|error| AppError::internal("begin batch rejudge", error))?;
+        let mut transaction = self.database.begin().await.map_err(|error| {
+            AppError::internal("begin batch rejudge", error)
+                .with_contest_id(contest_id)
+                .with_user_id(actor.id)
+        })?;
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
             .bind(&request.idempotency_key)
             .execute(&mut *transaction)
             .await
-            .map_err(|error| AppError::internal("lock batch rejudge idempotency key", error))?;
+            .map_err(|error| {
+                AppError::internal("lock batch rejudge idempotency key", error)
+                    .with_contest_id(contest_id)
+                    .with_user_id(actor.id)
+            })?;
         if let Some((existing_id, existing_contest_id, existing_creator_id)) =
             sqlx::query_as::<_, (i64, i64, i64)>(
                 "SELECT id, contest_id, created_by_user_id FROM batch_rejudge_tasks WHERE idempotency_key = $1",
@@ -73,12 +79,16 @@ impl BatchRejudgeService {
             .bind(&request.idempotency_key)
             .fetch_optional(&mut *transaction)
             .await
-            .map_err(|error| AppError::internal("recheck batch rejudge idempotency key", error))?
+            .map_err(|error| {
+            AppError::internal("recheck batch rejudge idempotency key", error).with_contest_id(contest_id).with_user_id(actor.id)
+        })?
         {
             transaction
                 .rollback()
                 .await
-                .map_err(|error| AppError::internal("rollback idempotent batch rejudge", error))?;
+                .map_err(|error| {
+            AppError::internal("rollback idempotent batch rejudge", error).with_contest_id(contest_id).with_user_id(actor.id)
+        })?;
             if existing_contest_id == contest_id && existing_creator_id == actor.id {
                 return self.get(contest_id, existing_id, actor).await;
             }
@@ -87,8 +97,11 @@ impl BatchRejudgeService {
                 "Idempotency key is already used by another batch rejudge request",
             ));
         }
-        let filter_data = serde_json::to_string(&request.filter)
-            .map_err(|error| AppError::internal("encode batch rejudge filter", error))?;
+        let filter_data = serde_json::to_string(&request.filter).map_err(|error| {
+            AppError::internal("encode batch rejudge filter", error)
+                .with_contest_id(contest_id)
+                .with_user_id(actor.id)
+        })?;
         let task_id = sqlx::query_scalar::<_, i64>(
             r#"
             INSERT INTO batch_rejudge_tasks
@@ -104,7 +117,11 @@ impl BatchRejudgeService {
         .bind(actor.id)
         .fetch_one(&mut *transaction)
         .await
-        .map_err(|error| AppError::internal("insert batch rejudge task", error))?;
+        .map_err(|error| {
+            AppError::internal("insert batch rejudge task", error)
+                .with_contest_id(contest_id)
+                .with_user_id(actor.id)
+        })?;
         let inserted = insert_items(&mut transaction, task_id, contest_id, &request.filter).await?;
         if inserted != request.expected_count {
             return Err(AppError::conflict(
@@ -123,11 +140,16 @@ impl BatchRejudgeService {
         .bind(task_id.to_string())
         .execute(&mut *transaction)
         .await
-        .map_err(|error| AppError::internal("record batch rejudge audit", error))?;
-        transaction
-            .commit()
-            .await
-            .map_err(|error| AppError::internal("commit batch rejudge", error))?;
+        .map_err(|error| {
+            AppError::internal("record batch rejudge audit", error)
+                .with_contest_id(contest_id)
+                .with_user_id(actor.id)
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::internal("commit batch rejudge", error)
+                .with_contest_id(contest_id)
+                .with_user_id(actor.id)
+        })?;
         self.get(contest_id, task_id, actor).await
     }
 
@@ -149,7 +171,11 @@ impl BatchRejudgeService {
         .bind(task_id)
         .fetch_all(&self.database)
         .await
-        .map_err(|error| AppError::internal("load batch rejudge items", error))?;
+        .map_err(|error| {
+            AppError::internal("load batch rejudge items", error)
+                .with_contest_id(contest_id)
+                .with_user_id(actor.id)
+        })?;
         task.items_truncated = task.total_items > 1000;
         Ok(task)
     }
@@ -167,7 +193,11 @@ impl BatchRejudgeService {
         .bind(contest_id)
         .fetch_all(&self.database)
         .await
-        .map_err(|error| AppError::internal("list batch rejudge tasks", error))?;
+        .map_err(|error| {
+            AppError::internal("list batch rejudge tasks", error)
+                .with_contest_id(contest_id)
+                .with_user_id(actor.id)
+        })?;
         Ok(rows.into_iter().map(BatchRejudgeTaskRow::response).collect())
     }
 
@@ -189,7 +219,9 @@ impl BatchRejudgeService {
         .bind(contest_id)
         .execute(&self.database)
         .await
-        .map_err(|error| AppError::internal("pause batch rejudge", error))?;
+        .map_err(|error| {
+            AppError::internal("pause batch rejudge", error).with_contest_id(contest_id).with_user_id(actor.id)
+        })?;
         if changed.rows_affected() == 0 {
             load_task(&self.database, contest_id, task_id).await?;
             return Err(AppError::conflict(
@@ -219,7 +251,11 @@ impl BatchRejudgeService {
         .bind(contest_id)
         .execute(&self.database)
         .await
-        .map_err(|error| AppError::internal("resume batch rejudge", error))?;
+        .map_err(|error| {
+            AppError::internal("resume batch rejudge", error)
+                .with_contest_id(contest_id)
+                .with_user_id(actor.id)
+        })?;
         if changed.rows_affected() == 0 {
             load_task(&self.database, contest_id, task_id).await?;
             return Err(AppError::conflict(
@@ -251,7 +287,9 @@ async fn load_task(
     .bind(contest_id)
     .fetch_optional(database)
     .await
-    .map_err(|error| AppError::internal("load batch rejudge task", error))?
+    .map_err(|error| {
+        AppError::internal("load batch rejudge task", error).with_contest_id(contest_id)
+    })?
     .ok_or_else(batch_not_found)
     .map(BatchRejudgeTaskRow::response)
 }
@@ -270,7 +308,9 @@ async fn require_access(
     .bind(contest_id)
     .fetch_one(database)
     .await
-    .map_err(|error| AppError::internal("check batch rejudge contest", error))?;
+    .map_err(|error| {
+        AppError::internal("check batch rejudge contest", error).with_contest_id(contest_id)
+    })?;
     if !active {
         return Err(batch_not_found());
     }
@@ -284,7 +324,9 @@ async fn require_access(
     .bind(actor.id)
     .fetch_one(database)
     .await
-    .map_err(|error| AppError::internal("check batch rejudge scope", error))?;
+    .map_err(|error| {
+        AppError::internal("check batch rejudge scope", error).with_contest_id(contest_id)
+    })?;
     if assigned { Ok(()) } else { Err(batch_not_found()) }
 }
 
@@ -303,8 +345,12 @@ async fn count_matches(
         .bind(filter.submitted_to)
         .fetch_one(database)
         .await
-        .map_err(|error| AppError::internal("preview batch rejudge", error))?;
-    i32::try_from(count).map_err(|error| AppError::internal("convert batch match count", error))
+        .map_err(|error| {
+            AppError::internal("preview batch rejudge", error).with_contest_id(contest_id)
+        })?;
+    i32::try_from(count).map_err(|error| {
+        AppError::internal("convert batch match count", error).with_contest_id(contest_id)
+    })
 }
 
 const MATCHING_SUBMISSIONS: &str = r#"
@@ -343,9 +389,12 @@ async fn insert_items(
     .bind(task_id)
     .execute(&mut **transaction)
     .await
-    .map_err(|error| AppError::internal("insert batch rejudge items", error))?;
-    i32::try_from(result.rows_affected())
-        .map_err(|error| AppError::internal("convert batch rejudge item count", error))
+    .map_err(|error| {
+        AppError::internal("insert batch rejudge items", error).with_contest_id(contest_id)
+    })?;
+    i32::try_from(result.rows_affected()).map_err(|error| {
+        AppError::internal("convert batch rejudge item count", error).with_contest_id(contest_id)
+    })
 }
 
 fn batch_not_found() -> AppError {

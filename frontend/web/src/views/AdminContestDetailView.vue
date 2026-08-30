@@ -126,7 +126,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { ArrowLeft, Refresh } from '@element-plus/icons-vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -152,7 +152,7 @@ const route = useRoute();
 const router = useRouter();
 const session = useSession();
 const { t } = useI18n();
-const contestId = Number(route.params.contestId);
+const contestId = computed(() => Number(route.params.contestId));
 const activeTab = ref('overview');
 const contest = ref<Contest | null>(null);
 const teams = ref<Team[]>([]);
@@ -180,30 +180,33 @@ const cloneScheduleComplete = computed(() => {
 
 async function loadContest() {
   try {
-    contest.value = await adminContestApi.getContest(contestId);
+    contest.value = await adminContestApi.getContest(contestId.value);
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   }
 }
 
+let generation = 0;
 async function loadAll() {
+  const request = ++generation;
   errorMessage.value = '';
   try {
     const [contestValue, teamPage, assignedTeamPage, allProblems, assignedProblems] =
       await Promise.all([
-        adminContestApi.getContest(contestId),
+        adminContestApi.getContest(contestId.value),
         adminContestApi.listTeams(),
-        adminContestApi.listContestTeams(contestId),
-        adminContestApi.listAllProblems(contestId),
-        adminContestApi.listContestProblems(contestId),
+        adminContestApi.listContestTeams(contestId.value),
+        adminContestApi.listAllProblems(contestId.value),
+        adminContestApi.listContestProblems(contestId.value),
       ]);
+    if (request !== generation) return;
     contest.value = contestValue;
     teams.value = teamPage.content;
     contestTeams.value = assignedTeamPage;
     problems.value = allProblems;
     contestProblems.value = assignedProblems;
   } catch (error) {
-    errorMessage.value = getErrorMessage(error);
+    if (request === generation) errorMessage.value = getErrorMessage(error);
   }
 }
 
@@ -222,7 +225,7 @@ async function cloneContest() {
   if (!cloneForm.name.trim() || !cloneScheduleComplete.value) return;
   cloning.value = true;
   try {
-    const result = await adminContestApi.cloneContest(contestId, {
+    const result = await adminContestApi.cloneContest(contestId.value, {
       name: cloneForm.name.trim(),
       visibility: cloneForm.visibility,
       startAt: cloneForm.startAt?.toISOString() ?? null,
@@ -246,14 +249,22 @@ async function cloneContest() {
 }
 
 function openBulkRejudge() {
-  void router.push(`/admin/contests/${contestId}/rejudge-tasks`);
+  void router.push(`/admin/contests/${contestId.value}/rejudge-tasks`);
 }
 
 function openAnnouncements() {
-  void router.push(`/admin/contests/${contestId}/announcements`);
+  void router.push(`/admin/contests/${contestId.value}/announcements`);
 }
 
-onMounted(loadAll);
+watch(
+  contestId,
+  () => {
+    activeTab.value = 'overview';
+    cloneVisible.value = false;
+    void loadAll();
+  },
+  { immediate: true },
+);
 </script>
 
 <style scoped>

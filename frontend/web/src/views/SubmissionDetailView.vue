@@ -13,16 +13,23 @@
         :closable="false"
       />
       <template v-else-if="submission">
-        <div class="result-hero" :class="{ accepted: submission.status === 'ACCEPTED' }">
+        <div
+          class="result-hero"
+          :class="{ accepted: (submission.verdict ?? submission.status) === 'ACCEPTED' }"
+        >
           <div>
             <p class="eyebrow">Submission #{{ submission.id }}</p>
-            <h1>{{ submissionStatusLabel(submission.status) }}</h1>
+            <h1>{{ submissionStatusLabel(submission.verdict ?? submission.status) }}</h1>
             <p v-if="!isFinalSubmissionStatus(submission.status)" class="polling-hint">
               <span class="pulse-dot"></span> {{ t('正在等待判题结果，页面将自动刷新') }}
             </p>
           </div>
-          <ElTag :type="statusTagType(submission.status)" size="large" effect="dark">
-            {{ submission.status }}
+          <ElTag
+            :type="statusTagType(submission.verdict ?? submission.status)"
+            size="large"
+            effect="dark"
+          >
+            {{ submission.verdict ?? submission.status }}
           </ElTag>
         </div>
 

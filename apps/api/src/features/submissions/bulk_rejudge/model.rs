@@ -40,10 +40,18 @@ impl BatchRejudgeFilter {
             return Err(AppError::validation("language", "must be c, cpp, java, or python"));
         }
         self.verdict = self.verdict.map(|value| value.trim().to_ascii_uppercase());
-        if self.verdict.as_ref().is_some_and(|value| {
-            !crate::features::submissions::SubmissionStatus::parse(value)
-                .is_some_and(|status| status.domain().is_terminal())
-        }) {
+        const VERDICTS: &[&str] = &[
+            "ACCEPTED",
+            "WRONG_ANSWER",
+            "COMPILE_ERROR",
+            "RUNTIME_ERROR",
+            "TIME_LIMIT_EXCEEDED",
+            "MEMORY_LIMIT_EXCEEDED",
+            "OUTPUT_LIMIT_EXCEEDED",
+            "SYSTEM_ERROR",
+            "CANCELLED",
+        ];
+        if self.verdict.as_ref().is_some_and(|value| !VERDICTS.contains(&value.as_str())) {
             return Err(AppError::validation("verdict", "contains an unsupported final verdict"));
         }
         Ok(self)

@@ -24,6 +24,14 @@ Required controls:
 - Clean temporary directories after every run.
 - **Production / contest deployments**: Judge containers must not mount the Docker socket and must not run as privileged containers.
 - **Development sandbox exception**: For local development and CI, the worker may run as a sibling-docker container (mounting `/var/run/docker.sock`) provided that (a) the worker process runs as a non-root user added to the `docker` group, (b) the worker never constructs shell or Docker CLI command strings from user-controlled input and uses only typed Docker API parameters through the Rust `bollard` client, and (c) every sandbox container is created with no network, a read-only root filesystem, `no-new-privileges`, a PID limit, a non-root UID/GID, and automatic cleanup. The threat model: user-submitted code is the untrusted boundary and stays inside the sandbox container; worker code is part of the trusted base.
+- **Docker socket trust boundary**: a worker process with access to
+  `/var/run/docker.sock` effectively holds host-root-equivalent privileges:
+  anyone who escapes the worker (or the worker process itself when
+  compromised) can launch or modify containers, mount arbitrary host paths,
+  and read host files. Treat the worker host as inside the trust boundary —
+  sandbox escape on a socket-mounted worker means an impact radius of the
+  host's root user, not an isolated container. Keep such workers off
+  database hosts and behind network segmentation accordingly.
 - Keep judge workers separate from database hosts in official deployment.
 
 Judge workers should run with the least host privileges compatible with the selected sandbox implementation.

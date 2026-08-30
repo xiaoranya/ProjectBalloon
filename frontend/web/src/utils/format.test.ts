@@ -2,11 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { isFinalSubmissionStatus, statusTagType, submissionStatusLabel } from './format';
 
 describe('Rust submission status helpers', () => {
-  it('keeps active states polling and stops on final verdicts', () => {
+  it('keeps active lifecycle states polling and stops when COMPLETED', () => {
     expect(isFinalSubmissionStatus('PENDING')).toBe(false);
     expect(isFinalSubmissionStatus('JUDGING')).toBe(false);
-    expect(isFinalSubmissionStatus('ACCEPTED')).toBe(true);
-    expect(isFinalSubmissionStatus('COMPILE_ERROR')).toBe(true);
+    expect(isFinalSubmissionStatus('COMPLETED')).toBe(true);
   });
 
   it('renders full Rust verdict names', () => {
