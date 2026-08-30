@@ -20,11 +20,11 @@ pub struct BatchRejudgeRunner {
 #[derive(sqlx::FromRow)]
 pub(super) struct ClaimedItem {
     pub(super) id: i64,
-    task_id: i64,
-    contest_id: i64,
-    submission_id: i64,
-    old_judgement_id: Uuid,
-    created_by_user_id: i64,
+    pub(super) task_id: i64,
+    pub(super) contest_id: i64,
+    pub(super) submission_id: i64,
+    pub(super) old_judgement_id: Uuid,
+    pub(super) created_by_user_id: i64,
 }
 
 impl BatchRejudgeRunner {
@@ -128,7 +128,7 @@ impl BatchRejudgeRunner {
         }
     }
 
-    async fn finish_item(
+    pub(super) async fn finish_item(
         &self,
         item: &ClaimedItem,
         status: &str,
