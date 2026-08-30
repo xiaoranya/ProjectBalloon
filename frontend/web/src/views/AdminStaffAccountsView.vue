@@ -21,7 +21,7 @@
 
       <ElCard shadow="never">
         <ElTable v-loading="loading" :data="accounts" row-key="id">
-          <ElTableColumn :label="t('账号')" min-width="190">
+          <ElTableColumn :label="t('账号')" min-width="170">
             <template #default="{ row }">
               <div class="staff-account-identity">
                 <strong>{{ row.displayName }}</strong>
@@ -29,14 +29,14 @@
               </div>
             </template>
           </ElTableColumn>
-          <ElTableColumn :label="t('账号类型')" width="140">
+          <ElTableColumn :label="t('账号类型')" width="120">
             <template #default="{ row }">
               <ElTag :type="row.userType === 'SUPER_ADMIN' ? 'danger' : 'info'">
                 {{ row.userType === 'SUPER_ADMIN' ? t('超级管理员') : t('工作人员') }}
               </ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn :label="t('权限')" min-width="320">
+          <ElTableColumn :label="t('权限')" min-width="220">
             <template #default="{ row }">
               <div v-if="row.userType === 'SUPER_ADMIN'" class="permission-tags">
                 <ElTag type="danger">{{ t('全部权限') }}</ElTag>
@@ -49,23 +49,23 @@
               <span v-else class="muted-text">{{ t('未分配权限') }}</span>
             </template>
           </ElTableColumn>
-          <ElTableColumn :label="t('状态')" width="130">
+          <ElTableColumn :label="t('状态')" width="100">
             <template #default="{ row }">
               <ElTag :type="row.enabled ? 'success' : 'info'">
                 {{ row.enabled ? t('已启用') : t('已停用') }}
               </ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn :label="t('密码状态')" width="140">
+          <ElTableColumn :label="t('密码状态')" width="120">
             <template #default="{ row }">
               <ElTag v-if="row.passwordResetRequired" type="warning">{{ t('等待首次改密') }}</ElTag>
               <span v-else>{{ t('正常') }}</span>
             </template>
           </ElTableColumn>
-          <ElTableColumn :label="t('最近登录')" min-width="180">
+          <ElTableColumn :label="t('最近登录')" min-width="150">
             <template #default="{ row }">{{ formatDateTime(row.lastLoginAt) }}</template>
           </ElTableColumn>
-          <ElTableColumn :label="t('操作')" width="190" fixed="right">
+          <ElTableColumn :label="t('操作')" width="170" fixed="right">
             <template #default="{ row }">
               <ElButton link type="primary" @click="openEdit(row)">{{ t('编辑') }}</ElButton>
               <ElButton link type="warning" @click="openReset(row)">{{ t('重置密码') }}</ElButton>

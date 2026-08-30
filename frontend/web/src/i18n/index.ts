@@ -940,6 +940,7 @@ const english: Record<string, string> = {
   '参赛者需上传包含 1.out、2.out 等根目录输出文件的 ZIP。':
     'Contestants must upload a ZIP containing root-level output files such as 1.out and 2.out.',
   '上传 Interactor ELF': 'Upload Interactor ELF',
+  选择文件: 'Select file',
   '时间限制（ms）': 'Time limit (ms)',
   '内存限制（MiB）': 'Memory limit (MiB)',
   '输出限制（KiB）': 'Output limit (KiB)',

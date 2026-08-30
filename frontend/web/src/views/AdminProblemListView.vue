@@ -19,7 +19,7 @@
 
       <ElCard shadow="never">
         <ElTable v-loading="loading" :data="page.content" row-key="id" @row-click="editProblem">
-          <ElTableColumn :label="t('题目')" min-width="280">
+          <ElTableColumn :label="t('题目')" min-width="220">
             <template #default="{ row }">
               <div class="admin-primary-cell">
                 <strong>{{ row.title }}</strong>
@@ -27,7 +27,7 @@
               </div>
             </template>
           </ElTableColumn>
-          <ElTableColumn :label="t('语言')" min-width="190">
+          <ElTableColumn :label="t('语言')" min-width="180">
             <template #default="{ row }">
               <ElTag
                 v-for="language in row.languages"
@@ -39,23 +39,23 @@
               </ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn :label="t('资源限制')" min-width="220">
+          <ElTableColumn :label="t('资源限制')" min-width="215">
             <template #default="{ row }"
               >{{ row.timeLimitMs }} ms · {{ row.memoryLimitMb }} MiB ·
               {{ row.outputLimitKb }} KiB</template
             >
           </ElTableColumn>
-          <ElTableColumn :label="t('测试数据')" width="130">
+          <ElTableColumn :label="t('测试数据')" width="100">
             <template #default="{ row }">
               <ElTag :type="row.testdataVersion > 0 ? 'success' : 'info'"
                 >v{{ row.testdataVersion }}</ElTag
               >
             </template>
           </ElTableColumn>
-          <ElTableColumn :label="t('版本')" width="90"
+          <ElTableColumn :label="t('版本')" width="70"
             ><template #default="{ row }">{{ row.version }}</template></ElTableColumn
           >
-          <ElTableColumn :label="t('操作')" width="200" fixed="right">
+          <ElTableColumn :label="t('操作')" width="180" fixed="right">
             <template #default="{ row }">
               <ElButton link type="primary" @click.stop="editProblem(row as ProblemResponse)">{{
                 t('编辑')

@@ -414,7 +414,11 @@ onMounted(refreshAll);
   min-height: 150px;
 }
 .health-component-grid .el-col {
+  display: flex;
   margin-bottom: 14px;
+}
+.health-component-grid .el-col > .el-card {
+  width: 100%;
 }
 .health-component-card {
   border: 1px solid #dbe8df;

@@ -38,7 +38,10 @@
               </div>
             </template>
             <ElForm label-position="top" @submit.prevent="submitPrintRequest">
-              <ElFormItem :label="t('打印内容')" :error="validation.error ?? undefined">
+              <ElFormItem
+                :label="t('打印内容')"
+                :error="content.length ? (validation.error ?? undefined) : undefined"
+              >
                 <ElInput
                   v-model="content"
                   type="textarea"

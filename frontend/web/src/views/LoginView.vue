@@ -202,4 +202,17 @@ async function submitPairing() {
   color: #337ecc;
   text-decoration: underline;
 }
+
+.register-link {
+  display: block;
+  margin-top: 14px;
+  font-size: 14px;
+  text-align: center;
+  color: var(--primary);
+  text-decoration: none;
+}
+.register-link:hover {
+  color: var(--primary-dark);
+  text-decoration: underline;
+}
 </style>

@@ -63,6 +63,12 @@ p {
   margin-bottom: 20px;
 }
 
+/* ElRow gutter 用负外边距实现列间距，会让栅格超出 page-body 右缘约半个 gutter；
+   clip 不产生滚动容器，内部 sticky 定位不受影响。 */
+.el-main.page-body {
+  overflow-x: clip;
+}
+
 .wide-button,
 .wide-control,
 .el-upload,
