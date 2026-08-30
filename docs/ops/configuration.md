@@ -163,6 +163,25 @@ an independently generated CSRF secret.
 Runtime image tags must be fixed; `latest` is never allowed. Production must
 use the rootless Podman socket, uid/gid `10001:10001`, and `runsc`.
 
+### Time-Limit Semantics (CPU Time vs. Wall Clock)
+
+Sandboxed runs are penalized on **CPU time**, not wall-clock time
+(`apps/judge-worker/src/sandbox/runner.rs`):
+
+- The **charged time** for each test case is the CPU time reported by GNU
+  `time` (`%U` user + `%S` system, parsed from the
+  `__PROJECT_BALLOON_GNU_TIME__` marker). It is what `total_time_ms` and the
+  time-limit comparison use.
+- The **hard kill** is a wall-clock cap of `3 ×` the effective time limit
+  (base limit × language multiplier), with a floor of 1 second. Exceeding the
+  wall cap kills the container and the run is judged `TIME_LIMIT_EXCEEDED`.
+
+Consequence (inherent tradeoff of the CPU-time model): a program that sleeps
+until ~2.9× the effective time limit and then exits immediately consumes
+almost no CPU time and will be judged `ACCEPTED` despite using far more wall
+time than the limit. The 3× wall cap exists to bound resource usage, not to
+enforce the time limit itself.
+
 ## Backup
 
 | Variable | Default | Purpose |
