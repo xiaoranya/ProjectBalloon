@@ -34,6 +34,30 @@ use crate::{
     state::AppState,
 };
 use ipnet::IpNet;
+use tracing::Instrument;
+
+async fn request_tracing(
+    request: Request<Body>,
+    next: middleware::Next,
+) -> axum::response::Response {
+    let request_id = uuid::Uuid::new_v4();
+    let method = request.method().clone();
+    let path = request.uri().path().to_owned();
+    let span = tracing::info_span!(
+        "http_request",
+        request_id = %request_id,
+        method = %method,
+        path = %path,
+    );
+    let start = std::time::Instant::now();
+    let response = next.run(request).instrument(span).await;
+    tracing::info!(
+        status = response.status().as_u16(),
+        latency_ms = start.elapsed().as_millis() as u64,
+        "request completed"
+    );
+    response
+}
 
 async fn apply_forwarded_client_ip(
     State(trusted_proxy_cidrs): State<Vec<IpNet>>,
@@ -110,5 +134,6 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         .layer(middleware::from_fn_with_state(state.clone(), auth::protect_csrf))
         .layer(middleware::from_fn_with_state(trusted_proxy_cidrs, apply_forwarded_client_ip))
         .layer(middleware::from_fn_with_state(state.clone(), enforce_deployment_mode))
+        .layer(middleware::from_fn(request_tracing))
         .with_state(state)
 }

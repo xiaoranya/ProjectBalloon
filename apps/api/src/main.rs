@@ -471,7 +471,7 @@ async fn spawn_background_runners(
 
 fn init_tracing() {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("project_balloon_api=info,tower_http=info"));
+        .unwrap_or_else(|_| EnvFilter::new("project_balloon_api=info"));
     tracing_subscriber::fmt().with_env_filter(filter).json().init();
 }
 

@@ -7,7 +7,7 @@ services:
       context: ../..
       dockerfile: apps/api/Dockerfile
     environment:
-      RUST_LOG: ${RUST_LOG:-project_balloon_api=info,tower_http=info}
+      RUST_LOG: ${RUST_LOG:-project_balloon_api=info}
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
       PROJECT_BALLOON_API_BIND: ${PROJECT_BALLOON_API_BIND:-0.0.0.0:8080}
       PROJECT_BALLOON_DEPLOYMENT_MODE: ${PROJECT_BALLOON_DEPLOYMENT_MODE:-standard}
