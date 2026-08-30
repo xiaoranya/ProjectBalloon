@@ -58,12 +58,12 @@
 <script setup lang="ts">
 import { Refresh, Search } from '@element-plus/icons-vue';
 import { balloonTaskStatuses, type BalloonTaskStatus } from '../../api/balloons';
-import type { Contest } from '../../api/types';
+import type { ContestResponse } from '../../api/types';
 import { useI18n } from '../../i18n';
 import { statusLabel } from './status';
 
 defineProps<{
-  contests: Contest[];
+  contests: ContestResponse[];
   problemOptions: string[];
   loading: boolean;
   action: string;

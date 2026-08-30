@@ -83,7 +83,7 @@ import {
 } from '../api/balloons';
 import { getErrorMessage } from '../api/client';
 import { contestApi } from '../api/contest';
-import type { Contest } from '../api/types';
+import type { ContestResponse } from '../api/types';
 import {
   subscribeContestEvents,
   type ContestRealtimeSubscription,
@@ -99,7 +99,7 @@ const route = useRoute();
 const router = useRouter();
 const session = useSession();
 const { t } = useI18n();
-const contests = ref<Contest[]>([]);
+const contests = ref<ContestResponse[]>([]);
 const selectedContestId = ref<number | null>(null);
 const statusFilter = ref<BalloonTaskStatus | 'ALL'>('ALL');
 const problemFilter = ref('');

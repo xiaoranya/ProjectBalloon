@@ -1,5 +1,5 @@
 import { apiRequest } from './client';
-import type { Scoreboard } from './types';
+import type { ScoreboardResponse } from './types';
 
 export type PresentationMode = 'SCREEN' | 'LIVE';
 export interface PresentationConfig {
@@ -75,7 +75,7 @@ export interface PublishedPresentation {
   endAt: string | null;
   serverTime: string;
   config: PresentationConfig;
-  scoreboard: Scoreboard;
+  scoreboard: ScoreboardResponse;
   announcements: Array<{
     id: number;
     title: string;

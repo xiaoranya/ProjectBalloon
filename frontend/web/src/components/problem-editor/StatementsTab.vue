@@ -61,7 +61,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus } from '@element-plus/icons-vue';
 import { adminProblemApi } from '../../api/admin-problems';
 import { getErrorMessage } from '../../api/client';
-import type { Problem, ProblemStatement } from '../../api/types';
+import type { ProblemResponse, ProblemStatementResponse } from '../../api/types';
 import CodeEditor from '../CodeEditor.vue';
 import { useI18n } from '../../i18n';
 
@@ -74,11 +74,11 @@ interface StatementDraft {
 }
 
 const props = defineProps<{
-  problem: Problem | null;
-  statements: ProblemStatement[];
+  problem: ProblemResponse | null;
+  statements: ProblemStatementResponse[];
 }>();
 const emit = defineEmits<{
-  'problem-refreshed': [value: Problem | null];
+  'problem-refreshed': [value: ProblemResponse | null];
   'error-message': [message: string];
 }>();
 const { t } = useI18n();

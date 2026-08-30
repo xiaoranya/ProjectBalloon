@@ -67,7 +67,7 @@ import { useRoute } from 'vue-router';
 import { getErrorMessage } from '../api/client';
 import { contestApi } from '../api/contest';
 import { resolverApi, type ResolverPublicRun } from '../api/resolver';
-import type { Contest } from '../api/types';
+import type { ContestResponse } from '../api/types';
 import {
   subscribeContestEvents,
   type ContestRealtimeSubscription,
@@ -78,7 +78,7 @@ const { t } = useI18n();
 
 const route = useRoute();
 const run = ref<ResolverPublicRun | null>(null);
-const contest = ref<Contest | null>(null);
+const contest = ref<ContestResponse | null>(null);
 const errorMessage = ref('');
 let realtime: ContestRealtimeSubscription | undefined;
 let generation = 0;

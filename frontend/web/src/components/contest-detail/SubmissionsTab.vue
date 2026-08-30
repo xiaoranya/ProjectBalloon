@@ -199,9 +199,9 @@ import CodeEditor from '../CodeEditor.vue';
 import type {
   ContestProblem,
   PageResponse,
-  Problem,
+  ProblemResponse,
   SubmissionDetail,
-  SubmissionSimilarityPair,
+  SimilarityPairResponse,
   SubmissionSummary,
 } from '../../api/types';
 import { formatDateTime, statusTagType, submissionStatusLabel } from '../../utils/format';
@@ -210,7 +210,7 @@ import { useI18n } from '../../i18n';
 const props = defineProps<{
   contestId: number;
   contestName: string | null;
-  problems: Problem[];
+  problems: ProblemResponse[];
   contestProblems: ContestProblem[];
 }>();
 const { t } = useI18n();
@@ -231,7 +231,7 @@ const rejudgingId = ref<number | null>(null);
 const submissionDetailVisible = ref(false);
 const submissionDetailLoading = ref(false);
 const submissionDetail = ref<SubmissionDetail | null>(null);
-const similarityPairs = ref<SubmissionSimilarityPair[]>([]);
+const similarityPairs = ref<SimilarityPairResponse[]>([]);
 const similarityLoading = ref(false);
 const similarityBackfillLoading = ref(false);
 const similarityThreshold = ref(85);

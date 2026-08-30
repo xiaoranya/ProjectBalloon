@@ -76,7 +76,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { adminApi } from '../api/admin';
 import { getErrorMessage } from '../api/client';
-import type { Contest, ContestManagementScope } from '../api/types';
+import type { ContestResponse, ContestManagementScopeResponse } from '../api/types';
 import { contestStatusLabel } from '../utils/format';
 import { useI18n } from '../i18n';
 
@@ -85,8 +85,8 @@ const { t } = useI18n();
 const loading = ref(false);
 const savingUserId = ref<number | null>(null);
 const errorMessage = ref('');
-const admins = ref<ContestManagementScope[]>([]);
-const contests = ref<Contest[]>([]);
+const admins = ref<ContestManagementScopeResponse[]>([]);
+const contests = ref<ContestResponse[]>([]);
 const draftScopes = reactive<Record<number, number[]>>({});
 
 async function load() {
@@ -113,14 +113,14 @@ function normalized(values: number[]) {
   return [...values].sort((left, right) => left - right);
 }
 
-function changed(admin: ContestManagementScope) {
+function changed(admin: ContestManagementScopeResponse) {
   return (
     JSON.stringify(normalized(draftScopes[admin.userId] ?? [])) !==
     JSON.stringify(normalized(admin.contestIds))
   );
 }
 
-async function save(admin: ContestManagementScope) {
+async function save(admin: ContestManagementScopeResponse) {
   savingUserId.value = admin.userId;
   errorMessage.value = '';
   try {

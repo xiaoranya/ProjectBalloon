@@ -126,7 +126,7 @@ import type { FormInstance, FormRules } from 'element-plus';
 import { useRouter } from 'vue-router';
 import { adminProblemApi } from '../../api/admin-problems';
 import { ApiError, getErrorMessage } from '../../api/client';
-import type { JudgeLanguage, Problem } from '../../api/types';
+import type { JudgeLanguage, ProblemResponse } from '../../api/types';
 import { useI18n } from '../../i18n';
 
 interface ProblemForm {
@@ -143,11 +143,11 @@ interface ProblemForm {
 }
 
 const props = defineProps<{
-  problem: Problem | null;
+  problem: ProblemResponse | null;
   isNew: boolean;
 }>();
 const emit = defineEmits<{
-  'problem-refreshed': [value: Problem | null];
+  'problem-refreshed': [value: ProblemResponse | null];
   'error-message': [message: string];
   'saving-changed': [saving: boolean];
 }>();
@@ -214,7 +214,7 @@ watch(
   { immediate: true },
 );
 
-function applyProblem(value: Problem) {
+function applyProblem(value: ProblemResponse) {
   form.slug = value.slug;
   form.title = value.title;
   form.timeLimitMs = value.timeLimitMs;

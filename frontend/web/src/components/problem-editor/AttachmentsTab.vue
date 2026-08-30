@@ -25,12 +25,18 @@
       >
       <ElTableColumn :label="t('操作')" width="170">
         <template #default="{ row }">
-          <ElButton link type="primary" @click="downloadAttachment(row as ProblemAttachment)">{{
-            t('下载')
-          }}</ElButton>
-          <ElButton link type="danger" @click="removeAttachment(row as ProblemAttachment)">{{
-            t('删除')
-          }}</ElButton>
+          <ElButton
+            link
+            type="primary"
+            @click="downloadAttachment(row as ProblemAttachmentResponse)"
+            >{{ t('下载') }}</ElButton
+          >
+          <ElButton
+            link
+            type="danger"
+            @click="removeAttachment(row as ProblemAttachmentResponse)"
+            >{{ t('删除') }}</ElButton
+          >
         </template>
       </ElTableColumn>
       <template #empty><ElEmpty :description="t('尚未上传附件')" /></template>
@@ -43,21 +49,25 @@ import { ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminProblemApi } from '../../api/admin-problems';
 import { getErrorMessage } from '../../api/client';
-import type { Problem, ProblemAttachment, ProblemAttachmentKind } from '../../api/types';
+import type {
+  ProblemResponse,
+  ProblemAttachmentResponse,
+  ProblemAttachmentKind,
+} from '../../api/types';
 import { formatBytes } from '../../utils/format';
 import { useI18n } from '../../i18n';
 
 const props = defineProps<{
-  problem: Problem | null;
-  initialAttachments: ProblemAttachment[];
+  problem: ProblemResponse | null;
+  initialAttachments: ProblemAttachmentResponse[];
 }>();
 const emit = defineEmits<{
-  'problem-refreshed': [value: Problem | null];
+  'problem-refreshed': [value: ProblemResponse | null];
   'error-message': [message: string];
 }>();
 const { t } = useI18n();
 
-const attachments = ref<ProblemAttachment[]>([]);
+const attachments = ref<ProblemAttachmentResponse[]>([]);
 const attachmentKind = ref<ProblemAttachmentKind>('SAMPLE');
 const attachmentFile = ref<File | null>(null);
 const attachmentInput = ref<HTMLInputElement>();
@@ -103,7 +113,7 @@ async function uploadAttachment() {
   }
 }
 
-async function removeAttachment(attachment: ProblemAttachment) {
+async function removeAttachment(attachment: ProblemAttachmentResponse) {
   if (!props.problem) return;
   try {
     await ElMessageBox.confirm(
@@ -122,7 +132,7 @@ async function removeAttachment(attachment: ProblemAttachment) {
   }
 }
 
-async function downloadAttachment(attachment: ProblemAttachment) {
+async function downloadAttachment(attachment: ProblemAttachmentResponse) {
   if (!props.problem) return;
   try {
     downloadBlob(

@@ -78,10 +78,10 @@ import TestdataTab from '../components/problem-editor/TestdataTab.vue';
 import { adminProblemApi } from '../api/admin-problems';
 import { getErrorMessage } from '../api/client';
 import type {
-  Problem,
-  ProblemAttachment,
-  ProblemStatement,
-  ProblemTestdataVersion,
+  ProblemResponse,
+  ProblemAttachmentResponse,
+  ProblemStatementResponse,
+  ProblemTestdataVersionResponse,
 } from '../api/types';
 import { useI18n } from '../i18n';
 
@@ -92,17 +92,17 @@ const isNew = computed(
   () => route.params.problemId === undefined || route.params.problemId === 'new',
 );
 const problemId = computed(() => Number(route.params.problemId));
-const problem = ref<Problem | null>(null);
-const statements = ref<ProblemStatement[]>([]);
-const attachments = ref<ProblemAttachment[]>([]);
-const testdataVersions = ref<ProblemTestdataVersion[]>([]);
+const problem = ref<ProblemResponse | null>(null);
+const statements = ref<ProblemStatementResponse[]>([]);
+const attachments = ref<ProblemAttachmentResponse[]>([]);
+const testdataVersions = ref<ProblemTestdataVersionResponse[]>([]);
 const activeTab = ref('basic');
 const loading = ref(false);
 const basicSaving = ref(false);
 const errorMessage = ref('');
 const basicTabRef = ref<{ save: () => Promise<void> }>();
 
-function applyRefreshedProblem(value: Problem | null) {
+function applyRefreshedProblem(value: ProblemResponse | null) {
   if (value) {
     // Child-resource mutations only need the new concurrency token and test-data pointer;
     // preserve unsaved metadata currently being edited in the form, and never regress when

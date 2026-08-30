@@ -92,14 +92,14 @@ import { useRoute } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
 import { contestApi } from '../api/contest';
 import { getErrorMessage } from '../api/client';
-import type { Scoreboard, ScoreboardCell } from '../api/types';
+import type { ScoreboardResponse, ScoreboardCell } from '../api/types';
 import { formatDateTime } from '../utils/format';
 import { useI18n } from '../i18n';
 
 const route = useRoute();
 const { t } = useI18n();
 const contestId = computed(() => Number(route.params.contestId));
-const scoreboard = ref<Scoreboard | null>(null);
+const scoreboard = ref<ScoreboardResponse | null>(null);
 const loading = ref(false);
 const errorMessage = ref('');
 let timer: number | undefined;

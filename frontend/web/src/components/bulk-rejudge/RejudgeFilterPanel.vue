@@ -91,7 +91,7 @@
 
 <script setup lang="ts">
 import type { BatchRejudgePreview, BatchRejudgeVerdict } from '../../api/bulk-rejudge';
-import type { ContestProblem, ContestTeam } from '../../api/types';
+import type { ContestProblem, ContestTeamResponse } from '../../api/types';
 import { useI18n } from '../../i18n';
 
 interface RejudgeFilterState {
@@ -107,7 +107,7 @@ const filter = defineModel<RejudgeFilterState>('filter', { required: true });
 
 defineProps<{
   contestProblems: ContestProblem[];
-  contestTeams: ContestTeam[];
+  contestTeams: ContestTeamResponse[];
   verdictOptions: { value: BatchRejudgeVerdict; label: string }[];
   previewing: boolean;
   previewResult: BatchRejudgePreview | null;

@@ -138,12 +138,12 @@ import { adminContestApi } from '../api/admin-contests';
 import { getErrorMessage } from '../api/client';
 import { useSession } from '../auth/session';
 import type {
-  Contest,
+  ContestResponse,
   ContestProblem,
-  ContestTeam,
+  ContestTeamResponse,
   ContestVisibility,
-  Problem,
-  Team,
+  ProblemResponse,
+  TeamResponse,
 } from '../api/types';
 import { contestStatusLabel } from '../utils/format';
 import { useI18n } from '../i18n';
@@ -154,10 +154,10 @@ const session = useSession();
 const { t } = useI18n();
 const contestId = computed(() => Number(route.params.contestId));
 const activeTab = ref('overview');
-const contest = ref<Contest | null>(null);
-const teams = ref<Team[]>([]);
-const contestTeams = ref<ContestTeam[]>([]);
-const problems = ref<Problem[]>([]);
+const contest = ref<ContestResponse | null>(null);
+const teams = ref<TeamResponse[]>([]);
+const contestTeams = ref<ContestTeamResponse[]>([]);
+const problems = ref<ProblemResponse[]>([]);
 const contestProblems = ref<ContestProblem[]>([]);
 const scoringMode = ref('ICPC');
 const errorMessage = ref('');

@@ -85,21 +85,21 @@ import { ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminProblemApi } from '../../api/admin-problems';
 import { getErrorMessage } from '../../api/client';
-import type { Problem, ProblemTestdataVersion } from '../../api/types';
+import type { ProblemResponse, ProblemTestdataVersionResponse } from '../../api/types';
 import { formatBytes } from '../../utils/format';
 import { useI18n } from '../../i18n';
 
 const props = defineProps<{
-  problem: Problem | null;
-  initialTestdataVersions: ProblemTestdataVersion[];
+  problem: ProblemResponse | null;
+  initialTestdataVersions: ProblemTestdataVersionResponse[];
 }>();
 const emit = defineEmits<{
-  'problem-refreshed': [value: Problem | null];
+  'problem-refreshed': [value: ProblemResponse | null];
   'error-message': [message: string];
 }>();
 const { t } = useI18n();
 
-const testdataVersions = ref<ProblemTestdataVersion[]>([]);
+const testdataVersions = ref<ProblemTestdataVersionResponse[]>([]);
 const testdataFile = ref<File | null>(null);
 const testdataInput = ref<HTMLInputElement>();
 const uploadingTestdata = ref(false);

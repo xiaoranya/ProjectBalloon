@@ -95,7 +95,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { awardsApi, type AwardCategory, type AwardResolverRun, type AwardSet } from '../api/awards';
 import { ApiError, getErrorMessage } from '../api/client';
 import { contestApi } from '../api/contest';
-import type { Contest } from '../api/types';
+import type { ContestResponse } from '../api/types';
 import { useI18n } from '../i18n';
 import AwardMetricsRow from '../components/awards-manage/AwardMetricsRow.vue';
 import AwardsCommandBar from '../components/awards-manage/AwardsCommandBar.vue';
@@ -105,7 +105,7 @@ import AwardRecipientsPanel from '../components/awards-manage/AwardRecipientsPan
 const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
-const contests = ref<Contest[]>([]);
+const contests = ref<ContestResponse[]>([]);
 const contestId = ref<number | null>(null);
 const categories = ref<AwardCategory[]>([]);
 const awardSet = ref<AwardSet | null>(null);

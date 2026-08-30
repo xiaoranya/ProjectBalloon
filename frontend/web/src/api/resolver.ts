@@ -1,5 +1,5 @@
 import { apiRequest } from './client';
-import type { Scoreboard, ScoreboardCell } from './types';
+import type { ScoreboardResponse, ScoreboardCell } from './types';
 
 export type ResolverRunStatus = 'READY' | 'RUNNING' | 'PAUSED' | 'COMPLETED';
 
@@ -13,7 +13,7 @@ export interface ResolverReveal {
 export interface ResolverState {
   stepIndex: number;
   totalSteps: number;
-  board: Scoreboard;
+  board: ScoreboardResponse;
   lastReveal: ResolverReveal | null;
 }
 

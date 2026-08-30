@@ -57,13 +57,13 @@
           >
           <ElTableColumn :label="t('操作')" width="200" fixed="right">
             <template #default="{ row }">
-              <ElButton link type="primary" @click.stop="editProblem(row as Problem)">{{
+              <ElButton link type="primary" @click.stop="editProblem(row as ProblemResponse)">{{
                 t('编辑')
               }}</ElButton>
-              <ElButton link type="success" @click.stop="openPublication(row as Problem)">{{
+              <ElButton link type="success" @click.stop="openPublication(row as ProblemResponse)">{{
                 t('发布')
               }}</ElButton>
-              <ElButton link type="danger" @click.stop="removeProblem(row as Problem)">{{
+              <ElButton link type="danger" @click.stop="removeProblem(row as ProblemResponse)">{{
                 t('删除')
               }}</ElButton>
             </template>
@@ -105,13 +105,13 @@ import { useRouter } from 'vue-router';
 import { adminProblemApi } from '../api/admin-problems';
 import { getErrorMessage } from '../api/client';
 import PublicationPanel from '../components/problem-editor/PublicationPanel.vue';
-import type { PageResponse, Problem } from '../api/types';
+import type { PageResponse, ProblemResponse } from '../api/types';
 import { languageLabel } from '../utils/format';
 import { useI18n } from '../i18n';
 
 const router = useRouter();
 const { t } = useI18n();
-const page = ref<PageResponse<Problem>>({
+const page = ref<PageResponse<ProblemResponse>>({
   content: [],
   page: 0,
   size: 50,
@@ -122,7 +122,7 @@ const currentPage = ref(1);
 const loading = ref(false);
 const errorMessage = ref('');
 const publicationVisible = ref(false);
-const publicationProblem = ref<Problem | null>(null);
+const publicationProblem = ref<ProblemResponse | null>(null);
 
 let loadGeneration = 0;
 async function loadProblems() {
@@ -145,15 +145,15 @@ function createProblem() {
 }
 
 function editProblem(row: unknown) {
-  void router.push(`/admin/problems/${(row as Problem).id}`);
+  void router.push(`/admin/problems/${(row as ProblemResponse).id}`);
 }
 
-function openPublication(problem: Problem) {
+function openPublication(problem: ProblemResponse) {
   publicationProblem.value = problem;
   publicationVisible.value = true;
 }
 
-async function removeProblem(problem: Problem) {
+async function removeProblem(problem: ProblemResponse) {
   try {
     await ElMessageBox.confirm(
       t('确认删除题目“{title}”？已分配到比赛的题目无法删除。', { title: problem.title }),

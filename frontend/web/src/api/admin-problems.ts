@@ -2,12 +2,12 @@ import { apiRequest } from './client';
 import type {
   JudgeLanguage,
   PageResponse,
-  Problem,
-  ProblemAttachment,
+  ProblemResponse,
+  ProblemAttachmentResponse,
   ProblemAttachmentKind,
-  ProblemStatement,
-  ProblemTestdata,
-  ProblemTestdataVersion,
+  ProblemStatementResponse,
+  ProblemTestdataResponse,
+  ProblemTestdataVersionResponse,
 } from './types';
 
 export interface ProblemPayload {
@@ -65,16 +65,19 @@ export const adminProblemApi = {
       page: String(Math.max(0, Math.trunc(page))),
       size: String(boundedPageSize(size)),
     });
-    return apiRequest<PageResponse<Problem>>(`/api/problems?${params.toString()}`);
+    return apiRequest<PageResponse<ProblemResponse>>(`/api/problems?${params.toString()}`);
   },
   getProblem(problemId: number) {
-    return apiRequest<Problem>(`/api/problems/${problemId}`);
+    return apiRequest<ProblemResponse>(`/api/problems/${problemId}`);
   },
   createProblem(payload: ProblemPayload) {
-    return apiRequest<Problem>('/api/problems', { method: 'POST', body: payload });
+    return apiRequest<ProblemResponse>('/api/problems', { method: 'POST', body: payload });
   },
   updateProblem(problemId: number, payload: UpdateProblemPayload) {
-    return apiRequest<Problem>(`/api/problems/${problemId}`, { method: 'PATCH', body: payload });
+    return apiRequest<ProblemResponse>(`/api/problems/${problemId}`, {
+      method: 'PATCH',
+      body: payload,
+    });
   },
   deleteProblem(problemId: number) {
     return apiRequest<void>(`/api/problems/${problemId}`, { method: 'DELETE' });
@@ -91,14 +94,14 @@ export const adminProblemApi = {
   upsertStatement(problemId: number, langCode: string, body: string) {
     return mutateThenRefresh(
       problemId,
-      apiRequest<ProblemStatement>(
+      apiRequest<ProblemStatementResponse>(
         `/api/problems/${problemId}/statements/${encodeURIComponent(langCode)}`,
         { method: 'PUT', body: { body } },
       ),
     );
   },
   listStatements(problemId: number) {
-    return apiRequest<ProblemStatement[]>(`/api/problems/${problemId}/statements`);
+    return apiRequest<ProblemStatementResponse[]>(`/api/problems/${problemId}/statements`);
   },
   deleteStatement(problemId: number, langCode: string) {
     return apiRequest<void>(
@@ -107,7 +110,7 @@ export const adminProblemApi = {
     );
   },
   listAttachments(problemId: number) {
-    return apiRequest<ProblemAttachment[]>(`/api/problems/${problemId}/attachments`);
+    return apiRequest<ProblemAttachmentResponse[]>(`/api/problems/${problemId}/attachments`);
   },
   uploadAttachment(problemId: number, kind: ProblemAttachmentKind, file: File) {
     const body = new FormData();
@@ -115,7 +118,7 @@ export const adminProblemApi = {
     body.append('file', file);
     return mutateThenRefresh(
       problemId,
-      apiRequest<ProblemAttachment>(`/api/problems/${problemId}/attachments`, {
+      apiRequest<ProblemAttachmentResponse>(`/api/problems/${problemId}/attachments`, {
         method: 'POST',
         body,
       }),
@@ -139,7 +142,7 @@ export const adminProblemApi = {
     body.append('file', file);
     return mutateThenRefresh(
       problemId,
-      apiRequest<ProblemTestdata>(`/api/problems/${problemId}/testdata`, {
+      apiRequest<ProblemTestdataResponse>(`/api/problems/${problemId}/testdata`, {
         method: 'POST',
         body,
       }),
@@ -148,13 +151,18 @@ export const adminProblemApi = {
   uploadInteractor(problemId: number, file: File) {
     const body = new FormData();
     body.append('file', file);
-    return apiRequest<Problem>(`/api/problems/${problemId}/interactor`, { method: 'POST', body });
+    return apiRequest<ProblemResponse>(`/api/problems/${problemId}/interactor`, {
+      method: 'POST',
+      body,
+    });
   },
   downloadTestdata(problemId: number) {
     return apiRequest<Blob>(`/api/problems/${problemId}/testdata`, { responseType: 'blob' });
   },
   listTestdataVersions(problemId: number) {
-    return apiRequest<ProblemTestdataVersion[]>(`/api/problems/${problemId}/testdata/versions`);
+    return apiRequest<ProblemTestdataVersionResponse[]>(
+      `/api/problems/${problemId}/testdata/versions`,
+    );
   },
   downloadTestdataVersion(problemId: number, version: number) {
     return apiRequest<Blob>(`/api/problems/${problemId}/testdata/versions/${version}`, {
@@ -164,7 +172,7 @@ export const adminProblemApi = {
   activateTestdataVersion(problemId: number, version: number, expectedCurrentVersion: number) {
     return mutateThenRefresh(
       problemId,
-      apiRequest<ProblemTestdataVersion>(
+      apiRequest<ProblemTestdataVersionResponse>(
         `/api/problems/${problemId}/testdata/versions/${version}/activate`,
         { method: 'POST', body: { expectedCurrentVersion } },
       ),

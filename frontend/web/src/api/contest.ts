@@ -1,20 +1,20 @@
 import { apiRequest } from './client';
 import type {
-  Contest,
+  ContestResponse,
   ContestProblem,
   PageResponse,
-  Scoreboard,
+  ScoreboardResponse,
   SubmissionDetail,
   SubmissionSummary,
-  SubmitResult,
+  SubmitResponse,
 } from './types';
 
 export const contestApi = {
-  listContests(page = 0, size = 50): Promise<PageResponse<Contest>> {
+  listContests(page = 0, size = 50): Promise<PageResponse<ContestResponse>> {
     return apiRequest(`/api/contests?page=${page}&size=${size}&sort=startAt,desc`);
   },
 
-  getContest(contestId: number): Promise<Contest> {
+  getContest(contestId: number): Promise<ContestResponse> {
     return apiRequest(`/api/contests/${contestId}`);
   },
 
@@ -28,7 +28,7 @@ export const contestApi = {
     problemId: number,
     language: string,
     source: File,
-  ): Promise<SubmitResult> {
+  ): Promise<SubmitResponse> {
     const form = new FormData();
     form.append('metadata', JSON.stringify({ problemId, language }));
     form.append('source', source, source.name);
@@ -48,7 +48,7 @@ export const contestApi = {
     return apiRequest(`/api/contests/${contestId}/submissions/${submissionId}`);
   },
 
-  getScoreboard(contestId: number): Promise<Scoreboard> {
+  getScoreboard(contestId: number): Promise<ScoreboardResponse> {
     return apiRequest(`/api/contests/${contestId}/scoreboard`);
   },
 };
