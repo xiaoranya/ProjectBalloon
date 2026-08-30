@@ -28,7 +28,7 @@ describe('AdminPracticeView', () => {
     vi.mocked(trainingApi.problemBank).mockResolvedValue({
       content: [{ id: 5, slug: 'a-plus-b', title: 'A+B' }],
     } as Awaited<ReturnType<typeof trainingApi.problemBank>>);
-    vi.mocked(trainingApi.updatePracticeSettings).mockResolvedValue(undefined);
+    vi.mocked(trainingApi.updatePracticeSettings).mockResolvedValue(settings);
   });
 
   function mountView() {

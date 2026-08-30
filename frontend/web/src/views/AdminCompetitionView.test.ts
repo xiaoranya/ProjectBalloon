@@ -40,6 +40,7 @@ const binding = {
   teamId: 3,
   teamName: 'Ball Team',
   pairingCode: 'AB-CD23',
+  boundAt: '2026-07-22T01:00:00Z',
   revokedAt: null,
   createdAt: '2026-07-22T01:00:00Z',
 } as WorkstationBinding;
