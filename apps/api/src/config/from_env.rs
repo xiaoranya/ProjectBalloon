@@ -83,6 +83,7 @@ impl AppConfig {
             judge_dispatch_retry_base: judge_dispatch.retry_base,
             judge_dispatch_batch_size: judge_dispatch.batch_size,
             judge_dispatch_max_attempts: judge_dispatch.max_attempts,
+            judge_stuck_requeue_interval: judge_dispatch.stuck_requeue_interval,
             judge_result_prefetch: judge_dispatch.result_prefetch,
             judge_result_reconnect_delay: judge_dispatch.result_reconnect_delay,
             cups_enabled: cups.enabled,
@@ -592,6 +593,7 @@ struct JudgeDispatchSettings {
     retry_base: Duration,
     batch_size: i64,
     max_attempts: i32,
+    stuck_requeue_interval: Duration,
     result_prefetch: u16,
     result_reconnect_delay: Duration,
 }
@@ -624,6 +626,11 @@ fn parse_judge_dispatch(
         lookup("PROJECT_BALLOON_JUDGE_DISPATCH_MAX_ATTEMPTS")
             .unwrap_or_else(|| DEFAULT_JUDGE_DISPATCH_MAX_ATTEMPTS.to_string()),
     )?;
+    let stuck_requeue_interval_seconds = parse_positive(
+        "PROJECT_BALLOON_JUDGE_STUCK_REQUEUE_INTERVAL_SECONDS",
+        lookup("PROJECT_BALLOON_JUDGE_STUCK_REQUEUE_INTERVAL_SECONDS")
+            .unwrap_or_else(|| DEFAULT_JUDGE_STUCK_REQUEUE_INTERVAL_SECONDS.to_string()),
+    )?;
     let result_prefetch = parse_positive(
         "PROJECT_BALLOON_JUDGE_RESULT_PREFETCH",
         lookup("PROJECT_BALLOON_JUDGE_RESULT_PREFETCH")
@@ -641,6 +648,7 @@ fn parse_judge_dispatch(
         retry_base: Duration::from_millis(retry_base_milliseconds),
         batch_size,
         max_attempts,
+        stuck_requeue_interval: Duration::from_secs(stuck_requeue_interval_seconds),
         result_prefetch,
         result_reconnect_delay: Duration::from_millis(result_reconnect_milliseconds),
     })
