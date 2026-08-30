@@ -426,6 +426,72 @@ mod tests {
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn practice_recovery_marks_system_error_without_realtime_event(pool: PgPool) {
+        let user_id = sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO users (username, password_hash, display_name, user_type)
+            VALUES ('practice-dead', 'test-only-hash', 'Practice Dead', 'SUPER_ADMIN')
+            RETURNING id
+            "#,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert user");
+        let problem_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems (slug, title) VALUES ('practice-dead', 'Practice Dead') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert problem");
+        let submission_id = sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO submissions
+                (contest_id, problem_id, team_id, language, source_object_key,
+                 source_size_bytes, source_sha256, status, submitted_at,
+                 submission_scope, participant_user_id)
+            VALUES (NULL, $1, NULL, 'cpp', 'sources/practice-dead.cpp', 10, $2, 'JUDGING', now(),
+                    'PRACTICE', $3)
+            RETURNING id
+            "#,
+        )
+        .bind(problem_id)
+        .bind("a".repeat(64))
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("insert practice submission");
+        let judgement_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO judgements (id, submission_id) VALUES ($1, $2)")
+            .bind(judgement_id)
+            .bind(submission_id)
+            .execute(&pool)
+            .await
+            .expect("insert judgement");
+
+        recover_stuck_submission(&pool, judgement_id, submission_id)
+            .await
+            .expect("recover stuck practice submission");
+
+        let submission_status =
+            sqlx::query_scalar::<_, String>("SELECT status FROM submissions WHERE id = $1")
+                .bind(submission_id)
+                .fetch_one(&pool)
+                .await
+                .expect("load recovered practice submission");
+        assert_eq!(submission_status, "SYSTEM_ERROR");
+        let outbox_events = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM realtime_outbox")
+            .fetch_one(&pool)
+            .await
+            .expect("count realtime outbox events");
+        assert_eq!(outbox_events, 0, "PRACTICE recovery must not enqueue realtime events");
+
+        recover_stuck_submission(&pool, judgement_id, submission_id)
+            .await
+            .expect("repeat recovery is a no-op");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
     async fn completed_judgement_is_left_untouched(pool: PgPool) {
         let (judgement_id, submission_id, _contest_id) = seed_stuck_submission(&pool).await;
         sqlx::query(

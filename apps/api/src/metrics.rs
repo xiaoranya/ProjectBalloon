@@ -3,7 +3,7 @@ use axum::{
     http::{HeaderValue, header},
     response::{IntoResponse, Response},
 };
-use sqlx::FromRow;
+use sqlx::{FromRow, PgPool};
 
 use crate::{error::AppError, state::AppState};
 use axum::routing::get;
@@ -36,7 +36,22 @@ struct MetricsSnapshot {
     security(())
 )]
 pub(crate) async fn prometheus(State(state): State<AppState>) -> Result<Response, AppError> {
-    let snapshot = sqlx::query_as::<_, MetricsSnapshot>(
+    let snapshot = collect_snapshot(state.database())
+        .await
+        .map_err(|error| AppError::internal("collect Prometheus metrics", error))?;
+    let body = render(&snapshot);
+    Ok((
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
+        )],
+        body,
+    )
+        .into_response())
+}
+
+async fn collect_snapshot(database: &PgPool) -> Result<MetricsSnapshot, sqlx::Error> {
+    sqlx::query_as::<_, MetricsSnapshot>(
         r#"
         SELECT
             (SELECT count(*) FROM realtime_outbox WHERE status IN ('PENDING', 'PUBLISHING')) AS realtime_pending,
@@ -58,18 +73,8 @@ pub(crate) async fn prometheus(State(state): State<AppState>) -> Result<Response
                 AND submitted_at < now() - interval '10 minutes') AS judging_stuck
         "#,
     )
-    .fetch_one(state.database())
+    .fetch_one(database)
     .await
-    .map_err(|error| AppError::internal("collect Prometheus metrics", error))?;
-    let body = render(&snapshot);
-    Ok((
-        [(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
-        )],
-        body,
-    )
-        .into_response())
 }
 
 fn render(value: &MetricsSnapshot) -> String {
@@ -171,7 +176,9 @@ pub fn routes() -> axum::Router<crate::state::AppState> {
 
 #[cfg(test)]
 mod tests {
-    use crate::metrics::{MetricsSnapshot, render};
+    use sqlx::PgPool;
+
+    use crate::metrics::{MetricsSnapshot, collect_snapshot, render};
 
     #[test]
     fn prometheus_output_has_help_type_and_values() {
@@ -198,5 +205,46 @@ mod tests {
         assert!(output.contains("project_balloon_practice_submissions_today 12\n"));
         assert!(output.contains("project_balloon_submissions_stuck_judging 1\n"));
         assert!(output.ends_with('\n'));
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn worker_capacity_counts_only_heartbeat_fresh_workers(pool: PgPool) {
+        sqlx::query(
+            r#"
+            INSERT INTO judge_workers
+                (worker_id, instance_id, started_at, last_seen_at, capacity, active_tasks,
+                 languages, runtime_versions, last_message_id)
+            VALUES ('stale-worker', $1, now() - interval '1 hour', now() - interval '2 minutes',
+                    4, 2, '[]'::jsonb, '{}'::jsonb, $2)
+            "#,
+        )
+        .bind(uuid::Uuid::new_v4())
+        .bind(uuid::Uuid::new_v4())
+        .execute(&pool)
+        .await
+        .expect("insert stale worker");
+
+        let stale = collect_snapshot(&pool).await.expect("snapshot with only stale worker");
+        assert_eq!(stale.worker_capacity, 0, "stale heartbeats must not contribute capacity");
+        assert_eq!(stale.worker_active, 0);
+
+        sqlx::query(
+            r#"
+            INSERT INTO judge_workers
+                (worker_id, instance_id, started_at, last_seen_at, capacity, active_tasks,
+                 languages, runtime_versions, last_message_id)
+            VALUES ('fresh-worker', $1, now(), now(), 3, 1, '[]'::jsonb, '{}'::jsonb, $2)
+            "#,
+        )
+        .bind(uuid::Uuid::new_v4())
+        .bind(uuid::Uuid::new_v4())
+        .execute(&pool)
+        .await
+        .expect("insert fresh worker");
+
+        let fresh = collect_snapshot(&pool).await.expect("snapshot with a fresh worker");
+        assert_eq!(fresh.worker_capacity, 3, "COALESCE must expose fresh capacity");
+        assert_eq!(fresh.worker_active, 1);
     }
 }

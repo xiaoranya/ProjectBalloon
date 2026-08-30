@@ -560,4 +560,142 @@ mod tests {
         assert!(matches!(error, ApplyResultError::Invalid(_)));
         assert!(error.is_permanent());
     }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn superseded_judgement_cannot_apply_a_result(pool: PgPool) {
+        let team_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO teams (name) VALUES ('Race Result Team') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert team");
+        let contest_id = sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO contests (name, status, visibility, start_at, freeze_at, end_at)
+            VALUES (
+                'Race Result Contest', 'RUNNING', 'PRIVATE',
+                date_trunc('second', now()) - interval '2 hours',
+                date_trunc('second', now()) + interval '1 hour',
+                date_trunc('second', now()) + interval '2 hours'
+            )
+            RETURNING id
+            "#,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert contest");
+        let problem_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems (slug, title) VALUES ('race-result', 'Race Result') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert problem");
+        sqlx::query("INSERT INTO contest_teams (contest_id, team_id, participation_type) VALUES ($1, $2, 'STAR')")
+            .bind(contest_id).bind(team_id).execute(&pool).await.expect("roster team");
+        sqlx::query("INSERT INTO contest_problems (contest_id, problem_id, alias, display_order) VALUES ($1, $2, 'A', 1)")
+            .bind(contest_id).bind(problem_id).execute(&pool).await.expect("assign problem");
+        let submission_id = sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO submissions
+                (contest_id, problem_id, team_id, language, source_object_key,
+                 source_size_bytes, source_sha256, status, submitted_at)
+            VALUES (
+                $1, $2, $3, 'cpp', 'sources/race-result.cpp', 10, $4, 'JUDGING',
+                (SELECT start_at + interval '30 minutes' FROM contests WHERE id = $1)
+            )
+            RETURNING id
+            "#,
+        )
+        .bind(contest_id)
+        .bind(problem_id)
+        .bind(team_id)
+        .bind("a".repeat(64))
+        .fetch_one(&pool)
+        .await
+        .expect("insert submission");
+        let active_judgement_id = Uuid::new_v4();
+        let superseded_judgement_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO judgements (id, submission_id) VALUES ($1, $2)")
+            .bind(active_judgement_id)
+            .bind(submission_id)
+            .execute(&pool)
+            .await
+            .expect("insert active judgement");
+        // The unique index uq_judgements_one_active_per_submission only permits
+        // one active_marker per submission, so the superseded row is inserted
+        // in its final shape directly (same as rejudge.rs leaves it behind).
+        sqlx::query(
+            "INSERT INTO judgements (id, submission_id, superseded, active_marker) VALUES ($1, $2, true, NULL)",
+        )
+        .bind(superseded_judgement_id)
+        .bind(submission_id)
+        .execute(&pool)
+        .await
+        .expect("insert superseded judgement");
+
+        let now = OffsetDateTime::now_utc();
+        let build_result = |judgement_id: Uuid, verdict: JudgeVerdict| JudgeResult {
+            schema_version: JUDGE_RESULT_SCHEMA_VERSION,
+            message_id: judgement_id,
+            judgement_id,
+            submission_id,
+            worker_id: "worker-race-result".to_owned(),
+            verdict,
+            total_time_ms: 10,
+            peak_memory_kb: 1_024,
+            compile_log: None,
+            started_at: now - Duration::SECOND,
+            completed_at: now,
+            runs: vec![JudgeRunResult {
+                test_index: 1,
+                verdict,
+                time_ms: 10,
+                memory_kb: 1_024,
+                exit_code: Some(1),
+                stderr_tail: None,
+            }],
+        };
+        let active_result = build_result(active_judgement_id, JudgeVerdict::WrongAnswer);
+        let superseded_result = build_result(superseded_judgement_id, JudgeVerdict::Accepted);
+        let processor = JudgeResultProcessor::new(pool.clone());
+        let (active_outcome, superseded_outcome) =
+            tokio::join!(processor.apply(&active_result), processor.apply(&superseded_result),);
+        assert_eq!(active_outcome.expect("apply active result"), ApplyResultOutcome::Applied);
+        assert_eq!(
+            superseded_outcome.expect("apply superseded result is safe"),
+            ApplyResultOutcome::Superseded,
+            "the superseded judgement must refuse the result without erroring the consumer"
+        );
+
+        let persisted = sqlx::query_as::<_, (Option<String>, bool, Option<String>, Option<String>, String)>(
+            r#"
+            SELECT a.verdict, a.completed_at IS NOT NULL, b.verdict, b.completed_at::varchar, s.status
+            FROM judgements a
+            CROSS JOIN judgements b
+            JOIN submissions s ON s.id = a.submission_id
+            WHERE a.id = $1 AND b.id = $2
+            "#,
+        )
+        .bind(active_judgement_id)
+        .bind(superseded_judgement_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load post-race state");
+        assert_eq!(persisted.0.as_deref(), Some("WRONG_ANSWER"));
+        assert!(persisted.1, "the active judgement must be finalized");
+        assert_eq!(persisted.2, None, "the superseded judgement must stay without a verdict");
+        assert_eq!(persisted.3, None, "the superseded judgement must stay without a completion");
+        assert_eq!(
+            persisted.4, "WRONG_ANSWER",
+            "the submission must reflect exactly the active judgement"
+        );
+        let outbox_events = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM realtime_outbox WHERE event_type = 'SUBMISSION_STATUS_CHANGED'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count status events");
+        assert_eq!(outbox_events, 1, "only the applied result may emit an event");
+    }
 }

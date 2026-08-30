@@ -281,6 +281,114 @@ mod tests {
 
     #[sqlx::test(migrations = "../../migrations")]
     #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn concurrent_dispatchers_claim_each_outbox_row_exactly_once(pool: PgPool) {
+        let contest_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO contests (name, status, visibility) VALUES ('Race Dispatch', 'RUNNING', 'PRIVATE') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert contest");
+        let team_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO teams (name) VALUES ('Race Team') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert team");
+        let problem_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems (slug, title) VALUES ('race', 'Race') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("insert problem");
+        let mut judgement_ids = Vec::new();
+        for sequence in 1..=4 {
+            let submission_id = sqlx::query_scalar::<_, i64>(
+                r#"
+                INSERT INTO submissions
+                    (contest_id, problem_id, team_id, language, source_object_key,
+                     source_size_bytes, status)
+                VALUES ($1, $2, $3, 'cpp', $4, 1, 'PENDING')
+                RETURNING id
+                "#,
+            )
+            .bind(contest_id)
+            .bind(problem_id)
+            .bind(team_id)
+            .bind(format!("fixture/race-{sequence}.cpp"))
+            .fetch_one(&pool)
+            .await
+            .expect("insert submission");
+            let judgement_id = Uuid::new_v4();
+            sqlx::query("INSERT INTO judgements (id, submission_id) VALUES ($1, $2)")
+                .bind(judgement_id)
+                .bind(submission_id)
+                .execute(&pool)
+                .await
+                .expect("insert judgement");
+            sqlx::query(
+                "INSERT INTO submission_outbox (judgement_id, submission_id, payload) VALUES ($1, $2, $3)",
+            )
+            .bind(judgement_id)
+            .bind(submission_id)
+            .bind(format!(r#"{{"judgementId":"{judgement_id}"}}"#))
+            .execute(&pool)
+            .await
+            .expect("insert outbox row");
+            judgement_ids.push(judgement_id);
+        }
+        let publisher = Arc::new(FakePublisher::default());
+        let config = SubmissionOutboxDispatcherConfig {
+            poll_interval: Duration::from_millis(50),
+            lease: Duration::from_secs(30),
+            retry_base: Duration::from_secs(60),
+            batch_size: 10,
+            max_attempts: 2,
+        };
+        let first_dispatcher =
+            SubmissionOutboxDispatcher::new(pool.clone(), publisher.clone(), config);
+        let second_dispatcher =
+            SubmissionOutboxDispatcher::new(pool.clone(), publisher.clone(), config);
+        let first = tokio::spawn(async move { first_dispatcher.dispatch_once().await });
+        let second = tokio::spawn(async move { second_dispatcher.dispatch_once().await });
+        let (first_count, second_count) = tokio::join!(first, second);
+        let first_count = first_count.expect("first dispatcher task").expect("first dispatch");
+        let second_count = second_count.expect("second dispatcher task").expect("second dispatch");
+        assert_eq!(
+            first_count + second_count,
+            4,
+            "FOR UPDATE SKIP LOCKED must hand every row to exactly one dispatcher"
+        );
+
+        let rows = sqlx::query_as::<_, (Uuid, String, i32, bool)>(
+            "SELECT judgement_id, status, attempts, lease_owner IS NULL FROM submission_outbox ORDER BY id",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("load outbox rows");
+        assert_eq!(rows.len(), 4, "no outbox row may be lost");
+        let mut claimed_judgements = publisher.calls.lock().expect("publisher calls lock").clone();
+        claimed_judgements.sort();
+        claimed_judgements.dedup();
+        assert_eq!(claimed_judgements.len(), 4, "each judgement must be published exactly once");
+        let mut expected = judgement_ids;
+        expected.sort();
+        assert_eq!(claimed_judgements, expected);
+        for row in &rows {
+            assert_eq!(row.1, "SENT", "every row must end SENT");
+            assert_eq!(row.2, 1, "sum(attempts) must equal the row count");
+            assert!(row.3, "the winning lease must be released");
+        }
+        let judging = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM submissions WHERE status = 'JUDGING'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count judging submissions");
+        assert_eq!(judging, 4);
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
     async fn confirmed_publish_failure_and_expired_lease_have_safe_transitions(pool: PgPool) {
         let contest_id = sqlx::query_scalar::<_, i64>(
             "INSERT INTO contests (name, status, visibility) VALUES ('Dispatch', 'RUNNING', 'PRIVATE') RETURNING id",
