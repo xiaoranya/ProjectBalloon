@@ -358,3 +358,33 @@ fn resolver_tiebreaks_follow_the_icpc_rulebook() {
         Ordering::Greater
     );
 }
+
+#[test]
+fn resolver_ranking_matches_the_scoreboard_icpc_ordering() {
+    use crate::features::resolver::plan::compare_rows as resolver_compare;
+    use crate::features::scoreboard::helpers::compare_rows as scoreboard_compare;
+
+    let early = OffsetDateTime::from_unix_timestamp(60).expect("timestamp");
+    let late = OffsetDateTime::from_unix_timestamp(120).expect("timestamp");
+    let mut rows = Vec::new();
+    let mut team_id = 0;
+    for solved_count in [0_i32, 1, 2] {
+        for penalty_minutes in [0_i64, 90, 300] {
+            for last_solved_at in [None, Some(early), Some(late)] {
+                team_id += 1;
+                rows.push(tiebreak_row(team_id, solved_count, penalty_minutes, last_solved_at));
+            }
+        }
+    }
+    for left in &rows {
+        for right in &rows {
+            assert_eq!(
+                scoreboard_compare("ICPC", left, right),
+                resolver_compare(left, right),
+                "scoreboard and resolver must agree when ranking team {} against team {}",
+                left.team_id,
+                right.team_id
+            );
+        }
+    }
+}

@@ -780,3 +780,126 @@ fn to_csv_renders_solve_minutes_only_for_icpc_boards() {
     assert!(oi_csv.contains(",'+2"), "non-ICPC cells must render attempts only: {oi_csv}");
     assert!(!oi_csv.contains("@-"), "non-ICPC cells must never render negative minutes: {oi_csv}");
 }
+
+#[test]
+fn to_csv_renders_unsolved_attempts_escaped_and_zero_attempt_cells_blank() {
+    let board = assemble(
+        1,
+        "ADMIN",
+        false,
+        OffsetDateTime::UNIX_EPOCH,
+        "ICPC".to_owned(),
+        "BEST".to_owned(),
+        vec![ScoreboardProblem {
+            problem_id: 10,
+            alias: "A".to_owned(),
+            display_order: 1,
+            first_blood_team_id: None,
+            first_blood_at: None,
+        }],
+        vec![
+            RosterRow {
+                team_id: 1,
+                team_name: "Failed Twice".to_owned(),
+                school: None,
+                participation_type: "OFFICIAL".to_owned(),
+                group_name: None,
+                team_star: false,
+            },
+            RosterRow {
+                team_id: 2,
+                team_name: "Never Submitted".to_owned(),
+                school: None,
+                participation_type: "OFFICIAL".to_owned(),
+                group_name: None,
+                team_star: false,
+            },
+        ],
+        vec![CellRow {
+            team_id: 1,
+            problem_id: 10,
+            wrong_attempts: 2,
+            solved: false,
+            solved_at: None,
+            penalty_minutes: 40,
+            score_milli: 0,
+        }],
+    );
+    let csv = to_csv(&board);
+    let lines: Vec<&str> = csv.lines().collect();
+    assert_eq!(lines.len(), 3, "{csv}");
+    // csv_field escapes the leading '-' of the unsolved marker like it does '+'.
+    assert!(lines[1].contains(",'-2"), "unsolved attempts must render escaped -n: {csv}");
+    assert!(lines[2].ends_with(','), "zero-attempt unsolved cell renders blank: {csv}");
+}
+
+#[test]
+fn scoreboard_filter_applies_group_and_participation_and_reranks_officials() {
+    let roster_row = |team_id: i64, participation: &str, group: &str| RosterRow {
+        team_id,
+        team_name: format!("Team {team_id}"),
+        school: None,
+        participation_type: participation.to_owned(),
+        group_name: Some(group.to_owned()),
+        team_star: false,
+    };
+    let solved = |team_id: i64, minutes: i64| CellRow {
+        team_id,
+        problem_id: 10,
+        wrong_attempts: 1,
+        solved: true,
+        solved_at: Some(OffsetDateTime::UNIX_EPOCH + Duration::minutes(minutes)),
+        penalty_minutes: minutes,
+        score_milli: 100_000,
+    };
+    let mut board = assemble(
+        1,
+        "ADMIN",
+        false,
+        OffsetDateTime::UNIX_EPOCH,
+        "ICPC".to_owned(),
+        "BEST".to_owned(),
+        vec![ScoreboardProblem {
+            problem_id: 10,
+            alias: "A".to_owned(),
+            display_order: 1,
+            first_blood_team_id: None,
+            first_blood_at: None,
+        }],
+        vec![
+            roster_row(1, "OFFICIAL", "East"),
+            roster_row(2, "OFFICIAL", "West"),
+            roster_row(3, "STAR", "East"),
+            roster_row(4, "PRACTICE", "West"),
+        ],
+        vec![solved(1, 100), solved(2, 200), solved(3, 50)],
+    );
+    // The star team outranks officials on the raw board yet stays officially unranked.
+    assert_eq!(
+        board.rows.iter().map(|row| (row.team_id, row.rank, row.official_rank)).collect::<Vec<_>>(),
+        vec![(3, 1, None), (1, 2, Some(1)), (2, 3, Some(2)), (4, 4, None)]
+    );
+
+    apply_scoreboard_filter(
+        &mut board,
+        &ValidatedScoreboardQuery { group_name: Some("East".to_owned()), participation_type: None },
+    );
+    assert_eq!(
+        board.rows.iter().map(|row| (row.team_id, row.rank, row.official_rank)).collect::<Vec<_>>(),
+        vec![(3, 1, None), (1, 2, Some(1))],
+        "group filter must drop West rows and renumber official ranks from 1"
+    );
+
+    apply_scoreboard_filter(
+        &mut board,
+        &ValidatedScoreboardQuery {
+            group_name: Some("East".to_owned()),
+            participation_type: Some("STAR".to_owned()),
+        },
+    );
+    assert_eq!(
+        board.rows.iter().map(|row| (row.team_id, row.rank, row.official_rank)).collect::<Vec<_>>(),
+        vec![(3, 1, None)],
+        "star-only board must keep rank 1 with official_rank unset"
+    );
+}

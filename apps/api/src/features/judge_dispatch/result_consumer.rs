@@ -16,7 +16,8 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::features::judge_dispatch::{
-    error::JudgeDispatchError, result_processor::JudgeResultProcessor, topology,
+    error::JudgeDispatchError, payload::message_id_mismatch,
+    result_processor::JudgeResultProcessor, topology,
 };
 
 pub struct RabbitJudgeResultConsumer {
@@ -114,8 +115,8 @@ async fn process_delivery(
             return Ok(());
         }
     };
-    if let Some(property_id) = delivery.properties.message_id().as_ref()
-        && property_id.as_str() != result.message_id.to_string()
+    if let Some(property_id) = delivery.properties.message_id().as_ref().map(|value| value.as_str())
+        && message_id_mismatch(Some(property_id), result.message_id)
     {
         warn!(
             body_message_id = %result.message_id,

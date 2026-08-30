@@ -202,7 +202,7 @@ pub(super) fn assemble(
     }
 }
 
-pub(super) fn compare_rows(
+pub(crate) fn compare_rows(
     scoring_mode: &str,
     left: &ScoreboardRow,
     right: &ScoreboardRow,

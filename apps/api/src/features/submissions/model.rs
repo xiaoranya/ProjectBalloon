@@ -671,6 +671,38 @@ mod tests {
     }
 
     #[test]
+    fn simhash_is_identical_when_only_identifiers_literals_and_numbers_differ() {
+        let first = source_similarity_signature(
+            b"int solve(int n){ /* header */ char tag='A'; if(n>10){return \"big\";} return 0; }",
+        );
+        let second = source_similarity_signature(
+            b"int run(int n){ // renamed\n\n\tchar tag='Z'; if(n>999){return \"tiny\";} return 9; }",
+        );
+        assert_eq!(first, second);
+        assert!(first.token_count > 10, "mixed content must yield many tokens");
+    }
+
+    #[test]
+    fn simhash_reduces_oversized_tokens_to_the_fixed_alphabet() {
+        let huge_identifier = source_similarity_signature(&vec![b'a'; 100_000]);
+        let one_letter = source_similarity_signature(b"x");
+        assert_eq!(huge_identifier, one_letter);
+        assert_eq!(huge_identifier.token_count, 1);
+
+        let mut huge_literal = vec![b'"'];
+        huge_literal.extend(vec![b'z'; 50_000]);
+        huge_literal.push(b'"');
+        let literal_signature = source_similarity_signature(&huge_literal);
+        assert_eq!(literal_signature.token_count, 1);
+
+        let mut huge_comment = vec![b'/', b'*'];
+        huge_comment.extend(vec![b'#'; 50_000]);
+        huge_comment.extend_from_slice(b"*/ x");
+        let commented = source_similarity_signature(&huge_comment);
+        assert_eq!(commented, one_letter);
+    }
+
+    #[test]
     fn source_language_extension_and_size_are_closed() {
         let valid = SubmitMetadata { problem_id: 1, language: " Cpp ".into() }
             .validate("main.CPP", Bytes::from_static(b"int main(){}"))

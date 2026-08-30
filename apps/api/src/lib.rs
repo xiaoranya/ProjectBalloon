@@ -77,22 +77,24 @@ async fn apply_forwarded_client_ip(
     next.run(request).await
 }
 
-async fn enforce_deployment_mode(
-    State(state): State<AppState>,
-    request: Request<Body>,
-    next: middleware::Next,
-) -> axum::response::Response {
-    use axum::response::IntoResponse;
-    let path = request.uri().path();
-    let daily = path == "/api/auth/register"
+fn is_daily_only_path(path: &str) -> bool {
+    path == "/api/auth/register"
         || path.starts_with("/api/public/problem-bank")
         || path.starts_with("/api/practice")
         || path.starts_with("/api/training")
         || path.starts_with("/api/admin/practice")
         || path.starts_with("/api/admin/training")
         || (path.starts_with("/api/admin/problems/")
-            && (path.ends_with("/publication") || path.contains("/editorials/")));
-    if state.deployment_mode().is_competition() && daily {
+            && (path.ends_with("/publication") || path.contains("/editorials/")))
+}
+
+async fn enforce_deployment_mode(
+    State(state): State<AppState>,
+    request: Request<Body>,
+    next: middleware::Next,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    if state.deployment_mode().is_competition() && is_daily_only_path(request.uri().path()) {
         return crate::error::AppError::not_found(
             "DAILY_FEATURE_DISABLED",
             "This feature is disabled in competition mode",
@@ -136,4 +138,40 @@ pub fn router(state: AppState, trusted_proxy_cidrs: Vec<IpNet>) -> Router {
         .layer(middleware::from_fn_with_state(state.clone(), enforce_deployment_mode))
         .layer(middleware::from_fn(request_tracing))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_daily_only_path;
+
+    #[test]
+    fn daily_only_paths_cover_the_daily_surface_and_nothing_else() {
+        for path in [
+            "/api/auth/register",
+            "/api/public/problem-bank",
+            "/api/public/problem-bank/algorithms",
+            "/api/practice",
+            "/api/practice/attempts",
+            "/api/training/plans",
+            "/api/admin/practice/problems",
+            "/api/admin/training/plans",
+            "/api/admin/problems/7/publication",
+            "/api/admin/problems/7/editorials/9",
+        ] {
+            assert!(is_daily_only_path(path), "{path} must be daily-only");
+        }
+        for path in [
+            "/api/auth/login",
+            "/api/auth/register-admin",
+            "/api/contests",
+            "/api/scoreboard",
+            "/api/admin/problems",
+            "/api/admin/problems/7",
+            "/api/admin/contests/7/publication",
+        ] {
+            assert!(!is_daily_only_path(path), "{path} must stay available in competition mode");
+        }
+        // Prefix matching is the shipped behavior; pin it so refactors keep it.
+        assert!(is_daily_only_path("/api/practice-offseason"));
+    }
 }
