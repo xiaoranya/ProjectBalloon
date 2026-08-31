@@ -548,6 +548,7 @@ pub fn routes() -> axum::Router<crate::state::AppState> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::features::auth::model::{UserType, user_for_test};
 
     #[test]
     fn policy_and_subtasks_are_closed_and_exact() {
@@ -662,5 +663,338 @@ mod tests {
         .expect("score");
         assert_eq!(score, 0);
         tx.rollback().await.expect("rollback");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires PostgreSQL"]
+    async fn policy_and_subtask_reads_shape_the_configuration(pool: PgPool) {
+        let contest_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO contests(name,status,visibility,scoring_mode,score_aggregation,feedback_policy) VALUES('scoring reads','DRAFT','PRIVATE','OI','LAST','SCORE_ONLY') RETURNING id",
+        ).fetch_one(&pool).await.expect("contest");
+        let policy = load_policy(&pool, contest_id).await.expect("load policy");
+        assert_eq!(policy.contest_id, contest_id);
+        assert_eq!(policy.scoring_mode, "OI");
+        assert_eq!(policy.feedback_policy, "SCORE_ONLY");
+        assert_eq!(
+            load_policy(&pool, contest_id + 1).await.expect_err("missing contest").code(),
+            "CONTEST_NOT_FOUND"
+        );
+
+        let problem_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems(slug,title) VALUES('scoring-reads','Scoring reads') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("problem");
+        assert_eq!(
+            load_subtasks(&pool, contest_id, problem_id)
+                .await
+                .expect_err("missing assignment")
+                .code(),
+            "CONTEST_PROBLEM_NOT_FOUND"
+        );
+        sqlx::query("INSERT INTO contest_problems(contest_id,problem_id,alias,display_order,max_score_milli) VALUES($1,$2,'A',1,100000)")
+            .bind(contest_id).bind(problem_id).execute(&pool).await.expect("assignment");
+        let subtask_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO contest_problem_subtasks(contest_id,problem_id,subtask_key,name,display_order,score_milli) VALUES($1,$2,'BASIC','Basic',1,40000) RETURNING id",
+        ).bind(contest_id).bind(problem_id).fetch_one(&pool).await.expect("subtask");
+        sqlx::query(
+            "INSERT INTO contest_problem_subtask_tests(subtask_id,test_index) VALUES($1,2),($1,1)",
+        )
+        .bind(subtask_id)
+        .execute(&pool)
+        .await
+        .expect("tests");
+        let response = load_subtasks(&pool, contest_id, problem_id).await.expect("subtasks");
+        assert_eq!(response.max_score_milli, 100_000);
+        assert_eq!(response.subtasks.len(), 1);
+        assert_eq!(response.subtasks[0].subtask_key, "BASIC");
+        assert_eq!(response.subtasks[0].test_indexes, vec![1, 2]);
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires PostgreSQL"]
+    async fn scoring_writes_respect_assignment_scope_and_draft_state(pool: PgPool) {
+        let contest_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO contests(name,status,visibility) VALUES('scoring scope','DRAFT','PRIVATE') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("contest");
+        let frozen_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO contests(name,status,visibility) VALUES('scoring frozen','RUNNING','PRIVATE') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("frozen contest");
+        let super_admin = user_for_test(UserType::SuperAdmin, &[]);
+        assert!(require_manage_pool(&pool, contest_id, &super_admin).await.is_ok());
+        assert_eq!(
+            require_manage_pool(&pool, contest_id + 100, &super_admin)
+                .await
+                .expect_err("missing contest")
+                .code(),
+            "CONTEST_NOT_FOUND"
+        );
+
+        let manager_id = common_insert_user(&pool, "scoring-manager").await;
+        sqlx::query("INSERT INTO contest_management_assignments(user_id,contest_id) VALUES($1,$2)")
+            .bind(manager_id)
+            .bind(contest_id)
+            .execute(&pool)
+            .await
+            .expect("assignment");
+        let manager = scoped_user(manager_id);
+        assert!(require_manage_pool(&pool, contest_id, &manager).await.is_ok());
+
+        let outsider_id = common_insert_user(&pool, "scoring-outsider").await;
+        assert_eq!(
+            require_manage_pool(&pool, contest_id, &scoped_user(outsider_id))
+                .await
+                .expect_err("unassigned manager")
+                .code(),
+            "CONTEST_NOT_FOUND"
+        );
+
+        let mut tx = pool.begin().await.expect("transaction");
+        lock_configurable(&mut tx, contest_id, &super_admin).await.expect("draft is configurable");
+        tx.rollback().await.expect("rollback");
+        let mut tx = pool.begin().await.expect("transaction");
+        assert_eq!(
+            lock_configurable(&mut tx, frozen_id, &super_admin)
+                .await
+                .expect_err("frozen contest")
+                .code(),
+            "CONTEST_SCORING_CONFIG_FROZEN"
+        );
+        assert_eq!(
+            lock_configurable(&mut tx, contest_id + 100, &super_admin)
+                .await
+                .expect_err("missing contest")
+                .code(),
+            "CONTEST_NOT_FOUND"
+        );
+        assert_eq!(
+            require_manage_tx(&mut tx, frozen_id, &scoped_user(outsider_id))
+                .await
+                .expect_err("unassigned mutation")
+                .code(),
+            "CONTEST_NOT_FOUND"
+        );
+        require_manage_tx(&mut tx, contest_id, &scoped_user(manager_id))
+            .await
+            .expect("assigned mutation passes");
+        tx.rollback().await.expect("rollback");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires PostgreSQL"]
+    async fn icpc_and_subtaskless_scoring_fall_back_to_max_score(pool: PgPool) {
+        let (contest_id, problem_id, submission_id) = seed_scored_submission(&pool, "ICPC").await;
+        let judgement_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO judgements(id,submission_id) VALUES($1,$2)")
+            .bind(judgement_id)
+            .bind(submission_id)
+            .execute(&pool)
+            .await
+            .expect("judgement");
+        let mut tx = pool.begin().await.expect("transaction");
+        assert_eq!(
+            score_judgement(
+                &mut tx,
+                judgement_id,
+                contest_id,
+                problem_id,
+                JudgeVerdict::Accepted,
+                &[]
+            )
+            .await
+            .expect("score accepted"),
+            100_000
+        );
+        assert_eq!(
+            score_judgement(
+                &mut tx,
+                judgement_id,
+                contest_id,
+                problem_id,
+                JudgeVerdict::RuntimeError,
+                &[],
+            )
+            .await
+            .expect("score failed"),
+            0
+        );
+        tx.rollback().await.expect("rollback");
+
+        let (ioi_contest, ioi_problem, ioi_submission) = seed_scored_submission(&pool, "IOI").await;
+        let judgement_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO judgements(id,submission_id) VALUES($1,$2)")
+            .bind(judgement_id)
+            .bind(ioi_submission)
+            .execute(&pool)
+            .await
+            .expect("judgement");
+        let mut tx = pool.begin().await.expect("transaction");
+        assert_eq!(
+            score_judgement(
+                &mut tx,
+                judgement_id,
+                ioi_contest,
+                ioi_problem,
+                JudgeVerdict::Accepted,
+                &[],
+            )
+            .await
+            .expect("subtaskless accepted"),
+            100_000
+        );
+        tx.rollback().await.expect("rollback");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires PostgreSQL"]
+    async fn partial_subtasks_score_passing_groups_and_cap_at_the_maximum(pool: PgPool) {
+        let (contest_id, problem_id, submission_id) = seed_scored_submission(&pool, "IOI").await;
+        let first = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO contest_problem_subtasks(contest_id,problem_id,subtask_key,name,display_order,score_milli) VALUES($1,$2,'EASY','Easy',1,40000) RETURNING id",
+        ).bind(contest_id).bind(problem_id).fetch_one(&pool).await.expect("first subtask");
+        let second = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO contest_problem_subtasks(contest_id,problem_id,subtask_key,name,display_order,score_milli) VALUES($1,$2,'HARD','Hard',2,90000) RETURNING id",
+        ).bind(contest_id).bind(problem_id).fetch_one(&pool).await.expect("second subtask");
+        for (subtask_id, tests) in [(first, vec![1, 2]), (second, vec![3])] {
+            for test_index in tests {
+                sqlx::query(
+                    "INSERT INTO contest_problem_subtask_tests(subtask_id,test_index) VALUES($1,$2)",
+                )
+                .bind(subtask_id)
+                .bind(test_index)
+                .execute(&pool)
+                .await
+                .expect("test index");
+            }
+        }
+        let judgement_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO judgements(id,submission_id) VALUES($1,$2)")
+            .bind(judgement_id)
+            .bind(submission_id)
+            .execute(&pool)
+            .await
+            .expect("judgement");
+        let runs = |indexes: &[i32], verdict: JudgeVerdict| -> Vec<JudgeRunResult> {
+            indexes
+                .iter()
+                .map(|index| JudgeRunResult {
+                    test_index: *index,
+                    verdict,
+                    time_ms: 1,
+                    memory_kb: 1,
+                    exit_code: Some(0),
+                    stderr_tail: None,
+                })
+                .collect()
+        };
+        let mut tx = pool.begin().await.expect("transaction");
+        assert_eq!(
+            score_judgement(
+                &mut tx,
+                judgement_id,
+                contest_id,
+                problem_id,
+                JudgeVerdict::WrongAnswer,
+                &[
+                    runs(&[1, 2], JudgeVerdict::Accepted).as_slice(),
+                    runs(&[3], JudgeVerdict::WrongAnswer).as_slice()
+                ]
+                .concat(),
+            )
+            .await
+            .expect("partial score"),
+            40_000
+        );
+        // Scoring again replaces the persisted per-subtask breakdown.
+        let breakdown = sqlx::query_scalar::<_, i32>(
+            "SELECT score_milli FROM judgement_subtask_scores WHERE judgement_id=$1 AND subtask_id=$2",
+        )
+        .bind(judgement_id)
+        .bind(first)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("persisted subtask score");
+        assert_eq!(breakdown, 40_000);
+        tx.rollback().await.expect("rollback");
+
+        // Re-scoring the same judgement must replace the previous breakdown and
+        // cap the summed subtask scores at the assignment maximum.
+        let mut tx = pool.begin().await.expect("transaction");
+        assert_eq!(
+            score_judgement(
+                &mut tx,
+                judgement_id,
+                contest_id,
+                problem_id,
+                JudgeVerdict::Accepted,
+                &runs(&[1, 2, 3], JudgeVerdict::Accepted),
+            )
+            .await
+            .expect("capped score"),
+            100_000
+        );
+        tx.rollback().await.expect("rollback");
+    }
+
+    async fn seed_scored_submission(pool: &PgPool, scoring_mode: &str) -> (i64, i64, i64) {
+        static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let serial = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let contest_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO contests(name,status,visibility,scoring_mode) VALUES($1,'RUNNING','PRIVATE',$2) RETURNING id",
+        )
+        .bind(format!("scored contest {scoring_mode} {serial}"))
+        .bind(scoring_mode)
+        .fetch_one(pool)
+        .await
+        .expect("contest");
+        let problem_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems(slug,title) VALUES($1,$2) RETURNING id",
+        )
+        .bind(format!("scored-{scoring_mode}-{serial}"))
+        .bind("Scored problem")
+        .fetch_one(pool)
+        .await
+        .expect("problem");
+        sqlx::query("INSERT INTO contest_problems(contest_id,problem_id,alias,display_order,max_score_milli) VALUES($1,$2,'A',1,100000)")
+            .bind(contest_id).bind(problem_id).execute(pool).await.expect("assignment");
+        let team_id =
+            sqlx::query_scalar::<_, i64>("INSERT INTO teams(name) VALUES($1) RETURNING id")
+                .bind(format!("scored team {serial}"))
+                .fetch_one(pool)
+                .await
+                .expect("team");
+        let submission_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO submissions(contest_id,problem_id,team_id,language,source_object_key,source_size_bytes,source_sha256,status) VALUES($1,$2,$3,'cpp','sources/scored.cpp',1,$4,'JUDGING') RETURNING id",
+        ).bind(contest_id).bind(problem_id).bind(team_id).bind("a".repeat(64)).fetch_one(pool).await.expect("submission");
+        (contest_id, problem_id, submission_id)
+    }
+
+    async fn common_insert_user(pool: &PgPool, username: &str) -> i64 {
+        sqlx::query_scalar::<_, i64>(
+            "INSERT INTO users(username,password_hash,display_name,user_type) VALUES($1,'hash',$2,'STAFF') RETURNING id",
+        )
+        .bind(username)
+        .bind(username)
+        .fetch_one(pool)
+        .await
+        .expect("insert user")
+    }
+
+    fn scoped_user(id: i64) -> AuthUser {
+        AuthUser {
+            id,
+            username: format!("user-{id}"),
+            display_name: format!("User {id}"),
+            user_type: UserType::Staff,
+            permissions: vec![crate::features::auth::permissions::CONTEST_MANAGE.to_owned()],
+            password_reset_required: false,
+        }
     }
 }
