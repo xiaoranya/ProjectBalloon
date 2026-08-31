@@ -2,7 +2,6 @@
   <el-container direction="vertical" class="login-page password-change-page">
     <el-main class="login-page-main">
       <section class="login-copy">
-        <p class="eyebrow">Account Security</p>
         <h1>{{ t(required ? '首次登录，请修改密码' : '修改登录密码') }}</h1>
       </section>
 

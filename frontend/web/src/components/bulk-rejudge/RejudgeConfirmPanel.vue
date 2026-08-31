@@ -100,11 +100,6 @@ const { t } = useI18n();
 </script>
 
 <style scoped>
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 .card-header > div {
   min-width: 0;
 }
@@ -119,7 +114,7 @@ const { t } = useI18n();
   margin: 2px 0 18px;
   padding: 22px;
   border: 1px solid #dbeafe;
-  border-radius: 0;
+
   background: #f7faff;
   text-align: center;
 }
@@ -143,10 +138,7 @@ const { t } = useI18n();
   margin-bottom: 0;
 }
 .form-help {
-  color: var(--el-text-color-secondary);
+  color: var(--muted);
   font-size: 0.8rem;
-}
-.wide-button {
-  width: 100%;
 }
 </style>

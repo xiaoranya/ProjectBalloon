@@ -3,7 +3,6 @@
     <el-header height="auto" class="page-head">
       <div class="page-title-row">
         <div>
-          <p class="eyebrow">Scoreboard</p>
           <h1>{{ t('比赛榜单') }}</h1>
           <p>
             {{ t(scoreboard?.frozen ? '榜单已封榜，显示公开数据。' : '榜单自动刷新。') }}
@@ -189,30 +188,17 @@ onUnmounted(() => {
   letter-spacing: -0.035em;
 }
 
-.page-title-row p {
-  display: none;
-  margin-bottom: 0;
-  color: var(--muted);
-}
-
-.eyebrow {
-  display: none;
-  margin: 0 0 8px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .page-alert {
   margin-bottom: 20px;
 }
 
 .scoreboard-wrap {
-  overflow-x: auto;
+  /* 表格列数随题目数增长，横向滚动必须保留；纵向也限制在视口内，
+     让 thead 的 position: sticky 相对本滚动容器吸附。 */
+  max-height: calc(100vh - 160px);
+  overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 0;
+
   background: white;
 }
 
@@ -270,8 +256,8 @@ onUnmounted(() => {
   display: grid;
   min-height: 46px;
   place-content: center;
-  border-radius: 0;
-  color: #94a3b8;
+
+  color: var(--muted-light);
 }
 
 .score-cell.solved {

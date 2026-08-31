@@ -118,11 +118,6 @@ const { t } = useI18n();
 </script>
 
 <style scoped>
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 .card-header > div {
   min-width: 0;
 }

@@ -330,16 +330,4 @@ defineExpose({ save });
   flex-wrap: wrap;
   margin-bottom: 24px;
 }
-.visually-hidden-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-.file-upload-name {
-  color: var(--muted);
-  font-size: 13px;
-}
 </style>

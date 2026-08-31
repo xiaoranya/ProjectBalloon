@@ -242,44 +242,8 @@ onMounted(loadContests);
 </script>
 
 <style scoped>
-.admin-page {
-  width: min(1320px, 100%);
-  margin: 0 auto;
-}
-.page-head {
-  height: auto;
-  padding: 42px 42px 0;
-}
-.page-body {
-  padding: 0 42px 42px;
-}
-.admin-page-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  margin-bottom: 28px;
-}
-.admin-page-header.compact {
-  align-items: center;
-}
-.admin-page-header h1 {
-  margin: 5px 0 6px;
-  font-size: clamp(28px, 4vw, 40px);
-  color: #13213b;
-}
-.page-alert {
-  margin-bottom: 20px;
-}
 .pagination-row {
   margin-top: 24px;
-}
-.admin-primary-cell strong,
-.admin-primary-cell small {
-  display: block;
-}
-.admin-primary-cell small {
-  margin-top: 4px;
-  color: var(--muted);
 }
 .admin-form-grid :deep(.el-date-editor) {
   width: 100%;

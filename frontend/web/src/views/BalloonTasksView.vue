@@ -3,7 +3,6 @@
     <el-header height="auto" class="page-head">
       <div class="page-title-row">
         <div>
-          <p class="eyebrow">Balloon Delivery Desk</p>
           <h1>{{ t('气球配送工作台') }}</h1>
         </div>
         <div
@@ -388,46 +387,8 @@ onUnmounted(() => realtime?.stop());
   font-size: clamp(32px, 4vw, 48px);
   letter-spacing: -0.035em;
 }
-.page-title-row p {
-  display: none;
-  margin-bottom: 0;
-  color: var(--muted);
-}
-.eyebrow {
-  display: none;
-  margin: 0 0 8px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
 .page-alert {
   margin-bottom: 20px;
-}
-.clarification-live-state {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 14px;
-  border-radius: 0;
-  padding: 8px 12px;
-  color: var(--muted);
-  background: #e9eef5;
-  font-size: 12px;
-}
-.clarification-live-state span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #94a3b8;
-}
-.clarification-live-state.connected {
-  color: #166534;
-  background: #dcfce7;
-}
-.clarification-live-state.connected span {
-  background: #22c55e;
 }
 @media (max-width: 640px) {
   .page-title-row {

@@ -49,9 +49,9 @@ const { t } = useI18n();
   display: grid;
   gap: 8px;
   border: 1px solid #e2e8f0;
-  border-radius: 0;
+
   padding: 18px;
-  color: #64748b;
+  color: var(--muted);
   background: white;
 }
 .balloon-stat strong {

@@ -2,7 +2,6 @@
   <el-container direction="vertical" class="profile-page">
     <el-header height="auto" class="page-head"
       ><div>
-        <p class="eyebrow">Account</p>
         <h1>{{ t('账户设置') }}</h1>
       </div>
       <RouterLink to="/practice">{{ t('返回练习') }}</RouterLink></el-header
@@ -69,7 +68,7 @@ async function saveProfile() {
   display: flex;
   justify-content: space-between;
   align-items: end;
-  border-bottom: 1px solid #dcdfe6;
+  border-bottom: 1px solid var(--border);
   padding: 28px 20px 18px;
   margin-bottom: 20px;
   height: auto;
@@ -82,8 +81,8 @@ async function saveProfile() {
 .profile-page p {
   margin: 0;
 }
-.page-head p:not(.eyebrow) {
-  color: #606266;
+.page-head p {
+  color: var(--muted);
   margin-top: 6px;
 }
 .profile-card {
@@ -96,7 +95,7 @@ async function saveProfile() {
   gap: 20px;
 }
 .password-row p {
-  color: #606266;
+  color: var(--muted);
   margin-top: 6px;
 }
 @media (max-width: 600px) {

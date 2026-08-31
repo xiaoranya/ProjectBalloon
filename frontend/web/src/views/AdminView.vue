@@ -365,34 +365,6 @@ onMounted(refreshAll);
 </script>
 
 <style scoped>
-.admin-page {
-  width: min(1320px, 100%);
-  margin: 0 auto;
-}
-.page-head {
-  height: auto;
-  padding: 42px 42px 0;
-}
-.page-body {
-  padding: 0 42px 42px;
-}
-.admin-page-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  margin-bottom: 28px;
-}
-.admin-page-header.compact {
-  align-items: center;
-}
-.admin-page-header h1 {
-  margin: 5px 0 6px;
-  font-size: clamp(28px, 4vw, 40px);
-  color: #13213b;
-}
-.page-alert {
-  margin-bottom: 20px;
-}
 .operations-health,
 .operations-audit {
   margin-bottom: 34px;
@@ -423,7 +395,6 @@ onMounted(refreshAll);
 .health-component-card {
   border: 1px solid #dbe8df;
   border-left: 4px solid #16a34a;
-  border-radius: 0;
 }
 .health-component-card.down {
   border-color: #fecaca;
@@ -431,7 +402,7 @@ onMounted(refreshAll);
 }
 .health-component-card.neutral {
   border-color: #e2e8f0;
-  border-left-color: #94a3b8;
+  border-left-color: var(--muted-light);
 }
 .health-component-title {
   display: flex;

@@ -443,15 +443,6 @@ function problemName(problemId: number) {
 </script>
 
 <style scoped>
-.assignment-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-bottom: 22px;
-  padding: 18px;
-  border-radius: 0;
-  background: #f7f9fc;
-}
 .problem-color {
   display: inline-flex;
   gap: 7px;

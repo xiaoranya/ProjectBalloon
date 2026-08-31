@@ -109,16 +109,6 @@ const selected = defineModel<BalloonTask | null>('selected');
   gap: 8px;
   margin-bottom: 18px;
 }
-.balloon-color {
-  display: inline-block;
-  flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
-  border: 2px solid rgb(255 255 255 / 85%);
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgb(15 23 42 / 18%);
-  vertical-align: middle;
-}
 .balloon-color.small {
   width: 14px;
   height: 14px;
@@ -128,7 +118,7 @@ const selected = defineModel<BalloonTask | null>('selected');
   display: grid;
   gap: 12px;
   border: 1px solid #e2e8f0;
-  border-radius: 0;
+
   padding: 16px;
   background: #f8fafc;
 }
@@ -137,21 +127,13 @@ const selected = defineModel<BalloonTask | null>('selected');
   gap: 3px;
 }
 .balloon-note-panel small {
-  color: #64748b;
+  color: var(--muted);
 }
 .balloon-note-panel > :deep(.el-button) {
   justify-self: end;
 }
 .balloon-actions {
   flex-wrap: wrap;
-}
-.clarification-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 30px;
-  padding-top: 22px;
-  border-top: 1px solid #e5eaf2;
 }
 .danger-text {
   color: #dc2626;

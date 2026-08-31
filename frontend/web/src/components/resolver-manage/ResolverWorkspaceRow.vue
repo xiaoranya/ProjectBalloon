@@ -176,7 +176,6 @@ function problemAlias(id: number) {
 .resolver-history-card,
 .resolver-table-card {
   border: 1px solid #e4e9f0;
-  border-radius: 0;
 }
 .resolver-focus {
   min-height: 284px;
@@ -192,7 +191,7 @@ function problemAlias(id: number) {
   width: 76px;
   height: 76px;
   place-items: center;
-  border-radius: 0;
+
   color: #fff;
   background: #17233d;
   font-size: 25px;
@@ -214,7 +213,7 @@ function problemAlias(id: number) {
 }
 .resolver-reveal-grid > div {
   padding: 14px;
-  border-radius: 0;
+
   background: #f5f7fa;
 }
 .resolver-reveal-grid span,
@@ -249,10 +248,9 @@ function problemAlias(id: number) {
   gap: 10px;
   padding: 10px;
   border: 1px solid #edf0f4;
-  border-radius: 0;
 }
 .resolver-event-list article > span:first-child {
-  color: #64748b;
+  color: var(--muted);
   text-align: center;
   font-weight: 700;
 }
@@ -280,8 +278,8 @@ function problemAlias(id: number) {
 .resolver-cell-list span {
   min-width: 43px;
   padding: 4px 6px;
-  border-radius: 0;
-  color: #64748b;
+
+  color: var(--muted);
   background: #f1f5f9;
   text-align: center;
   font-size: 11px;

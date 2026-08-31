@@ -166,7 +166,6 @@ async function removeRecipient(value: unknown) {
 }
 .award-recipients-card {
   border: 1px solid #e5eaf2;
-  border-radius: 0;
 }
 .award-team-cell strong,
 .award-team-cell > span {

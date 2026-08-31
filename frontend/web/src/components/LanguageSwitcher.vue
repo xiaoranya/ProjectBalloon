@@ -47,4 +47,12 @@ function changeLocale(value: AppLocale) {
   background: rgb(255 255 255 / 94%);
   box-shadow: 0 4px 16px rgb(15 23 42 / 14%);
 }
+
+@media (max-width: 900px) {
+  /* 让出 media.css 的 fixed 底部导航（bottom 16px + 导航高度），并与其 16px 边距对齐 */
+  .language-switcher {
+    right: 16px;
+    bottom: 88px;
+  }
+}
 </style>

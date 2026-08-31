@@ -2,7 +2,6 @@
   <el-container direction="vertical" class="host-script-page">
     <el-header height="auto" class="host-script-page-header"
       ><div>
-        <p class="eyebrow">Host Cue Sheet</p>
         <h1>{{ t('颁奖主持人脚本') }}</h1>
       </div>
       <ElSpace wrap :size="16" class="host-script-toolbar"
@@ -333,7 +332,6 @@ onBeforeUnmount(() => {
 .host-live-card,
 .host-script-editor {
   margin-top: 18px;
-  border-radius: 0;
 }
 
 .host-live-card .card-header,
@@ -351,7 +349,7 @@ onBeforeUnmount(() => {
 
 .host-current-cue {
   padding: 28px;
-  border-radius: 0;
+
   color: #fff8e8;
   background: #18233d;
 }
@@ -384,7 +382,7 @@ onBeforeUnmount(() => {
   overflow: auto;
   padding: 20px 24px;
   border: 1px solid #e5e7eb;
-  border-radius: 0;
+
   background: #fafbfc;
 }
 
@@ -416,7 +414,7 @@ onBeforeUnmount(() => {
 .host-section-editor-list article {
   padding: 18px;
   border: 1px solid #e5e7eb;
-  border-radius: 0;
+
   background: #fafbfc;
 }
 

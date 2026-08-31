@@ -107,7 +107,7 @@ async function logout() {
   overflow: auto;
 }
 
-.admin-sidebar :deep(.admin-brand) {
+.admin-sidebar .admin-brand {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -115,26 +115,26 @@ async function logout() {
   text-decoration: none;
 }
 
-.admin-sidebar :deep(.admin-brand > span) {
+.admin-sidebar .admin-brand > span {
   display: grid;
   width: 40px;
   height: 40px;
   flex: 0 0 auto;
   place-items: center;
   color: white;
-  background: #2563eb;
+  background: var(--primary);
   font-size: 13px;
   font-weight: 900;
   letter-spacing: -0.04em;
 }
 
-.admin-sidebar :deep(.admin-brand > div),
-.admin-sidebar :deep(.admin-user > div) {
+.admin-sidebar .admin-brand > div,
+.admin-sidebar .admin-user > div {
   min-width: 0;
 }
 
-.admin-sidebar :deep(.admin-brand strong),
-.admin-sidebar :deep(.admin-brand small) {
+.admin-sidebar .admin-brand strong,
+.admin-sidebar .admin-brand small {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -142,7 +142,7 @@ async function logout() {
   white-space: nowrap;
 }
 
-.admin-sidebar :deep(.admin-brand small) {
+.admin-sidebar .admin-brand small {
   margin-top: 3px;
   color: var(--muted);
   font-size: 11px;
@@ -161,7 +161,7 @@ async function logout() {
   line-height: 46px;
 }
 
-.admin-sidebar :deep(.admin-user) {
+.admin-sidebar .admin-user {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -171,20 +171,20 @@ async function logout() {
   border-top: 1px solid var(--border);
 }
 
-.admin-sidebar :deep(.admin-user strong),
-.admin-sidebar :deep(.admin-user small) {
+.admin-sidebar .admin-user strong,
+.admin-sidebar .admin-user small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.admin-sidebar :deep(.admin-user small) {
+.admin-sidebar .admin-user small {
   margin-top: 3px;
   color: var(--muted);
 }
 
-.admin-sidebar :deep(.admin-user .el-button) {
+.admin-sidebar .admin-user .el-button {
   flex: 0 0 auto;
   color: var(--muted);
 }
@@ -192,7 +192,6 @@ async function logout() {
 .admin-main {
   min-width: 0;
   padding: 0;
-  overflow: auto;
 }
 
 @media (max-width: 900px) {
@@ -208,8 +207,8 @@ async function logout() {
     padding: 14px 20px;
   }
 
-  .admin-sidebar :deep(.admin-brand small),
-  .admin-sidebar :deep(.admin-user > div) {
+  .admin-sidebar .admin-brand small,
+  .admin-sidebar .admin-user > div {
     display: none;
   }
 
@@ -220,7 +219,7 @@ async function logout() {
     margin: 0 0 0 auto;
   }
 
-  .admin-sidebar :deep(.admin-user) {
+  .admin-sidebar .admin-user {
     margin: 0 0 0 8px;
     padding: 0;
     border: 0;

@@ -3,6 +3,7 @@
     class="award-display"
     :class="`award-display-${presentation?.status.toLowerCase() || 'offline'}`"
   >
+    <div class="award-display-decor" aria-hidden="true"></div>
     <div v-if="disconnected && presentation" class="award-display-connection">
       {{ t('连接中断，继续展示最后一次同步结果') }}
     </div>

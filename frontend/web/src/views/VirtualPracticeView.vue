@@ -189,7 +189,7 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: end;
-  border-bottom: 1px solid #dcdfe6;
+  border-bottom: 1px solid var(--border);
   padding: 28px 20px 18px;
   height: auto;
 }
@@ -202,7 +202,7 @@ onBeforeUnmount(() => {
 }
 .page-head p {
   margin: 6px 0 0;
-  color: #606266;
+  color: var(--muted);
 }
 .layout {
   display: grid;
@@ -210,7 +210,7 @@ onBeforeUnmount(() => {
   gap: 24px;
 }
 .session-nav {
-  border-right: 1px solid #dcdfe6;
+  border-right: 1px solid var(--border);
   padding-right: 12px;
 }
 .session-menu {
@@ -222,14 +222,14 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 .session-item span {
-  color: #606266;
+  color: var(--muted);
   font-size: 13px;
 }
 .session-head {
   display: flex;
   justify-content: space-between;
   align-items: end;
-  border-bottom: 1px solid #dcdfe6;
+  border-bottom: 1px solid var(--border);
   padding-bottom: 18px;
   margin-bottom: 20px;
 }
@@ -247,7 +247,7 @@ onBeforeUnmount(() => {
   }
   .session-nav {
     border-right: 0;
-    border-bottom: 1px solid #dcdfe6;
+    border-bottom: 1px solid var(--border);
   }
 }
 </style>

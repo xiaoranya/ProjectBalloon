@@ -2,7 +2,6 @@
   <el-container direction="vertical" class="resolver-page">
     <el-header height="auto" class="resolver-page-heading">
       <div>
-        <p class="eyebrow">Official Resolver</p>
         <h1>{{ t('Resolver 运行控制台') }}</h1>
       </div>
       <ElSpace wrap :size="10" class="resolver-heading-actions">

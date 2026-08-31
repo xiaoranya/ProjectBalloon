@@ -195,11 +195,11 @@ async function submitPairing() {
   text-align: center;
 }
 .staff-entry a {
-  color: #606266;
+  color: var(--muted);
   text-decoration: none;
 }
 .staff-entry a:hover {
-  color: #337ecc;
+  color: var(--primary);
   text-decoration: underline;
 }
 

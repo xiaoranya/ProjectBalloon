@@ -238,7 +238,7 @@ td {
 }
 .board small {
   display: block;
-  color: #94a3b8;
+  color: var(--muted-light);
 }
 .board aside,
 .metrics article {
@@ -269,6 +269,7 @@ td {
   color: var(--accent);
 }
 .template-cinematic {
+  background: #080b14;
   background:
     radial-gradient(
       circle at 75% 10%,
@@ -313,6 +314,7 @@ td {
 }
 .template-custom .board aside,
 .template-custom .metrics article {
+  background: rgb(255 255 255 / 8%);
   background: color-mix(in srgb, var(--custom-foreground) 8%, var(--custom-background));
 }
 @media (max-width: 800px) {

@@ -1,5 +1,5 @@
 <template>
-  <el-container direction="vertical" class="judge-shell resolver-shell">
+  <el-container direction="vertical" class="judge-shell">
     <el-header height="auto" class="judge-header resolver-header">
       <RouterLink class="judge-brand" to="/resolver"
         ><span class="brand-mark">PB</span>
