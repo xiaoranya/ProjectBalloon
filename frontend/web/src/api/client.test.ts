@@ -159,4 +159,117 @@ describe('apiRequest', () => {
   it('describes non-Error rejection values', () => {
     expect(getErrorMessage('boom')).toBe('发生未知错误');
   });
+
+  it('returns undefined for a 204 response without parsing a body', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await expect(apiRequest('/api/example')).resolves.toBeUndefined();
+  });
+
+  it('reads plain text when responseType is text', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      new Response('plain output', {
+        status: 200,
+        headers: { 'content-type': 'text/plain' },
+      }),
+    );
+
+    await expect(apiRequest<string>('/api/example', { responseType: 'text' })).resolves.toBe(
+      'plain output',
+    );
+    const options = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(new Headers(options.headers).get('Accept')).toBe('text/plain');
+  });
+
+  it('reads binary data when responseType is blob', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      new Response(new Blob(['zip-bytes']), {
+        status: 200,
+        headers: { 'content-type': 'application/octet-stream' },
+      }),
+    );
+
+    const blob = await apiRequest<Blob>('/api/example', { responseType: 'blob' });
+    expect(await blob.text()).toBe('zip-bytes');
+    const options = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(new Headers(options.headers).get('Accept')).toBe('application/octet-stream');
+  });
+
+  it('keeps the caller-supplied Accept header untouched', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await apiRequest('/api/example', { headers: { Accept: 'text/csv' } });
+
+    const options = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(new Headers(options.headers).get('Accept')).toBe('text/csv');
+  });
+
+  it('fetches the CSRF token only once for concurrent mutations', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      if (String(input) === '/api/auth/csrf') {
+        return new Promise<Response>((resolve) =>
+          setTimeout(
+            () =>
+              resolve(
+                jsonResponse({
+                  headerName: 'X-XSRF-TOKEN',
+                  parameterName: '_csrf',
+                  token: 'csrf-token',
+                }),
+              ),
+            5,
+          ),
+        );
+      }
+      return Promise.resolve(jsonResponse({ ok: true }));
+    });
+
+    await Promise.all([
+      apiRequest('/api/example', { method: 'POST', body: { n: 1 } }),
+      apiRequest('/api/example', { method: 'POST', body: { n: 2 } }),
+      apiRequest('/api/example', { method: 'PUT', body: { n: 3 } }),
+    ]);
+
+    const csrfCalls = fetchMock.mock.calls.filter(([input]) => String(input) === '/api/auth/csrf');
+    expect(csrfCalls).toHaveLength(1);
+    for (const [input, options] of fetchMock.mock.calls) {
+      if (String(input) === '/api/auth/csrf') continue;
+      expect(new Headers((options as RequestInit).headers).get('X-XSRF-TOKEN')).toBe('csrf-token');
+    }
+  });
+
+  it('re-fetches the CSRF token after a logout clears it', async () => {
+    const fetchMock = vi.mocked(fetch);
+    const csrfResponse = () =>
+      jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'csrf-token' });
+    fetchMock
+      .mockResolvedValueOnce(csrfResponse())
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await apiRequest('/api/example', { method: 'POST' });
+    clearCsrfToken();
+
+    fetchMock
+      .mockResolvedValueOnce(csrfResponse())
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+    await apiRequest('/api/example', { method: 'POST' });
+
+    const csrfCalls = fetchMock.mock.calls.filter(([input]) => String(input) === '/api/auth/csrf');
+    expect(csrfCalls).toHaveLength(2);
+  });
+
+  it('does not fetch a CSRF token for GET requests', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await apiRequest('/api/example');
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/example');
+  });
 });

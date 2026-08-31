@@ -12,6 +12,16 @@ const nodeProcess = (
 const nodeBlob = nodeProcess?.getBuiltinModule?.('buffer')?.Blob;
 if (nodeBlob) globalThis.Blob = nodeBlob;
 
+// jsdom has no ResizeObserver; Element Plus tables need it to lay out and
+// render body rows. Provide a no-op stub so table cell content renders.
+if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
+  (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 afterEach(() => {
   document.body.innerHTML = '';
 });
