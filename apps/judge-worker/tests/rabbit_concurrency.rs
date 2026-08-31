@@ -10,15 +10,19 @@ use std::{
 use async_trait::async_trait;
 use bollard::Docker;
 use lapin::{
-    BasicProperties, Connection, ConnectionProperties,
-    options::{BasicAckOptions, BasicGetOptions, BasicPublishOptions, ConfirmSelectOptions},
+    BasicProperties, Connection, ConnectionProperties, ExchangeKind,
+    options::{
+        BasicAckOptions, BasicGetOptions, BasicPublishOptions, ConfirmSelectOptions,
+        ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions,
+    },
+    types::FieldTable,
 };
 use project_balloon_contracts::{
-    JUDGE_RESULT_SCHEMA_VERSION, JUDGE_TASKS_EXCHANGE, JudgeResult, JudgeRunResult, JudgeTask,
-    JudgeVerdict,
+    JUDGE_HEARTBEAT_ROUTING_KEY, JUDGE_HEARTBEATS_EXCHANGE, JUDGE_RESULT_SCHEMA_VERSION,
+    JUDGE_TASKS_EXCHANGE, JudgeResult, JudgeRunResult, JudgeTask, JudgeVerdict, WorkerHeartbeat,
 };
 use project_balloon_judge_worker::{
-    heartbeat::WorkerActivity,
+    heartbeat::{WorkerActivity, WorkerHeartbeatPublisher, WorkerHeartbeatPublisherConfig},
     rabbit::{JudgeTaskHandler, RabbitJudgeWorker, RabbitJudgeWorkerConfig, TaskFailure},
 };
 use project_balloon_test_support::valid_judge_task;
@@ -207,6 +211,118 @@ async fn broker_restart_requeues_unacknowledged_in_flight_task() {
         .await
         .expect("Worker must stop after recovery")
         .expect("Worker task must join");
+}
+
+#[tokio::test]
+#[ignore = "requires the reviewed RabbitMQ Judge topology"]
+async fn worker_heartbeat_publisher_streams_activity_and_stops_on_shutdown() {
+    let amqp_url = env::var("PROJECT_BALLOON_TEST_AMQP_URL")
+        .expect("PROJECT_BALLOON_TEST_AMQP_URL must be set");
+    let connection = Connection::connect(&amqp_url, ConnectionProperties::default())
+        .await
+        .expect("connect RabbitMQ");
+    let channel = connection.create_channel().await.expect("create RabbitMQ channel");
+    // The publisher only passively declares the exchange, so the test owns the
+    // active declaration and binds a private queue to observe heartbeats.
+    channel
+        .exchange_declare(
+            JUDGE_HEARTBEATS_EXCHANGE.into(),
+            ExchangeKind::Direct,
+            ExchangeDeclareOptions { durable: true, ..ExchangeDeclareOptions::default() },
+            FieldTable::default(),
+        )
+        .await
+        .expect("declare heartbeat exchange");
+    let queue = channel
+        .queue_declare(
+            "".into(),
+            QueueDeclareOptions { exclusive: true, ..QueueDeclareOptions::default() },
+            FieldTable::default(),
+        )
+        .await
+        .expect("declare observation queue")
+        .name()
+        .as_str()
+        .to_owned();
+    channel
+        .queue_bind(
+            queue.as_str().into(),
+            JUDGE_HEARTBEATS_EXCHANGE.into(),
+            JUDGE_HEARTBEAT_ROUTING_KEY.into(),
+            QueueBindOptions::default(),
+            FieldTable::default(),
+        )
+        .await
+        .expect("bind heartbeat queue");
+
+    let activity = WorkerActivity::new(4);
+    let guard = activity.begin_task();
+    let publisher = WorkerHeartbeatPublisher::new(
+        WorkerHeartbeatPublisherConfig {
+            uri: amqp_url.clone(),
+            worker_id: "heartbeat-publisher-test".to_owned(),
+            interval: Duration::from_millis(50),
+            request_timeout: Duration::from_secs(5),
+            reconnect_delay: Duration::from_millis(100),
+            runtime_versions: std::collections::BTreeMap::from([(
+                "cpp".to_owned(),
+                "12.2.0".to_owned(),
+            )]),
+            sandbox_runtime: Some("runsc".to_owned()),
+        },
+        activity.clone(),
+    );
+    let (shutdown, shutdown_rx) = watch::channel(false);
+    let publisher_task = tokio::spawn(publisher.run(shutdown_rx));
+
+    let first = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(message) = channel
+                .basic_get(queue.as_str().into(), BasicGetOptions::default())
+                .await
+                .expect("poll heartbeat queue")
+            {
+                break message;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("heartbeat must arrive while a task is active");
+    let heartbeat: WorkerHeartbeat =
+        serde_json::from_slice(&first.data).expect("deserialize heartbeat");
+    assert_eq!(heartbeat.worker_id, "heartbeat-publisher-test");
+    assert_eq!(heartbeat.capacity, 4);
+    assert_eq!(heartbeat.active_tasks, 1);
+    assert_eq!(heartbeat.runtime_versions.get("cpp").map(String::as_str), Some("12.2.0"));
+    assert_eq!(heartbeat.sandbox_runtime.as_deref(), Some("runsc"));
+    first.ack(BasicAckOptions::default()).await.expect("ack observed heartbeat");
+
+    drop(guard);
+    let second = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(message) = channel
+                .basic_get(queue.as_str().into(), BasicGetOptions::default())
+                .await
+                .expect("poll heartbeat queue")
+            {
+                break message;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("second heartbeat must arrive after the task guard drops");
+    let heartbeat: WorkerHeartbeat =
+        serde_json::from_slice(&second.data).expect("deserialize second heartbeat");
+    assert_eq!(heartbeat.active_tasks, 0);
+    second.ack(BasicAckOptions::default()).await.expect("ack second heartbeat");
+
+    let _sent = shutdown.send(true);
+    tokio::time::timeout(Duration::from_secs(5), publisher_task)
+        .await
+        .expect("heartbeat publisher must stop after shutdown")
+        .expect("heartbeat publisher task must join");
 }
 
 #[derive(Default)]

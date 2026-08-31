@@ -226,3 +226,165 @@ async fn official_run_is_immutable_reversible_and_restart_safe(pool: PgPool) {
     assert!(sqlx::query("UPDATE resolver_runs SET source_final_snapshot_id = source_public_snapshot_id WHERE id = $1")
             .bind(created.id).execute(&pool).await.is_err());
 }
+
+fn resolver_cell(
+    problem_id: i64,
+    solved: bool,
+    penalty_minutes: i64,
+    solved_at: Option<OffsetDateTime>,
+) -> ScoreboardCell {
+    ScoreboardCell {
+        problem_id,
+        wrong_attempts: 0,
+        solved,
+        solved_at,
+        penalty_minutes,
+        score_milli: 0,
+        first_blood: false,
+    }
+}
+
+#[test]
+fn recompute_board_rewrites_aggregates_ranks_and_first_blood() {
+    use crate::features::resolver::plan::recompute_board;
+
+    let earlier = OffsetDateTime::from_unix_timestamp(300).expect("timestamp");
+    let later = OffsetDateTime::from_unix_timestamp(540).expect("timestamp");
+    let mut board = ScoreboardResponse {
+        contest_id: 1,
+        variant: "PUBLIC".into(),
+        frozen: true,
+        scoring_mode: "ICPC".into(),
+        score_aggregation: "BEST".into(),
+        generated_at: earlier,
+        problems: vec![ScoreboardProblem {
+            problem_id: 1,
+            alias: "A".into(),
+            display_order: 1,
+            first_blood_team_id: None,
+            first_blood_at: None,
+        }],
+        rows: vec![
+            ScoreboardRow {
+                team_id: 2,
+                rank: 1,
+                official_rank: Some(1),
+                team_name: "Team 2".into(),
+                school: None,
+                participation_type: "OFFICIAL".into(),
+                group_name: None,
+                is_star: false,
+                solved_count: 1,
+                penalty_minutes: 30,
+                total_score_milli: 0,
+                last_solved_at: Some(later),
+                problems: vec![resolver_cell(1, true, 30, Some(later))],
+            },
+            ScoreboardRow {
+                team_id: 1,
+                rank: 2,
+                official_rank: Some(2),
+                team_name: "Team 1".into(),
+                school: None,
+                participation_type: "OFFICIAL".into(),
+                group_name: None,
+                is_star: false,
+                solved_count: 1,
+                penalty_minutes: 30,
+                total_score_milli: 0,
+                last_solved_at: None,
+                problems: vec![resolver_cell(1, true, 5, Some(earlier))],
+            },
+        ],
+    };
+
+    recompute_board(&mut board);
+    assert_eq!(board.rows[0].team_id, 1, "smaller penalty must overtake after the reveal");
+    assert_eq!(board.rows[0].rank, 1);
+    assert_eq!(board.rows[0].penalty_minutes, 5);
+    assert!(board.rows[0].problems[0].first_blood);
+    assert_eq!(board.problems[0].first_blood_team_id, Some(1));
+    assert_eq!(board.problems[0].first_blood_at, Some(earlier));
+    assert_eq!(board.rows[1].team_id, 2);
+    assert_eq!(board.rows[1].rank, 2);
+    assert_eq!(board.rows[1].official_rank, Some(2));
+    assert!(!board.rows[1].problems[0].first_blood);
+}
+
+fn tiebreak_row(
+    team_id: i64,
+    solved_count: i32,
+    penalty_minutes: i64,
+    last_solved_at: Option<OffsetDateTime>,
+) -> ScoreboardRow {
+    ScoreboardRow {
+        rank: 0,
+        official_rank: None,
+        team_id,
+        team_name: format!("Team {team_id}"),
+        school: None,
+        participation_type: "OFFICIAL".into(),
+        group_name: None,
+        is_star: false,
+        solved_count,
+        penalty_minutes,
+        total_score_milli: 0,
+        last_solved_at,
+        problems: Vec::new(),
+    }
+}
+
+#[test]
+fn resolver_tiebreaks_follow_the_icpc_rulebook() {
+    use crate::features::resolver::plan::compare_rows;
+    use std::cmp::Ordering;
+
+    let early = OffsetDateTime::from_unix_timestamp(60).expect("timestamp");
+    let late = OffsetDateTime::from_unix_timestamp(120).expect("timestamp");
+    assert_eq!(
+        compare_rows(&tiebreak_row(1, 3, 500, Some(late)), &tiebreak_row(2, 2, 10, Some(early))),
+        Ordering::Less
+    );
+    assert_eq!(
+        compare_rows(&tiebreak_row(1, 2, 90, None), &tiebreak_row(2, 2, 120, None)),
+        Ordering::Less
+    );
+    assert_eq!(
+        compare_rows(&tiebreak_row(1, 2, 100, Some(early)), &tiebreak_row(2, 2, 100, Some(late))),
+        Ordering::Less
+    );
+    assert_eq!(
+        compare_rows(&tiebreak_row(2, 2, 100, None), &tiebreak_row(1, 2, 100, None)),
+        Ordering::Greater
+    );
+}
+
+#[test]
+fn resolver_ranking_matches_the_scoreboard_icpc_ordering() {
+    use crate::features::resolver::plan::compare_rows as resolver_compare;
+    use crate::features::scoreboard::helpers::compare_rows as scoreboard_compare;
+
+    let early = OffsetDateTime::from_unix_timestamp(60).expect("timestamp");
+    let late = OffsetDateTime::from_unix_timestamp(120).expect("timestamp");
+    let mut rows = Vec::new();
+    let mut team_id = 0;
+    for solved_count in [0_i32, 1, 2] {
+        for penalty_minutes in [0_i64, 90, 300] {
+            for last_solved_at in [None, Some(early), Some(late)] {
+                team_id += 1;
+                rows.push(tiebreak_row(team_id, solved_count, penalty_minutes, last_solved_at));
+            }
+        }
+    }
+    for left in &rows {
+        for right in &rows {
+            assert_eq!(
+                scoreboard_compare("ICPC", left, right),
+                resolver_compare(left, right),
+                "scoreboard and resolver must agree when ranking team {} against team {}",
+                left.team_id,
+                right.team_id
+            );
+        }
+    }
+}

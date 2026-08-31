@@ -169,3 +169,83 @@ impl BatchRejudgeTaskRow {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{BatchRejudgeCreateRequest, BatchRejudgeFilter};
+
+    fn filter() -> BatchRejudgeFilter {
+        BatchRejudgeFilter {
+            problem_id: None,
+            team_id: None,
+            language: None,
+            verdict: None,
+            submitted_from: None,
+            submitted_to: None,
+        }
+    }
+
+    fn request(
+        expected_count: i32,
+        confirmation_text: &str,
+        idempotency_key: &str,
+    ) -> BatchRejudgeCreateRequest {
+        BatchRejudgeCreateRequest {
+            filter: filter(),
+            expected_count,
+            confirmation_text: confirmation_text.to_owned(),
+            idempotency_key: idempotency_key.to_owned(),
+        }
+    }
+
+    #[test]
+    fn well_formed_batch_requests_pass_validation() {
+        request(1, "REJUDGE 1", "k".repeat(8).as_str()).validate().expect("lower bounds");
+        request(10_000, "REJUDGE 10000", "k".repeat(128).as_str())
+            .validate()
+            .expect("upper bounds");
+    }
+
+    #[test]
+    fn expected_count_must_stay_within_batch_limits() {
+        for count in [0, 10_001] {
+            assert!(
+                request(count, &format!("REJUDGE {count}"), "idempotency-key").validate().is_err(),
+                "count {count} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn confirmation_text_must_echo_the_expected_count() {
+        assert!(request(3, "REJUDGE 4", "idempotency-key").validate().is_err());
+        assert!(request(3, "rejudge 3", "idempotency-key").validate().is_err());
+    }
+
+    #[test]
+    fn idempotency_keys_are_trimmed_and_length_bounded() {
+        assert!(request(1, "REJUDGE 1", "k".repeat(7).as_str()).validate().is_err());
+        assert!(request(1, "REJUDGE 1", "k".repeat(129).as_str()).validate().is_err());
+        let validated =
+            request(1, "REJUDGE 1", "   idempotency-key   ").validate().expect("trimmed key");
+        assert_eq!(validated.idempotency_key, "idempotency-key");
+    }
+
+    #[test]
+    fn filter_languages_and_verdicts_are_normalized_and_bounded() {
+        let validated_filter = BatchRejudgeFilter {
+            language: Some(" CPP ".to_owned()),
+            verdict: Some("wrong_answer".to_owned()),
+            ..filter()
+        }
+        .validate()
+        .expect("valid filter");
+        assert_eq!(validated_filter.language.as_deref(), Some("cpp"));
+        assert_eq!(validated_filter.verdict.as_deref(), Some("WRONG_ANSWER"));
+        assert!(
+            BatchRejudgeFilter { language: Some("rust".to_owned()), ..filter() }
+                .validate()
+                .is_err()
+        );
+    }
+}

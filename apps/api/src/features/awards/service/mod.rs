@@ -342,3 +342,25 @@ fn map_category_error(e: sqlx::Error) -> AppError {
         AppError::internal("create award category", e)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::require_operator;
+    use crate::features::auth::model::{UserType, user_for_test};
+    use crate::features::auth::permissions;
+
+    #[test]
+    fn award_gate_accepts_super_admins_and_award_managers() {
+        assert!(require_operator(&user_for_test(UserType::SuperAdmin, &[])).is_ok());
+        assert!(
+            require_operator(&user_for_test(UserType::Staff, &[permissions::AWARD_MANAGE])).is_ok()
+        );
+    }
+
+    #[test]
+    fn award_gate_rejects_operators_without_the_permission() {
+        let error = require_operator(&user_for_test(UserType::Staff, &[]))
+            .expect_err("missing permission must be rejected");
+        assert_eq!(error.code(), "AWARD_PERMISSION_REQUIRED");
+    }
+}

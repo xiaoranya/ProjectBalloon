@@ -284,24 +284,7 @@ impl ResolverService {
                 "Resolver run changed; reload and retry",
             ));
         }
-        let (next_status, next_step) = match action {
-            "START" if status == "READY" => ("RUNNING", step),
-            "NEXT" if status == "RUNNING" && step < total => ("RUNNING", step + 1),
-            "PREVIOUS" if matches!(status.as_str(), "RUNNING" | "PAUSED") && step > 0 => {
-                (status.as_str(), step - 1)
-            }
-            "PAUSE" if status == "RUNNING" => ("PAUSED", step),
-            "RESUME" if status == "PAUSED" => ("RUNNING", step),
-            "COMPLETE" if matches!(status.as_str(), "RUNNING" | "PAUSED") && step == total => {
-                ("COMPLETED", step)
-            }
-            _ => {
-                return Err(AppError::conflict(
-                    "RESOLVER_STATE_CHANGED",
-                    "Resolver command is not valid in the current state",
-                ));
-            }
-        };
+        let (next_status, next_step) = next_transition(action, &status, step, total)?;
         sqlx::query(
             r#"
             UPDATE resolver_runs SET status = $2, current_step = $3,
@@ -546,4 +529,92 @@ fn map_create_error(error: sqlx::Error) -> AppError {
 
 fn resolver_not_found() -> AppError {
     AppError::not_found("RESOLVER_RUN_NOT_FOUND", "Resolver run was not found")
+}
+
+fn next_transition<'a>(
+    action: &'a str,
+    status: &'a str,
+    step: i32,
+    total: i32,
+) -> Result<(&'a str, i32), AppError> {
+    match action {
+        "START" if status == "READY" => Ok(("RUNNING", step)),
+        "NEXT" if status == "RUNNING" && step < total => Ok(("RUNNING", step + 1)),
+        "PREVIOUS" if matches!(status, "RUNNING" | "PAUSED") && step > 0 => Ok((status, step - 1)),
+        "PAUSE" if status == "RUNNING" => Ok(("PAUSED", step)),
+        "RESUME" if status == "PAUSED" => Ok(("RUNNING", step)),
+        "COMPLETE" if matches!(status, "RUNNING" | "PAUSED") && step == total => {
+            Ok(("COMPLETED", step))
+        }
+        _ => Err(AppError::conflict(
+            "RESOLVER_STATE_CHANGED",
+            "Resolver command is not valid in the current state",
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::require_operator;
+    use crate::features::auth::model::{UserType, user_for_test};
+    use crate::features::auth::permissions;
+
+    #[test]
+    fn resolver_gate_accepts_super_admins_and_resolver_managers() {
+        assert!(require_operator(&user_for_test(UserType::SuperAdmin, &[])).is_ok());
+        assert!(
+            require_operator(&user_for_test(UserType::Staff, &[permissions::RESOLVER_MANAGE]))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn resolver_gate_rejects_operators_without_the_permission() {
+        let error = require_operator(&user_for_test(UserType::Staff, &[]))
+            .expect_err("missing permission must be rejected");
+        assert_eq!(error.code(), "RESOLVER_PERMISSION_REQUIRED");
+    }
+
+    #[test]
+    fn resolver_state_machine_accepts_only_rulebook_transitions() {
+        use super::next_transition;
+
+        assert_eq!(next_transition("START", "READY", 0, 5).expect("start"), ("RUNNING", 0));
+        assert_eq!(next_transition("NEXT", "RUNNING", 2, 5).expect("next"), ("RUNNING", 3));
+        assert_eq!(
+            next_transition("PREVIOUS", "RUNNING", 3, 5).expect("previous while running"),
+            ("RUNNING", 2)
+        );
+        assert_eq!(
+            next_transition("PREVIOUS", "PAUSED", 3, 5).expect("previous while paused"),
+            ("PAUSED", 2)
+        );
+        assert_eq!(next_transition("PAUSE", "RUNNING", 4, 5).expect("pause"), ("PAUSED", 4));
+        assert_eq!(next_transition("RESUME", "PAUSED", 4, 5).expect("resume"), ("RUNNING", 4));
+        assert_eq!(
+            next_transition("COMPLETE", "RUNNING", 5, 5).expect("complete while running"),
+            ("COMPLETED", 5)
+        );
+        assert_eq!(
+            next_transition("COMPLETE", "PAUSED", 5, 5).expect("complete while paused"),
+            ("COMPLETED", 5)
+        );
+
+        for (action, status, step, total) in [
+            ("START", "RUNNING", 0, 5),
+            ("START", "COMPLETED", 5, 5),
+            ("NEXT", "RUNNING", 5, 5),
+            ("NEXT", "PAUSED", 0, 5),
+            ("PREVIOUS", "READY", 0, 5),
+            ("PREVIOUS", "RUNNING", 0, 5),
+            ("PAUSE", "PAUSED", 2, 5),
+            ("RESUME", "RUNNING", 2, 5),
+            ("COMPLETE", "RUNNING", 3, 5),
+            ("REWIND", "RUNNING", 2, 5),
+        ] {
+            let error = next_transition(action, status, step, total)
+                .expect_err("transition must be rejected");
+            assert_eq!(error.code(), "RESOLVER_STATE_CHANGED", "{action} from {status} at {step}");
+        }
+    }
 }

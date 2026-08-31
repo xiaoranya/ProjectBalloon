@@ -113,7 +113,7 @@ pub(super) fn build_states(
     Ok(states)
 }
 
-fn recompute_board(board: &mut ScoreboardResponse) {
+pub(super) fn recompute_board(board: &mut ScoreboardResponse) {
     for row in &mut board.rows {
         row.solved_count = i32::try_from(row.problems.iter().filter(|cell| cell.solved).count())
             .unwrap_or(i32::MAX);
@@ -160,7 +160,7 @@ fn recompute_board(board: &mut ScoreboardResponse) {
     }
 }
 
-fn compare_rows(left: &ScoreboardRow, right: &ScoreboardRow) -> Ordering {
+pub(super) fn compare_rows(left: &ScoreboardRow, right: &ScoreboardRow) -> Ordering {
     right
         .solved_count
         .cmp(&left.solved_count)

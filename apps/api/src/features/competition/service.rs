@@ -655,4 +655,13 @@ mod tests {
         service.revoke(contest_id, binding.id, &actor).await.expect("revoke");
         assert!(auth.authenticate(&session.session_token).await.is_err());
     }
+
+    #[test]
+    fn pairing_code_comparison_is_constant_time_and_exact() {
+        assert!(super::constant_time_equal("A1B2C3", "A1B2C3"));
+        assert!(!super::constant_time_equal("A1B2C3", "A1B2C4"));
+        assert!(!super::constant_time_equal("A1B2C3", "A1B2C3X"));
+        assert!(!super::constant_time_equal("", "A"));
+        assert!(super::constant_time_equal("", ""));
+    }
 }

@@ -1,3 +1,5 @@
+mod common;
+
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use http_body_util::BodyExt;
@@ -7,18 +9,9 @@ use sqlx::PgPool;
 #[sqlx::test(migrations = "../../migrations")]
 #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
 async fn archived_contest_child_write_maps_to_read_only_conflict(pool: PgPool) {
-    let contest_id = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO contests(name, status, visibility) VALUES('archived-readonly', 'ARCHIVED', 'PUBLIC') RETURNING id",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("insert archived contest");
-    let user_id = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO users(username, password_hash, display_name, user_type) VALUES('archived-readonly', 'hash', 'Archived Readonly', 'INDIVIDUAL') RETURNING id",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("insert user");
+    let contest_id = common::insert_contest(&pool, "archived-readonly", "ARCHIVED", "PUBLIC").await;
+    let user_id =
+        common::insert_user(&pool, "archived-readonly", "Archived Readonly", "INDIVIDUAL").await;
 
     let rejection = sqlx::query(
         "INSERT INTO announcements(contest_id, title, body, created_by) VALUES($1, 't', 'b', $2)",

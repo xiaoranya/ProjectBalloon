@@ -296,3 +296,89 @@ fn safe_text(value: Option<String>, limit: usize) -> Option<String> {
             .collect()
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use time::OffsetDateTime;
+    use uuid::Uuid;
+
+    use super::apply_feedback_policy;
+    use crate::features::submissions::model::{
+        JudgementDetail, JudgementSubtaskScore, RunDetail, SubmissionDetail,
+    };
+    use crate::features::submissions::query::restricted_submission_summary;
+
+    fn restricted_detail() -> SubmissionDetail {
+        SubmissionDetail {
+            summary: restricted_submission_summary(),
+            source: "int main() {}".to_owned(),
+            source_sha256: Some("hash".to_owned()),
+            judgements: vec![JudgementDetail {
+                id: Uuid::from_u128(1),
+                verdict: Some("WRONG_ANSWER".to_owned()),
+                total_time_ms: Some(12),
+                peak_memory_kb: Some(2048),
+                compile_log: Some("cc: error".to_owned()),
+                worker_id: Some("worker-1".to_owned()),
+                started_at: None,
+                completed_at: None,
+                created_at: OffsetDateTime::from_unix_timestamp(0).expect("epoch"),
+                version: 1,
+                superseded: false,
+                active: true,
+                score_milli: Some(100_000),
+                runs: vec![RunDetail {
+                    test_index: 1,
+                    verdict: Some("WRONG_ANSWER".to_owned()),
+                    time_ms: Some(12),
+                    memory_kb: Some(2048),
+                    exit_code: Some(1),
+                    stderr_tail: Some("assert failed".to_owned()),
+                }],
+                subtask_scores: vec![JudgementSubtaskScore {
+                    subtask_key: "full".to_owned(),
+                    name: "Full".to_owned(),
+                    score_milli: 100_000,
+                    max_score_milli: 100_000,
+                    passed_tests: 0,
+                    total_tests: 1,
+                }],
+            }],
+        }
+    }
+
+    #[test]
+    fn full_feedback_keeps_every_judgement_field() {
+        let mut detail = restricted_detail();
+        apply_feedback_policy(&mut detail, "FULL");
+        assert_eq!(detail.summary.verdict.as_deref(), Some("WRONG_ANSWER"));
+        let judgement = &detail.judgements[0];
+        assert_eq!(judgement.compile_log.as_deref(), Some("cc: error"));
+        assert_eq!(judgement.worker_id.as_deref(), Some("worker-1"));
+        assert_eq!(judgement.runs.len(), 1);
+        assert_eq!(judgement.subtask_scores.len(), 1);
+        assert_eq!(judgement.score_milli, Some(100_000));
+    }
+
+    #[test]
+    fn score_feedback_clears_judgement_diagnostics_but_keeps_scores() {
+        let mut detail = restricted_detail();
+        apply_feedback_policy(&mut detail, "SCORE");
+        assert_eq!(detail.summary.verdict, None);
+        let judgement = &detail.judgements[0];
+        assert_eq!(judgement.verdict, None);
+        assert_eq!(judgement.compile_log, None);
+        assert_eq!(judgement.worker_id, None);
+        assert!(judgement.runs.is_empty());
+        assert!(judgement.subtask_scores.is_empty());
+        assert_eq!(judgement.score_milli, Some(100_000));
+    }
+
+    #[test]
+    fn none_feedback_clears_judgement_scores_too() {
+        let mut detail = restricted_detail();
+        apply_feedback_policy(&mut detail, "NONE");
+        assert_eq!(detail.summary.score_milli, None);
+        assert_eq!(detail.judgements[0].score_milli, None);
+    }
+}

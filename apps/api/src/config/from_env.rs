@@ -701,3 +701,42 @@ where
     }
     Ok(parsed)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_proxy_cidrs;
+    use crate::config::ConfigError;
+
+    #[test]
+    fn parses_comma_separated_cidrs_and_trims_whitespace() {
+        let cidrs = parse_proxy_cidrs(" 10.0.0.0/8 ,192.168.0.0/16,,2001:db8::/32 ".to_owned())
+            .expect("valid CIDR list");
+        assert_eq!(cidrs.len(), 3);
+    }
+
+    #[test]
+    fn rejects_malformed_cidr_values() {
+        for value in ["not-a-cidr", "10.0.0.1", "300.0.0.0/8"] {
+            assert_eq!(
+                parse_proxy_cidrs(value.to_owned()),
+                Err(ConfigError::Invalid {
+                    name: "PROJECT_BALLOON_TRUSTED_PROXY_CIDRS",
+                    value: value.to_owned(),
+                    reason: "expected a comma-separated list of IP CIDRs",
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_lists_without_any_cidr() {
+        assert_eq!(
+            parse_proxy_cidrs("   ".to_owned()),
+            Err(ConfigError::Invalid {
+                name: "PROJECT_BALLOON_TRUSTED_PROXY_CIDRS",
+                value: "   ".to_owned(),
+                reason: "must contain at least one CIDR",
+            })
+        );
+    }
+}

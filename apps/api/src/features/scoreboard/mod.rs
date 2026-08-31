@@ -1,6 +1,6 @@
 mod cache;
 pub(crate) mod handlers;
-mod helpers;
+pub(crate) mod helpers;
 mod model;
 mod projection;
 mod service;

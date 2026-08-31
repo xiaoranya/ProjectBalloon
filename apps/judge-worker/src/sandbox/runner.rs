@@ -245,9 +245,7 @@ impl DockerSandbox {
         let mut runs = Vec::with_capacity(case_count);
         let mut total_time_ms = 0_i32;
         let effective_time_limit_ms =
-            (f64::from(task.time_limit_ms) * task.language_multiplier).ceil();
-        let effective_time_limit_ms = effective_time_limit_ms.clamp(1.0, f64::from(i32::MAX));
-        let effective_time_limit_ms = effective_time_limit_ms as i32;
+            effective_time_limit(task.time_limit_ms, task.language_multiplier);
         let wall_limit = Duration::from_millis(
             u64::try_from(effective_time_limit_ms).unwrap_or(1).saturating_mul(3).max(1_000),
         );
@@ -257,9 +255,7 @@ impl DockerSandbox {
             set_private_file_permissions(&input_path).await?;
             let actual_path = work_dir.join("actual.out");
             remove_file_if_present(&actual_path).await?;
-            // POSIX shells express `ulimit -f` in 512-byte blocks, while the task contract uses
-            // KiB. Keep the kernel file limit and the post-run byte check on the same boundary.
-            let output_blocks = i64::from(task.output_limit_kb).saturating_mul(2).max(1);
+            let output_blocks = output_file_blocks(task.output_limit_kb);
             let program = language.run_command(task.memory_limit_mb);
             let shell = if interactive {
                 format!(
@@ -299,14 +295,17 @@ impl DockerSandbox {
             .map_err(|error| SandboxError::Api(error.to_string()))??;
             let output_bytes = output.as_ref().map_or(0, |output| output.len() as u64);
             let output_limit_bytes = u64::try_from(task.output_limit_kb).unwrap_or(0) * 1024;
-            let verdict = if run.oom_killed || (run.exit_code == 137 && !run.timed_out) {
-                JudgeVerdict::MemoryLimitExceeded
-            } else if output_bytes > output_limit_bytes
-                || (run.exit_code != 0 && output_bytes >= output_limit_bytes)
-            {
-                JudgeVerdict::OutputLimitExceeded
-            } else if run.timed_out || charged_time_ms > effective_time_limit_ms {
-                JudgeVerdict::TimeLimitExceeded
+            let resource = resource_verdict(
+                run.oom_killed,
+                run.exit_code,
+                run.timed_out,
+                output_bytes,
+                output_limit_bytes,
+                charged_time_ms,
+                effective_time_limit_ms,
+            );
+            let verdict = if let Some(verdict) = resource {
+                verdict
             } else if interactive && run.exit_code == 20 {
                 JudgeVerdict::WrongAnswer
             } else if run.exit_code != 0 || output.is_none() {
@@ -601,4 +600,103 @@ struct ContainerRun {
     cpu_time_ms: Option<i32>,
     peak_memory_kb: i32,
     logs: String,
+}
+
+/// Applies the language multiplier to the task time limit, clamped to at least
+/// one millisecond.
+fn effective_time_limit(task_time_limit_ms: i32, language_multiplier: f64) -> i32 {
+    (f64::from(task_time_limit_ms) * language_multiplier).ceil().clamp(1.0, f64::from(i32::MAX))
+        as i32
+}
+
+/// POSIX shells express `ulimit -f` in 512-byte blocks, while the task contract
+/// uses KiB. Keep the kernel file limit and the post-run byte check on the same
+/// boundary.
+fn output_file_blocks(output_limit_kb: i32) -> i64 {
+    i64::from(output_limit_kb).saturating_mul(2).max(1)
+}
+
+/// Decides the resource-driven verdicts (memory, output, time). These strictly
+/// precede the interactive protocol and the byte comparison; `None` means the
+/// run finished inside its limits and the output must be judged.
+fn resource_verdict(
+    oom_killed: bool,
+    exit_code: i64,
+    timed_out: bool,
+    output_bytes: u64,
+    output_limit_bytes: u64,
+    charged_time_ms: i32,
+    effective_time_limit_ms: i32,
+) -> Option<JudgeVerdict> {
+    if oom_killed || (exit_code == 137 && !timed_out) {
+        Some(JudgeVerdict::MemoryLimitExceeded)
+    } else if output_bytes > output_limit_bytes
+        || (exit_code != 0 && output_bytes >= output_limit_bytes)
+    {
+        Some(JudgeVerdict::OutputLimitExceeded)
+    } else if timed_out || charged_time_ms > effective_time_limit_ms {
+        Some(JudgeVerdict::TimeLimitExceeded)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use project_balloon_contracts::JudgeVerdict;
+
+    use super::{effective_time_limit, output_file_blocks, resource_verdict};
+
+    #[test]
+    fn resource_verdicts_precede_output_comparison() {
+        // OOM kills and exit code 137 mean memory exhaustion.
+        assert_eq!(
+            resource_verdict(true, 0, false, 0, 1_024, 1, 1_000),
+            Some(JudgeVerdict::MemoryLimitExceeded)
+        );
+        assert_eq!(
+            resource_verdict(false, 137, false, 0, 1_024, 1, 1_000),
+            Some(JudgeVerdict::MemoryLimitExceeded)
+        );
+        // Exit 137 with a wall-clock timeout is a time limit, not OOM.
+        assert_eq!(
+            resource_verdict(false, 137, true, 0, 1_024, 1, 1_000),
+            Some(JudgeVerdict::TimeLimitExceeded)
+        );
+        // Output above the limit is OLE; a non-zero exit at the boundary is too.
+        assert_eq!(
+            resource_verdict(false, 0, false, 1_025, 1_024, 1, 1_000),
+            Some(JudgeVerdict::OutputLimitExceeded)
+        );
+        assert_eq!(
+            resource_verdict(false, 1, false, 1_024, 1_024, 1, 1_000),
+            Some(JudgeVerdict::OutputLimitExceeded)
+        );
+        assert_eq!(resource_verdict(false, 0, false, 1_024, 1_024, 1, 1_000), None);
+        // Wall-clock timeouts and charged CPU beyond the effective limit are TLE.
+        assert_eq!(
+            resource_verdict(false, 0, true, 0, 1_024, 1, 1_000),
+            Some(JudgeVerdict::TimeLimitExceeded)
+        );
+        assert_eq!(
+            resource_verdict(false, 0, false, 0, 1_024, 1_001, 1_000),
+            Some(JudgeVerdict::TimeLimitExceeded)
+        );
+        assert_eq!(resource_verdict(false, 0, false, 0, 1_024, 1_000, 1_000), None);
+    }
+
+    #[test]
+    fn effective_time_limits_apply_multiplier_and_clamp() {
+        assert_eq!(effective_time_limit(1_000, 1.0), 1_000);
+        assert_eq!(effective_time_limit(1_000, 2.0), 2_000);
+        assert_eq!(effective_time_limit(1_000, 0.001), 1);
+        assert_eq!(effective_time_limit(1, 0.0), 1);
+    }
+
+    #[test]
+    fn output_blocks_convert_kib_to_512_byte_blocks() {
+        assert_eq!(output_file_blocks(64), 128);
+        assert_eq!(output_file_blocks(1), 2);
+        assert_eq!(output_file_blocks(0), 1);
+    }
 }

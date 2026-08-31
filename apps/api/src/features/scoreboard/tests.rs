@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::time::Duration as StdDuration;
 
 use redis::AsyncCommands;
@@ -10,10 +11,13 @@ use crate::features::{
     scoreboard::{ScoreboardCache, projection::rebuild_cell},
 };
 
-use crate::features::scoreboard::helpers::{assemble, csv_field, score_submissions, to_csv};
+use crate::features::scoreboard::helpers::{
+    apply_scoreboard_filter, assemble, compare_rows, csv_field, is_penalized_rejection,
+    score_submissions, to_csv,
+};
 use crate::features::scoreboard::model::{
-    CellRow, RosterRow, ScoreboardProblem, SubmissionScoreRow, ValidatedScoreboardQuery,
-    ValidatedSnapshotSelector,
+    CellRow, RosterRow, ScoreboardProblem, ScoreboardRow, SubmissionScoreRow,
+    ValidatedScoreboardQuery, ValidatedSnapshotSelector,
 };
 use crate::features::scoreboard::service::ScoreboardService;
 
@@ -547,4 +551,355 @@ async fn rebuild_cell_with_zero_submissions_writes_clean_cells(pool: PgPool) {
         .expect("load empty row");
         assert_eq!((row.0, row.1, row.2), (0, 0, 0), "{scoring_mode}");
     }
+}
+
+#[test]
+fn icpc_penalty_counts_penalized_rejections_and_stops_after_the_accept() {
+    let start = OffsetDateTime::UNIX_EPOCH;
+    let submission = |id: i64, minutes: i64, verdict: &str| SubmissionScoreRow {
+        submission_id: id,
+        team_id: 1,
+        problem_id: 10,
+        submitted_at: start + Duration::minutes(minutes),
+        verdict: verdict.to_owned(),
+        score_milli: 0,
+        max_score_milli: 100_000,
+    };
+    let cells = score_submissions(
+        start,
+        "ICPC",
+        "BEST",
+        vec![
+            submission(1, 5, "WRONG_ANSWER"),
+            submission(2, 20, "COMPILE_ERROR"),
+            submission(3, 45, "TIME_LIMIT_EXCEEDED"),
+            submission(4, 100, "ACCEPTED"),
+            submission(5, 150, "WRONG_ANSWER"),
+        ],
+    );
+    assert_eq!(cells.len(), 1);
+    let cell = &cells[0];
+    assert!(cell.solved);
+    assert_eq!(cell.solved_at, Some(start + Duration::minutes(100)));
+    assert_eq!(cell.wrong_attempts, 2, "compile errors must not count as penalties");
+    assert_eq!(cell.penalty_minutes, 100 + 20 * 2);
+    assert_eq!(cell.score_milli, 100_000);
+}
+
+#[test]
+fn non_icpc_cells_follow_the_aggregation_rule() {
+    let start = OffsetDateTime::UNIX_EPOCH;
+    let submission = |id: i64, minutes: i64, score_milli: i32| SubmissionScoreRow {
+        submission_id: id,
+        team_id: 1,
+        problem_id: 10,
+        submitted_at: start + Duration::minutes(minutes),
+        verdict: "ACCEPTED".to_owned(),
+        score_milli,
+        max_score_milli: 100_000,
+    };
+    // LAST aggregation replaces the cell on every submission.
+    let cells = score_submissions(
+        start,
+        "OI",
+        "LAST",
+        vec![submission(1, 10, 40_000), submission(2, 20, 10_000)],
+    );
+    assert_eq!(cells[0].score_milli, 10_000);
+    assert_eq!(cells[0].wrong_attempts, 2);
+    assert_eq!(cells[0].penalty_minutes, 0);
+    assert!(!cells[0].solved);
+    // BEST aggregation keeps the highest score and solves when it reaches the max.
+    let cells = score_submissions(
+        start,
+        "IOI",
+        "BEST",
+        vec![submission(1, 10, 40_000), submission(2, 20, 100_000), submission(3, 30, 30_000)],
+    );
+    assert_eq!(cells[0].score_milli, 100_000);
+    assert!(cells[0].solved);
+    assert_eq!(cells[0].solved_at, Some(start + Duration::minutes(20)));
+}
+
+#[test]
+fn penalized_rejection_whitelist_is_exact() {
+    for verdict in [
+        "WRONG_ANSWER",
+        "TIME_LIMIT_EXCEEDED",
+        "MEMORY_LIMIT_EXCEEDED",
+        "RUNTIME_ERROR",
+        "OUTPUT_LIMIT_EXCEEDED",
+    ] {
+        assert!(is_penalized_rejection(verdict), "{verdict} must count toward penalty");
+    }
+    for verdict in ["ACCEPTED", "COMPILE_ERROR", "SYSTEM_ERROR", "CANCELLED", ""] {
+        assert!(!is_penalized_rejection(verdict), "{verdict} must not count toward penalty");
+    }
+}
+
+fn tiebreak_row(
+    team_id: i64,
+    solved_count: i32,
+    penalty_minutes: i64,
+    last_solved_at: Option<OffsetDateTime>,
+    total_score_milli: i64,
+) -> ScoreboardRow {
+    ScoreboardRow {
+        rank: 0,
+        official_rank: None,
+        team_id,
+        team_name: format!("Team {team_id}"),
+        school: None,
+        participation_type: "OFFICIAL".to_owned(),
+        group_name: None,
+        is_star: false,
+        solved_count,
+        penalty_minutes,
+        total_score_milli,
+        last_solved_at,
+        problems: Vec::new(),
+    }
+}
+
+#[test]
+fn icpc_rows_rank_by_solves_then_penalty_then_last_solve_then_team_id() {
+    let early = OffsetDateTime::from_unix_timestamp(60).expect("timestamp");
+    let late = OffsetDateTime::from_unix_timestamp(120).expect("timestamp");
+    assert_eq!(
+        compare_rows(
+            "ICPC",
+            &tiebreak_row(1, 3, 500, Some(late), 0),
+            &tiebreak_row(2, 2, 10, Some(early), 0)
+        ),
+        Ordering::Less
+    );
+    assert_eq!(
+        compare_rows("ICPC", &tiebreak_row(1, 2, 90, None, 0), &tiebreak_row(2, 2, 120, None, 0)),
+        Ordering::Less
+    );
+    assert_eq!(
+        compare_rows(
+            "ICPC",
+            &tiebreak_row(1, 2, 100, Some(early), 0),
+            &tiebreak_row(2, 2, 100, Some(late), 0)
+        ),
+        Ordering::Less
+    );
+    assert_eq!(
+        compare_rows("ICPC", &tiebreak_row(2, 2, 100, None, 0), &tiebreak_row(1, 2, 100, None, 0)),
+        Ordering::Greater
+    );
+}
+
+#[test]
+fn non_icpc_rows_rank_by_score_then_last_solve_then_team_id() {
+    let early = OffsetDateTime::from_unix_timestamp(60).expect("timestamp");
+    let late = OffsetDateTime::from_unix_timestamp(120).expect("timestamp");
+    assert_eq!(
+        compare_rows(
+            "OI",
+            &tiebreak_row(1, 0, 0, None, 90_000),
+            &tiebreak_row(2, 0, 0, None, 30_000)
+        ),
+        Ordering::Less
+    );
+    assert_eq!(
+        compare_rows(
+            "IOI",
+            &tiebreak_row(1, 0, 0, Some(early), 90_000),
+            &tiebreak_row(2, 0, 0, Some(late), 90_000)
+        ),
+        Ordering::Less
+    );
+    assert_eq!(
+        compare_rows(
+            "IOI",
+            &tiebreak_row(1, 0, 0, None, 90_000),
+            &tiebreak_row(2, 0, 0, None, 90_000)
+        ),
+        Ordering::Less
+    );
+}
+
+fn single_team_board(scoring_mode: &str) -> crate::features::scoreboard::ScoreboardResponse {
+    assemble(
+        1,
+        "ADMIN",
+        false,
+        OffsetDateTime::UNIX_EPOCH,
+        scoring_mode.to_owned(),
+        "BEST".to_owned(),
+        vec![ScoreboardProblem {
+            problem_id: 10,
+            alias: "A".to_owned(),
+            display_order: 1,
+            first_blood_team_id: None,
+            first_blood_at: None,
+        }],
+        vec![RosterRow {
+            team_id: 1,
+            team_name: "Team".to_owned(),
+            school: None,
+            participation_type: "OFFICIAL".to_owned(),
+            group_name: None,
+            team_star: false,
+        }],
+        vec![CellRow {
+            team_id: 1,
+            problem_id: 10,
+            wrong_attempts: 2,
+            solved: true,
+            solved_at: Some(OffsetDateTime::UNIX_EPOCH),
+            penalty_minutes: 140,
+            score_milli: 100_000,
+        }],
+    )
+}
+
+#[test]
+fn scoreboard_filter_renumbers_ranks_and_official_ranks() {
+    let mut filtered = single_team_board("ICPC");
+    filtered.rows.push(tiebreak_row(2, 0, 0, None, 0));
+    apply_scoreboard_filter(
+        &mut filtered,
+        &ValidatedScoreboardQuery { group_name: None, participation_type: None },
+    );
+    // Re-numbering starts at 1 even when the incoming ranks were unset.
+    for (index, row) in filtered.rows.iter().enumerate() {
+        assert_eq!(row.rank, u32::try_from(index + 1).expect("small board"));
+    }
+}
+
+#[test]
+fn to_csv_renders_solve_minutes_only_for_icpc_boards() {
+    let icpc_csv = to_csv(&single_team_board("ICPC"));
+    assert!(icpc_csv.starts_with("rank,officialRank,teamId,"), "{icpc_csv}");
+    assert!(icpc_csv.contains("+2@100"), "ICPC cells must render attempts@minutes: {icpc_csv}");
+    let oi_csv = to_csv(&single_team_board("OI"));
+    // csv_field escapes the leading '+' to defuse spreadsheet formulas.
+    assert!(oi_csv.contains(",'+2"), "non-ICPC cells must render attempts only: {oi_csv}");
+    assert!(!oi_csv.contains("@-"), "non-ICPC cells must never render negative minutes: {oi_csv}");
+}
+
+#[test]
+fn to_csv_renders_unsolved_attempts_escaped_and_zero_attempt_cells_blank() {
+    let board = assemble(
+        1,
+        "ADMIN",
+        false,
+        OffsetDateTime::UNIX_EPOCH,
+        "ICPC".to_owned(),
+        "BEST".to_owned(),
+        vec![ScoreboardProblem {
+            problem_id: 10,
+            alias: "A".to_owned(),
+            display_order: 1,
+            first_blood_team_id: None,
+            first_blood_at: None,
+        }],
+        vec![
+            RosterRow {
+                team_id: 1,
+                team_name: "Failed Twice".to_owned(),
+                school: None,
+                participation_type: "OFFICIAL".to_owned(),
+                group_name: None,
+                team_star: false,
+            },
+            RosterRow {
+                team_id: 2,
+                team_name: "Never Submitted".to_owned(),
+                school: None,
+                participation_type: "OFFICIAL".to_owned(),
+                group_name: None,
+                team_star: false,
+            },
+        ],
+        vec![CellRow {
+            team_id: 1,
+            problem_id: 10,
+            wrong_attempts: 2,
+            solved: false,
+            solved_at: None,
+            penalty_minutes: 40,
+            score_milli: 0,
+        }],
+    );
+    let csv = to_csv(&board);
+    let lines: Vec<&str> = csv.lines().collect();
+    assert_eq!(lines.len(), 3, "{csv}");
+    // csv_field escapes the leading '-' of the unsolved marker like it does '+'.
+    assert!(lines[1].contains(",'-2"), "unsolved attempts must render escaped -n: {csv}");
+    assert!(lines[2].ends_with(','), "zero-attempt unsolved cell renders blank: {csv}");
+}
+
+#[test]
+fn scoreboard_filter_applies_group_and_participation_and_reranks_officials() {
+    let roster_row = |team_id: i64, participation: &str, group: &str| RosterRow {
+        team_id,
+        team_name: format!("Team {team_id}"),
+        school: None,
+        participation_type: participation.to_owned(),
+        group_name: Some(group.to_owned()),
+        team_star: false,
+    };
+    let solved = |team_id: i64, minutes: i64| CellRow {
+        team_id,
+        problem_id: 10,
+        wrong_attempts: 1,
+        solved: true,
+        solved_at: Some(OffsetDateTime::UNIX_EPOCH + Duration::minutes(minutes)),
+        penalty_minutes: minutes,
+        score_milli: 100_000,
+    };
+    let mut board = assemble(
+        1,
+        "ADMIN",
+        false,
+        OffsetDateTime::UNIX_EPOCH,
+        "ICPC".to_owned(),
+        "BEST".to_owned(),
+        vec![ScoreboardProblem {
+            problem_id: 10,
+            alias: "A".to_owned(),
+            display_order: 1,
+            first_blood_team_id: None,
+            first_blood_at: None,
+        }],
+        vec![
+            roster_row(1, "OFFICIAL", "East"),
+            roster_row(2, "OFFICIAL", "West"),
+            roster_row(3, "STAR", "East"),
+            roster_row(4, "PRACTICE", "West"),
+        ],
+        vec![solved(1, 100), solved(2, 200), solved(3, 50)],
+    );
+    // The star team outranks officials on the raw board yet stays officially unranked.
+    assert_eq!(
+        board.rows.iter().map(|row| (row.team_id, row.rank, row.official_rank)).collect::<Vec<_>>(),
+        vec![(3, 1, None), (1, 2, Some(1)), (2, 3, Some(2)), (4, 4, None)]
+    );
+
+    apply_scoreboard_filter(
+        &mut board,
+        &ValidatedScoreboardQuery { group_name: Some("East".to_owned()), participation_type: None },
+    );
+    assert_eq!(
+        board.rows.iter().map(|row| (row.team_id, row.rank, row.official_rank)).collect::<Vec<_>>(),
+        vec![(3, 1, None), (1, 2, Some(1))],
+        "group filter must drop West rows and renumber official ranks from 1"
+    );
+
+    apply_scoreboard_filter(
+        &mut board,
+        &ValidatedScoreboardQuery {
+            group_name: Some("East".to_owned()),
+            participation_type: Some("STAR".to_owned()),
+        },
+    );
+    assert_eq!(
+        board.rows.iter().map(|row| (row.team_id, row.rank, row.official_rank)).collect::<Vec<_>>(),
+        vec![(3, 1, None)],
+        "star-only board must keep rank 1 with official_rank unset"
+    );
 }

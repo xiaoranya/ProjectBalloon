@@ -30,13 +30,21 @@ pub struct CreateExportTaskRequest {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
     use std::time::Duration;
 
+    use async_trait::async_trait;
+    use bytes::Bytes;
     use sqlx::PgPool;
     use uuid::Uuid;
 
+    use crate::features::auth::model::{AuthUser, UserType};
     use crate::features::submissions::SubmissionService;
-    use crate::features::submissions::export_tasks::{ExportTaskKind, retry_delay};
+    use crate::features::submissions::export_tasks::{
+        ExportTaskKind, ExportTaskRunner, ExportTaskRunnerConfig, retry_delay,
+    };
+    use crate::object_storage::{ObjectStorage, ObjectStorageError, ObjectStorageHandle};
 
     #[test]
     fn export_kinds_have_stable_wire_names() {
@@ -56,6 +64,309 @@ mod tests {
         assert_eq!(retry_delay(base, 1), Duration::from_secs(5));
         assert_eq!(retry_delay(base, 4), Duration::from_secs(40));
         assert_eq!(retry_delay(base, 100), Duration::from_secs(3_600));
+    }
+
+    #[derive(Default)]
+    struct MemoryStorage {
+        objects: Mutex<HashMap<(String, String), Bytes>>,
+    }
+
+    #[async_trait]
+    impl ObjectStorage for MemoryStorage {
+        async fn check_bucket(&self, _bucket: &str) -> Result<(), ObjectStorageError> {
+            Ok(())
+        }
+
+        async fn put(
+            &self,
+            bucket: &str,
+            key: &str,
+            _content_type: Option<&str>,
+            content: Bytes,
+        ) -> Result<(), ObjectStorageError> {
+            self.objects
+                .lock()
+                .expect("memory storage lock")
+                .insert((bucket.into(), key.into()), content);
+            Ok(())
+        }
+
+        async fn get(&self, bucket: &str, key: &str) -> Result<Bytes, ObjectStorageError> {
+            self.objects
+                .lock()
+                .expect("memory storage lock")
+                .get(&(bucket.into(), key.into()))
+                .cloned()
+                .ok_or_else(|| ObjectStorageError::Request("not found".into()))
+        }
+
+        async fn delete(&self, bucket: &str, key: &str) -> Result<(), ObjectStorageError> {
+            self.objects.lock().expect("memory storage lock").remove(&(bucket.into(), key.into()));
+            Ok(())
+        }
+    }
+
+    async fn seed_admin(pool: &PgPool, username: &str) -> AuthUser {
+        let user_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO users (username, password_hash, display_name, user_type) VALUES ($1, 'hash', $2, 'SUPER_ADMIN') RETURNING id",
+        )
+        .bind(username)
+        .bind(username)
+        .fetch_one(pool)
+        .await
+        .expect("insert export admin");
+        AuthUser {
+            id: user_id,
+            username: username.to_owned(),
+            display_name: username.to_owned(),
+            user_type: UserType::SuperAdmin,
+            permissions: Vec::new(),
+            password_reset_required: false,
+        }
+    }
+
+    async fn seed_contest(pool: &PgPool, name: &str) -> i64 {
+        sqlx::query_scalar::<_, i64>(
+            "INSERT INTO contests (name, status, visibility) VALUES ($1, 'DRAFT', 'PRIVATE') RETURNING id",
+        )
+        .bind(name)
+        .fetch_one(pool)
+        .await
+        .expect("insert export contest")
+    }
+
+    /// Seeds one contest submission (with its team and problem assignment) so
+    /// the metadata CSV has a data row and the sources ZIP has an object to fetch.
+    async fn seed_contest_submission(pool: &PgPool, contest_id: i64, suffix: &str) -> i64 {
+        let problem_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO problems(slug,title) VALUES($1,$2) RETURNING id",
+        )
+        .bind(format!("export-{suffix}"))
+        .bind("Export problem")
+        .fetch_one(pool)
+        .await
+        .expect("insert export problem");
+        sqlx::query("INSERT INTO contest_problems(contest_id,problem_id,alias,display_order,max_score_milli) VALUES($1,$2,'A',1,100000)")
+            .bind(contest_id).bind(problem_id).execute(pool).await.expect("assign problem");
+        let team_id =
+            sqlx::query_scalar::<_, i64>("INSERT INTO teams(name) VALUES($1) RETURNING id")
+                .bind(format!("export team {suffix}"))
+                .fetch_one(pool)
+                .await
+                .expect("insert export team");
+        sqlx::query_scalar::<_, i64>(
+            "INSERT INTO submissions(contest_id,problem_id,team_id,language,source_object_key,source_size_bytes,source_sha256,status) VALUES($1,$2,$3,'cpp',$4,11,$5,'JUDGING') RETURNING id",
+        )
+        .bind(contest_id)
+        .bind(problem_id)
+        .bind(team_id)
+        .bind(format!("sources/export/{suffix}.cpp"))
+        .bind("c".repeat(64))
+        .fetch_one(pool)
+        .await
+        .expect("insert export submission")
+    }
+
+    fn runner_config() -> ExportTaskRunnerConfig {
+        ExportTaskRunnerConfig {
+            poll_interval: Duration::from_secs(3600),
+            lease: Duration::from_secs(30),
+            retry_base: Duration::from_millis(1),
+            output_ttl: Duration::from_secs(3600),
+        }
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn export_task_service_validates_access_and_records_failures(pool: PgPool) {
+        let actor = seed_admin(&pool, "export-service-admin").await;
+        let contest_id = seed_contest(&pool, "Export Service Contest").await;
+        let service = SubmissionService::new(pool.clone());
+
+        assert_eq!(
+            service
+                .create_export_task(0, &actor, ExportTaskKind::MetadataCsv)
+                .await
+                .expect_err("non-positive contest")
+                .code(),
+            "VALIDATION_FAILED"
+        );
+        let created = service
+            .create_export_task(contest_id, &actor, ExportTaskKind::SourcesZip)
+            .await
+            .expect("create export task");
+        assert_eq!(created.status, "QUEUED");
+        assert_eq!(created.kind, "SOURCES_ZIP");
+        assert_eq!(created.contest_id, contest_id);
+
+        assert_eq!(
+            service
+                .get_export_task(0, created.id, &actor)
+                .await
+                .expect_err("non-positive ids")
+                .code(),
+            "VALIDATION_FAILED"
+        );
+        assert_eq!(
+            service
+                .get_export_task(contest_id + 100, created.id, &actor)
+                .await
+                .expect_err("missing contest")
+                .code(),
+            "SUBMISSION_NOT_FOUND"
+        );
+        assert_eq!(
+            service
+                .get_export_task(contest_id, created.id + 1, &actor)
+                .await
+                .expect_err("missing task")
+                .code(),
+            "EXPORT_TASK_NOT_FOUND"
+        );
+        assert_eq!(
+            service.get_export_task(contest_id, created.id, &actor).await.expect("fetch task").id,
+            created.id
+        );
+
+        let individual = AuthUser {
+            id: sqlx::query_scalar::<_, i64>(
+                "INSERT INTO users (username, password_hash, display_name, user_type) VALUES ('export-individual','hash','Export Individual','INDIVIDUAL') RETURNING id",
+            )
+            .fetch_one(&pool)
+            .await
+            .expect("insert restricted user"),
+            username: "export-individual".to_owned(),
+            display_name: "Export Individual".to_owned(),
+            user_type: UserType::Individual,
+            permissions: Vec::new(),
+            password_reset_required: false,
+        };
+        assert_eq!(
+            service
+                .get_export_task(contest_id, created.id, &individual)
+                .await
+                .expect_err("unprivileged actor")
+                .code(),
+            "SUBMISSION_NOT_FOUND"
+        );
+
+        let owner = Uuid::new_v4();
+        let claimed = service
+            .claim_export_task(owner, Duration::from_secs(30))
+            .await
+            .expect("claim")
+            .expect("claimed task");
+        assert_eq!(claimed.id, created.id);
+        assert!(
+            !service
+                .fail_export_task(created.id, Uuid::new_v4(), Duration::from_secs(5), "wrong owner")
+                .await
+                .expect("mismatched lease fails")
+        );
+        let long_message = "x".repeat(1_500);
+        assert!(
+            service
+                .fail_export_task(created.id, owner, Duration::from_secs(5), &long_message)
+                .await
+                .expect("fail export task")
+        );
+        let (status, last_error): (String, String) =
+            sqlx::query_as("SELECT status, last_error FROM submission_export_tasks WHERE id=$1")
+                .bind(created.id)
+                .fetch_one(&pool)
+                .await
+                .expect("load failed task");
+        assert_eq!(status, "FAILED");
+        assert_eq!(last_error.len(), 1_000);
+        let retryable = sqlx::query_scalar::<_, bool>(
+            "SELECT available_at > now() FROM submission_export_tasks WHERE id=$1",
+        )
+        .bind(created.id)
+        .fetch_one(&pool)
+        .await
+        .expect("load retry delay");
+        assert!(retryable, "failed task must wait for the backoff before retrying");
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn export_runner_completes_a_metadata_export_end_to_end(pool: PgPool) {
+        let contest_id = seed_contest(&pool, "Export Runner Contest").await;
+        seed_contest_submission(&pool, contest_id, "runner").await;
+        seed_admin(&pool, "export-runner-admin").await;
+        let task_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO submission_export_tasks (contest_id, requested_by, kind) SELECT $1, id, 'METADATA_CSV' FROM users WHERE username='export-runner-admin' RETURNING id",
+        )
+        .bind(contest_id)
+        .fetch_one(&pool)
+        .await
+        .expect("insert export task");
+
+        let backend = std::sync::Arc::new(MemoryStorage::default());
+        let storage =
+            ObjectStorageHandle::with_buckets(backend.clone(), "problems".into(), "sources".into());
+        let runner = ExportTaskRunner::new(pool.clone(), storage, runner_config());
+        assert!(runner.run_once().await.expect("run once"));
+
+        let (status, bucket, key): (String, String, String) = sqlx::query_as(
+            "SELECT status, output_bucket, output_object_key FROM submission_export_tasks WHERE id=$1",
+        )
+        .bind(task_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load completed export task");
+        assert_eq!(status, "SUCCEEDED");
+        assert_eq!(bucket, "sources");
+        let stored = backend
+            .objects
+            .lock()
+            .expect("memory storage lock")
+            .get(&(bucket.clone(), key.clone()))
+            .cloned()
+            .expect("export artifact stored");
+        assert!(String::from_utf8_lossy(&stored).contains("submissionId"));
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn export_runner_fails_and_retries_when_sources_are_missing(pool: PgPool) {
+        let contest_id = seed_contest(&pool, "Export Retry Contest").await;
+        seed_contest_submission(&pool, contest_id, "retry").await;
+        seed_admin(&pool, "export-retry-admin").await;
+        let task_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO submission_export_tasks (contest_id, requested_by, kind) SELECT $1, id, 'SOURCES_ZIP' FROM users WHERE username='export-retry-admin' RETURNING id",
+        )
+        .bind(contest_id)
+        .fetch_one(&pool)
+        .await
+        .expect("insert export task");
+
+        let backend = std::sync::Arc::new(MemoryStorage::default());
+        let storage =
+            ObjectStorageHandle::with_buckets(backend.clone(), "problems".into(), "sources".into());
+        let runner = ExportTaskRunner::new(pool.clone(), storage, runner_config());
+        assert!(runner.run_once().await.expect("run once"));
+        let (status, attempts, last_error): (String, i32, String) = sqlx::query_as(
+            "SELECT status, attempts, last_error FROM submission_export_tasks WHERE id=$1",
+        )
+        .bind(task_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load failed export task");
+        assert_eq!(status, "FAILED");
+        assert_eq!(attempts, 1);
+        assert!(!last_error.is_empty());
+
+        // The 1 ms retry base makes the task immediately claimable again.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(runner.run_once().await.expect("run once again"));
+        let attempts: i32 =
+            sqlx::query_scalar("SELECT attempts FROM submission_export_tasks WHERE id=$1")
+                .bind(task_id)
+                .fetch_one(&pool)
+                .await
+                .expect("load retried export task");
+        assert_eq!(attempts, 2);
     }
 
     #[sqlx::test(migrations = "../../migrations")]

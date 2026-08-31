@@ -91,6 +91,18 @@ fn zip_paths_are_fixed_and_archive_contains_manifest() {
     assert_eq!(manifest, "manifest");
 }
 
+#[test]
+fn safe_component_falls_back_to_problem_for_unsafe_names() {
+    assert_eq!(safe_component(""), "problem");
+    assert_eq!(safe_component("题目/名称"), "problem");
+    assert_eq!(safe_component("题A-b_c9题"), "A-b_c9");
+}
+
+#[test]
+fn safe_component_truncates_to_32_ascii_characters() {
+    assert_eq!(safe_component("a".repeat(33).as_str()), "a".repeat(32));
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
 async fn administrator_exports_verified_sources_and_audits_both_formats(pool: PgPool) {

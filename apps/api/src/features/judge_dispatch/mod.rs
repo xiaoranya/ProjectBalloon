@@ -3,6 +3,7 @@ mod dispatcher;
 pub(crate) mod error;
 mod heartbeat_consumer;
 mod heartbeat_processor;
+mod payload;
 mod rabbit;
 mod result_consumer;
 mod result_processor;

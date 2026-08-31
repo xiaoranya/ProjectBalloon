@@ -1,3 +1,5 @@
+mod common;
+
 use project_balloon_api::features::contests::ContestStatus;
 use project_balloon_api::features::submissions::SubmissionStatus;
 use project_balloon_contracts::JudgeVerdict;
@@ -144,24 +146,11 @@ fn constraint_literals(definition: &str) -> Vec<&str> {
 #[sqlx::test(migrations = "../../migrations")]
 #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
 async fn submission_status_and_verdict_stay_consistent(pool: PgPool) {
-    let contest_id = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO contests (name, status, visibility) VALUES ('Split Status', 'RUNNING', 'PRIVATE') RETURNING id",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("insert contest");
-    let team_id = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO teams (name) VALUES ('Split Status Team') RETURNING id",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("insert team");
-    let problem_id = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO problems (slug, title) VALUES ('split-status', 'Split Status') RETURNING id",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("insert problem");
+    let contest_id = common::insert_contest(&pool, "Split Status", "RUNNING", "PRIVATE").await;
+    let team_id = common::insert_team(&pool, "Split Status Team").await;
+    let problem_id =
+        common::insert_problem(&pool, "split-status", "Split Status", "problems/split.zip", None)
+            .await;
     let submission_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO submissions

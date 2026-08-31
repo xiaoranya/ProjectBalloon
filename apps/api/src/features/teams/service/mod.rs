@@ -22,6 +22,8 @@ mod helpers;
 mod import;
 mod members;
 mod password;
+#[cfg(test)]
+mod tests;
 
 const TEAM_COLUMNS: &str = r#"
     t.id,

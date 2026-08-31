@@ -182,4 +182,120 @@ mod tests {
     fn excessive_compression_ratio_is_rejected() {
         assert!(validate_sync(&compressed_bomb_fixture()).is_err());
     }
+
+    fn empty_archive() -> Bytes {
+        let writer = ZipWriter::new(Cursor::new(Vec::new()));
+        Bytes::from(writer.finish().expect("finish empty archive").into_inner())
+    }
+
+    fn directory_fixture() -> Bytes {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        writer.add_directory("nested", options).expect("directory entry");
+        for (name, content) in [("1.in", &b"1"[..]), ("1.out", &b"2"[..])] {
+            writer.start_file(name, options).expect("start fixture entry");
+            writer.write_all(content).expect("write fixture entry");
+        }
+        Bytes::from(writer.finish().expect("finish fixture archive").into_inner())
+    }
+
+    fn symlink_fixture_bytes() -> Bytes {
+        archive(&[("1.in", b"1"), ("1.out", b"2")])
+    }
+
+    /// Flips the "encrypted" general-purpose bit in every local file header and
+    /// central directory entry so the archive reads back as encrypted.
+    fn with_encrypted_bits(mut zip: Vec<u8>) -> Bytes {
+        fn flip(zip: &mut [u8], signature: [u8; 4], flag_offset: usize) {
+            let mut start = 0;
+            while let Some(offset) = zip[start..]
+                .windows(4)
+                .position(|window| window == &signature[..])
+                .map(|relative| start + relative)
+            {
+                zip[offset + flag_offset] |= 1;
+                start = offset + 4;
+            }
+        }
+        flip(&mut zip, *b"PK\x03\x04", 6);
+        flip(&mut zip, *b"PK\x01\x02", 8);
+        Bytes::from(zip)
+    }
+
+    /// Rewrites the external-attributes field of every central directory header
+    /// so entries read back with an arbitrary unix mode (e.g. a symlink).
+    fn with_unix_modes(zip: &Bytes, mode: u32) -> Bytes {
+        let mut patched = zip.to_vec();
+        let mut start = 0;
+        while let Some(offset) = patched[start..]
+            .windows(4)
+            .position(|window| window == &b"PK\x01\x02"[..])
+            .map(|relative| start + relative)
+        {
+            patched[offset + 38..offset + 42].copy_from_slice(&(mode << 16).to_le_bytes());
+            start = offset + 4;
+        }
+        Bytes::from(patched)
+    }
+
+    /// Rewrites the declared (uncompressed) size in every central directory
+    /// header so oversized entries can be simulated without materialising them.
+    fn with_declared_entry_size(zip: &Bytes, declared_bytes: u32) -> Bytes {
+        let mut patched = zip.to_vec();
+        let mut start = 0;
+        while let Some(offset) = patched[start..]
+            .windows(4)
+            .position(|window| window == &b"PK\x01\x02"[..])
+            .map(|relative| start + relative)
+        {
+            patched[offset + 24..offset + 28].copy_from_slice(&declared_bytes.to_le_bytes());
+            start = offset + 4;
+        }
+        Bytes::from(patched)
+    }
+
+    #[test]
+    fn empty_archives_are_rejected() {
+        assert!(validate_sync(&empty_archive()).is_err());
+    }
+
+    #[test]
+    fn directory_entries_are_rejected() {
+        assert!(validate_sync(&directory_fixture()).is_err());
+    }
+
+    #[test]
+    fn symlink_unix_modes_are_rejected() {
+        let content = with_unix_modes(&symlink_fixture_bytes(), 0o120777);
+        assert!(validate_sync(&content).is_err());
+    }
+
+    #[test]
+    fn encrypted_entries_are_rejected() {
+        let content = with_encrypted_bits(archive(&[("1.in", b"1"), ("1.out", b"2")]).to_vec());
+        assert!(validate_sync(&content).is_err());
+    }
+
+    #[test]
+    fn oversized_declared_entries_are_rejected() {
+        let content =
+            with_declared_entry_size(&archive(&[("1.in", b"1"), ("1.out", b"2")]), 0x1000_0001);
+        assert!(validate_sync(&content).is_err());
+    }
+
+    #[test]
+    fn overlong_entry_paths_are_rejected() {
+        let long = format!("{}.in", "a".repeat(510));
+        let content = archive(&[(long.as_str(), b"1"), ("1.out", b"2")]);
+        assert!(validate_sync(&content).is_err());
+    }
+
+    #[test]
+    fn unpaired_and_unsafe_case_names_are_rejected() {
+        assert!(
+            validate_sync(&archive(&[("1.in", b"1"), ("2.in", b"2"), ("1.out", b"3")])).is_err()
+        );
+        assert!(validate_sync(&archive(&[("dir\\1.in", b"1"), ("1.out", b"2")])).is_err());
+        assert!(validate_sync(&archive(&[("1\x00.in", b"1"), ("1.out", b"2")])).is_err());
+    }
 }

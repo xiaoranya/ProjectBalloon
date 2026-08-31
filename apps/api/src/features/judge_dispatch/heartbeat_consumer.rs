@@ -9,14 +9,17 @@ use lapin::{
     },
     types::FieldTable,
 };
-use project_balloon_contracts::{JUDGE_HEARTBEATS_QUEUE, WorkerHeartbeat};
+use project_balloon_contracts::JUDGE_HEARTBEATS_QUEUE;
 use sqlx::PgPool;
 use tokio::{sync::watch, time::timeout};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::features::judge_dispatch::{
-    error::JudgeDispatchError, heartbeat_processor::WorkerHeartbeatProcessor, topology,
+    error::JudgeDispatchError,
+    heartbeat_processor::WorkerHeartbeatProcessor,
+    payload::{HeartbeatPayload, message_id_mismatch, parse_heartbeat},
+    topology,
 };
 
 pub struct RabbitWorkerHeartbeatConsumer {
@@ -99,23 +102,21 @@ async fn process_delivery(
     processor: &WorkerHeartbeatProcessor,
     delivery: &Delivery,
 ) -> Result<(), JudgeDispatchError> {
-    let heartbeat = match serde_json::from_slice::<WorkerHeartbeat>(&delivery.data) {
-        Ok(value) if value.validate().is_ok() => value,
-        Ok(value) => {
+    let heartbeat = match parse_heartbeat(&delivery.data) {
+        HeartbeatPayload::Accepted(value) => value,
+        HeartbeatPayload::Invalid(value) => {
             warn!(worker_id = %value.worker_id, "rejecting invalid Worker heartbeat");
             return reject(delivery).await;
         }
-        Err(error) => {
+        HeartbeatPayload::Malformed(error) => {
             warn!(%error, "rejecting malformed Worker heartbeat");
             return reject(delivery).await;
         }
     };
-    if delivery
-        .properties
-        .message_id()
-        .as_ref()
-        .is_some_and(|id| id.as_str() != heartbeat.message_id.to_string())
-    {
+    if message_id_mismatch(
+        delivery.properties.message_id().as_ref().map(|value| value.as_str()),
+        heartbeat.message_id,
+    ) {
         warn!(worker_id = %heartbeat.worker_id, "rejecting Worker heartbeat with mismatched message IDs");
         return reject(delivery).await;
     }
