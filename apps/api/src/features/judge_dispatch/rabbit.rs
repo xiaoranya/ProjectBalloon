@@ -31,37 +31,60 @@ impl RabbitJudgeTaskPublisher {
         Arc::new(Self { uri, timeout, channel: Mutex::new(None) })
     }
 
+    /// Connects, declares the topology, and enables publisher confirms. The
+    /// whole setup is one bounded section: a broker that accepts TCP but
+    /// stalls on AMQP frames fails the connect instead of wedging the caller.
     async fn connect(&self) -> Result<Channel, JudgeDispatchError> {
-        let connection =
-            timeout(self.timeout, Connection::connect(&self.uri, ConnectionProperties::default()))
-                .await
-                .map_err(|_| JudgeDispatchError::Timeout("connection"))??;
-        let channel = connection.create_channel().await?;
-        topology::declare(&channel).await?;
-        channel.confirm_select(ConfirmSelectOptions::default()).await?;
+        timeout(self.timeout, async {
+            let connection =
+                Connection::connect(&self.uri, ConnectionProperties::default()).await?;
+            let channel = connection.create_channel().await?;
+            topology::declare(&channel).await?;
+            channel.confirm_select(ConfirmSelectOptions::default()).await?;
+            Ok(channel)
+        })
+        .await
+        .map_err(|_| JudgeDispatchError::Timeout("connection"))?
+    }
+
+    /// Returns a connected channel, replacing a stale one. The channel lock is
+    /// only ever held to read or store the handle — never across the
+    /// reconnection awaits — so a slow broker cannot starve other publishers.
+    async fn available_channel(&self) -> Result<Channel, JudgeDispatchError> {
+        let cached = self.channel.lock().await.clone();
+        if let Some(channel) = cached.filter(|channel| channel.status().connected()) {
+            return Ok(channel);
+        }
+        self.reconnect().await
+    }
+
+    async fn reconnect(&self) -> Result<Channel, JudgeDispatchError> {
+        let channel = self.connect().await?;
+        *self.channel.lock().await = Some(channel.clone());
         Ok(channel)
     }
 
     pub async fn probe(&self) -> Result<RabbitJudgeProbe, JudgeDispatchError> {
-        let mut guard = self.channel.lock().await;
-        if guard.as_ref().is_none_or(|channel| !channel.status().connected()) {
-            *guard = Some(self.connect().await?);
-        }
-        let channel = guard.as_ref().ok_or(JudgeDispatchError::ChannelUnavailable)?;
+        let channel = self.available_channel().await?;
         let passive = lapin::options::QueueDeclareOptions {
             passive: true,
             durable: true,
             ..lapin::options::QueueDeclareOptions::default()
         };
-        let tasks = channel
-            .queue_declare(topology::TASKS_QUEUE.into(), passive, FieldTable::default())
-            .await?;
-        let dead = channel
-            .queue_declare(topology::DEAD_QUEUE.into(), passive, FieldTable::default())
-            .await?;
-        let results = channel
-            .queue_declare(topology::RESULTS_QUEUE.into(), passive, FieldTable::default())
-            .await?;
+        let (tasks, dead, results) = timeout(self.timeout, async {
+            let tasks = channel
+                .queue_declare(topology::TASKS_QUEUE.into(), passive, FieldTable::default())
+                .await?;
+            let dead = channel
+                .queue_declare(topology::DEAD_QUEUE.into(), passive, FieldTable::default())
+                .await?;
+            let results = channel
+                .queue_declare(topology::RESULTS_QUEUE.into(), passive, FieldTable::default())
+                .await?;
+            Ok::<_, lapin::Error>((tasks, dead, results))
+        })
+        .await
+        .map_err(|_| JudgeDispatchError::Timeout("queue probe"))??;
         Ok(RabbitJudgeProbe {
             queued_tasks: tasks.message_count(),
             queued_results: results.message_count(),
@@ -114,16 +137,14 @@ impl RabbitJudgeTaskPublisher {
 #[async_trait]
 impl JudgeTaskPublisher for RabbitJudgeTaskPublisher {
     async fn publish(&self, message_id: Uuid, payload: &[u8]) -> Result<(), JudgeDispatchError> {
-        let mut guard = self.channel.lock().await;
-        if guard.as_ref().is_none_or(|channel| !channel.status().connected()) {
-            *guard = Some(self.connect().await?);
-        }
-        let first = guard.as_ref().ok_or(JudgeDispatchError::ChannelUnavailable)?;
-        if self.publish_on(first, message_id, payload).await.is_ok() {
+        let channel = self.available_channel().await?;
+        if self.publish_on(&channel, message_id, payload).await.is_ok() {
             return Ok(());
         }
-        *guard = Some(self.connect().await?);
-        let retry = guard.as_ref().ok_or(JudgeDispatchError::ChannelUnavailable)?;
-        self.publish_on(retry, message_id, payload).await
+        // One bounded retry on a freshly connected channel. The channel mutex
+        // is not held across any of this, so a stalling broker delays one
+        // publish instead of blocking every future one behind the lock.
+        let channel = self.reconnect().await?;
+        self.publish_on(&channel, message_id, payload).await
     }
 }

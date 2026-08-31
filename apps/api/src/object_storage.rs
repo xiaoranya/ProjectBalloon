@@ -208,6 +208,7 @@ pub struct S3ObjectStorage {
     secret_key: String,
     force_path_style: bool,
     request_timeout: Duration,
+    upload_timeout: Duration,
     stores: RwLock<HashMap<String, Arc<AmazonS3>>>,
 }
 
@@ -220,6 +221,7 @@ impl S3ObjectStorage {
             secret_key: config.secret_key,
             force_path_style: config.force_path_style,
             request_timeout: config.request_timeout,
+            upload_timeout: config.upload_timeout,
             stores: RwLock::new(HashMap::new()),
         })
     }
@@ -278,6 +280,16 @@ impl S3ObjectStorage {
         timeout(self.request_timeout, request).await.map_err(|_| ObjectStorageError::Timeout)?
     }
 
+    /// Upload transfers (`put`, `put_file`) carry multi-GiB export archives and
+    /// 256MiB testdata bundles, so they are bounded by the dedicated upload
+    /// timeout instead of the short metadata request budget.
+    async fn within_upload_timeout<T>(
+        &self,
+        request: impl Future<Output = Result<T, ObjectStorageError>>,
+    ) -> Result<T, ObjectStorageError> {
+        timeout(self.upload_timeout, request).await.map_err(|_| ObjectStorageError::Timeout)?
+    }
+
     async fn get_limited_inner(
         &self,
         bucket: &str,
@@ -326,6 +338,7 @@ pub struct S3ObjectStorageConfig {
     pub secret_key: String,
     pub force_path_style: bool,
     pub request_timeout: Duration,
+    pub upload_timeout: Duration,
 }
 
 #[async_trait]
@@ -385,7 +398,7 @@ impl ObjectStorage for S3ObjectStorage {
     ) -> Result<(), ObjectStorageError> {
         let store = self.store(bucket)?;
         let path = Self::path(key)?;
-        self.within_timeout(async {
+        self.within_upload_timeout(async {
             store
                 .put_opts(&path, PutPayload::from_bytes(content), Self::put_options(content_type))
                 .await
@@ -407,7 +420,7 @@ impl ObjectStorage for S3ObjectStorage {
             .map_err(|error| ObjectStorageError::Request(error.to_string()))?;
         let store = self.store(bucket)?;
         let object_path = Self::path(key)?;
-        self.within_timeout(async {
+        self.within_upload_timeout(async {
             let upload = store
                 .put_multipart_opts(
                     &object_path,
@@ -531,11 +544,16 @@ pub mod keys {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use async_trait::async_trait;
     use bytes::Bytes;
     use futures_util::{StreamExt, TryStreamExt};
+    use tokio::{io::AsyncReadExt, time::timeout};
 
-    use crate::object_storage::{ObjectStorage, ObjectStorageError, S3ObjectStorage, keys};
+    use crate::object_storage::{
+        ObjectStorage, ObjectStorageError, S3ObjectStorage, S3ObjectStorageConfig, keys,
+    };
 
     struct BufferedStorage;
 
@@ -624,6 +642,66 @@ mod tests {
         assert_eq!(
             S3ObjectStorage::path("problems/7/testdata/v1.zip").expect("valid key").as_ref(),
             "problems/7/testdata/v1.zip"
+        );
+    }
+
+    /// A backend that accepts TCP connections but never answers, mimicking a
+    /// wedged object store, plus storage configured against it.
+    async fn stalled_storage(
+        request_timeout: Duration,
+        upload_timeout: Duration,
+    ) -> S3ObjectStorage {
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind stalled backend");
+        let address = listener.local_addr().expect("listener address");
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    // Drain the request so the client considers it sent, then
+                    // hold the connection open without ever responding.
+                    let mut scratch = [0_u8; 8192];
+                    loop {
+                        match socket.read(&mut scratch).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(_) => {}
+                        }
+                    }
+                });
+            }
+        });
+        S3ObjectStorage::new(S3ObjectStorageConfig {
+            endpoint: format!("http://{address}"),
+            region: "us-east-1".to_owned(),
+            access_key: "access".to_owned(),
+            secret_key: "secret".to_owned(),
+            force_path_style: true,
+            request_timeout,
+            upload_timeout,
+        })
+        .expect("stalled storage must build")
+    }
+
+    #[tokio::test]
+    async fn uploads_are_not_bounded_by_the_short_request_timeout() {
+        let storage = stalled_storage(Duration::from_millis(50), Duration::from_secs(30)).await;
+        // Against a backend that never answers, a request-budget upload would
+        // fail within ~50ms; the upload budget must keep it in flight instead.
+        let upload = storage.put("bucket", "key", None, Bytes::from_static(b"payload"));
+        assert!(
+            timeout(Duration::from_millis(500), upload).await.is_err(),
+            "the upload must outlive the 50ms request timeout"
+        );
+    }
+
+    #[tokio::test]
+    async fn metadata_operations_remain_bounded_by_the_request_timeout() {
+        let storage = stalled_storage(Duration::from_millis(50), Duration::from_secs(30)).await;
+        let started = Instant::now();
+        let result = storage.delete("bucket", "key").await;
+        assert!(matches!(result, Err(ObjectStorageError::Timeout)));
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the delete must fail on the request timeout instead of hanging"
         );
     }
 }

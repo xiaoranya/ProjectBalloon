@@ -10,6 +10,24 @@ mod result_processor;
 mod stuck_reaper;
 mod topology;
 
+use std::{future::Future, time::Duration};
+
+use tokio::time::timeout;
+
+/// Bounds one AMQP channel-setup await so a broker that accepts TCP but stalls
+/// on AMQP frames surfaces as a timeout (and a reconnect) instead of wedging
+/// the publisher or a consumer session forever.
+pub(crate) async fn within_request_timeout<T>(
+    label: &'static str,
+    budget: Duration,
+    future: impl Future<Output = Result<T, lapin::Error>>,
+) -> Result<T, JudgeDispatchError> {
+    match timeout(budget, future).await {
+        Ok(result) => result.map_err(JudgeDispatchError::from),
+        Err(_) => Err(JudgeDispatchError::Timeout(label)),
+    }
+}
+
 pub use dead_letter_consumer::RabbitDeadLetterConsumer;
 pub use dispatcher::{SubmissionOutboxDispatcher, SubmissionOutboxDispatcherConfig};
 pub use error::JudgeDispatchError;

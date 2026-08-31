@@ -15,7 +15,9 @@ use tokio::{sync::watch, time::timeout};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::features::judge_dispatch::{error::JudgeDispatchError, topology};
+use crate::features::judge_dispatch::{
+    error::JudgeDispatchError, topology, within_request_timeout,
+};
 
 /// Consumes the `judge.dead` queue so dead-lettered tasks and permanently
 /// rejected results never leave a submission stuck in `JUDGING`. Each dead
@@ -74,18 +76,38 @@ impl RabbitDeadLetterConsumer {
         )
         .await
         .map_err(|_| JudgeDispatchError::Timeout("dead-letter consumer connection"))??;
-        let channel = connection.create_channel().await?;
-        topology::declare(&channel).await?;
-        channel.basic_qos(self.prefetch, BasicQosOptions::default()).await?;
+        // Every channel-setup await is bounded so a stalling broker takes the
+        // reconnect path instead of wedging the consumer task.
+        let channel = within_request_timeout(
+            "dead-letter consumer channel",
+            self.request_timeout,
+            connection.create_channel(),
+        )
+        .await?;
+        within_request_timeout(
+            "dead-letter consumer topology declaration",
+            self.request_timeout,
+            topology::declare(&channel),
+        )
+        .await?;
+        within_request_timeout(
+            "dead-letter consumer qos",
+            self.request_timeout,
+            channel.basic_qos(self.prefetch, BasicQosOptions::default()),
+        )
+        .await?;
         let consumer_tag = format!("project-balloon-api-dead-{}", Uuid::new_v4());
-        let mut consumer = channel
-            .basic_consume(
+        let mut consumer = within_request_timeout(
+            "dead-letter consumer subscription",
+            self.request_timeout,
+            channel.basic_consume(
                 topology::DEAD_QUEUE.into(),
                 consumer_tag.into(),
                 BasicConsumeOptions::default(),
                 FieldTable::default(),
-            )
-            .await?;
+            ),
+        )
+        .await?;
         loop {
             tokio::select! {
                 delivery = consumer.next() => {

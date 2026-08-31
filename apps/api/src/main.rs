@@ -20,7 +20,10 @@ use project_balloon_api::{
     router,
     state::AppState,
 };
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::{
+    PgPool,
+    postgres::{PgConnectOptions, PgPoolOptions},
+};
 use tokio::{net::TcpListener, sync::watch, task::JoinHandle};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
@@ -36,19 +39,23 @@ async fn main() -> Result<()> {
     let cups_gateway = init_cups_gateway(&config);
     let judge_publisher = init_judge_publisher(&config);
 
+    // One shutdown channel drives the graceful server stop, every background
+    // runner, and the SSE streams (through AppState), so a single signal ends
+    // all of them together.
+    let shutdown = watch::Sender::new(false);
     let state = build_app_state(
         &database,
         &config,
         object_storage.clone(),
         cups_gateway.clone(),
         judge_publisher.clone(),
+        shutdown.subscribe(),
     )
     .await?;
     let listener = TcpListener::bind(config.bind_address)
         .await
         .context("failed to bind the API listening socket")?;
 
-    let shutdown = watch::Sender::new(false);
     let runners = spawn_background_runners(
         &database,
         &config,
@@ -87,13 +94,33 @@ fn load_config() -> Result<AppConfig> {
     Ok(config)
 }
 
+/// Bound for establishing the startup PostgreSQL connection. sqlx bounds every
+/// pool connection attempt by the acquire timeout, but an outer bound keeps a
+/// stalled (as opposed to refused) database from hanging startup entirely.
+const DATABASE_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Parses the database URL into explicit connect options for the pool.
+///
+/// sqlx 0.9 does not expose TCP keepalive tuning on `PgConnectOptions` (unlike
+/// the MySQL driver), so the operating system defaults govern keepalives; the
+/// pool's acquire timeout still bounds every connection establishment.
+fn database_connect_options(database_url: &str) -> Result<PgConnectOptions, sqlx::Error> {
+    database_url.parse::<PgConnectOptions>()
+}
+
 async fn connect_database(config: &AppConfig) -> Result<PgPool> {
-    let database = PgPoolOptions::new()
-        .max_connections(config.database_max_connections)
-        .acquire_timeout(config.database_acquire_timeout)
-        .connect(&config.database_url)
-        .await
-        .context("failed to connect to PostgreSQL")?;
+    let options = database_connect_options(&config.database_url)
+        .context("invalid PostgreSQL connection URL")?;
+    let database = tokio::time::timeout(
+        DATABASE_CONNECT_TIMEOUT,
+        PgPoolOptions::new()
+            .max_connections(config.database_max_connections)
+            .acquire_timeout(config.database_acquire_timeout)
+            .connect_with(options),
+    )
+    .await
+    .context("timed out connecting to PostgreSQL")?
+    .context("failed to connect to PostgreSQL")?;
 
     if config.run_migrations {
         MIGRATOR.run(&database).await.context("failed to run PostgreSQL migrations")?;
@@ -112,6 +139,7 @@ async fn init_object_storage(config: &AppConfig) -> Result<Option<ObjectStorageH
                 secret_key: config.object_storage_secret_key.clone(),
                 force_path_style: config.object_storage_force_path_style,
                 request_timeout: config.object_storage_request_timeout,
+                upload_timeout: config.object_storage_upload_timeout,
             })?),
             config.object_storage_problem_bucket.clone(),
             config.object_storage_source_bucket.clone(),
@@ -147,6 +175,7 @@ async fn build_app_state(
     object_storage: Option<ObjectStorageHandle>,
     cups_gateway: Option<Arc<dyn CupsGateway>>,
     judge_publisher: Option<Arc<RabbitJudgeTaskPublisher>>,
+    shutdown: watch::Receiver<bool>,
 ) -> Result<AppState> {
     let mut state = match object_storage {
         Some(object_storage) => AppState::with_object_storage(
@@ -170,6 +199,7 @@ async fn build_app_state(
         ),
     };
     state = state.with_deployment_mode(config.deployment_mode);
+    state = state.with_shutdown(shutdown);
     if config.deployment_mode.is_competition() {
         state.competition().validate_schedule_integrity().await.map_err(|error| {
             anyhow::anyhow!("competition schedule validation failed: {error:?}")
@@ -229,89 +259,103 @@ struct BackgroundRunners {
     announcement_schedule: JoinHandle<()>,
 }
 
+/// Overall bound for draining the background runners after the shutdown
+/// signal. Runners still alive when it expires are logged and aborted so
+/// shutdown proceeds (pool close included) instead of hanging until the
+/// orchestrator gives up and SIGKILLs the process.
+const RUNNER_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(30);
+
 impl BackgroundRunners {
     /// Signals every runner, drains them, closes the pool, and applies the
     /// startup/shutdown error precedence of the original single `main`.
     async fn shutdown(self, database: PgPool, server_result: std::io::Result<()>) -> Result<()> {
+        self.shutdown_within(database, server_result, RUNNER_SHUTDOWN_DEADLINE).await
+    }
+
+    async fn shutdown_within(
+        self,
+        database: PgPool,
+        server_result: std::io::Result<()>,
+        deadline: Duration,
+    ) -> Result<()> {
         let _sent = self.shutdown.send(true);
-        let dispatcher_result = match self.dispatcher {
-            Some(task) => Some(task.await.context("realtime outbox dispatcher task failed")),
-            None => None,
-        };
-        let subscriber_result = match self.redis_subscriber {
-            Some(task) => Some(task.await.context("Redis realtime subscriber task failed")),
-            None => None,
-        };
-        let judge_dispatcher_result = match self.judge_dispatcher {
-            Some(task) => Some(task.await.context("submission outbox dispatcher task failed")),
-            None => None,
-        };
-        let judge_stuck_reaper_result = match self.judge_stuck_reaper {
-            Some(task) => Some(task.await.context("stuck-judging reaper task failed")),
-            None => None,
-        };
-        let judge_result_consumer_result = match self.judge_result_consumer {
-            Some(task) => Some(task.await.context("Judge result consumer task failed")),
-            None => None,
-        };
-        let worker_heartbeat_consumer_result = match self.worker_heartbeat_consumer {
-            Some(task) => Some(task.await.context("Worker heartbeat consumer task failed")),
-            None => None,
-        };
-        let judge_dead_letter_consumer_result = match self.judge_dead_letter_consumer {
-            Some(task) => Some(task.await.context("Judge dead-letter consumer task failed")),
-            None => None,
-        };
-        let cups_delivery_result = match self.cups_delivery {
-            Some(task) => Some(task.await.context("CUPS delivery runner task failed")),
-            None => None,
-        };
-        let object_cleanup_result = match self.object_cleanup {
-            Some(task) => Some(task.await.context("object-storage cleanup runner task failed")),
-            None => None,
-        };
-        let export_result = match self.export {
-            Some(task) => Some(task.await.context("submission export runner task failed")),
-            None => None,
-        };
-        self.batch_rejudge.await.context("batch rejudge runner task failed")?;
-        self.resolver_auto.await.context("Resolver auto-play runner task failed")?;
-        self.contest_lifecycle.await.context("contest lifecycle runner task failed")?;
-        self.announcement_schedule.await.context("announcement schedule runner task failed")?;
+        // Named in the order the original sequential shutdown awaited them, so
+        // the same failure surfaces first when several runners fail together.
+        let mut tasks: Vec<(&'static str, JoinHandle<()>)> = Vec::new();
+        if let Some(task) = self.dispatcher {
+            tasks.push(("realtime outbox dispatcher", task));
+        }
+        if let Some(task) = self.redis_subscriber {
+            tasks.push(("Redis realtime subscriber", task));
+        }
+        if let Some(task) = self.judge_dispatcher {
+            tasks.push(("submission outbox dispatcher", task));
+        }
+        if let Some(task) = self.judge_stuck_reaper {
+            tasks.push(("stuck-judging reaper", task));
+        }
+        if let Some(task) = self.judge_result_consumer {
+            tasks.push(("Judge result consumer", task));
+        }
+        if let Some(task) = self.worker_heartbeat_consumer {
+            tasks.push(("Worker heartbeat consumer", task));
+        }
+        if let Some(task) = self.judge_dead_letter_consumer {
+            tasks.push(("Judge dead-letter consumer", task));
+        }
+        if let Some(task) = self.cups_delivery {
+            tasks.push(("CUPS delivery runner", task));
+        }
+        if let Some(task) = self.object_cleanup {
+            tasks.push(("object-storage cleanup runner", task));
+        }
+        if let Some(task) = self.export {
+            tasks.push(("submission export runner", task));
+        }
+        let optional_count = tasks.len();
+        tasks.push(("batch rejudge runner", self.batch_rejudge));
+        tasks.push(("Resolver auto-play runner", self.resolver_auto));
+        tasks.push(("contest lifecycle runner", self.contest_lifecycle));
+        tasks.push(("announcement schedule runner", self.announcement_schedule));
+
+        let mut results = join_runners_within_deadline(tasks, deadline).await;
+        let required_results = results.split_off(optional_count);
+
         database.close().await;
+        for result in required_results {
+            result?;
+        }
         server_result.context("API server failed")?;
-        if let Some(result) = dispatcher_result {
-            result?;
-        }
-        if let Some(result) = subscriber_result {
-            result?;
-        }
-        if let Some(result) = judge_dispatcher_result {
-            result?;
-        }
-        if let Some(result) = judge_stuck_reaper_result {
-            result?;
-        }
-        if let Some(result) = judge_result_consumer_result {
-            result?;
-        }
-        if let Some(result) = worker_heartbeat_consumer_result {
-            result?;
-        }
-        if let Some(result) = judge_dead_letter_consumer_result {
-            result?;
-        }
-        if let Some(result) = cups_delivery_result {
-            result?;
-        }
-        if let Some(result) = object_cleanup_result {
-            result?;
-        }
-        if let Some(result) = export_result {
+        for result in results {
             result?;
         }
         Ok(())
     }
+}
+
+/// Waits for every runner to finish inside an overall `deadline`; runners
+/// still alive when it expires are logged and aborted so shutdown can proceed
+/// (pool close included). Returns every runner's outcome in input order — a
+/// runner aborted at the deadline reports its cancellation as a failure.
+///
+/// Each `JoinHandle` is awaited exactly once: the select below holds the
+/// handle across the deadline instead of re-awaiting a completed handle.
+async fn join_runners_within_deadline(
+    tasks: Vec<(&'static str, JoinHandle<()>)>,
+    deadline: Duration,
+) -> Vec<anyhow::Result<()>> {
+    futures_util::future::join_all(tasks.into_iter().map(|(name, mut task)| async move {
+        let outcome = tokio::select! {
+            result = &mut task => result,
+            _ = tokio::time::sleep(deadline) => {
+                warn!(runner = name, "background runner did not stop in time; aborting");
+                task.abort();
+                task.await
+            }
+        };
+        outcome.context(format!("{name} task failed"))
+    }))
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -528,4 +572,82 @@ async fn shutdown_signal() {
         ctrl_c.await;
     }
     info!("API shutdown requested");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_pool() -> PgPool {
+        PgPoolOptions::new().connect_lazy_with(
+            database_connect_options("postgres://127.0.0.1:5432/project-balloon-shutdown-test")
+                .expect("database URL must parse"),
+        )
+    }
+
+    #[test]
+    fn database_connect_options_parse_the_database_url() {
+        let options =
+            database_connect_options("postgres://balloon:secret@db.internal:5433/contest")
+                .expect("a valid database URL");
+        assert_eq!(options.get_host(), "db.internal");
+        assert_eq!(options.get_port(), 5433);
+        assert_eq!(options.get_database(), Some("contest"));
+        assert_eq!(options.get_username(), "balloon");
+        assert!(database_connect_options("::not a url::").is_err());
+    }
+
+    #[tokio::test]
+    async fn shutdown_joins_finished_runners_and_reports_clean_exit() {
+        let runners = BackgroundRunners {
+            shutdown: watch::Sender::new(false),
+            dispatcher: Some(tokio::spawn(async {})),
+            redis_subscriber: None,
+            judge_dispatcher: Some(tokio::spawn(async {})),
+            judge_stuck_reaper: None,
+            judge_result_consumer: None,
+            worker_heartbeat_consumer: None,
+            judge_dead_letter_consumer: None,
+            cups_delivery: None,
+            object_cleanup: None,
+            export: None,
+            batch_rejudge: tokio::spawn(async {}),
+            resolver_auto: tokio::spawn(async {}),
+            contest_lifecycle: tokio::spawn(async {}),
+            announcement_schedule: tokio::spawn(async {}),
+        };
+        runners
+            .shutdown_within(test_pool(), Ok(()), Duration::from_secs(5))
+            .await
+            .expect("every runner stopped, so shutdown must succeed");
+    }
+
+    #[tokio::test]
+    async fn shutdown_aborts_runners_that_outlive_the_deadline() {
+        let runners = BackgroundRunners {
+            shutdown: watch::Sender::new(false),
+            dispatcher: None,
+            redis_subscriber: None,
+            judge_dispatcher: None,
+            judge_stuck_reaper: None,
+            judge_result_consumer: None,
+            worker_heartbeat_consumer: None,
+            judge_dead_letter_consumer: None,
+            cups_delivery: None,
+            object_cleanup: None,
+            export: None,
+            batch_rejudge: tokio::spawn(async {}),
+            resolver_auto: tokio::spawn(std::future::pending::<()>()),
+            contest_lifecycle: tokio::spawn(std::future::pending::<()>()),
+            announcement_schedule: tokio::spawn(async {}),
+        };
+        let error = runners
+            .shutdown_within(test_pool(), Ok(()), Duration::from_millis(50))
+            .await
+            .expect_err("runners that ignore shutdown must fail the shutdown");
+        assert!(
+            error.to_string().contains("Resolver auto-play runner task failed"),
+            "unexpected error: {error:#}"
+        );
+    }
 }

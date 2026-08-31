@@ -35,6 +35,8 @@ fn local_defaults_are_valid() {
     assert_eq!(config.scoreboard_cache_ttl.as_secs(), 30);
     assert_eq!(config.scoreboard_cache_timeout.as_millis(), 200);
     assert!(!config.object_storage_enabled);
+    assert_eq!(config.object_storage_request_timeout.as_millis(), 5_000);
+    assert_eq!(config.object_storage_upload_timeout.as_millis(), 300_000);
     assert_eq!(config.object_cleanup_poll_interval, Duration::from_secs(5));
     assert_eq!(config.object_cleanup_batch_size, 50);
     assert!(!config.rabbitmq_enabled);
@@ -165,6 +167,36 @@ fn enabled_scoreboard_cache_requires_a_url_and_positive_ttl() {
 fn enabled_object_storage_requires_credentials() {
     let values = HashMap::from([("PROJECT_BALLOON_OBJECT_STORAGE_ENABLED", "true".to_owned())]);
     assert!(AppConfig::from_lookup(dev_lookup(&values)).is_err());
+}
+
+#[test]
+fn object_storage_upload_timeout_is_independently_configured() {
+    let values = HashMap::from([(
+        "PROJECT_BALLOON_OBJECT_STORAGE_UPLOAD_TIMEOUT_MILLISECONDS",
+        "600000".to_owned(),
+    )]);
+    let config = AppConfig::from_lookup(dev_lookup(&values)).expect("custom upload timeout");
+    assert_eq!(config.object_storage_upload_timeout.as_millis(), 600_000);
+    // The metadata request budget stays at its default.
+    assert_eq!(config.object_storage_request_timeout.as_millis(), 5_000);
+}
+
+#[test]
+fn object_storage_upload_timeout_must_be_positive() {
+    let values = HashMap::from([(
+        "PROJECT_BALLOON_OBJECT_STORAGE_UPLOAD_TIMEOUT_MILLISECONDS",
+        "0".to_owned(),
+    )]);
+    let error = AppConfig::from_lookup(dev_lookup(&values))
+        .expect_err("zero upload timeout must be rejected");
+    assert_eq!(
+        error,
+        ConfigError::Invalid {
+            name: "PROJECT_BALLOON_OBJECT_STORAGE_UPLOAD_TIMEOUT_MILLISECONDS",
+            value: "0".to_owned(),
+            reason: "must be greater than zero",
+        }
+    );
 }
 
 #[test]

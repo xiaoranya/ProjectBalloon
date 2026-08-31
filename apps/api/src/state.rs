@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use sqlx::PgPool;
+use tokio::sync::watch;
 
 use crate::config::DeploymentMode;
 use crate::features::{
@@ -56,6 +57,11 @@ pub struct AppState {
     object_storage: Option<ObjectStorageHandle>,
     judge_publisher: Option<Arc<RabbitJudgeTaskPublisher>>,
     cups_gateway: Option<Arc<dyn CupsGateway>>,
+    /// Notified with `true` when the process begins shutting down. SSE streams
+    /// select on it so long-lived responses end instead of deadlocking the
+    /// graceful shutdown. Defaults to an already-dropped sender, which keeps
+    /// streams on their natural termination (hub close) when not wired up.
+    shutdown: watch::Receiver<bool>,
 }
 
 impl AppState {
@@ -140,6 +146,7 @@ impl AppState {
         let submissions = Arc::new(SubmissionService::new(database.clone()));
         let batch_rejudge = Arc::new(BatchRejudgeService::new(database.clone()));
         let teams = Arc::new(TeamService::new(database.clone()));
+        let (_, shutdown) = watch::channel(false);
         Self {
             database,
             readiness_timeout,
@@ -168,7 +175,21 @@ impl AppState {
             object_storage,
             judge_publisher: None,
             cups_gateway: None,
+            shutdown,
         }
+    }
+
+    /// Wires the process shutdown channel into SSE streams. Must share the
+    /// same watch channel the background runners use, so one signal ends both.
+    #[must_use]
+    pub fn with_shutdown(mut self, shutdown: watch::Receiver<bool>) -> Self {
+        self.shutdown = shutdown;
+        self
+    }
+
+    #[must_use]
+    pub fn shutdown_receiver(&self) -> watch::Receiver<bool> {
+        self.shutdown.clone()
     }
 
     #[must_use]
