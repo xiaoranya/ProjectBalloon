@@ -52,7 +52,7 @@ const uniqueTeams = computed(
 .award-metric {
   padding: 20px 22px;
   border: 1px solid #e6eaf0;
-  border-radius: 0;
+
   background: white;
 }
 .award-metric span,

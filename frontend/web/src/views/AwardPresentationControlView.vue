@@ -2,7 +2,6 @@
   <el-container direction="vertical" class="awards-page">
     <el-header height="auto" class="awards-page-header">
       <div>
-        <p class="eyebrow">Ceremony Control</p>
         <h1>{{ t('颁奖控制台') }}</h1>
       </div>
       <ElSpace wrap :size="10" class="awards-header-actions">
@@ -253,7 +252,6 @@ onBeforeUnmount(() => realtime?.stop());
 
 .award-presentation-control {
   margin-top: 18px;
-  border-radius: 0;
 }
 
 .award-presentation-control-grid > .el-col {

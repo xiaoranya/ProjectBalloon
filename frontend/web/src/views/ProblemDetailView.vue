@@ -37,7 +37,7 @@
           </div>
         </div>
 
-        <ElRow :gutter="24" align="top" class="problem-layout">
+        <ElRow :gutter="24" class="problem-layout">
           <ElCol :xs="24" :md="15">
             <article class="statement-card">
               <div v-if="problem.statement" class="statement-language">
@@ -54,7 +54,6 @@
           <ElCol :xs="24" :md="9">
             <aside class="submit-card">
               <div>
-                <p class="eyebrow">Submit</p>
                 <h2>{{ t(language === 'output' ? '提交输出' : '提交代码') }}</h2>
               </div>
               <ElAlert
@@ -336,16 +335,6 @@ watch(language, () => {
   padding: 0;
 }
 
-.eyebrow {
-  display: none;
-  margin: 0 0 8px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .page-alert,
 .form-alert {
   margin-bottom: 20px;
@@ -379,8 +368,9 @@ watch(language, () => {
   flex: 0 0 auto;
   place-items: center;
   border: 3px solid var(--problem-color);
-  border-radius: 0;
+
   color: var(--problem-color);
+  background: white;
   background: color-mix(in srgb, var(--problem-color) 9%, white);
   font-size: 24px;
   font-weight: 900;
@@ -389,7 +379,7 @@ watch(language, () => {
 .statement-card,
 .submit-card {
   border: 1px solid var(--border);
-  border-radius: 0;
+
   background: white;
 }
 
@@ -437,7 +427,7 @@ watch(language, () => {
 
 .markdown-body pre {
   overflow-x: auto;
-  border-radius: 0;
+
   padding: 18px;
   color: #dbeafe;
   background: #101827;
@@ -447,7 +437,6 @@ watch(language, () => {
 }
 
 .markdown-body code:not(pre code) {
-  border-radius: 0;
   padding: 2px 5px;
   color: #1d4ed8;
   background: #eff6ff;
@@ -467,13 +456,6 @@ watch(language, () => {
 
 .markdown-body img {
   max-width: 100%;
-}
-
-.wide-button,
-.wide-control,
-:deep(.el-upload),
-:deep(.el-upload-dragger) {
-  width: 100%;
 }
 
 .upload-icon {
@@ -505,13 +487,12 @@ watch(language, () => {
   .large-alias {
     width: 50px;
     height: 50px;
-    border-radius: 0;
+
     font-size: 21px;
   }
 
   .statement-card,
   .submit-card {
-    border-radius: 0;
     padding: 20px;
   }
 }

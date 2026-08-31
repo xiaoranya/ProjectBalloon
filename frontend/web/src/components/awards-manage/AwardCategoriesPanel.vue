@@ -297,7 +297,6 @@ async function deleteCategory(category: AwardCategory) {
   position: sticky;
   top: 20px;
   border: 1px solid #e5eaf2;
-  border-radius: 0;
 }
 .award-category-list {
   display: grid;
@@ -310,7 +309,7 @@ async function deleteCategory(category: AwardCategory) {
   gap: 12px;
   padding: 14px;
   border: 1px solid #e7ebf1;
-  border-radius: 0;
+
   background: #fbfcfe;
 }
 .award-order-controls {
@@ -343,7 +342,6 @@ async function deleteCategory(category: AwardCategory) {
   gap: 8px;
 }
 .award-category-title code {
-  border-radius: 0;
   padding: 2px 6px;
   color: #92400e;
   background: #fef3c7;
@@ -386,7 +384,7 @@ async function deleteCategory(category: AwardCategory) {
   gap: 10px;
   margin-bottom: 10px;
   padding: 10px;
-  border-radius: 0;
+
   background: #f6f8fb;
 }
 @media (max-width: 1180px) {

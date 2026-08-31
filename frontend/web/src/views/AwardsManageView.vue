@@ -2,7 +2,6 @@
   <el-container direction="vertical" class="awards-page">
     <el-header height="auto" class="awards-page-header">
       <div>
-        <p class="eyebrow">Awards Operations</p>
         <h1>{{ t('奖项名单管理') }}</h1>
       </div>
       <ElSpace wrap :size="10" class="awards-header-actions">

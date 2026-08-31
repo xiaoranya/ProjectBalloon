@@ -74,14 +74,6 @@ const { t } = useI18n();
 </script>
 
 <style scoped>
-.admin-primary-cell strong,
-.admin-primary-cell small {
-  display: block;
-}
-.admin-primary-cell small {
-  margin-top: 4px;
-  color: var(--muted);
-}
 .balloon-problem-cell {
   display: flex;
   align-items: center;
@@ -92,17 +84,7 @@ const { t } = useI18n();
   gap: 2px;
 }
 .balloon-problem-cell small {
-  color: #64748b;
-}
-.balloon-color {
-  display: inline-block;
-  flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
-  border: 2px solid rgb(255 255 255 / 85%);
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgb(15 23 42 / 18%);
-  vertical-align: middle;
+  color: var(--muted);
 }
 .muted-text {
   color: var(--muted);

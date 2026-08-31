@@ -3,7 +3,6 @@
     <el-header height="auto" class="page-head">
       <div class="page-title-row">
         <div>
-          <p class="eyebrow">Submissions</p>
           <h1>{{ t('提交记录') }}</h1>
         </div>
         <ElButton :icon="Refresh" :loading="loading" @click="loadSubmissions()">{{
@@ -178,22 +177,6 @@ onUnmounted(() => {
   letter-spacing: -0.035em;
 }
 
-.page-title-row p {
-  display: none;
-  margin-bottom: 0;
-  color: var(--muted);
-}
-
-.eyebrow {
-  display: none;
-  margin: 0 0 8px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .page-alert {
   margin-bottom: 20px;
 }
@@ -201,7 +184,6 @@ onUnmounted(() => {
 .data-table {
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 0;
 }
 
 .data-table :deep(.el-table__row) {

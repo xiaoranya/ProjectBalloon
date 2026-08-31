@@ -1,7 +1,8 @@
 /* Resolver 展示大屏（ResolverDisplayView，无 scoped 样式，完全依赖全局） */
 .resolver-display {
+  display: flex;
   min-height: 100vh;
-  overflow: hidden;
+  flex-direction: column;
   color: #f8fafc;
   background: #0b1220;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
@@ -42,7 +43,7 @@
 
 .resolver-display-status > span {
   padding: 5px 10px;
-  border-radius: 0;
+
   color: #99f6e4;
   background: rgba(13, 148, 136, 0.18);
   font-size: 11px;
@@ -57,7 +58,7 @@
 
 .resolver-display-status button {
   border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 0;
+
   padding: 6px 11px;
   color: #e2e8f0;
   background: transparent;
@@ -66,7 +67,7 @@
 
 .resolver-display-stage {
   display: grid;
-  min-height: calc(100vh - 88px);
+  flex: 1;
   grid-template-rows: minmax(270px, 42vh) 1fr;
   padding: 2.2vh 3vw 3vh;
   gap: 2vh;
@@ -79,7 +80,7 @@
   gap: 3vw;
   padding: 2.8vh 3vw;
   border: 1px solid rgba(94, 234, 212, 0.24);
-  border-radius: 0;
+
   background: rgba(15, 23, 42, 0.88);
   box-shadow: 0 20px 70px rgba(0, 0, 0, 0.25);
 }
@@ -95,7 +96,7 @@
 
 .resolver-display-rank small,
 .resolver-display-verdict small {
-  color: #94a3b8;
+  color: var(--muted-light);
   font-size: clamp(9px, 0.8vw, 13px);
   letter-spacing: 0.14em;
 }
@@ -107,7 +108,7 @@
 }
 
 .resolver-display-rank span {
-  color: #94a3b8;
+  color: var(--muted-light);
 }
 
 .resolver-display-team p {
@@ -133,7 +134,7 @@
 
 .resolver-display-verdict {
   padding: 2.4vh 1.5vw;
-  border-radius: 0;
+
   text-align: center;
   background: rgba(239, 68, 68, 0.13);
 }
@@ -170,7 +171,7 @@
   min-height: 5.4vh;
   padding: 0.5vh 1vw;
   border: 1px solid rgba(148, 163, 184, 0.12);
-  border-radius: 0;
+
   background: rgba(15, 23, 42, 0.62);
 }
 
@@ -194,7 +195,7 @@
 
 .resolver-display-board div span {
   margin-top: 2px;
-  color: #94a3b8;
+  color: var(--muted-light);
   font-size: clamp(9px, 0.7vw, 12px);
 }
 
@@ -223,11 +224,11 @@
 }
 
 .resolver-display-waiting {
-  min-height: calc(100vh - 88px);
+  flex: 1;
 }
 
 .resolver-display-waiting small {
-  color: #94a3b8;
+  color: var(--muted-light);
 }
 
 /* 颁奖展示大屏（AwardDisplayView，无 scoped 样式，完全依赖全局） */
@@ -235,24 +236,32 @@
   --award-gold: #f5c451;
   --award-cream: #fff9e8;
   position: relative;
+  display: flex;
   min-height: 100vh;
-  overflow: hidden;
+  flex-direction: column;
   color: var(--award-cream);
   background: #1e1723;
 }
 
-.award-display::before,
-.award-display::after {
+/* 装饰圆环在独立裁剪层，根元素不裁内容 */
+.award-display-decor {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.award-display-decor::before,
+.award-display-decor::after {
   position: absolute;
   width: 34vw;
   height: 34vw;
   border: 1px solid rgb(245 196 81 / 16%);
   border-radius: 50%;
   content: '';
-  pointer-events: none;
 }
 
-.award-display::before {
+.award-display-decor::before {
   top: -20vw;
   left: -10vw;
   box-shadow:
@@ -260,18 +269,14 @@
     0 0 0 8vw rgb(245 196 81 / 2%);
 }
 
-.award-display::after {
+.award-display-decor::after {
   right: -20vw;
   bottom: -24vw;
   box-shadow: 0 0 0 5vw rgb(245 196 81 / 3%);
 }
 
 .award-display-connection {
-  position: fixed;
   z-index: 20;
-  top: 0;
-  right: 0;
-  left: 0;
   padding: 8px 20px;
   color: #fff7cc;
   text-align: center;
@@ -306,7 +311,7 @@
 
 .award-display-header button {
   border: 1px solid rgb(245 196 81 / 35%);
-  border-radius: 0;
+
   padding: 8px 16px;
   color: var(--award-cream);
   background: transparent;
@@ -317,7 +322,7 @@
   position: relative;
   z-index: 2;
   display: grid;
-  min-height: calc(100vh - 90px);
+  flex: 1;
   grid-template-columns: minmax(260px, 27vw) 1fr;
   gap: 3vw;
   padding: 5vh 4vw 4vh;
@@ -371,7 +376,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 18px;
   border: 1px solid rgb(245 196 81 / 21%);
-  border-radius: 0;
+
   padding: clamp(14px, 1.6vw, 24px);
   background: rgb(255 255 255 / 6%);
   box-shadow: 0 18px 50px rgb(0 0 0 / 18%);
@@ -412,7 +417,6 @@
 }
 
 .award-display-recipient p b {
-  border-radius: 0;
   padding: 2px 8px;
   color: #2b1803;
   font-size: 12px;
@@ -441,7 +445,7 @@
   position: relative;
   z-index: 2;
   display: grid;
-  min-height: calc(100vh - 90px);
+  flex: 1;
   place-content: center;
   padding: 40px;
   text-align: center;
@@ -472,7 +476,7 @@
   left: calc(31vw + 3vw);
   height: 3px;
   overflow: hidden;
-  border-radius: 0;
+
   background: rgb(255 255 255 / 10%);
 }
 
@@ -481,4 +485,12 @@
   height: 100%;
   background: var(--award-gold);
   transition: width 0.8s linear;
+}
+
+.award-display-empty {
+  grid-column: 1 / -1;
+  padding: 40px;
+  border: 1px dashed rgb(245 196 81 / 35%);
+  color: #cbbfa8;
+  text-align: center;
 }

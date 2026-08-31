@@ -3,7 +3,6 @@
     <el-header height="auto" class="page-head">
       <header class="dashboard-header">
         <div>
-          <p class="eyebrow">Contestant Dashboard</p>
           <h1>{{ t('选择比赛') }}</h1>
           <p>{{ t('欢迎回来，{name}', { name: session.state.user?.displayName ?? '' }) }}</p>
         </div>
@@ -152,16 +151,6 @@ onMounted(loadContests);
   color: var(--muted);
 }
 
-.eyebrow {
-  display: none;
-  margin: 0 0 8px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .page-alert {
   margin-bottom: 20px;
 }
@@ -170,7 +159,7 @@ onMounted(loadContests);
   display: grid;
   width: 100%;
   max-width: 1180px;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: 22px;
   margin: 0 auto;
 }
@@ -181,7 +170,7 @@ onMounted(loadContests);
   flex-direction: column;
   padding: 28px;
   border: 1px solid var(--border);
-  border-radius: 0;
+
   background: var(--surface);
   box-shadow: 0 16px 50px rgb(35 55 80 / 7%);
 }
@@ -229,10 +218,6 @@ onMounted(loadContests);
 }
 
 @media (max-width: 640px) {
-  .dashboard-page {
-    min-height: 100vh;
-  }
-
   .page-head {
     padding: 22px 22px 0;
   }

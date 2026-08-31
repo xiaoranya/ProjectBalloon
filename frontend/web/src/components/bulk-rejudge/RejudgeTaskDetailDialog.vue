@@ -116,7 +116,7 @@ code {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-.error-text {
-  color: #dc2626 !important;
+.el-table .error-text {
+  color: #dc2626;
 }
 </style>

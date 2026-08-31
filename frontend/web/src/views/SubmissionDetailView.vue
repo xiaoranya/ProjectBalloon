@@ -18,7 +18,6 @@
           :class="{ accepted: (submission.verdict ?? submission.status) === 'ACCEPTED' }"
         >
           <div>
-            <p class="eyebrow">Submission #{{ submission.id }}</p>
             <h1>{{ submissionStatusLabel(submission.verdict ?? submission.status) }}</h1>
             <p v-if="!isFinalSubmissionStatus(submission.status)" class="polling-hint">
               <span class="pulse-dot"></span> {{ t('正在等待判题结果，页面将自动刷新') }}
@@ -241,16 +240,6 @@ onUnmounted(() => {
   padding: 0;
 }
 
-.eyebrow {
-  display: none;
-  margin: 0 0 8px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .page-alert {
   margin-bottom: 20px;
 }
@@ -262,7 +251,7 @@ onUnmounted(() => {
   gap: 20px;
   margin: 24px 0;
   border: 1px solid #f5d58d;
-  border-radius: 0;
+
   padding: 30px;
   background: #fffbeb;
 }
@@ -308,13 +297,11 @@ onUnmounted(() => {
 }
 
 .source-card {
-  border-radius: 0;
 }
 
 .judgement-card,
 .history-card {
   margin-bottom: 24px;
-  border-radius: 0;
 }
 
 .metric-grid {
@@ -325,7 +312,6 @@ onUnmounted(() => {
 }
 
 .metric-grid div {
-  border-radius: 0;
   padding: 15px;
   background: #f8fafc;
 }
@@ -340,12 +326,6 @@ onUnmounted(() => {
   color: var(--muted);
 }
 
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
 .card-header > div {
   min-width: 0;
 }
@@ -358,7 +338,7 @@ onUnmounted(() => {
 
 .markdown-body pre {
   overflow-x: auto;
-  border-radius: 0;
+
   padding: 18px;
   color: #dbeafe;
   background: #101827;

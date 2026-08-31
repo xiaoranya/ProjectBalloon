@@ -404,24 +404,14 @@ function problemName(problemId: number) {
 </script>
 
 <style scoped>
-.assignment-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-bottom: 22px;
-  padding: 18px;
-  border-radius: 0;
-  background: #f7f9fc;
-}
 .pagination-row {
   margin-top: 24px;
 }
 .source-card {
-  border-radius: 0;
 }
 .source-card pre {
   overflow-x: auto;
-  border-radius: 0;
+
   padding: 18px;
   color: #dbeafe;
   background: #101827;

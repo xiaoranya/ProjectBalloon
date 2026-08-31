@@ -3,7 +3,6 @@
     <el-header height="auto" class="page-head">
       <div class="page-title-row">
         <div>
-          <p class="eyebrow">Print Request Desk</p>
           <h1>{{ t('打印请求') }}</h1>
         </div>
         <div
@@ -529,22 +528,6 @@ onUnmounted(() => realtime?.stop());
   letter-spacing: -0.035em;
 }
 
-.page-title-row p {
-  display: none;
-  margin-bottom: 0;
-  color: var(--muted);
-}
-
-.eyebrow {
-  display: none;
-  margin: 0 0 8px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .page-alert {
   margin-bottom: 20px;
 }
@@ -556,35 +539,6 @@ onUnmounted(() => realtime?.stop());
 .clarification-list-card {
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 0;
-}
-
-.clarification-live-state {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 14px;
-  border-radius: 0;
-  padding: 8px 12px;
-  color: var(--muted);
-  background: #e9eef5;
-  font-size: 12px;
-}
-
-.clarification-live-state span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #94a3b8;
-}
-
-.clarification-live-state.connected {
-  color: #166534;
-  background: #dcfce7;
-}
-
-.clarification-live-state.connected span {
-  background: #22c55e;
 }
 
 .printer-toolbar {
@@ -634,25 +588,6 @@ onUnmounted(() => realtime?.stop());
 
 .print-actions {
   flex-wrap: wrap;
-}
-
-.clarification-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 30px;
-  padding-top: 22px;
-  border-top: 1px solid #e5eaf2;
-}
-
-.admin-primary-cell strong,
-.admin-primary-cell small {
-  display: block;
-}
-
-.admin-primary-cell small {
-  margin-top: 4px;
-  color: var(--muted);
 }
 
 .muted-text {

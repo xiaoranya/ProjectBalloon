@@ -282,39 +282,6 @@ watch(contestId, () => void load(), { immediate: true });
 </script>
 
 <style scoped>
-.admin-page {
-  width: min(1320px, 100%);
-  margin: 0 auto;
-}
-.page-head {
-  height: auto;
-  padding: 42px 42px 0;
-}
-.page-body {
-  padding: 0 42px 42px;
-}
-.admin-page-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  margin-bottom: 28px;
-}
-.admin-page-header.compact {
-  align-items: center;
-}
-.admin-page-header h1 {
-  margin: 5px 0 6px;
-  font-size: clamp(28px, 4vw, 40px);
-  color: #13213b;
-}
-.admin-page-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.page-alert {
-  margin-bottom: 20px;
-}
 .announcement-title {
   display: flex;
   align-items: center;
@@ -322,11 +289,11 @@ watch(contestId, () => void load(), { immediate: true });
 }
 .announcement-body {
   margin: 6px 0 0;
-  color: #64748b;
+  color: var(--muted);
   white-space: pre-wrap;
 }
 .muted {
-  color: #94a3b8;
+  color: var(--muted-light);
 }
 @media (max-width: 680px) {
   .admin-page-header {

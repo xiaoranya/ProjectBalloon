@@ -168,7 +168,7 @@ p {
 }
 header p {
   margin-top: 6px;
-  color: #606266;
+  color: var(--muted);
 }
 h2 {
   font-size: 18px;

@@ -52,7 +52,7 @@ function statusLabel(status: ResolverRunStatus) {
   min-width: 0;
   padding: 18px 20px;
   border: 1px solid #e4e9f0;
-  border-radius: 0;
+
   background: #fff;
 }
 .resolver-metric span,
@@ -78,6 +78,6 @@ function statusLabel(status: ResolverRunStatus) {
   color: #b45309;
 }
 .resolver-metric .status-completed {
-  color: #2563eb;
+  color: var(--primary);
 }
 </style>

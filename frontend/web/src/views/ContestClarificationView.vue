@@ -3,7 +3,6 @@
     <el-header height="auto" class="page-head">
       <div class="page-title-row">
         <div>
-          <p class="eyebrow">Clarifications</p>
           <h1>{{ t('赛中答疑') }}</h1>
         </div>
         <div
@@ -26,7 +25,7 @@
         class="page-alert"
       />
 
-      <ElRow :gutter="24" align="top" class="clarification-team-grid">
+      <ElRow :gutter="24" class="clarification-team-grid">
         <ElCol :xs="24" :md="9">
           <ElCard shadow="never" class="clarification-compose-card">
             <template #header>
@@ -278,64 +277,14 @@ onUnmounted(() => realtime?.stop());
   letter-spacing: -0.035em;
 }
 
-.page-title-row p {
-  display: none;
-  margin-bottom: 0;
-  color: var(--muted);
-}
-
-.eyebrow {
-  display: none;
-  margin: 0 0 8px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .page-alert {
   margin-bottom: 20px;
-}
-
-.clarification-live-state {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 14px;
-  border-radius: 0;
-  padding: 8px 12px;
-  color: var(--muted);
-  background: #e9eef5;
-  font-size: 12px;
-}
-
-.clarification-live-state span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #94a3b8;
-}
-
-.clarification-live-state.connected {
-  color: #166534;
-  background: #dcfce7;
-}
-
-.clarification-live-state.connected span {
-  background: #22c55e;
-}
-
-.wide-button,
-.wide-control {
-  width: 100%;
 }
 
 .clarification-compose-card {
   position: sticky;
   top: 98px;
   border: 1px solid var(--border);
-  border-radius: 0;
 }
 
 .clarification-list-column,
@@ -364,7 +313,7 @@ onUnmounted(() => realtime?.stop());
 .clarification-card {
   padding: 22px;
   border: 1px solid var(--border);
-  border-radius: 0;
+
   background: white;
 }
 
@@ -399,7 +348,7 @@ onUnmounted(() => realtime?.stop());
 .clarification-reply {
   padding: 16px;
   border: 1px solid #bfdbfe;
-  border-radius: 0;
+
   background: #eff6ff;
 }
 
@@ -425,12 +374,6 @@ onUnmounted(() => realtime?.stop());
   margin: 0;
   color: var(--muted);
   font-size: 12px;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .card-header > div {

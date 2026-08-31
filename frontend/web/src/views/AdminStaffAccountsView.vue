@@ -369,49 +369,16 @@ onMounted(load);
 </script>
 
 <style scoped>
-.admin-page {
-  width: min(1320px, 100%);
-  margin: 0 auto;
-}
-.page-head {
-  height: auto;
-  padding: 42px 42px 0;
-}
-.page-body {
-  padding: 0 42px 42px;
-}
-.admin-page-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  margin-bottom: 28px;
-}
-.admin-page-header.compact {
-  align-items: center;
-}
-.admin-page-header h1 {
-  margin: 5px 0 6px;
-  font-size: clamp(28px, 4vw, 40px);
-  color: #13213b;
-}
-.admin-page-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.page-alert {
-  margin-bottom: 20px;
-}
 .staff-account-identity {
   display: grid;
   gap: 0.2rem;
 }
 .staff-account-identity span {
-  color: var(--el-text-color-secondary);
+  color: var(--muted);
   font-size: 0.8rem;
 }
 .form-help {
-  color: var(--el-text-color-secondary);
+  color: var(--muted);
   font-size: 0.8rem;
 }
 .permission-tags {
@@ -425,13 +392,10 @@ onMounted(load);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .muted-text {
-  color: var(--el-text-color-secondary);
+  color: var(--muted);
 }
 .reset-password-form {
   margin-top: 1rem;
-}
-.wide-control {
-  width: 100%;
 }
 @media (max-width: 680px) {
   .admin-page-header {

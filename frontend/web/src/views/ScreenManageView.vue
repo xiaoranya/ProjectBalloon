@@ -2,7 +2,6 @@
   <el-container direction="vertical" class="screen-manage-page">
     <el-header height="auto" class="page-head"
       ><div>
-        <p class="eyebrow">Screen Operations</p>
         <h1>{{ t('现场大屏控制') }}</h1>
       </div>
       <ElSelect v-model="contestId" filterable :placeholder="t('选择比赛')" @change="changeContest"
@@ -300,7 +299,7 @@ onBeforeUnmount(() => {
 }
 .instance-meta {
   display: block;
-  color: #8492a6;
+  color: var(--muted);
   margin-top: 4px;
 }
 @media (max-width: 900px) {

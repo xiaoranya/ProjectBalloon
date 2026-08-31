@@ -1,5 +1,5 @@
 :root {
-  color: #172033;
+  color: var(--ink);
   background: #f4f7fb;
   font-family:
     Inter,
@@ -17,17 +17,28 @@
   --primary-dark: #1d4ed8;
   --ink: #172033;
   --muted: #64748b;
+  --muted-light: #94a3b8;
+  --danger: #f56c6c;
   --border: #dce4ef;
   --surface: #ffffff;
 }
 
 * {
   box-sizing: border-box;
+  border-radius: 0;
+}
+
+/* ElCard 自带圆角需按类覆盖（通用重置特异性为 0 压不过 EP 组件类）；
+   EP 弹层（dialog/message 等）保留自身圆角，与现状一致 */
+.el-card {
+  border-radius: 0;
 }
 
 body {
   margin: 0;
-  min-width: 320px;
+  /* 经典滚动条占 15px 时 320px 视口的 client 区只有 305px，
+     固定 min-width: 320px 会横向溢出；min() 保留 320px 下限且不超容器 */
+  min-width: min(320px, 100%);
   min-height: 100vh;
 }
 
@@ -49,24 +60,84 @@ p {
   margin-top: 0;
 }
 
-.eyebrow {
-  display: none;
-  margin: 0 0 8px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .page-alert {
   margin-bottom: 20px;
 }
 
-/* ElRow gutter 用负外边距实现列间距，会让栅格超出 page-body 右缘约半个 gutter；
-   clip 不产生滚动容器，内部 sticky 定位不受影响。 */
-.el-main.page-body {
+/* 管理端页面骨架（原 11 个视图逐字重复，统一收口） */
+.admin-page {
+  width: min(1320px, 100%);
+  margin: 0 auto;
+}
+.page-head {
+  height: auto;
+  padding: 42px 42px 0;
+}
+.page-body {
+  padding: 0 42px 42px;
+}
+.admin-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+.admin-page-header.compact {
+  align-items: center;
+}
+.admin-page-header h1 {
+  margin: 5px 0 6px;
+  font-size: clamp(28px, 4vw, 40px);
+  color: #13213b;
+}
+.admin-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* 卡片头部（原 8 处视图副本；ScreenOrchestrationControl 缺 align-items 属修正） */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 实时连接状态条（原 5 处视图副本） */
+.clarification-live-state {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  padding: 8px 12px;
+  color: var(--muted);
+  background: #e9eef5;
+  font-size: 12px;
+}
+
+.clarification-live-state span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted-light);
+}
+
+.clarification-live-state.connected {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.clarification-live-state.connected span {
+  background: #22c55e;
+}
+
+/* ElRow gutter 用负外边距实现列间距，会让栅格超出容器右缘约半个 gutter；
+   x 轴 clip 拦截该溢出。el-main 不做滚动容器（EP 默认 overflow: auto 会让它成为
+   scrollport，而壳层高度随内容增长、自身永不滚动，内部 sticky 将完全失效）——
+   页面由 body 滚动，sticky 相对视口吸附。clip + visible 是合法组合且不产生滚动容器。 */
+.el-main {
   overflow-x: clip;
+  overflow-y: visible;
 }
 
 .wide-button,
@@ -86,7 +157,7 @@ p {
   letter-spacing: -0.045em;
 }
 
-.login-copy > p:not(.eyebrow) {
+.login-copy > p {
   max-width: 560px;
   color: var(--muted);
   font-size: 20px;
@@ -107,7 +178,6 @@ p {
   max-width: 480px;
   justify-self: center;
   border: 1px solid rgb(255 255 255 / 80%);
-  border-radius: 0;
   box-shadow: 0 30px 90px rgb(29 78 216 / 14%);
 }
 
@@ -123,5 +193,63 @@ p {
 
 .login-card .el-card__header p {
   margin: 0;
+  color: var(--muted);
+}
+
+/* 提交工具条（原 contest-detail 三个 Tab 逐字重复） */
+.assignment-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+  padding: 18px;
+  background: #f7f9fc;
+}
+
+/* 答疑/打印操作区（原 4 处视图副本） */
+.clarification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 30px;
+  padding-top: 22px;
+  border-top: 1px solid #e5eaf2;
+}
+
+/* 气球颜色标记（原 2 处副本） */
+.balloon-color {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border: 2px solid rgb(255 255 255 / 85%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 18%);
+  vertical-align: middle;
+}
+
+/* 隐藏文件输入 + 上传文件名（原 problem-editor 三个 Tab 副本） */
+.visually-hidden-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.file-upload-name {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* 表格主信息单元格（原 5 处视图副本） */
+.admin-primary-cell strong,
+.admin-primary-cell small {
+  display: block;
+}
+
+.admin-primary-cell small {
+  margin-top: 4px;
   color: var(--muted);
 }

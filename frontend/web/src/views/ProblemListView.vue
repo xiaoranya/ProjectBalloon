@@ -3,7 +3,6 @@
     <el-header height="auto" class="page-head">
       <div class="page-title-row">
         <div>
-          <p class="eyebrow">Problems</p>
           <h1>{{ t('题目列表') }}</h1>
         </div>
         <ElButton :icon="Refresh" :loading="loading" @click="loadProblems">{{
@@ -121,22 +120,6 @@ watch(
   letter-spacing: -0.035em;
 }
 
-.page-title-row p {
-  display: none;
-  margin-bottom: 0;
-  color: var(--muted);
-}
-
-.eyebrow {
-  display: none;
-  margin: 0 0 8px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .page-alert {
   margin-bottom: 20px;
 }
@@ -145,7 +128,7 @@ watch(
   display: grid;
   width: 100%;
   max-width: 1180px;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr));
   gap: 22px;
   margin: 0 auto;
 }
@@ -157,7 +140,7 @@ watch(
   gap: 20px;
   padding: 20px;
   border: 1px solid var(--border);
-  border-radius: 0;
+
   background: white;
   cursor: pointer;
   transition:
@@ -166,12 +149,16 @@ watch(
     box-shadow 160ms ease;
 }
 
-.problem-card:hover,
-.problem-card:focus-visible {
+.problem-card:hover {
   border-color: #93b4f5;
-  outline: none;
   box-shadow: 0 16px 40px rgb(37 99 235 / 10%);
   transform: translateY(-2px);
+}
+
+.problem-card:focus-visible {
+  border-color: #93b4f5;
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .problem-alias {
@@ -181,8 +168,9 @@ watch(
   flex: 0 0 auto;
   place-items: center;
   border: 3px solid var(--problem-color);
-  border-radius: 0;
+
   color: var(--problem-color);
+  background: white;
   background: color-mix(in srgb, var(--problem-color) 9%, white);
   font-size: 24px;
   font-weight: 900;
@@ -224,7 +212,7 @@ watch(
   .problem-alias {
     width: 48px;
     height: 48px;
-    border-radius: 0;
+
     font-size: 20px;
   }
 }

@@ -2,7 +2,6 @@
   <el-container direction="vertical" class="live-manage">
     <el-header height="auto" class="page-head"
       ><div>
-        <p class="eyebrow">Live / OBS</p>
         <h1>{{ t('直播展示控制台') }}</h1>
       </div>
       <ElSelect v-model="contestId" filterable
@@ -373,7 +372,7 @@ onMounted(async () => {
   display: grid;
 }
 .card-header small {
-  color: #8492a6;
+  color: var(--muted);
 }
 .link {
   align-items: center;

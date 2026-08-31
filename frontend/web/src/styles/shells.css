@@ -15,6 +15,15 @@
   padding: 10px clamp(24px, 5vw, 72px);
   border-bottom: 1px solid var(--border);
   background: rgb(255 255 255 / 92%);
+}
+
+/* backdrop-filter header'ı fixed alt öğelerinin (≤900px .contest-nav) containing block'ı
+   yapar; blur'u ::before'a taşı ki nav gerçek viewport'a göre konumlanabilsin */
+.contest-header::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
   backdrop-filter: blur(16px);
 }
 
@@ -32,9 +41,9 @@
   height: 40px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 0;
+
   color: white;
-  background: #2563eb;
+  background: var(--primary);
   font-size: 13px;
   font-weight: 900;
   letter-spacing: -0.04em;
@@ -62,12 +71,11 @@
   display: flex;
   gap: 6px;
   padding: 4px;
-  border-radius: 0;
+
   background: #f1f5f9;
 }
 
 .contest-nav a {
-  border-radius: 0;
   padding: 9px 16px;
   color: #526176;
   font-size: 14px;
@@ -127,7 +135,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  border-radius: 0;
+
   padding: 10px 14px;
   color: #bdc9dc;
   text-decoration: none;
@@ -179,11 +187,6 @@
 }
 
 /* 各工作台主题色 */
-.awards-shell {
-  min-height: 100vh;
-  background: #f6f8fb;
-}
-
 .awards-header {
   border-bottom-color: #eadfca;
   background: #17233d;

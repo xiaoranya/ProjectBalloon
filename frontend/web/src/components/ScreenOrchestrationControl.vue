@@ -316,15 +316,11 @@ watch(
 );
 </script>
 <style scoped>
-.card-header {
-  display: flex;
-  justify-content: space-between;
-}
 .card-header div {
   display: grid;
 }
 .card-header small {
-  color: #8492a6;
+  color: var(--muted);
 }
 .toolbar {
   margin-bottom: 12px;

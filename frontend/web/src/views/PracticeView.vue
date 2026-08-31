@@ -347,7 +347,7 @@ onMounted(load);
   display: flex;
   justify-content: space-between;
   align-items: end;
-  border-bottom: 1px solid #dcdfe6;
+  border-bottom: 1px solid var(--border);
   padding: 28px 20px 18px;
   margin-bottom: 20px;
   height: auto;
@@ -360,7 +360,7 @@ h2 {
   margin: 0;
 }
 .page-head p {
-  color: #606266;
+  color: var(--muted);
 }
 .page-head nav {
   display: flex;
@@ -369,7 +369,7 @@ h2 {
   font-size: 14px;
 }
 .page-head nav a {
-  color: #337ecc;
+  color: var(--primary);
   text-decoration: none;
 }
 .page-head nav a.router-link-active {
@@ -379,7 +379,7 @@ h2 {
   border: 0;
   background: transparent;
   padding: 0;
-  color: #f56c6c;
+  color: var(--danger);
   font-size: 14px;
   cursor: pointer;
 }
@@ -401,7 +401,7 @@ h2 {
 }
 .practice-stats span,
 .practice-stats small {
-  color: #606266;
+  color: var(--muted);
   font-size: 12px;
 }
 .practice-stats strong {
@@ -411,7 +411,7 @@ aside {
   display: grid;
   align-content: start;
   gap: 6px;
-  border-right: 1px solid #dcdfe6;
+  border-right: 1px solid var(--border);
   padding-right: 16px;
 }
 aside > .el-input {
@@ -428,10 +428,10 @@ aside button {
 }
 aside button.active {
   background: #ecf5ff;
-  color: #337ecc;
+  color: var(--primary);
 }
 aside button span {
-  color: #606266;
+  color: var(--muted);
   font-size: 13px;
 }
 aside button .el-tag {
@@ -452,7 +452,7 @@ aside button .el-tag {
   margin-left: 6px;
 }
 .problem-actions span {
-  color: #606266;
+  color: var(--muted);
 }
 .statement {
   line-height: 1.7;
@@ -490,7 +490,7 @@ aside button .el-tag {
   }
   aside {
     border-right: 0;
-    border-bottom: 1px solid #dcdfe6;
+    border-bottom: 1px solid var(--border);
     padding: 0 0 14px;
     max-height: 280px;
     overflow: auto;
