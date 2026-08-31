@@ -187,7 +187,6 @@ onUnmounted(() => {
   letter-spacing: -0.035em;
 }
 
-
 .scoreboard-wrap {
   /* 表格列数随题目数增长，横向滚动必须保留；纵向也限制在视口内，
      让 thead 的 position: sticky 相对本滚动容器吸附。 */

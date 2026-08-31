@@ -176,7 +176,6 @@ onUnmounted(() => {
   letter-spacing: -0.035em;
 }
 
-
 .data-table {
   overflow: hidden;
   border: 1px solid var(--border);

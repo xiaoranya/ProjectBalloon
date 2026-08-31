@@ -119,7 +119,6 @@ watch(
   letter-spacing: -0.035em;
 }
 
-
 .problem-grid {
   display: grid;
   width: 100%;

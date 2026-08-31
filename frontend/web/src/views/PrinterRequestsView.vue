@@ -527,7 +527,6 @@ onUnmounted(() => realtime?.stop());
   letter-spacing: -0.035em;
 }
 
-
 .clarification-filter-card {
   margin-bottom: 22px;
 }

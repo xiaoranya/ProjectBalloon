@@ -336,7 +336,6 @@ watch(language, () => {
   padding: 0;
 }
 
-
 .problem-heading {
   margin-bottom: 28px;
 }
