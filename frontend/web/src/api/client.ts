@@ -27,6 +27,7 @@ export class ApiError extends Error {
 }
 
 let csrf: CsrfResponse | null = null;
+let csrfFetch: Promise<CsrfResponse> | null = null;
 let unauthorizedHandler: (() => void) | null = null;
 
 export function setUnauthorizedHandler(handler: () => void) {
@@ -37,22 +38,34 @@ export function clearCsrfToken() {
   csrf = null;
 }
 
+async function fetchCsrfToken(): Promise<CsrfResponse> {
+  try {
+    const response = await fetch('/api/auth/csrf', {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) {
+      if (response.status === 401) {
+        unauthorizedHandler?.();
+      }
+      throw await createApiError(response);
+    }
+    csrf = (await response.json()) as CsrfResponse;
+    return csrf;
+  } finally {
+    csrfFetch = null;
+  }
+}
+
 async function getCsrfToken(): Promise<CsrfResponse> {
   if (csrf) {
     return csrf;
   }
-  const response = await fetch('/api/auth/csrf', {
-    credentials: 'same-origin',
-    headers: { Accept: 'application/json' },
-  });
-  if (!response.ok) {
-    if (response.status === 401) {
-      unauthorizedHandler?.();
-    }
-    throw await createApiError(response);
+  // Deduplicate concurrent acquisitions so parallel mutations share one fetch.
+  if (!csrfFetch) {
+    csrfFetch = fetchCsrfToken();
   }
-  csrf = (await response.json()) as CsrfResponse;
-  return csrf;
+  return csrfFetch;
 }
 
 async function createApiError(response: Response): Promise<ApiError> {
