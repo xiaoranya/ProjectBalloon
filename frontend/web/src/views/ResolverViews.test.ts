@@ -3,9 +3,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ResolverDisplayView from './ResolverDisplayView.vue';
 import ResolverManageView from './ResolverManageView.vue';
 import { contestApi } from '../api/contest';
+import { ApiError } from '../api/client';
 import { resolverApi } from '../api/resolver';
 import { subscribeContestEvents } from '../realtime/contest-events';
 import { setLocale } from '../i18n';
+
+const elementMocks = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  confirm: vi.fn(),
+}));
+vi.mock('element-plus', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('element-plus')>();
+  return {
+    ...actual,
+    ElMessage: { success: elementMocks.success, error: elementMocks.error },
+    ElMessageBox: { confirm: elementMocks.confirm },
+  };
+});
 
 const replace = vi.fn();
 let route = { params: { runId: '9' }, query: { contestId: '7', runId: '9' } };
@@ -105,6 +120,9 @@ describe('Resolver views', () => {
     setLocale('zh-CN');
     route = { params: { runId: '9' }, query: { contestId: '7', runId: '9' } };
     replace.mockReset();
+    elementMocks.success.mockReset();
+    elementMocks.error.mockReset();
+    elementMocks.confirm.mockReset();
     vi.mocked(contestApi.listContests).mockResolvedValue({
       content: [{ id: 7, name: 'Contest 7' }],
     } as Awaited<ReturnType<typeof contestApi.listContests>>);
@@ -120,6 +138,13 @@ describe('Resolver views', () => {
     vi.mocked(resolverApi.publicState).mockResolvedValue(run);
     vi.mocked(resolverApi.events).mockResolvedValue([]);
     vi.mocked(resolverApi.next).mockResolvedValue({ ...run, currentStep: 1, version: 3 });
+    vi.mocked(resolverApi.pause).mockResolvedValue({ ...run, status: 'PAUSED', version: 3 });
+    vi.mocked(resolverApi.complete).mockResolvedValue({ ...run, status: 'COMPLETED', version: 3 });
+    vi.mocked(resolverApi.autoPlay).mockResolvedValue({
+      ...run,
+      autoPlayEnabled: true,
+      version: 3,
+    });
   });
 
   it('recovers an existing run by contest and uses its current version for the next command', async () => {
@@ -157,6 +182,129 @@ describe('Resolver views', () => {
         eventTypes: ['RESOLVER_STATE_CHANGED'],
       }),
     );
+    wrapper.unmount();
+  });
+
+  it('guards completion until every step is revealed, then completes after confirmation', async () => {
+    const wrapper = mount(ResolverManageView);
+    await flushPromises();
+    const locked = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('完成 Resolver'))!;
+    expect(locked.attributes('disabled')).toBeDefined();
+    wrapper.unmount();
+
+    vi.mocked(resolverApi.get).mockResolvedValue({ ...run, currentStep: 1 });
+    const ready = mount(ResolverManageView);
+    await flushPromises();
+    const complete = ready
+      .findAll('button')
+      .find((button) => button.text().includes('完成 Resolver'))!;
+    expect(complete.attributes('disabled')).toBeUndefined();
+    elementMocks.confirm.mockResolvedValue(undefined);
+    await complete.trigger('click');
+    await flushPromises();
+    expect(elementMocks.confirm).toHaveBeenCalled();
+    expect(resolverApi.complete).toHaveBeenCalledWith(9, 2);
+    expect(elementMocks.success).toHaveBeenCalled();
+    ready.unmount();
+  });
+
+  it('keeps the run open when completion is dismissed', async () => {
+    vi.mocked(resolverApi.get).mockResolvedValue({ ...run, currentStep: 1 });
+    elementMocks.confirm.mockRejectedValue('cancel');
+    const wrapper = mount(ResolverManageView);
+    await flushPromises();
+    const completeCalls = vi.mocked(resolverApi.complete).mock.calls.length;
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('完成 Resolver'))!
+      .trigger('click');
+    await flushPromises();
+    expect(vi.mocked(resolverApi.complete).mock.calls.length).toBe(completeCalls);
+    expect(elementMocks.error).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('reports command failures and silently resyncs the run', async () => {
+    vi.mocked(resolverApi.next).mockRejectedValueOnce(
+      new ApiError(409, 'RESOLVER_VERSION_CONFLICT', 'resolver version conflict'),
+    );
+    const wrapper = mount(ResolverManageView);
+    await flushPromises();
+    const getCalls = vi.mocked(resolverApi.get).mock.calls.length;
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('揭晓下一步'))!
+      .trigger('click');
+    await flushPromises();
+    expect(elementMocks.error).toHaveBeenCalled();
+    expect(vi.mocked(resolverApi.get).mock.calls.length).toBe(getCalls + 1);
+    expect(
+      wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('揭晓下一步'))!
+        .attributes('disabled'),
+    ).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it('toggles auto play and pauses with the current version', async () => {
+    const wrapper = mount(ResolverManageView);
+    await flushPromises();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('启动自动播放'))!
+      .trigger('click');
+    await flushPromises();
+    expect(resolverApi.autoPlay).toHaveBeenCalledWith(9, 2, true, 3000);
+    expect(wrapper.text()).toContain('停止自动播放');
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('暂停'))!
+      .trigger('click');
+    await flushPromises();
+    expect(resolverApi.pause).toHaveBeenCalledWith(9, 3);
+    expect(wrapper.text()).toContain('恢复');
+    wrapper.unmount();
+  });
+
+  it('creates a rehearsal run after confirmation and selects it', async () => {
+    vi.mocked(resolverApi.create).mockResolvedValue({
+      ...run,
+      id: 13,
+      official: false,
+      status: 'READY',
+      version: 1,
+    });
+    elementMocks.confirm.mockResolvedValue(undefined);
+    const wrapper = mount(ResolverManageView);
+    await flushPromises();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('创建预演'))!
+      .trigger('click');
+    await flushPromises();
+    expect(resolverApi.create).toHaveBeenCalledWith(7, 11, 12, false);
+    expect(replace).toHaveBeenCalledWith(
+      expect.objectContaining({ query: expect.objectContaining({ runId: '13' }) }),
+    );
+    expect(elementMocks.success).toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('aborts run creation when the confirmation is dismissed', async () => {
+    elementMocks.confirm.mockRejectedValue('cancel');
+    const wrapper = mount(ResolverManageView);
+    await flushPromises();
+    const createCalls = vi.mocked(resolverApi.create).mock.calls.length;
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('创建预演'))!
+      .trigger('click');
+    await flushPromises();
+    expect(vi.mocked(resolverApi.create).mock.calls.length).toBe(createCalls);
+    expect(elementMocks.error).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 });
