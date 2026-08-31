@@ -20,7 +20,7 @@ use project_balloon_contracts::{
 use project_balloon_judge_worker::{
     artifacts::{ArtifactManager, S3ArtifactSource, S3ArtifactSourceConfig},
     heartbeat::WorkerActivity,
-    rabbit::{RabbitJudgeWorker, RabbitJudgeWorkerConfig},
+    rabbit::{InFlightTasks, RabbitJudgeWorker, RabbitJudgeWorkerConfig},
     sandbox::{DockerSandbox, DockerSandboxConfig},
     worker::JudgeEngine,
 };
@@ -151,6 +151,8 @@ async fn rabbit_rustfs_cpp_pipeline_publishes_confirmed_result() {
             prefetch: 1,
             request_timeout: Duration::from_secs(5),
             reconnect_delay: Duration::from_millis(100),
+            max_task_cases: 64,
+            in_flight: InFlightTasks::new(),
             health: None,
         },
         engine,
@@ -331,6 +333,8 @@ int main(int argc, char **argv) {
             prefetch: 1,
             request_timeout: Duration::from_secs(5),
             reconnect_delay: Duration::from_millis(100),
+            max_task_cases: 64,
+            in_flight: InFlightTasks::new(),
             health: None,
         },
         engine,

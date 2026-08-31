@@ -35,6 +35,12 @@ pub struct WorkerConfig {
     pub python_image: String,
     pub health_port: u16,
     pub health_session_error_window: Duration,
+    /// Upper bound on judged cases per task used for the per-task wall-clock
+    /// deadline (the task contract does not carry the case count).
+    pub max_task_cases: u32,
+    /// Interval between sandbox orphan sweeps (leftover containers and job
+    /// directories of SIGKILLed runs, OOM kills, and cancelled handlers).
+    pub gc_interval: Duration,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -118,6 +124,14 @@ impl WorkerConfig {
             "JUDGE_HEALTH_SESSION_ERROR_WINDOW_SECONDS",
             lookup("JUDGE_HEALTH_SESSION_ERROR_WINDOW_SECONDS").unwrap_or_else(|| "60".to_owned()),
         )?;
+        let max_task_cases = parse_positive(
+            "JUDGE_MAX_TASK_CASES",
+            lookup("JUDGE_MAX_TASK_CASES").unwrap_or_else(|| "1000".to_owned()),
+        )?;
+        let gc_interval_seconds = parse_positive(
+            "JUDGE_GC_INTERVAL_SECONDS",
+            lookup("JUDGE_GC_INTERVAL_SECONDS").unwrap_or_else(|| "300".to_owned()),
+        )?;
 
         validate_text("WORKER_ID", &worker_id)?;
         validate_text("JUDGE_TASK_QUEUE", &task_queue)?;
@@ -176,6 +190,8 @@ impl WorkerConfig {
             python_image,
             health_port,
             health_session_error_window: Duration::from_secs(health_session_error_window_seconds),
+            max_task_cases,
+            gc_interval: Duration::from_secs(gc_interval_seconds),
         })
     }
 }
@@ -270,5 +286,50 @@ mod tests {
             error,
             ConfigError::Invalid { name: "XCPC_SANDBOX_USER", reason: "must not be root" }
         );
+    }
+
+    #[test]
+    fn configuration_defaults_bound_deadline_math_and_gc_interval() {
+        let values = HashMap::from([
+            ("PROJECT_BALLOON_RABBITMQ_URL", "amqp://worker:secret@127.0.0.1:5672/%2f".to_owned()),
+            ("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY", "worker-access".to_owned()),
+            ("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY", "worker-secret".to_owned()),
+        ]);
+        let config = WorkerConfig::from_lookup(|name| values.get(name).cloned())
+            .expect("the defaults must always be valid");
+        assert_eq!(config.max_task_cases, 1000);
+        assert_eq!(config.gc_interval, std::time::Duration::from_secs(300));
+    }
+
+    #[test]
+    fn configuration_accepts_explicit_deadline_and_gc_values() {
+        let values = HashMap::from([
+            ("PROJECT_BALLOON_RABBITMQ_URL", "amqp://worker:secret@127.0.0.1:5672/%2f".to_owned()),
+            ("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY", "worker-access".to_owned()),
+            ("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY", "worker-secret".to_owned()),
+            ("JUDGE_MAX_TASK_CASES", "128".to_owned()),
+            ("JUDGE_GC_INTERVAL_SECONDS", "30".to_owned()),
+        ]);
+        let config = WorkerConfig::from_lookup(|name| values.get(name).cloned())
+            .expect("explicit deadline and GC values must be valid");
+        assert_eq!(config.max_task_cases, 128);
+        assert_eq!(config.gc_interval, std::time::Duration::from_secs(30));
+    }
+
+    #[test]
+    fn configuration_rejects_non_positive_deadline_and_gc_values() {
+        for (name, value, reason) in [
+            ("JUDGE_MAX_TASK_CASES", "0", "must be greater than zero"),
+            ("JUDGE_MAX_TASK_CASES", "-4", "expected a positive integer"),
+            ("JUDGE_MAX_TASK_CASES", "many", "expected a positive integer"),
+            ("JUDGE_GC_INTERVAL_SECONDS", "0", "must be greater than zero"),
+            ("JUDGE_GC_INTERVAL_SECONDS", "-10", "expected a positive integer"),
+            ("JUDGE_GC_INTERVAL_SECONDS", "sometimes", "expected a positive integer"),
+        ] {
+            let values = HashMap::from([(name, value.to_owned())]);
+            let error = WorkerConfig::from_lookup(|lookup| values.get(lookup).cloned())
+                .expect_err("non-positive values must fail");
+            assert_eq!(error, ConfigError::Invalid { name, reason }, "{name}={value}");
+        }
     }
 }
