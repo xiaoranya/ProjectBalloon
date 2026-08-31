@@ -272,4 +272,117 @@ describe('apiRequest', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(String(fetchMock.mock.calls[0][0])).toBe('/api/example');
   });
+
+  it('fails with NETWORK_ERROR when the request exceeds the default timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(fetch).mockReturnValueOnce(new Promise<Response>(() => undefined));
+      const pending = apiRequest('/api/example');
+      const assertion = expect(pending).rejects.toMatchObject({
+        status: 0,
+        code: 'NETWORK_ERROR',
+        message: '请求超时，请检查网络后重试',
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('honors a caller-provided timeout override', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(fetch).mockReturnValueOnce(new Promise<Response>(() => undefined));
+      const pending = apiRequest('/api/example', { timeoutMs: 5_000 });
+      const assertion = expect(pending).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('translates network-level failures into a localized NETWORK_ERROR', async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    await expect(apiRequest('/api/example')).rejects.toMatchObject({
+      code: 'NETWORK_ERROR',
+      message: '网络连接失败，请检查网络后重试',
+    });
+  });
+
+  it('translates abort errors (including caller aborts) into NETWORK_ERROR', async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(
+      new DOMException('The operation was aborted.', 'AbortError'),
+    );
+
+    await expect(
+      apiRequest('/api/example', { signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
+  });
+
+  it('prefers the status default message over raw HTML error pages', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response('<!DOCTYPE html><html><body>502 Bad Gateway</body></html>', {
+        status: 502,
+        headers: { 'content-type': 'text/html' },
+      }),
+    );
+
+    const error = await apiRequest('/api/example').catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({ code: 'HTTP_502' });
+    expect(getErrorMessage(error)).toBe('请求失败（502）');
+  });
+
+  it('truncates long non-JSON error bodies', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response('x'.repeat(500), { status: 502, headers: { 'content-type': 'text/plain' } }),
+    );
+
+    const error = await apiRequest('/api/example').catch((reason: unknown) => reason);
+
+    expect(getErrorMessage(error)).toHaveLength(200);
+  });
+
+  it('refreshes the CSRF token and replays once when the server rejects with CSRF_INVALID', async () => {
+    const fetchMock = vi.mocked(fetch);
+    const csrf = (token: string) =>
+      jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token });
+    fetchMock
+      .mockResolvedValueOnce(csrf('stale-token'))
+      .mockResolvedValueOnce(jsonResponse({ code: 'CSRF_INVALID' }, 403))
+      .mockResolvedValueOnce(csrf('fresh-token'))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await expect(apiRequest('/api/example', { method: 'POST', body: { n: 1 } })).resolves.toEqual({
+      ok: true,
+    });
+
+    const csrfCalls = fetchMock.mock.calls.filter(([input]) => String(input) === '/api/auth/csrf');
+    expect(csrfCalls).toHaveLength(2);
+    expect(
+      new Headers((fetchMock.mock.calls[1][1] as RequestInit).headers).get('X-XSRF-TOKEN'),
+    ).toBe('stale-token');
+    expect(
+      new Headers((fetchMock.mock.calls[3][1] as RequestInit).headers).get('X-XSRF-TOKEN'),
+    ).toBe('fresh-token');
+  });
+
+  it('does not replay more than once when the CSRF rejection persists', async () => {
+    const fetchMock = vi.mocked(fetch);
+    const csrf = () =>
+      jsonResponse({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' });
+    fetchMock
+      .mockResolvedValueOnce(csrf())
+      .mockResolvedValueOnce(jsonResponse({ code: 'CSRF_INVALID' }, 403))
+      .mockResolvedValueOnce(csrf())
+      .mockResolvedValueOnce(jsonResponse({ code: 'CSRF_INVALID' }, 403));
+
+    await expect(apiRequest('/api/example', { method: 'POST' })).rejects.toMatchObject({
+      code: 'CSRF_INVALID',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
 });

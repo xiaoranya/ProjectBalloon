@@ -26,6 +26,14 @@
         :closable="false"
         class="page-alert"
       />
+      <ElAlert
+        v-if="stale"
+        :title="t('榜单自动刷新暂时失败，数据可能已过期')"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="page-alert"
+      />
 
       <div v-loading="loading" class="scoreboard-wrap">
         <table v-if="scoreboard" class="scoreboard-table">
@@ -101,6 +109,8 @@ const contestId = computed(() => Number(route.params.contestId));
 const scoreboard = ref<ScoreboardResponse | null>(null);
 const loading = ref(false);
 const errorMessage = ref('');
+// Consecutive silent-poll failures: the displayed scoreboard may be outdated.
+const stale = ref(false);
 let timer: number | undefined;
 let requestGeneration = 0;
 
@@ -111,9 +121,17 @@ async function loadScoreboard(silent = false) {
     const result = await contestApi.getScoreboard(contestId.value);
     if (generation !== requestGeneration) return;
     scoreboard.value = result;
+    stale.value = false;
     errorMessage.value = '';
   } catch (error) {
-    if (generation === requestGeneration && !silent) errorMessage.value = getErrorMessage(error);
+    if (generation !== requestGeneration) return;
+    if (silent) {
+      // A silent poll failure must stay visible: flag the data as stale and
+      // keep rendering the last good scoreboard instead of a full-page error.
+      stale.value = true;
+    } else {
+      errorMessage.value = getErrorMessage(error);
+    }
   } finally {
     if (generation === requestGeneration) loading.value = false;
   }
@@ -150,6 +168,7 @@ watch(
   contestId,
   () => {
     scoreboard.value = null;
+    stale.value = false;
     void loadScoreboard();
   },
   { immediate: true },

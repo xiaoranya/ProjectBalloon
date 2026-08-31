@@ -135,6 +135,8 @@ export const adminProblemApi = {
   downloadAttachment(problemId: number, attachmentId: number) {
     return apiRequest<Blob>(`/api/problems/${problemId}/attachments/${attachmentId}`, {
       responseType: 'blob',
+      // 大文件下载不适用默认 30s 超时；网络层故障仍会转换为 NETWORK_ERROR。
+      timeoutMs: 0,
     });
   },
   uploadTestdata(problemId: number, file: File) {
@@ -157,7 +159,11 @@ export const adminProblemApi = {
     });
   },
   downloadTestdata(problemId: number) {
-    return apiRequest<Blob>(`/api/problems/${problemId}/testdata`, { responseType: 'blob' });
+    return apiRequest<Blob>(`/api/problems/${problemId}/testdata`, {
+      responseType: 'blob',
+      // 测试数据 ZIP 最大 256 MiB，不适用默认 30s 超时。
+      timeoutMs: 0,
+    });
   },
   listTestdataVersions(problemId: number) {
     return apiRequest<ProblemTestdataVersionResponse[]>(
@@ -167,6 +173,8 @@ export const adminProblemApi = {
   downloadTestdataVersion(problemId: number, version: number) {
     return apiRequest<Blob>(`/api/problems/${problemId}/testdata/versions/${version}`, {
       responseType: 'blob',
+      // 测试数据 ZIP 最大 256 MiB，不适用默认 30s 超时。
+      timeoutMs: 0,
     });
   },
   activateTestdataVersion(problemId: number, version: number, expectedCurrentVersion: number) {

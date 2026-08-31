@@ -303,6 +303,123 @@ describe('screen views', () => {
     wrapper.unmount();
   });
 
+  it('retries registration with capped exponential backoff after a boot failure', async () => {
+    vi.mocked(screenApi.register).mockClear();
+    vi.mocked(screenApi.heartbeat).mockClear();
+    vi.useFakeTimers();
+    vi.mocked(screenApi.register)
+      .mockRejectedValueOnce(new ApiError(503, 'HTTP_503', 'temporarily unavailable'))
+      .mockRejectedValueOnce(new ApiError(503, 'HTTP_503', 'temporarily unavailable'))
+      .mockRejectedValueOnce(new ApiError(503, 'HTTP_503', 'temporarily unavailable'));
+    const wrapper = mount(ScreenClientView);
+    try {
+      await flushPromises();
+      expect(screenApi.register).toHaveBeenCalledTimes(1);
+      expect(wrapper.text()).toContain('temporarily unavailable');
+      expect(wrapper.text()).toContain('连接中断，2 秒后自动重试');
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      await flushPromises();
+      expect(screenApi.register).toHaveBeenCalledTimes(2);
+      expect(wrapper.text()).toContain('连接中断，4 秒后自动重试');
+
+      await vi.advanceTimersByTimeAsync(4_000);
+      await flushPromises();
+      expect(screenApi.register).toHaveBeenCalledTimes(3);
+
+      // Fourth retry succeeds with the default registration mock; heartbeating resumes.
+      await vi.advanceTimersByTimeAsync(8_000);
+      await flushPromises();
+      expect(screenApi.register).toHaveBeenCalledTimes(4);
+      expect(wrapper.text()).not.toContain('temporarily unavailable');
+      expect(wrapper.text()).not.toContain('连接中断');
+      expect(screenApi.heartbeat).toHaveBeenCalledWith(3, 'secret', 'SCOREBOARD');
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-registers with backoff when the server invalidates the client token', async () => {
+    vi.mocked(screenApi.register).mockClear();
+    vi.mocked(screenApi.heartbeat).mockClear();
+    vi.useFakeTimers();
+    localStorage.setItem(
+      'project-balloon:screen:7',
+      JSON.stringify({
+        instanceId: 9,
+        contestId: 7,
+        name: 'Main Hall',
+        clientToken: 'revoked',
+        currentView: 'SCOREBOARD',
+        registeredAt: '2026-07-22T01:00:00Z',
+      }),
+    );
+    vi.mocked(screenApi.heartbeat)
+      .mockRejectedValueOnce(new ApiError(401, 'SCREEN_TOKEN_INVALID', 'token invalid'))
+      .mockResolvedValue({
+        instanceId: 3,
+        serverTime: '2026-07-22T01:00:00Z',
+        commandId: null,
+        targetView: 'SCOREBOARD',
+        groupPlayback: null,
+      });
+    const wrapper = mount(ScreenClientView);
+    try {
+      await flushPromises();
+      expect(screenApi.heartbeat).toHaveBeenCalledWith(9, 'revoked', 'SCOREBOARD');
+      expect(screenApi.register).not.toHaveBeenCalled();
+      expect(wrapper.text()).toContain('大屏令牌无效或已过期');
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      await flushPromises();
+      expect(screenApi.register).toHaveBeenCalledTimes(1);
+      expect(screenApi.heartbeat).toHaveBeenLastCalledWith(3, 'secret', 'SCOREBOARD');
+      expect(localStorage.getItem('project-balloon:screen:7')).toContain('secret');
+      expect(wrapper.text()).not.toContain('大屏令牌无效或已过期');
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('caps the retry backoff at 60 seconds', async () => {
+    vi.mocked(screenApi.register).mockClear();
+    vi.useFakeTimers();
+    vi.mocked(screenApi.register).mockRejectedValue(new ApiError(503, 'HTTP_503', 'still down'));
+    const wrapper = mount(ScreenClientView);
+    try {
+      await flushPromises();
+      expect(screenApi.register).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      await flushPromises();
+      expect(screenApi.register).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(4_000);
+      await flushPromises();
+      expect(screenApi.register).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(8_000);
+      await flushPromises();
+      expect(screenApi.register).toHaveBeenCalledTimes(4);
+      await vi.advanceTimersByTimeAsync(16_000);
+      await flushPromises();
+      expect(screenApi.register).toHaveBeenCalledTimes(5);
+      await vi.advanceTimersByTimeAsync(32_000);
+      await flushPromises();
+      expect(screenApi.register).toHaveBeenCalledTimes(6);
+      // The next delay would be 64s; the 60s cap means it has not fired yet.
+      await vi.advanceTimersByTimeAsync(32_000);
+      await flushPromises();
+      expect(screenApi.register).toHaveBeenCalledTimes(6);
+      await vi.advanceTimersByTimeAsync(28_000);
+      await flushPromises();
+      expect(screenApi.register).toHaveBeenCalledTimes(7);
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it('switches to the next playlist entry at the group playback boundary', async () => {
     vi.useFakeTimers();
     vi.mocked(screenApi.heartbeat).mockClear();

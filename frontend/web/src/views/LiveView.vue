@@ -169,22 +169,35 @@ const showBrand = computed(
   () =>
     presentation.value?.config.template !== 'CUSTOM' || presentation.value?.config.customShowLogo,
 );
+// Stale-response guard: only the newest load() may commit state, mirroring
+// ScoreboardView, so a slow response cannot overwrite a newer one on a big screen.
+let loadGeneration = 0;
 async function load() {
+  const generation = ++loadGeneration;
   try {
-    presentation.value = await presentationApi.published(contestId, 'LIVE', token);
-    if (props.view === 'balloons' || props.view === 'statistics')
-      metrics.value = await presentationApi.metrics(contestId, 'LIVE', token);
+    const nextPresentation = await presentationApi.published(contestId, 'LIVE', token);
+    if (generation !== loadGeneration) return;
+    presentation.value = nextPresentation;
+    if (props.view === 'balloons' || props.view === 'statistics') {
+      const nextMetrics = await presentationApi.metrics(contestId, 'LIVE', token);
+      if (generation !== loadGeneration) return;
+      metrics.value = nextMetrics;
+    }
+    if (generation !== loadGeneration) return;
     errorMessage.value = '';
   } catch (error) {
+    if (generation !== loadGeneration) return;
     errorMessage.value = getErrorMessage(error);
   }
 }
-onMounted(async () => {
+onMounted(() => {
   if (!contestId || !token) {
     errorMessage.value = t('缺少 contestId 或广播 Token');
     return;
   }
-  await load();
+  // Do not await the first load: a hung or slow first response must not
+  // prevent the 10s poller from ever starting.
+  void load();
   timer = window.setInterval(() => {
     now.value = Date.now();
     if (presentation.value?.announcements.length) announcementIndex.value += 1;

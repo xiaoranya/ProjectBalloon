@@ -36,7 +36,8 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
 
 const host = ref<HTMLElement | null>(null);
 let editor: monaco.editor.IStandaloneCodeEditor | null = null;
-let syncTimer: number | undefined;
+// Guards against echoing programmatic setValue() calls back to v-model.
+let applyingModelValue = false;
 
 function languageId(language: string): string {
   if (language === 'c' || language === 'cpp') return language;
@@ -69,18 +70,24 @@ onMounted(() => {
     placeholder: props.placeholder || undefined,
     theme: 'vs',
   });
+  // Emit immediately on every content change so a submit fired right after
+  // typing always sees the latest keystrokes (no debounce window).
   editor.onDidChangeModelContent(() => {
-    if (syncTimer) window.clearTimeout(syncTimer);
-    syncTimer = window.setTimeout(() => {
-      emit('update:modelValue', editor?.getValue() ?? '');
-    }, 200);
+    if (applyingModelValue) return;
+    emit('update:modelValue', editor?.getValue() ?? '');
   });
 });
 
 watch(
   () => props.modelValue,
   (value) => {
-    if (editor && editor.getValue() !== value) editor.setValue(value);
+    if (!editor || editor.getValue() === value) return;
+    applyingModelValue = true;
+    try {
+      editor.setValue(value);
+    } finally {
+      applyingModelValue = false;
+    }
   },
 );
 
@@ -98,7 +105,6 @@ watch(
 );
 
 onBeforeUnmount(() => {
-  if (syncTimer) window.clearTimeout(syncTimer);
   editor?.dispose();
   editor = null;
 });

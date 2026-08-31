@@ -150,6 +150,23 @@ describe('layouts', () => {
     wrapper.unmount();
   });
 
+  it('ContestantLayout still reaches the login page when the logout request fails', async () => {
+    vi.mocked(contestApi.getContest).mockResolvedValue(contest);
+    mocks.logout.mockRejectedValue(new Error('network down'));
+    const wrapper = mount(ContestantLayout, { global: { stubs: layoutStubs } });
+    await flushPromises();
+    const dropdown = wrapper.findComponent({ name: 'ElDropdown' });
+    (dropdown.vm as unknown as { $emit: (event: string, command: string) => void }).$emit(
+      'command',
+      'logout',
+    );
+    await flushPromises();
+    expect(mocks.logout).toHaveBeenCalled();
+    expect(elementMocks.success).toHaveBeenCalled();
+    expect(mocks.push).toHaveBeenCalledWith('/login');
+    wrapper.unmount();
+  });
+
   it('simple role layouts render their brand and log out', async () => {
     const cases = [
       { component: AwardsLayout, brand: '奖项管理' },

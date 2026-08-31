@@ -38,20 +38,95 @@ export function clearCsrfToken() {
   csrf = null;
 }
 
+/** Every request is bounded so hung requests cannot starve the connection pool. */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** Non-JSON error bodies (e.g. an HTML 502 page) are truncated before display. */
+const RAW_BODY_MESSAGE_LIMIT = 200;
+
+function networkError(kind: 'timeout' | 'unreachable'): ApiError {
+  const message =
+    kind === 'timeout'
+      ? translate('请求超时，请检查网络后重试')
+      : translate('网络连接失败，请检查网络后重试');
+  return new ApiError(0, 'NETWORK_ERROR', message);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+interface OpenConnection {
+  response: Response;
+  /** Releases the timeout once the response body has been fully consumed. */
+  settled: () => void;
+}
+
+/**
+ * Races the fetch against a timeout and merges the timer with any
+ * caller-provided signal, so caller aborts still reach the transport. The
+ * timer stays armed while the caller drains the body via `settled()`, so a
+ * stalled read cannot pin a pooled connection either.
+ */
+async function openConnection(
+  path: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<OpenConnection> {
+  const controller = new AbortController();
+  const external = init.signal;
+  const abortFromCaller = () => controller.abort();
+  if (external) {
+    if (external.aborted) controller.abort();
+    else external.addEventListener('abort', abortFromCaller);
+  }
+  let timer: number | undefined;
+  let released = false;
+  const settled = () => {
+    if (released) return;
+    released = true;
+    if (timer !== undefined) window.clearTimeout(timer);
+    external?.removeEventListener('abort', abortFromCaller);
+  };
+  try {
+    const response = await new Promise<Response>((resolve, reject) => {
+      if (timeoutMs > 0) {
+        timer = window.setTimeout(() => {
+          controller.abort();
+          reject(networkError('timeout'));
+        }, timeoutMs);
+      }
+      fetch(path, { ...init, signal: controller.signal }).then(resolve, reject);
+    });
+    return { response, settled };
+  } catch (error) {
+    settled();
+    if (error instanceof ApiError) throw error;
+    if (isAbortError(error) || error instanceof TypeError) throw networkError('unreachable');
+    throw error;
+  }
+}
+
 async function fetchCsrfToken(): Promise<CsrfResponse> {
   try {
-    const response = await fetch('/api/auth/csrf', {
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
-    });
-    if (!response.ok) {
-      if (response.status === 401) {
-        unauthorizedHandler?.();
+    const connection = await openConnection(
+      '/api/auth/csrf',
+      { credentials: 'same-origin', headers: { Accept: 'application/json' } },
+      DEFAULT_TIMEOUT_MS,
+    );
+    try {
+      const response = connection.response;
+      if (!response.ok) {
+        if (response.status === 401) {
+          unauthorizedHandler?.();
+        }
+        throw await createApiError(response);
       }
-      throw await createApiError(response);
+      csrf = (await response.json()) as CsrfResponse;
+      return csrf;
+    } finally {
+      connection.settled();
     }
-    csrf = (await response.json()) as CsrfResponse;
-    return csrf;
   } finally {
     csrfFetch = null;
   }
@@ -69,8 +144,8 @@ async function getCsrfToken(): Promise<CsrfResponse> {
 }
 
 async function createApiError(response: Response): Promise<ApiError> {
-  const contentType = response.headers.get('content-type') ?? '';
-  let body: ApiErrorBody;
+  const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+  let body: ApiErrorBody = {};
   if (contentType.includes('json')) {
     try {
       body = (await response.json()) as ApiErrorBody;
@@ -78,8 +153,11 @@ async function createApiError(response: Response): Promise<ApiError> {
       body = {};
     }
   } else {
-    const text = await response.text();
-    body = { message: text };
+    const text = (await response.text()).trim();
+    // Raw markup (e.g. an HTML 502 page from a reverse proxy) is noise for the
+    // user; fall back to the status default message instead.
+    const looksLikeHtml = contentType.includes('html') || text.startsWith('<');
+    if (text && !looksLikeHtml) body = { message: text.slice(0, RAW_BODY_MESSAGE_LIMIT) };
   }
   const code = body.code ?? `HTTP_${response.status}`;
   const message = body.message ?? defaultMessage(response.status);
@@ -104,6 +182,8 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
   responseType?: 'json' | 'text' | 'blob';
   acceptedStatuses?: number[];
   suppressUnauthorizedHandler?: boolean;
+  /** Per-request timeout in ms; 0 disables the timeout. Defaults to 30s. */
+  timeoutMs?: number;
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -111,6 +191,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     acceptedStatuses = [],
     responseType,
     suppressUnauthorizedHandler = false,
+    timeoutMs,
     ...fetchOptions
   } = options;
   const method = (fetchOptions.method ?? 'GET').toUpperCase();
@@ -132,36 +213,51 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     body = JSON.stringify(body);
   }
 
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
-    const csrfToken = await getCsrfToken();
-    headers.set(csrfToken.headerName, csrfToken.token);
-  }
+  const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
 
-  const response = await fetch(path, {
-    ...fetchOptions,
-    method,
-    body,
-    headers,
-    credentials: 'same-origin',
-  });
-
-  if (!response.ok && !acceptedStatuses.includes(response.status)) {
-    if (response.status === 401 && !suppressUnauthorizedHandler) {
-      unauthorizedHandler?.();
+  const send = async (allowCsrfRetry: boolean): Promise<T> => {
+    // Clone per attempt so each replay records the token it actually sent.
+    const attemptHeaders = new Headers(headers);
+    if (isMutation) {
+      const csrfToken = await getCsrfToken();
+      attemptHeaders.set(csrfToken.headerName, csrfToken.token);
     }
-    throw await createApiError(response);
-  }
+    const connection = await openConnection(
+      path,
+      { ...fetchOptions, method, body, headers: attemptHeaders, credentials: 'same-origin' },
+      timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    );
+    try {
+      const { response } = connection;
+      if (!response.ok && !acceptedStatuses.includes(response.status)) {
+        if (response.status === 401 && !suppressUnauthorizedHandler) {
+          unauthorizedHandler?.();
+        }
+        const error = await createApiError(response);
+        // The server rejects a stale CSRF token before processing the request,
+        // so refreshing the token and replaying once is safe and transparent.
+        if (allowCsrfRetry && isMutation && error.code === 'CSRF_INVALID') {
+          clearCsrfToken();
+          return await send(false);
+        }
+        throw error;
+      }
+      if (response.status === 204) {
+        return undefined as T;
+      }
+      if (responseType === 'text') {
+        return (await response.text()) as T;
+      }
+      if (responseType === 'blob') {
+        return (await response.blob()) as T;
+      }
+      return (await response.json()) as T;
+    } finally {
+      connection.settled();
+    }
+  };
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  if (responseType === 'text') {
-    return (await response.text()) as T;
-  }
-  if (responseType === 'blob') {
-    return (await response.blob()) as T;
-  }
-  return (await response.json()) as T;
+  return send(true);
 }
 
 const businessMessages: Record<string, string> = {

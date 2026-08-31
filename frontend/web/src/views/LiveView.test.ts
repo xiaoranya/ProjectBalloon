@@ -57,4 +57,33 @@ describe('live presentation templates', () => {
     expect(wrapper.attributes('style')).toContain('--accent: #ef4444');
     wrapper.unmount();
   });
+
+  it('ignores a stale poll response that resolves after a newer one', async () => {
+    vi.useFakeTimers();
+    const stale = { ...published, config: { ...published.config, title: 'STALE' } };
+    const fresh = { ...published, config: { ...published.config, title: 'FRESH' } };
+    let releaseStale!: (value: PublishedPresentation) => void;
+    const stalePromise = new Promise<PublishedPresentation>((resolve) => {
+      releaseStale = resolve;
+    });
+    vi.mocked(presentationApi.published)
+      .mockReturnValueOnce(stalePromise)
+      .mockResolvedValueOnce(fresh);
+
+    const wrapper = mount(LiveView);
+    try {
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await flushPromises();
+      expect(wrapper.text()).toContain('FRESH');
+
+      releaseStale(stale);
+      await flushPromises();
+      expect(wrapper.text()).toContain('FRESH');
+      expect(wrapper.text()).not.toContain('STALE');
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
 });
