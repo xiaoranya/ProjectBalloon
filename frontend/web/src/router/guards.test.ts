@@ -77,10 +77,7 @@ describe('resolveRouteGuard', () => {
     });
 
     it('redirects competition-only pages to the admin home in standard mode', async () => {
-      const result = await resolveRouteGuard(
-        buildRoute({ competitionOnly: true }),
-        buildSession(),
-      );
+      const result = await resolveRouteGuard(buildRoute({ competitionOnly: true }), buildSession());
       expect(result).toEqual({ name: 'admin-home' });
     });
 
@@ -119,10 +116,7 @@ describe('resolveRouteGuard', () => {
     });
 
     it('allows authenticated users through auth-required routes', async () => {
-      const result = await resolveRouteGuard(
-        buildRoute({ requiresAuth: true }),
-        buildSession(),
-      );
+      const result = await resolveRouteGuard(buildRoute({ requiresAuth: true }), buildSession());
       expect(result).toBe(true);
     });
   });
@@ -138,7 +132,10 @@ describe('resolveRouteGuard', () => {
 
     it('lets the change-password page through for users with a pending reset', async () => {
       const result = await resolveRouteGuard(
-        buildRoute({ requiresAuth: true }, { name: 'change-password', fullPath: '/change-password' }),
+        buildRoute(
+          { requiresAuth: true },
+          { name: 'change-password', fullPath: '/change-password' },
+        ),
         buildSession({ user: buildUser({ passwordResetRequired: true }) }),
       );
       expect(result).toBe(true);

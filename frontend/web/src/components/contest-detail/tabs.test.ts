@@ -366,7 +366,7 @@ describe('TeamsTab', () => {
       groupName: null,
     });
     expect(mockedApi.listContestTeams).toHaveBeenCalledWith(1);
-    expect(wrapper.emitted('update:contest-teams')).toEqual([[ [contestTeam] ]]);
+    expect(wrapper.emitted('update:contest-teams')).toEqual([[[contestTeam]]]);
     expect(elementMocks.success).toHaveBeenCalled();
   });
 

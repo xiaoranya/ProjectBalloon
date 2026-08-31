@@ -176,9 +176,9 @@ describe('apiRequest', () => {
       }),
     );
 
-    await expect(
-      apiRequest<string>('/api/example', { responseType: 'text' }),
-    ).resolves.toBe('plain output');
+    await expect(apiRequest<string>('/api/example', { responseType: 'text' })).resolves.toBe(
+      'plain output',
+    );
     const options = fetchMock.mock.calls[0][1] as RequestInit;
     expect(new Headers(options.headers).get('Accept')).toBe('text/plain');
   });
@@ -254,7 +254,9 @@ describe('apiRequest', () => {
     await apiRequest('/api/example', { method: 'POST' });
     clearCsrfToken();
 
-    fetchMock.mockResolvedValueOnce(csrfResponse()).mockResolvedValueOnce(jsonResponse({ ok: true }));
+    fetchMock
+      .mockResolvedValueOnce(csrfResponse())
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
     await apiRequest('/api/example', { method: 'POST' });
 
     const csrfCalls = fetchMock.mock.calls.filter(([input]) => String(input) === '/api/auth/csrf');
