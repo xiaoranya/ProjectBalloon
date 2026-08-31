@@ -320,7 +320,6 @@ onBeforeUnmount(() => {
   letter-spacing: -0.035em;
 }
 
-
 .page-body {
   padding: 0 38px 38px;
 }
