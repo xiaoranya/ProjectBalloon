@@ -926,4 +926,169 @@ mod tests {
             .expect_err("other users cannot see foreign practice submissions");
         assert_eq!(hidden.code(), "SUBMISSION_NOT_FOUND");
     }
+
+    /// Wraps [`MemoryStorage`] with injection points so the upload and its
+    /// compensation path can be forced to fail.
+    #[derive(Default)]
+    struct FaultyStorage {
+        inner: MemoryStorage,
+        fail_put: bool,
+        fail_delete: bool,
+    }
+
+    #[async_trait]
+    impl ObjectStorage for FaultyStorage {
+        async fn check_bucket(&self, bucket: &str) -> Result<(), ObjectStorageError> {
+            self.inner.check_bucket(bucket).await
+        }
+
+        async fn put(
+            &self,
+            bucket: &str,
+            key: &str,
+            content_type: Option<&str>,
+            content: Bytes,
+        ) -> Result<(), ObjectStorageError> {
+            if self.fail_put {
+                return Err(ObjectStorageError::Request("put rejected".into()));
+            }
+            self.inner.put(bucket, key, content_type, content).await
+        }
+
+        async fn get(&self, bucket: &str, key: &str) -> Result<Bytes, ObjectStorageError> {
+            self.inner.get(bucket, key).await
+        }
+
+        async fn delete(&self, bucket: &str, key: &str) -> Result<(), ObjectStorageError> {
+            if self.fail_delete {
+                return Err(ObjectStorageError::Request("delete rejected".into()));
+            }
+            self.inner.delete(bucket, key).await
+        }
+    }
+
+    /// Fills the per-minute practice budget directly so the next submission
+    /// fails inside `persist_practice` — after the object upload succeeded.
+    async fn exhaust_practice_minute_budget(pool: &PgPool, actor: &AuthUser, problem_id: i64) {
+        sqlx::query(
+            "INSERT INTO submissions (contest_id, problem_id, language, source_object_key,
+                                      source_size_bytes, source_sha256, status,
+                                      submission_scope, participant_user_id)
+             SELECT NULL, $2, 'cpp', 'sources/filler.cpp', 1, $1, 'PENDING', 'PRACTICE', $3
+             FROM generate_series(1, $4)",
+        )
+        .bind("f".repeat(64))
+        .bind(problem_id)
+        .bind(actor.id)
+        .bind(PRACTICE_LIMIT_PER_MINUTE)
+        .execute(pool)
+        .await
+        .expect("fill practice minute budget");
+    }
+
+    async fn compensation_cleanup_count(pool: &PgPool) -> i64 {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM object_storage_cleanup_tasks WHERE reason='PRACTICE_SOURCE_UPLOAD_COMPENSATION'",
+        )
+        .fetch_one(pool)
+        .await
+        .expect("load compensation cleanup tasks")
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn failed_persistence_compensates_by_deleting_the_uploaded_object(pool: PgPool) {
+        let (actor, _storage, backend, problem_id) = practice_harness(&pool, r#"["cpp"]"#).await;
+        sqlx::query("UPDATE practice_platform_settings SET concurrent_judging_limit = 20")
+            .execute(&pool)
+            .await
+            .expect("raise concurrent practice budget");
+        exhaust_practice_minute_budget(&pool, &actor, problem_id).await;
+        let service = SubmissionService::new(pool.clone());
+
+        let rejected = service
+            .submit_practice(
+                practice_command(problem_id, "cpp"),
+                None,
+                None,
+                &actor,
+                LOCALHOST,
+                &_storage,
+            )
+            .await
+            .expect_err("the over-budget submission must be rejected");
+        assert_eq!(rejected.code(), "PRACTICE_SUBMISSION_RATE_LIMITED");
+        assert!(
+            backend.objects.lock().expect("memory storage lock").is_empty(),
+            "the uploaded source must be compensated away"
+        );
+        assert_eq!(compensation_cleanup_count(&pool).await, 0);
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn failed_compensation_is_deferred_to_the_cleanup_worker(pool: PgPool) {
+        let (actor, _storage, backend, problem_id) = practice_harness(&pool, r#"["cpp"]"#).await;
+        sqlx::query("UPDATE practice_platform_settings SET concurrent_judging_limit = 20")
+            .execute(&pool)
+            .await
+            .expect("raise concurrent practice budget");
+        exhaust_practice_minute_budget(&pool, &actor, problem_id).await;
+        let service = SubmissionService::new(pool.clone());
+        let faulty = Arc::new(FaultyStorage {
+            inner: MemoryStorage::default(),
+            fail_put: false,
+            fail_delete: true,
+        });
+        let storage =
+            ObjectStorageHandle::with_buckets(faulty.clone(), "problems".into(), "sources".into());
+
+        let rejected = service
+            .submit_practice(
+                practice_command(problem_id, "cpp"),
+                None,
+                None,
+                &actor,
+                LOCALHOST,
+                &storage,
+            )
+            .await
+            .expect_err("the over-budget submission must be rejected");
+        assert_eq!(rejected.code(), "PRACTICE_SUBMISSION_RATE_LIMITED");
+        assert_eq!(compensation_cleanup_count(&pool).await, 1);
+        let _unused = backend;
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+    async fn failed_uploads_leave_no_object_and_no_submission(pool: PgPool) {
+        let (actor, _storage, backend, problem_id) = practice_harness(&pool, r#"["cpp"]"#).await;
+        let service = SubmissionService::new(pool.clone());
+        let faulty = Arc::new(FaultyStorage {
+            inner: MemoryStorage::default(),
+            fail_put: true,
+            fail_delete: false,
+        });
+        let storage =
+            ObjectStorageHandle::with_buckets(faulty.clone(), "problems".into(), "sources".into());
+
+        let rejected = service
+            .submit_practice(
+                practice_command(problem_id, "cpp"),
+                None,
+                None,
+                &actor,
+                LOCALHOST,
+                &storage,
+            )
+            .await
+            .expect_err("a failed upload cannot submit");
+        assert_eq!(rejected.code(), "INTERNAL_ERROR");
+        let submissions: i64 = sqlx::query_scalar("SELECT count(*) FROM submissions")
+            .fetch_one(&pool)
+            .await
+            .expect("count submissions");
+        assert_eq!(submissions, 0);
+        let _unused = backend;
+    }
 }
