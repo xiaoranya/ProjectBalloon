@@ -37,7 +37,7 @@
           </div>
         </div>
 
-        <ElRow :gutter="24" align="top" class="problem-layout">
+        <ElRow :gutter="24" class="problem-layout">
           <ElCol :xs="24" :md="15">
             <article class="statement-card">
               <div v-if="problem.statement" class="statement-language">

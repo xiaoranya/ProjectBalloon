@@ -25,7 +25,7 @@
         class="page-alert"
       />
 
-      <ElRow :gutter="24" align="top" class="clarification-team-grid">
+      <ElRow :gutter="24" class="clarification-team-grid">
         <ElCol :xs="24" :md="9">
           <ElCard shadow="never" class="clarification-compose-card">
             <template #header>
