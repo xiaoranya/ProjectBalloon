@@ -166,7 +166,6 @@ onUnmounted(() => {
 }
 
 .page-head {
-  height: auto;
   padding: 0;
 }
 
@@ -188,9 +187,6 @@ onUnmounted(() => {
   letter-spacing: -0.035em;
 }
 
-.page-alert {
-  margin-bottom: 20px;
-}
 
 .scoreboard-wrap {
   /* 表格列数随题目数增长，横向滚动必须保留；纵向也限制在视口内，

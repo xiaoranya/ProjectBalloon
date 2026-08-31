@@ -350,7 +350,6 @@ onMounted(load);
   border-bottom: 1px solid var(--border);
   padding: 28px 20px 18px;
   margin-bottom: 20px;
-  height: auto;
 }
 .page-body {
   padding: 0 20px 28px;
@@ -358,9 +357,6 @@ onMounted(load);
 h1,
 h2 {
   margin: 0;
-}
-.page-head p {
-  color: var(--muted);
 }
 .page-head nav {
   display: flex;
@@ -502,7 +498,7 @@ aside button .el-tag {
     justify-content: flex-start;
     margin-top: 10px;
   }
-  .history :deep(.el-table) {
+  .history .el-table {
     font-size: 12px;
   }
 }

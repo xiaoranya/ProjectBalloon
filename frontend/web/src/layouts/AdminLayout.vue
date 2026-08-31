@@ -148,7 +148,7 @@ async function logout() {
   font-size: 11px;
 }
 
-.admin-sidebar :deep(.admin-nav-menu) {
+.admin-sidebar .admin-nav-menu {
   flex: 1;
   margin-top: 42px;
   border-right: none;
@@ -212,7 +212,7 @@ async function logout() {
     display: none;
   }
 
-  .admin-sidebar :deep(.admin-nav-menu) {
+  .admin-sidebar .admin-nav-menu {
     display: flex;
     flex: none;
     flex-direction: row;

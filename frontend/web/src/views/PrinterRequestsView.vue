@@ -506,7 +506,6 @@ onUnmounted(() => realtime?.stop());
 }
 
 .page-head {
-  height: auto;
   padding: clamp(28px, 5vw, 58px) clamp(28px, 5vw, 58px) 0;
 }
 
@@ -528,9 +527,6 @@ onUnmounted(() => realtime?.stop());
   letter-spacing: -0.035em;
 }
 
-.page-alert {
-  margin-bottom: 20px;
-}
 
 .clarification-filter-card {
   margin-bottom: 22px;

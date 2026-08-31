@@ -70,7 +70,7 @@
       <ElDialog
         v-model="dialogVisible"
         :title="editing ? t('编辑比赛') : t('创建比赛')"
-        width="660"
+        width="min(660px, 94%)"
       >
         <ElForm ref="formRef" :model="form" :rules="rules" label-position="top">
           <ElFormItem :label="t('比赛名称')" prop="name"

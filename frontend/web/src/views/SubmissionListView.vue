@@ -155,7 +155,6 @@ onUnmounted(() => {
 }
 
 .page-head {
-  height: auto;
   padding: 0;
 }
 
@@ -177,9 +176,6 @@ onUnmounted(() => {
   letter-spacing: -0.035em;
 }
 
-.page-alert {
-  margin-bottom: 20px;
-}
 
 .data-table {
   overflow: hidden;

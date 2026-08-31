@@ -240,12 +240,6 @@ onBeforeUnmount(() => realtime?.stop());
   letter-spacing: -0.035em;
 }
 
-.awards-page-header > div > p:last-child {
-  display: none;
-  margin: 4px 0 0;
-  color: var(--muted);
-}
-
 .page-body {
   padding: 0 38px 38px;
 }

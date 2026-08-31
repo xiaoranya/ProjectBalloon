@@ -5,7 +5,7 @@
         v-model="problemForm.problemId"
         filterable
         :placeholder="t('选择未分配题目')"
-        style="width: 260px"
+        style="width: min(260px, 100%)"
       >
         <ElOption
           v-for="problem in availableProblems"
@@ -99,7 +99,7 @@
     </ElTable>
   </ElCard>
 
-  <ElDialog v-model="problemEditVisible" :title="t('编辑比赛题目')" width="460">
+  <ElDialog v-model="problemEditVisible" :title="t('编辑比赛题目')" width="min(460px, 94%)">
     <ElForm label-width="90px">
       <ElFormItem :label="t('题号')"
         ><ElInput v-model="problemEditForm.alias" maxlength="16"
@@ -123,7 +123,7 @@
     </template>
   </ElDialog>
 
-  <ElDialog v-model="subtasksVisible" :title="t('子任务与测试点计分')" width="900">
+  <ElDialog v-model="subtasksVisible" :title="t('子任务与测试点计分')" width="min(900px, 94%)">
     <ElSkeleton v-if="subtasksLoading" :rows="5" animated />
     <template v-else>
       <ElSpace wrap :size="12" class="assignment-toolbar">

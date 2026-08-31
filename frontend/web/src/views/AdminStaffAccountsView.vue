@@ -75,7 +75,7 @@
         <ElEmpty v-if="!loading && !accounts.length" :description="t('暂无工作人员账号')" />
       </ElCard>
 
-      <ElDialog v-model="createVisible" :title="t('新建工作人员账号')" width="520px">
+      <ElDialog v-model="createVisible" :title="t('新建工作人员账号')" width="min(520px, 94%)">
         <ElForm ref="createFormRef" :model="createForm" :rules="createRules" label-position="top">
           <ElFormItem :label="t('用户名')" prop="username">
             <ElInput v-model="createForm.username" :placeholder="t('例如 judge-01')" />
@@ -119,7 +119,7 @@
         </template>
       </ElDialog>
 
-      <ElDialog v-model="editVisible" :title="t('编辑工作人员账号')" width="520px">
+      <ElDialog v-model="editVisible" :title="t('编辑工作人员账号')" width="min(520px, 94%)">
         <ElForm :model="editForm" label-position="top">
           <ElFormItem :label="t('用户名')">
             <ElInput :model-value="selected?.username" disabled />
@@ -159,7 +159,7 @@
         </template>
       </ElDialog>
 
-      <ElDialog v-model="resetVisible" :title="t('重置工作人员密码')" width="460px">
+      <ElDialog v-model="resetVisible" :title="t('重置工作人员密码')" width="min(460px, 94%)">
         <p>
           {{ t('正在重置') }} <strong>{{ selected?.displayName }}</strong> (@{{
             selected?.username
@@ -397,27 +397,9 @@ onMounted(load);
 .reset-password-form {
   margin-top: 1rem;
 }
-@media (max-width: 680px) {
-  .admin-page-header {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 14px;
-  }
-}
 @media (max-width: 640px) {
   .permission-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .page-head {
-    padding: 24px 16px 0;
-  }
-  .page-body {
-    padding: 0 16px 24px;
-  }
-  .admin-page-header {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 16px;
   }
 }
 </style>

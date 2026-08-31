@@ -5,7 +5,7 @@
         v-model="teamForm.teamId"
         filterable
         :placeholder="t('选择未分配队伍')"
-        style="width: 260px"
+        style="width: min(260px, 100%)"
       >
         <ElOption
           v-for="team in availableTeams"

@@ -112,7 +112,7 @@
     </ElCol>
   </ElRow>
 
-  <ElDialog v-model="editVisible" :title="t('编辑比赛信息')" width="620">
+  <ElDialog v-model="editVisible" :title="t('编辑比赛信息')" width="min(620px, 94%)">
     <ElForm v-if="contest" label-position="top">
       <ElFormItem :label="t('比赛名称')"><ElInput v-model="editForm.name" /></ElFormItem>
       <ElFormItem :label="t('可见性')">
@@ -152,7 +152,7 @@
     </template>
   </ElDialog>
 
-  <ElDialog v-model="extensionVisible" :title="t('延长比赛')" width="520">
+  <ElDialog v-model="extensionVisible" :title="t('延长比赛')" width="min(520px, 94%)">
     <ElAlert
       :title="t('延时会立即同步到参赛队伍、大屏和直播页面，且不能通过此操作缩短比赛。')"
       type="warning"

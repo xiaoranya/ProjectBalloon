@@ -614,24 +614,53 @@ function resultStatusLabel(status: BatchResult['status']) {
 .team-import-source-actions-row {
   margin-top: 14px;
 }
-@media (max-width: 680px) {
-  .admin-page-header {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 14px;
-  }
+.form-hint {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
-@media (max-width: 640px) {
-  .page-head {
-    padding: 24px 16px 0;
-  }
-  .page-body {
-    padding: 0 16px 24px;
-  }
-  .admin-page-header {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 16px;
-  }
+.team-import-editor {
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  background: #f8fafc;
+}
+.team-import-editor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.team-import-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+.team-import-grid .el-input {
+  width: 100%;
+}
+.field-error {
+  margin-top: 8px;
+  color: var(--danger);
+  font-size: 12px;
+}
+.team-import-members {
+  display: flex;
+  margin-top: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.team-import-member-row {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.team-import-member-row .el-input {
+  width: auto;
+  flex: 1 1 150px;
 }
 </style>

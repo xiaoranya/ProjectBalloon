@@ -99,7 +99,7 @@
     <ElDialog
       v-model="playlistDialog"
       :title="playlistEditing ? t('编辑播放列表') : t('新建播放列表')"
-      width="620"
+      width="min(620px, 94%)"
       ><ElForm label-position="top"
         ><ElFormItem :label="t('名称')"
           ><ElInput v-model="playlistForm.name" maxlength="120" /></ElFormItem
@@ -130,7 +130,7 @@
     <ElDialog
       v-model="groupDialog"
       :title="groupEditing ? t('编辑分组') : t('新建分组')"
-      width="520"
+      width="min(520px, 94%)"
       ><ElForm label-position="top"
         ><ElFormItem :label="t('名称')"
           ><ElInput v-model="groupForm.name" maxlength="120" /></ElFormItem

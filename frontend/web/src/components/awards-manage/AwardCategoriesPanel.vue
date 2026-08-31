@@ -318,11 +318,6 @@ async function deleteCategory(category: AwardCategory) {
   color: var(--muted);
   font-size: 12px;
 }
-.award-order-controls .el-button {
-  width: 26px;
-  height: 24px;
-  padding: 0;
-}
 .award-category-content {
   min-width: 0;
 }

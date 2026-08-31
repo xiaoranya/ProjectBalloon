@@ -98,7 +98,6 @@ watch(
 }
 
 .page-head {
-  height: auto;
   padding: 0;
 }
 
@@ -120,9 +119,6 @@ watch(
   letter-spacing: -0.035em;
 }
 
-.page-alert {
-  margin-bottom: 20px;
-}
 
 .problem-grid {
   display: grid;

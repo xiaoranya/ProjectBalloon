@@ -71,7 +71,6 @@ async function saveProfile() {
   border-bottom: 1px solid var(--border);
   padding: 28px 20px 18px;
   margin-bottom: 20px;
-  height: auto;
 }
 .page-body {
   padding: 0 20px 28px;
@@ -80,10 +79,6 @@ async function saveProfile() {
 .profile-page h2,
 .profile-page p {
   margin: 0;
-}
-.page-head p {
-  color: var(--muted);
-  margin-top: 6px;
 }
 .profile-card {
   max-width: 560px;

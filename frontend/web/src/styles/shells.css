@@ -17,8 +17,8 @@
   background: rgb(255 255 255 / 92%);
 }
 
-/* backdrop-filter header'ı fixed alt öğelerinin (≤900px .contest-nav) containing block'ı
-   yapar; blur'u ::before'a taşı ki nav gerçek viewport'a göre konumlanabilsin */
+/* backdrop-filter 会把 header 变成 fixed 子元素（≤900px 的 .contest-nav）的包含块；
+   把 blur 移到 ::before 上，让 nav 仍相对真实视口定位 */
 .contest-header::before {
   content: '';
   position: absolute;

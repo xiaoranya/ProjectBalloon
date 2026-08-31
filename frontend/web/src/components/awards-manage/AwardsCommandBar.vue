@@ -95,7 +95,7 @@ const { t } = useI18n();
   gap: 10px;
 }
 .award-command-bar small {
-  display: none;
+  display: block;
   margin: 4px 0 0;
   color: var(--muted);
 }

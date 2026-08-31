@@ -286,7 +286,6 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   gap: 24px;
   padding: 28px 28px 0;
-  height: auto;
 }
 .page-body {
   padding: 20px 28px 28px;
