@@ -36,7 +36,9 @@
 
 body {
   margin: 0;
-  min-width: 320px;
+  /* 经典滚动条占 15px 时 320px 视口的 client 区只有 305px，
+     固定 min-width: 320px 会横向溢出；min() 保留 320px 下限且不超容器 */
+  min-width: min(320px, 100%);
   min-height: 100vh;
 }
 
