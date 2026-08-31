@@ -316,11 +316,6 @@ onUnmounted(() => realtime?.stop());
   font-size: clamp(30px, 4vw, 44px);
   letter-spacing: -0.04em;
 }
-.resolver-page-heading p:last-child {
-  display: none;
-  margin: 0;
-  color: var(--muted);
-}
 .resolver-heading-actions .el-select {
   width: min(320px, 100%);
 }

@@ -7,6 +7,7 @@
       <ElSkeleton v-if="loading && !submission" :rows="6" animated />
       <ElAlert
         v-else-if="errorMessage && !submission"
+        class="page-alert"
         :title="errorMessage"
         type="error"
         show-icon
@@ -73,7 +74,7 @@
 
           <template v-if="activeJudgement.compileLog">
             <h3>{{ t('编译日志') }}</h3>
-            <pre><code>{{ activeJudgement.compileLog }}</code></pre>
+            <pre class="compile-log"><code>{{ activeJudgement.compileLog }}</code></pre>
           </template>
 
           <template v-if="activeJudgement.runs.length">
@@ -240,10 +241,6 @@ onUnmounted(() => {
   padding: 0;
 }
 
-.page-alert {
-  margin-bottom: 20px;
-}
-
 .result-hero {
   display: flex;
   align-items: center;
@@ -296,9 +293,6 @@ onUnmounted(() => {
   margin-bottom: 24px;
 }
 
-.source-card {
-}
-
 .judgement-card,
 .history-card {
   margin-bottom: 24px;
@@ -326,17 +320,13 @@ onUnmounted(() => {
   color: var(--muted);
 }
 
-.card-header > div {
-  min-width: 0;
-}
-
 .muted-note {
   margin: 12px 0 0;
   color: var(--muted);
   font-size: 12px;
 }
 
-.markdown-body pre {
+.compile-log {
   overflow-x: auto;
 
   padding: 18px;

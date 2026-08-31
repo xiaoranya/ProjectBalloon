@@ -72,7 +72,7 @@
         </ElTable>
       </ElCard>
 
-      <ElDialog v-model="editorVisible" :title="editorTitle" width="680px">
+      <ElDialog v-model="editorVisible" :title="editorTitle" width="min(680px, 94%)">
         <ElForm label-position="top">
           <ElFormItem :label="t('标题')">
             <ElInput v-model="form.title" maxlength="255" show-word-limit />
@@ -294,25 +294,5 @@ watch(contestId, () => void load(), { immediate: true });
 }
 .muted {
   color: var(--muted-light);
-}
-@media (max-width: 680px) {
-  .admin-page-header {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 14px;
-  }
-}
-@media (max-width: 640px) {
-  .page-head {
-    padding: 24px 16px 0;
-  }
-  .page-body {
-    padding: 0 16px 24px;
-  }
-  .admin-page-header {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 16px;
-  }
 }
 </style>

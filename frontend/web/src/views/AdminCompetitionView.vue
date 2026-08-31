@@ -61,7 +61,7 @@
       </ElTableColumn>
     </ElTable>
 
-    <ElDialog v-model="codeVisible" :title="t('配对码')" width="420px">
+    <ElDialog v-model="codeVisible" :title="t('配对码')" width="min(420px, 94%)">
       <p>{{ t('配对码仅在本次操作后显示，请交给对应机位。') }}</p>
       <ElInput :model-value="pairingCode" readonly size="large" />
     </ElDialog>

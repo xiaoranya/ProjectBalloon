@@ -191,7 +191,6 @@ onBeforeUnmount(() => {
   align-items: end;
   border-bottom: 1px solid var(--border);
   padding: 28px 20px 18px;
-  height: auto;
 }
 .page-body {
   padding: 0 20px 28px;
@@ -199,10 +198,6 @@ onBeforeUnmount(() => {
 .page-head h1 {
   margin: 0;
   font-size: 28px;
-}
-.page-head p {
-  margin: 6px 0 0;
-  color: var(--muted);
 }
 .layout {
   display: grid;

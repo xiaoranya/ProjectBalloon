@@ -304,9 +304,6 @@ onUnmounted(() => realtime?.stop());
   margin-bottom: 20px;
 }
 
-.print-compose-card {
-}
-
 .print-compose-card :deep(.el-textarea__inner) {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   line-height: 1.55;

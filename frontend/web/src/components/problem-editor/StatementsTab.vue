@@ -184,7 +184,7 @@ async function deleteStatement(statement: StatementDraft) {
   margin-top: 4px;
   color: var(--muted);
 }
-.statement-editor-heading :deep(.el-input) {
+.statement-editor-heading .el-input {
   width: 180px;
 }
 .statement-editor {
@@ -202,7 +202,7 @@ async function deleteStatement(statement: StatementDraft) {
     align-items: stretch;
     flex-direction: column;
   }
-  .statement-editor-heading :deep(.el-input) {
+  .statement-editor-heading .el-input {
     width: 100%;
   }
 }

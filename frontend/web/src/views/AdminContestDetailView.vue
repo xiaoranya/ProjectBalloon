@@ -64,7 +64,7 @@
         </ElTabPane>
       </ElTabs>
 
-      <ElDialog v-model="cloneVisible" :title="t('克隆比赛')" width="620">
+      <ElDialog v-model="cloneVisible" :title="t('克隆比赛')" width="min(620px, 94%)">
         <ElAlert
           :title="t('将复制题目配置；可选择同时复制当前有效队伍。新比赛始终从草稿状态开始。')"
           type="info"

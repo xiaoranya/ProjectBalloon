@@ -1,3 +1,28 @@
+/* Admin 视图骨架响应式（原 6 个视图逐字重复，统一收口；≤640px 的 gap:16px 覆盖 ≤680px 的 14px） */
+@media (max-width: 680px) {
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-head {
+    padding: 24px 16px 0;
+  }
+
+  .page-body {
+    padding: 0 16px 24px;
+  }
+
+  .admin-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+
 @media (max-width: 1000px) {
   .award-display-stage {
     grid-template-columns: 1fr;

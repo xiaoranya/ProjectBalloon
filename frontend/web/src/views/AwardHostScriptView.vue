@@ -320,11 +320,6 @@ onBeforeUnmount(() => {
   letter-spacing: -0.035em;
 }
 
-.host-script-page-header p:last-child {
-  margin: 0;
-  color: var(--muted);
-}
-
 .page-body {
   padding: 0 38px 38px;
 }
@@ -451,8 +446,7 @@ onBeforeUnmount(() => {
 @media print {
   .host-script-page-header,
   .host-live-card,
-  .host-script-editor,
-  .page-alert {
+  .host-script-editor {
     display: none !important;
   }
 

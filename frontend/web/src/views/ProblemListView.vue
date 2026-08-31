@@ -98,7 +98,6 @@ watch(
 }
 
 .page-head {
-  height: auto;
   padding: 0;
 }
 
@@ -118,10 +117,6 @@ watch(
   margin-bottom: 8px;
   font-size: clamp(32px, 4vw, 48px);
   letter-spacing: -0.035em;
-}
-
-.page-alert {
-  margin-bottom: 20px;
 }
 
 .problem-grid {

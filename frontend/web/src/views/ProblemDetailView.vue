@@ -4,6 +4,7 @@
       <ElSkeleton v-if="loading" :rows="10" animated />
       <ElAlert
         v-else-if="errorMessage"
+        class="page-alert"
         :title="errorMessage"
         type="error"
         show-icon
@@ -335,11 +336,6 @@ watch(language, () => {
   padding: 0;
 }
 
-.page-alert,
-.form-alert {
-  margin-bottom: 20px;
-}
-
 .problem-heading {
   margin-bottom: 28px;
 }
@@ -469,7 +465,7 @@ watch(language, () => {
   gap: 10px;
 }
 
-.code-input :deep(.el-segmented) {
+.code-input .el-segmented {
   justify-self: start;
 }
 

@@ -132,9 +132,6 @@ const selected = defineModel<BalloonTask | null>('selected');
 .balloon-note-panel > :deep(.el-button) {
   justify-self: end;
 }
-.balloon-actions {
-  flex-wrap: wrap;
-}
 .danger-text {
   color: #dc2626;
 }

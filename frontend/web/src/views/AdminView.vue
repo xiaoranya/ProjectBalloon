@@ -416,16 +416,16 @@ onMounted(refreshAll);
   margin-bottom: 20px;
 }
 .audit-filters :deep(.el-input) {
-  width: 240px;
+  width: min(240px, 60vw);
 }
 .audit-filters :deep(.el-input-number) {
-  width: 130px;
+  width: min(130px, 40vw);
 }
 .audit-filters :deep(.el-select) {
-  width: 130px;
+  width: min(130px, 40vw);
 }
 .audit-filters :deep(.el-date-editor) {
-  width: 360px;
+  width: min(360px, 76vw);
 }
 .audit-pagination {
   margin-top: 20px;

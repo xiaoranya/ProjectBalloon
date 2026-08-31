@@ -174,24 +174,4 @@ onMounted(async () => {
 .editorial-actions {
   margin-top: 18px;
 }
-@media (max-width: 680px) {
-  .admin-page-header {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 14px;
-  }
-}
-@media (max-width: 640px) {
-  .page-head {
-    padding: 24px 16px 0;
-  }
-  .page-body {
-    padding: 0 16px 24px;
-  }
-  .admin-page-header {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 16px;
-  }
-}
 </style>

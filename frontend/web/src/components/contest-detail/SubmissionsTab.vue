@@ -153,7 +153,7 @@
     </ElTable>
   </ElCard>
 
-  <ElDialog v-model="submissionDetailVisible" :title="t('管理员提交详情')" width="900">
+  <ElDialog v-model="submissionDetailVisible" :title="t('管理员提交详情')" width="min(900px, 94%)">
     <ElSkeleton v-if="submissionDetailLoading" :rows="6" animated />
     <template v-else-if="submissionDetail">
       <ElDescriptions :column="2" border>
@@ -406,20 +406,5 @@ function problemName(problemId: number) {
 <style scoped>
 .pagination-row {
   margin-top: 24px;
-}
-.source-card {
-}
-.source-card pre {
-  overflow-x: auto;
-
-  padding: 18px;
-  color: #dbeafe;
-  background: #101827;
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
-  font-size: 13px;
-  line-height: 1.65;
-  max-height: 540px;
-  margin: 0;
-  white-space: pre;
 }
 </style>
