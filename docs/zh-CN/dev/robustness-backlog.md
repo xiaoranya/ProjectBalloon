@@ -41,6 +41,7 @@ description: 2026-09 健壮性审计的记录——第一轮整改已关闭的�
 | 部署 | P1 | 生产依赖 npm 审计：PR 时步骤 + 夜间定时任务 |
 | 部署 | P1 | Compose 透传 `PROJECT_BALLOON_JUDGE_STUCK_REQUEUE_INTERVAL_SECONDS`、`JUDGE_HEALTH_PORT`、`JUDGE_HEALTH_SESSION_ERROR_WINDOW_SECONDS` |
 | 部署 | P2 | `.env.example` 补齐代码读取的 5 个变量，并增加 judge-worker 校验的警示注释 |
+| 部署 | P2 | 工具链在 `rust-toolchain.toml` 钉死 1.94.1；CI、发布与 docker-integration 工作流的版本由其派生（于 0.1.0-alpha.4 发布准备轮关闭） |
 
 ## 未解决项
 
@@ -90,8 +91,6 @@ description: 2026-09 健壮性审计的记录——第一轮整改已关闭的�
 - **[P2] 备份完全依赖人工。** 未随包提供 systemd timer/cron 示例，也没有备份时效告警；数据保护全凭运维记忆。*修复思路：* 二进制包内置 `project-balloon-backup.timer`，同时给出 crontab 方案与 ops 文档中的时效检查。
 
 - **[P2] Compose 安装脚本不创建评测缓存目录**，归属不对的自动创建 bind mount 会让 worker 缓存写入以难懂的方式失败。修复思路：在 `scripts/deploy/install.sh` 中创建并校验归属。
-
-- **[P2] 工具链渠道漂移。** `rust-toolchain.toml` 用 `stable`，CI 钉在 1.94.0，Docker 镜像钉在 1.94.1。*延后原因：* 这是跨三个文件的联动变更，应独立提交并跑完整 CI。*修复思路：* 在 `rust-toolchain.toml` 钉死精确版本，并让 CI/Docker 从它派生。
 
 - **[P3] install.sh 在服务被证实存活前就报告成功**；应以带 deadline 的 `/livez`（和 `/api/health`）轮询替代单次 `systemctl is-active`。
 
