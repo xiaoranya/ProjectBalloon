@@ -203,6 +203,8 @@ function sourceFileName(): string {
     c: '.c',
     cpp: '.cpp',
     java: '.java',
+    go: '.go',
+    rust: '.rs',
     python: '.py',
   };
   return `Main${extension[language.value] ?? '.txt'}`;
@@ -211,6 +213,8 @@ function sourceFileName(): string {
 function sourceAccept(): string {
   if (language.value === 'cpp') return '.cpp,.cc,.cxx';
   if (language.value === 'java') return '.java';
+  if (language.value === 'go') return '.go';
+  if (language.value === 'rust') return '.rs';
   if (language.value === 'python') return '.py';
   return '.c';
 }

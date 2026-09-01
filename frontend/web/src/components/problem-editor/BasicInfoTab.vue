@@ -182,6 +182,8 @@ const languageOptions: Array<{ value: JudgeLanguage; label: string }> = [
   { value: 'c', label: 'C' },
   { value: 'cpp', label: 'C++' },
   { value: 'java', label: 'Java' },
+  { value: 'go', label: 'Go' },
+  { value: 'rust', label: 'Rust' },
   { value: 'python', label: 'Python' },
 ];
 const langCodePattern = /^[a-z]{2}(?:-[A-Z]{2})?$/;

@@ -69,9 +69,9 @@ describe('registerCompletionProviders', () => {
     registerCompletionProviders();
     registerCompletionProviders();
 
-    expect(monacoStubs.register).toHaveBeenCalledTimes(4);
+    expect(monacoStubs.register).toHaveBeenCalledTimes(6);
     const languages = providersByLanguage();
-    expect([...languages.keys()].sort()).toEqual(['c', 'cpp', 'java', 'python']);
+    expect([...languages.keys()].sort()).toEqual(['c', 'cpp', 'go', 'java', 'python', 'rust']);
     for (const provider of languages.values()) {
       expect(provider.triggerCharacters).toEqual(['.', ':', '#', '<']);
     }
@@ -93,6 +93,12 @@ describe('registerCompletionProviders', () => {
     const python = providers
       .get('python')!
       .provideCompletionItems(fakeModel('', { startColumn: 1, endColumn: 1 }, ''), cursorAt);
+    const go = providers
+      .get('go')!
+      .provideCompletionItems(fakeModel('', { startColumn: 1, endColumn: 1 }, ''), cursorAt);
+    const rust = providers
+      .get('rust')!
+      .provideCompletionItems(fakeModel('', { startColumn: 1, endColumn: 1 }, ''), cursorAt);
 
     const labels = (result: { suggestions: Array<{ label: string; kind: number }> }) =>
       result.suggestions.filter((s) => s.kind !== monacoStubs.Variable).map((s) => s.label);
@@ -100,6 +106,8 @@ describe('registerCompletionProviders', () => {
     expect(labels(cpp)).toContain('static_cast');
     expect(labels(java)).toContain('sysout');
     expect(labels(python)).toContain('for each');
+    expect(labels(go)).toContain('fmt.Scan');
+    expect(labels(rust)).toContain('read_line');
     expect(labels(java)).not.toContain('static_cast');
   });
 });

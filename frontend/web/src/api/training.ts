@@ -174,9 +174,13 @@ export const trainingApi = {
           ? 'java'
           : language === 'python'
             ? 'py'
-            : language === 'output'
-              ? 'zip'
-              : 'c';
+            : language === 'go'
+              ? 'go'
+              : language === 'rust'
+                ? 'rs'
+                : language === 'output'
+                  ? 'zip'
+                  : 'c';
     body.append(
       'source',
       new File([source], `Main.${extension}`, {

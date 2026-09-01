@@ -41,6 +41,8 @@
               <ElOption label="C" value="c" />
               <ElOption label="C++" value="cpp" />
               <ElOption label="Java" value="java" />
+              <ElOption label="Go" value="go" />
+              <ElOption label="Rust" value="rust" />
               <ElOption label="Python" value="python" />
             </ElSelect>
           </ElFormItem>

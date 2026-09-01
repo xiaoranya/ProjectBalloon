@@ -7,6 +7,8 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as monaco from 'monaco-editor/editor/editor.api';
 import 'monaco-editor/languages/definitions/cpp/register';
 import 'monaco-editor/languages/definitions/java/register';
+import 'monaco-editor/languages/definitions/go/register';
+import 'monaco-editor/languages/definitions/rust/register';
 import 'monaco-editor/languages/definitions/python/register';
 import 'monaco-editor/languages/definitions/markdown/register';
 import 'monaco-editor/language/json/monaco.contribution.js';
@@ -42,6 +44,8 @@ let applyingModelValue = false;
 function languageId(language: string): string {
   if (language === 'c' || language === 'cpp') return language;
   if (language === 'java') return 'java';
+  if (language === 'go') return 'go';
+  if (language === 'rust') return 'rust';
   if (language === 'python') return 'python';
   if (language === 'markdown') return 'markdown';
   if (language === 'json') return 'json';
