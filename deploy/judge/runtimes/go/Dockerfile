@@ -3,6 +3,7 @@ FROM golang:1.24-bookworm
 RUN set -eux; \
     export DEBIAN_FRONTEND=noninteractive; \
     apt-get update; \
+    apt-get upgrade -y; \
     apt-get install -y --no-install-recommends time; \
     rm -rf /var/lib/apt/lists/*; \
     go version | head -1 | awk '{print $NF}' > /VERSION; \
