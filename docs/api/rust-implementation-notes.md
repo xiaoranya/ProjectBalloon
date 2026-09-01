@@ -312,8 +312,8 @@ team.
 
 The first Rust problem-bank slice exposes super-administrator-only CRUD at
 `/api/problems`. It validates lowercase kebab-case slugs, bounded positive
-resource limits, language tags, and the closed P0 judge language set (`c`,
-`cpp`, `java`, and `python`). Update requests require `expectedVersion` and
+resource limits, language tags, and the closed judge language set (`c`,
+`cpp`, `java`, `go`, `rust`, and `python`). Update requests require `expectedVersion` and
 return `PROBLEM_VERSION_STALE` on concurrent modification.
 
 Problem deletion is soft deletion and is rejected with
@@ -561,7 +561,7 @@ verification remains follow-up work. Docker cgroup statistics now populate per-r
 peak-memory fields, and cgroup CPU nanoseconds drive the reported run time and language-adjusted
 CPU limit. A bounded wall-clock deadline remains as a safety limit and short-process fallback.
 Workers now publish confirmed, versioned RabbitMQ heartbeats with a stable process instance ID,
-capacity, active task count, P0 languages, image-version tags, and sandbox runtime. The API stores
+capacity, active task count, supported languages, image-version tags, and sandbox runtime. The API stores
 them in PostgreSQL and exposes online/stale counts plus current capacity in `/api/health`.
 `JUDGE_TASK_PREFETCH` is the Worker execution capacity: tasks run concurrently up to that bound,
 and graceful shutdown drains already accepted work without consuming new deliveries.
@@ -612,7 +612,7 @@ judgements are rejected.
 Submission browsing is available through `GET /api/contests/{contestId}/submissions` and
 `GET /api/contests/{contestId}/submissions/{submissionId}` for the authenticated team, plus the
 matching `/api/admin/contests/{contestId}/submissions` administrator paths. Lists are paginated and
-support team, problem, status, and P0-language filters. Team queries always add the explicit
+support team, problem, status, and language filters. Team queries always add the explicit
 `team_accounts` identity as a database predicate, so submission IDs cannot enumerate another
 team's metadata or source object. Details load the UTF-8 source from object storage only after
 authorization and include active and superseded judgement history with ordered runs. Compile logs

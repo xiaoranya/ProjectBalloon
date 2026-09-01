@@ -288,6 +288,196 @@ const PYTHON: Snippet[] = [
   { label: 'dict', insertText: '{$1: $2}', kind: monaco.languages.CompletionItemKind.Snippet },
 ];
 
+const GO: Snippet[] = [
+  {
+    label: 'package main',
+    insertText: 'package main',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'main',
+    insertText: 'func main() {\n\t$1\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'fmt.Scan',
+    insertText: 'var $1 $2\nfmt.Scan(&$1)',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'fmt.Println',
+    insertText: 'fmt.Println($1)',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'fmt.Printf',
+    insertText: 'fmt.Printf("$1\\n"$2)',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'func',
+    insertText: 'func $1($2) $3 {\n\t$4\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'for',
+    insertText: 'for $1 := 0; $1 < $2; $1++ {\n\t$3\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'for range',
+    insertText: 'for $1, $2 := range $3 {\n\t$4\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'while',
+    insertText: 'for $1 {\n\t$2\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'if',
+    insertText: 'if $1 {\n\t$2\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'if err',
+    insertText: 'if err != nil {\n\t$1\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'else',
+    insertText: 'else {\n\t$1\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'switch',
+    insertText: 'switch $1 {\ncase $2:\n\t$3\ndefault:\n\t$4\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  { label: 'var', insertText: 'var $1 $2', kind: monaco.languages.CompletionItemKind.Keyword },
+  {
+    label: 'const',
+    insertText: 'const $1 = $2',
+    kind: monaco.languages.CompletionItemKind.Keyword,
+  },
+  { label: 'type', insertText: 'type $1 $2', kind: monaco.languages.CompletionItemKind.Keyword },
+  {
+    label: 'struct',
+    insertText: 'type $1 struct {\n\t$2\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  { label: 'map', insertText: 'map[$1]$2', kind: monaco.languages.CompletionItemKind.Keyword },
+  { label: 'slice', insertText: '[]$1{$2}', kind: monaco.languages.CompletionItemKind.Snippet },
+  { label: 'make', insertText: 'make($1, $2)', kind: monaco.languages.CompletionItemKind.Snippet },
+  {
+    label: 'append',
+    insertText: 'append($1, $2)',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  { label: 'len', insertText: 'len($1)', kind: monaco.languages.CompletionItemKind.Snippet },
+  { label: 'return', insertText: 'return $1', kind: monaco.languages.CompletionItemKind.Snippet },
+  { label: 'defer', insertText: 'defer $1', kind: monaco.languages.CompletionItemKind.Keyword },
+  { label: 'go', insertText: 'go $1', kind: monaco.languages.CompletionItemKind.Keyword },
+  {
+    label: 'import',
+    insertText: 'import (\n\t"$1"\n)',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+];
+
+const RUST: Snippet[] = [
+  {
+    label: 'main',
+    insertText: 'fn main() {\n\t$1\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'fn',
+    insertText: 'fn $1($2) $3 {\n\t$4\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  { label: 'let', insertText: 'let $1 = $2;', kind: monaco.languages.CompletionItemKind.Keyword },
+  {
+    label: 'let mut',
+    insertText: 'let mut $1 = $2;',
+    kind: monaco.languages.CompletionItemKind.Keyword,
+  },
+  {
+    label: 'for',
+    insertText: 'for $1 in $2 {\n\t$3\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'while',
+    insertText: 'while $1 {\n\t$2\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'loop',
+    insertText: 'loop {\n\t$1\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'if',
+    insertText: 'if $1 {\n\t$2\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'else',
+    insertText: 'else {\n\t$1\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'match',
+    insertText: 'match $1 {\n\t$2 => $3,\n\t_ => $4,\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'struct',
+    insertText: 'struct $1 {\n\t$2\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'enum',
+    insertText: 'enum $1 {\n\t$2,\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'impl',
+    insertText: 'impl $1 {\n\t$2\n}',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  { label: 'vec', insertText: 'vec![$1]', kind: monaco.languages.CompletionItemKind.Snippet },
+  {
+    label: 'println',
+    insertText: 'println!("$1"$2);',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'print',
+    insertText: 'print!("$1"$2);',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  {
+    label: 'read_line',
+    insertText: 'let mut $1 = String::new();\nstd::io::stdin().read_line(&mut $1);',
+    kind: monaco.languages.CompletionItemKind.Snippet,
+  },
+  { label: 'return', insertText: 'return $1;', kind: monaco.languages.CompletionItemKind.Snippet },
+  { label: 'use', insertText: 'use $1;', kind: monaco.languages.CompletionItemKind.Keyword },
+  { label: 'pub', insertText: 'pub ', kind: monaco.languages.CompletionItemKind.Keyword },
+  {
+    label: 'const',
+    insertText: 'const $1: $2 = $3;',
+    kind: monaco.languages.CompletionItemKind.Keyword,
+  },
+  {
+    label: 'static',
+    insertText: 'static $1: $2 = $3;',
+    kind: monaco.languages.CompletionItemKind.Keyword,
+  },
+];
+
 function wordRange(model: monaco.editor.ITextModel, position: monaco.Position): monaco.IRange {
   const word = model.getWordUntilPosition(position);
   if (word.startColumn !== word.endColumn) {
@@ -360,5 +550,7 @@ export function registerCompletionProviders(): void {
   monaco.languages.registerCompletionItemProvider('cpp', makeProvider(CPP));
   monaco.languages.registerCompletionItemProvider('c', makeProvider(CPP));
   monaco.languages.registerCompletionItemProvider('java', makeProvider(JAVA));
+  monaco.languages.registerCompletionItemProvider('go', makeProvider(GO));
+  monaco.languages.registerCompletionItemProvider('rust', makeProvider(RUST));
   monaco.languages.registerCompletionItemProvider('python', makeProvider(PYTHON));
 }

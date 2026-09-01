@@ -161,7 +161,10 @@ impl JudgeTask {
                 return Err(ContractError::InvalidSha256(name));
             }
         }
-        if !matches!(self.language.as_str(), "c" | "cpp" | "java" | "python" | "output") {
+        if !matches!(
+            self.language.as_str(),
+            "c" | "cpp" | "java" | "python" | "go" | "rust" | "output"
+        ) {
             return Err(ContractError::UnsupportedLanguage);
         }
         if self.judge_mode == JudgeMode::Interactive {
@@ -355,10 +358,9 @@ impl WorkerHeartbeat {
         }
         if self.languages.is_empty()
             || self.languages.len() > 16
-            || self
-                .languages
-                .iter()
-                .any(|language| !matches!(language.as_str(), "c" | "cpp" | "java" | "python"))
+            || self.languages.iter().any(|language| {
+                !matches!(language.as_str(), "c" | "cpp" | "java" | "python" | "go" | "rust")
+            })
         {
             return Err(ContractError::InvalidWorkerLanguages);
         }
@@ -431,7 +433,7 @@ pub enum ContractError {
     InvalidWorkerCapacity,
     #[error("Worker heartbeat occurredAt precedes startedAt")]
     InvalidHeartbeatTimeline,
-    #[error("Worker languages must be a nonempty subset of the P0 language set")]
+    #[error("Worker languages must be a nonempty subset of the supported judge language set")]
     InvalidWorkerLanguages,
     #[error("Worker runtime versions are invalid")]
     InvalidRuntimeVersions,
@@ -605,5 +607,55 @@ mod tests {
         assert!(heartbeat.validate().is_ok());
         heartbeat.active_tasks = 2;
         assert!(matches!(heartbeat.validate(), Err(super::ContractError::InvalidWorkerCapacity)));
+    }
+
+    #[test]
+    fn go_and_rust_tasks_and_heartbeats_are_accepted() {
+        let mut task = JudgeTask {
+            schema_version: JUDGE_TASK_SCHEMA_VERSION,
+            judgement_id: Uuid::new_v4(),
+            submission_id: 42,
+            problem_id: 7,
+            testdata_version: 2,
+            testdata_object_key: "problems/7/v2.zip".to_owned(),
+            testdata_sha256: "a".repeat(64),
+            source_object_key: "submissions/42/main.go".to_owned(),
+            source_sha256: "b".repeat(64),
+            language: "go".to_owned(),
+            time_limit_ms: 1_000,
+            memory_limit_mb: 256,
+            output_limit_kb: 64,
+            language_multiplier: 1.0,
+            judge_mode: super::JudgeMode::default(),
+            interactor_object_key: None,
+            interactor_sha256: None,
+        };
+        assert!(task.validate().is_ok());
+        task.language = "rust".to_owned();
+        task.source_object_key = "submissions/42/main.rs".to_owned();
+        assert!(task.validate().is_ok());
+        task.language = "kotlin".to_owned();
+        assert!(matches!(task.validate(), Err(super::ContractError::UnsupportedLanguage)));
+
+        let now = time::OffsetDateTime::now_utc();
+        let mut heartbeat = WorkerHeartbeat {
+            schema_version: WORKER_HEARTBEAT_SCHEMA_VERSION,
+            message_id: Uuid::new_v4(),
+            worker_id: "worker-1".to_owned(),
+            instance_id: Uuid::new_v4(),
+            started_at: now,
+            occurred_at: now,
+            capacity: 1,
+            active_tasks: 0,
+            languages: vec!["c".to_owned(), "go".to_owned(), "rust".to_owned()],
+            runtime_versions: std::collections::BTreeMap::from([
+                ("go".to_owned(), "1.24".to_owned()),
+                ("rust".to_owned(), "1.88".to_owned()),
+            ]),
+            sandbox_runtime: None,
+        };
+        assert!(heartbeat.validate().is_ok());
+        heartbeat.languages = vec!["kotlin".to_owned()];
+        assert!(matches!(heartbeat.validate(), Err(super::ContractError::InvalidWorkerLanguages)));
     }
 }

@@ -11288,6 +11288,168 @@
         ]
       }
     },
+    "/api/presentation-configs/{contest_id}/live/program": {
+      "get": {
+        "tags": [
+          "live"
+        ],
+        "operationId": "getLiveProgram",
+        "parameters": [
+          {
+            "name": "contest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffLiveProgramResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "live"
+        ],
+        "operationId": "updateLiveProgram",
+        "parameters": [
+          {
+            "name": "contest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveProgramRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveProgramResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf_cookie": [],
+            "csrf_header": [],
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/presentation-configs/{contest_id}/live/tokens": {
       "get": {
         "tags": [
@@ -13716,6 +13878,63 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PresentationMetrics"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "broadcast_token_header": []
+          }
+        ]
+      }
+    },
+    "/api/public/presentations/{contest_id}/program": {
+      "get": {
+        "tags": [
+          "live"
+        ],
+        "operationId": "getPublishedLiveProgram",
+        "parameters": [
+          {
+            "name": "contest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedLiveProgram"
                 }
               }
             }
@@ -19312,6 +19531,103 @@
           }
         }
       },
+      "LiveProgramRequest": {
+        "type": "object",
+        "required": [
+          "currentScene",
+          "transitionMilliseconds",
+          "showClock",
+          "tickerEnabled",
+          "expectedVersion"
+        ],
+        "properties": {
+          "currentScene": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "resolverRunId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "showClock": {
+            "type": "boolean"
+          },
+          "tickerEnabled": {
+            "type": "boolean"
+          },
+          "titleCardText": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transitionMilliseconds": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "LiveProgramResponse": {
+        "type": "object",
+        "required": [
+          "contestId",
+          "currentScene",
+          "transitionMilliseconds",
+          "showClock",
+          "tickerEnabled",
+          "version"
+        ],
+        "properties": {
+          "contestId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currentScene": {
+            "type": "string"
+          },
+          "resolverRunId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "showClock": {
+            "type": "boolean"
+          },
+          "tickerEnabled": {
+            "type": "boolean"
+          },
+          "titleCardText": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transitionMilliseconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "LoginRequest": {
         "type": "object",
         "required": [
@@ -21294,6 +21610,58 @@
         },
         "additionalProperties": false
       },
+      "PublishedLiveProgram": {
+        "type": "object",
+        "required": [
+          "contestId",
+          "currentScene",
+          "transitionMilliseconds",
+          "showClock",
+          "tickerEnabled",
+          "serverTime",
+          "version"
+        ],
+        "properties": {
+          "contestId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currentScene": {
+            "type": "string"
+          },
+          "resolverRunId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "showClock": {
+            "type": "boolean"
+          },
+          "tickerEnabled": {
+            "type": "boolean"
+          },
+          "titleCardText": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transitionMilliseconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "PublishedPresentation": {
         "type": "object",
         "required": [
@@ -21766,6 +22134,41 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "ResolverRunOption": {
+        "type": "object",
+        "required": [
+          "id",
+          "official",
+          "status",
+          "currentStep",
+          "totalSteps",
+          "createdAt"
+        ],
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "currentStep": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "official": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "totalSteps": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -22521,6 +22924,24 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "StaffLiveProgramResponse": {
+        "type": "object",
+        "required": [
+          "program",
+          "resolverRuns"
+        ],
+        "properties": {
+          "program": {
+            "$ref": "#/components/schemas/LiveProgramResponse"
+          },
+          "resolverRuns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResolverRunOption"
+            }
           }
         }
       },

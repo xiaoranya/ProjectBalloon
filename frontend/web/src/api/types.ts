@@ -195,7 +195,7 @@ export interface ContestTeamResponse {
   createdAt: string;
 }
 
-export type JudgeLanguage = 'c' | 'cpp' | 'java' | 'python' | 'output';
+export type JudgeLanguage = 'c' | 'cpp' | 'java' | 'go' | 'rust' | 'python' | 'output';
 export type ProblemAttachmentKind = 'SAMPLE' | 'SUPPLEMENT';
 
 export interface ProblemResponse {

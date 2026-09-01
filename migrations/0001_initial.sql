@@ -707,6 +707,47 @@ CREATE TABLE public.judgements (
 
 
 --
+-- Name: live_programs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.live_programs (
+    id bigint NOT NULL,
+    contest_id bigint NOT NULL,
+    current_scene character varying(32) DEFAULT 'SCOREBOARD'::character varying NOT NULL,
+    resolver_run_id bigint,
+    transition_milliseconds integer DEFAULT 800 NOT NULL,
+    show_clock boolean DEFAULT true NOT NULL,
+    ticker_enabled boolean DEFAULT true NOT NULL,
+    title_card_text character varying(240),
+    updated_by_user_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    version bigint DEFAULT 0 NOT NULL,
+    CONSTRAINT ck_live_programs_transition CHECK (((transition_milliseconds >= 100) AND (transition_milliseconds <= 5000))),
+    CONSTRAINT ck_live_programs_scene CHECK ((current_scene IN ('SCOREBOARD', 'FIRST_BLOOD', 'BALLOONS', 'FREEZE_COUNTDOWN', 'STATISTICS', 'RESOLVER', 'AWARDS', 'TITLE_CARD')))
+);
+
+
+--
+-- Name: live_programs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.live_programs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: live_programs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.live_programs_id_seq OWNED BY public.live_programs.id;
+
+
+--
 -- Name: permissions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1699,6 +1740,13 @@ ALTER TABLE ONLY public.contests ALTER COLUMN id SET DEFAULT nextval('public.con
 
 
 --
+-- Name: live_programs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.live_programs ALTER COLUMN id SET DEFAULT nextval('public.live_programs_id_seq'::regclass);
+
+
+--
 -- Name: permissions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2112,6 +2160,22 @@ ALTER TABLE ONLY public.contests
 
 ALTER TABLE ONLY public.judgements
     ADD CONSTRAINT judgements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: live_programs live_programs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.live_programs
+    ADD CONSTRAINT live_programs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: live_programs live_programs_contest_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.live_programs
+    ADD CONSTRAINT live_programs_contest_id_key UNIQUE (contest_id);
 
 
 --
@@ -3112,6 +3176,30 @@ ALTER TABLE ONLY public.contest_teams
 
 ALTER TABLE ONLY public.judgements
     ADD CONSTRAINT judgements_submission_id_fkey FOREIGN KEY (submission_id) REFERENCES public.submissions(id);
+
+
+--
+-- Name: live_programs live_programs_contest_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.live_programs
+    ADD CONSTRAINT live_programs_contest_id_fkey FOREIGN KEY (contest_id) REFERENCES public.contests(id);
+
+
+--
+-- Name: live_programs live_programs_resolver_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.live_programs
+    ADD CONSTRAINT live_programs_resolver_run_id_fkey FOREIGN KEY (resolver_run_id) REFERENCES public.resolver_runs(id);
+
+
+--
+-- Name: live_programs live_programs_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.live_programs
+    ADD CONSTRAINT live_programs_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.users(id);
 
 
 --

@@ -40,6 +40,39 @@ description: 介绍现场工作人员如何使用大屏、直播、气球、打�
   - `/live/statistics` — 统计。
 - 直播页面可能受令牌保护。正式比赛前请轮换排练时共享的令牌。
 
+### 直播节目包装（导播台、合成页与叠加层）
+
+直播节目采用 OBS 图形包装层形态：导播台驱动合成节目页与透明叠加层，二者都作为 OBS 浏览器源使用，不引入任何外部流媒体服务。
+
+| 界面 | 路由 | 访问方式 |
+| --- | --- | --- |
+| 导播台 | `/live/program/control` | 员工，需 `LIVE_MANAGE` |
+| 合成节目页 | `/live/program` | 公开直播令牌 |
+| 透明叠加层 | `/live/overlay?parts=ticker,popup,clock` | 公开直播令牌 |
+
+推荐的 OBS 配置：
+
+1. 将合成页 `/live/program` 作为**主浏览器源**（1920×1080、60 fps）。它渲染当前场景 —— 榜单、一血、气球、封榜倒计时、统计、Resolver、颁奖或标题卡 —— 以及公告条与时钟。
+2. 将叠加层 `/live/overlay` 作为第二个**上层浏览器源**，背景透明。通过 `?parts=ticker,popup,clock` 只显示选中的元素；它不会重复舞台内容。
+3. 将导播台 `/live/program/control` 保持在操作员屏幕上。场景切换、转场时长（100–5000 ms）、时钟、公告条与 RESOLVER run 都在导播台控制，并采用乐观并发（并发编辑返回 `LIVE_PROGRAM_VERSION_CONFLICT`，导播台会自动重载当前节目）。
+
+导播台键盘快捷键：
+
+| 按键 | 动作 |
+| --- | --- |
+| `1` | SCOREBOARD 场景 |
+| `2` | FIRST_BLOOD 场景 |
+| `3` | BALLOONS 场景 |
+| `4` | FREEZE_COUNTDOWN 场景 |
+| `5` | STATISTICS 场景 |
+| `6` | RESOLVER 场景 |
+| `7` | AWARDS 场景 |
+| `8` | TITLE_CARD 场景 |
+| `T` | 切换公告条 |
+| `C` | 切换时钟 |
+
+合成页通过 SSE 即时跟随节目变更，并在流中断时回退为 10 秒轮询。一血动画在合成页与叠加层弹窗层播放；两者都遵循 `prefers-reduced-motion`。
+
 ## 气球（`/balloon`）
 
 - 气球任务会按题目配置的气球颜色，为首次通过的提交自动生成。

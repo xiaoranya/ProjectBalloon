@@ -20,6 +20,8 @@ vi.mock('monaco-editor/editor/editor.api', () => ({
 }));
 vi.mock('monaco-editor/languages/definitions/cpp/register', () => ({}));
 vi.mock('monaco-editor/languages/definitions/java/register', () => ({}));
+vi.mock('monaco-editor/languages/definitions/go/register', () => ({}));
+vi.mock('monaco-editor/languages/definitions/rust/register', () => ({}));
 vi.mock('monaco-editor/languages/definitions/python/register', () => ({}));
 vi.mock('monaco-editor/languages/definitions/markdown/register', () => ({}));
 vi.mock('monaco-editor/language/json/monaco.contribution.js', () => ({}));

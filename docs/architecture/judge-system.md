@@ -117,17 +117,17 @@ Development option:
 
 ## Language Support
 
-P0 languages:
+Supported judge languages:
 
 - C
 - C++
 - Java
-- Python
-
-P1 languages:
-
 - Go
 - Rust
+- Python
+
+(`output` is the OUTPUT_ONLY pseudo-language that scores uploaded archives
+without executing contestant code.)
 
 ### Current Rust Worker Slice
 
@@ -146,10 +146,15 @@ Test-data cache names include problem, immutable version, and hash; corrupted
 cache entries are discarded. Per-judgement work directories are private and
 removed after every outcome.
 
-All four P0 languages compile or syntax-check and execute through Bollard
-against fixed `judge-runtime-c/cpp:12.2.0`, `judge-runtime-java:21`, and
-`judge-runtime-python:3.12.13` images. Java receives a 2× time multiplier and
-Python 3×; C/C++ remain 1×. Each judgement creates one container, compiles once,
+All six source languages compile or syntax-check and execute through Bollard
+against fixed `judge-runtime-c/cpp:12.2.0`, `judge-runtime-java:21`,
+`judge-runtime-python:3.12.13`, `judge-runtime-go:1.24`, and
+`judge-runtime-rust:1.88` images. Java receives a 2× time multiplier and
+Python 3×; C, C++, Go, and Rust remain 1×. Go compiles a single `main.go`
+file with its build caches on the read-write `/work` mount and a serial
+(`GOMAXPROCS=1`) build so the sandbox PID limit is respected; Rust compiles a
+single `main.rs` file with `rustc --edition 2021 -O` against the standard
+library only. Each judgement creates one container, compiles once,
 and executes its cases sequentially through Docker exec before forced removal.
 The compile phase starts with a 1 GiB allowance; after successful compilation
 the container cgroup is tightened to the problem memory limit. Containers have

@@ -8,7 +8,7 @@ const DEFAULT_TIME_LIMIT_MS: i32 = 1_000;
 const DEFAULT_MEMORY_LIMIT_MB: i32 = 256;
 const DEFAULT_OUTPUT_LIMIT_KB: i32 = 65_536;
 const DEFAULT_LANG_CODE: &str = "en";
-const ALLOWED_LANGUAGES: [&str; 5] = ["c", "cpp", "java", "output", "python"];
+const ALLOWED_LANGUAGES: [&str; 7] = ["c", "cpp", "java", "go", "rust", "output", "python"];
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -523,7 +523,7 @@ fn validate_languages(mut values: Vec<String>) -> Result<String, AppError> {
     {
         return Err(AppError::validation(
             "languages",
-            "must contain one or more of c, cpp, java, output, or python",
+            "must contain one or more of c, cpp, java, go, rust, output, or python",
         ));
     }
     serde_json::to_string(&values)
@@ -594,6 +594,25 @@ mod tests {
     }
 
     #[test]
+    fn go_and_rust_languages_are_accepted_and_sorted() {
+        let value = CreateProblemRequest {
+            slug: "a".into(),
+            title: "A".into(),
+            time_limit_ms: None,
+            memory_limit_mb: None,
+            output_limit_kb: None,
+            languages: Some(vec!["rust".into(), "python".into(), "go".into(), "rust".into()]),
+            default_lang_code: None,
+            judge_mode: None,
+            interactor_object_key: None,
+            interactor_sha256: None,
+        }
+        .validate()
+        .expect("go and rust are supported judge languages");
+        assert_eq!(value.languages_json, r#"["go","python","rust"]"#);
+    }
+
+    #[test]
     fn unsupported_language_and_empty_update_are_rejected() {
         let create = CreateProblemRequest {
             slug: "a".into(),
@@ -601,7 +620,7 @@ mod tests {
             time_limit_ms: None,
             memory_limit_mb: None,
             output_limit_kb: None,
-            languages: Some(vec!["rust".into()]),
+            languages: Some(vec!["kotlin".into()]),
             default_lang_code: None,
             judge_mode: None,
             interactor_object_key: None,

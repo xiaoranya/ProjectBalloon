@@ -36,6 +36,8 @@ export function languageLabel(language: string): string {
       c: 'C',
       cpp: 'C++',
       java: 'Java',
+      go: 'Go',
+      rust: 'Rust',
       python: 'Python',
       output: 'Output-only',
     }[language] ?? language

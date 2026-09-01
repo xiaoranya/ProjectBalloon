@@ -221,7 +221,7 @@ const problems = ref<BankProblem[]>([]),
   submissionDetail = ref<PracticeSubmissionDetail>(),
   submissionVisible = ref(false);
 const { t } = useI18n();
-const defaultLanguages = ['c', 'cpp', 'java', 'python'];
+const defaultLanguages = ['c', 'cpp', 'java', 'go', 'rust', 'python'];
 const languages = computed(() => {
   const allowed = selected.value?.languages;
   if (allowed && allowed.length > 0) return allowed;

@@ -295,11 +295,13 @@ impl SubmitMetadata {
             "cpp" => &[".cpp", ".cc", ".cxx"][..],
             "java" => &[".java"][..],
             "python" => &[".py"][..],
+            "go" => &[".go"][..],
+            "rust" => &[".rs"][..],
             "output" => &[".zip"][..],
             _ => {
                 return Err(AppError::validation(
                     "language",
-                    "must be c, cpp, java, python, or output",
+                    "must be c, cpp, java, go, rust, python, or output",
                 ));
             }
         };
@@ -463,11 +465,11 @@ impl SubmissionListQuery {
         }
         let language = self.language.map(|value| value.trim().to_ascii_lowercase());
         if language.as_ref().is_some_and(|value| {
-            !matches!(value.as_str(), "c" | "cpp" | "java" | "python" | "output")
+            !matches!(value.as_str(), "c" | "cpp" | "java" | "go" | "rust" | "python" | "output")
         }) {
             return Err(AppError::validation(
                 "language",
-                "must be c, cpp, java, python, or output",
+                "must be c, cpp, java, go, rust, python, or output",
             ));
         }
         Ok(ValidatedSubmissionListQuery {

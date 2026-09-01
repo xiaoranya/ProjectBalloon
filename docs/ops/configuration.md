@@ -167,6 +167,8 @@ an independently generated CSRF secret.
 | `JUDGE_CPP_IMAGE` | `judge-runtime-cpp:12.2.0` | C++ runtime image tag |
 | `JUDGE_JAVA_IMAGE` | `judge-runtime-java:21` | Java 21 runtime image tag |
 | `JUDGE_PYTHON_IMAGE` | `judge-runtime-python:3.12.13` | Python 3.12 runtime image tag |
+| `JUDGE_GO_IMAGE` | `judge-runtime-go:1.24` | Go 1.24 runtime image tag |
+| `JUDGE_RUST_IMAGE` | `judge-runtime-rust:1.88` | Rust 1.88 runtime image tag |
 
 Runtime image tags must be fixed; `latest` is never allowed. Production must
 use the rootless Podman socket, uid/gid `10001:10001`, and `runsc`.

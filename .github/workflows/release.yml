@@ -215,6 +215,8 @@ jobs:
         Judge runtime build (judge-runtime-cpp)
         Judge runtime build (judge-runtime-java)
         Judge runtime build (judge-runtime-python)
+        Judge runtime build (judge-runtime-go)
+        Judge runtime build (judge-runtime-rust)
         Compose configuration
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

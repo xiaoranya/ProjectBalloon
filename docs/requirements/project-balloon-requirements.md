@@ -225,7 +225,7 @@ Test data is stored in RustFS, not directly in the database.
 Submission features include:
 
 - Teams select a problem and language and submit code.
-- P0 supports C, C++, Java, and Python; P1 supports Go and Rust.
+- Supports C, C++, Java, Go, Rust, and Python.
 - Support submission status queries.
 - Support submission detail views.
 - Support compile error message views.
@@ -718,7 +718,7 @@ File-type data is stored in RustFS:
 - Problem management and test-data management.
 - Code submission.
 - Judge queue and Judge Worker.
-- C/C++/Java/Python support.
+- C/C++/Java/Go/Rust/Python support.
 - ICPC/XCPC scoreboard.
 - First Blood.
 - Clarification.
@@ -747,7 +747,9 @@ File-type data is stored in RustFS:
 - Enhanced CUPS printer status sync.
 - Screen playlists.
 - Multi-screen group synchronization.
-- First Blood animations.
+- First Blood animations (implemented: the live program page and the
+  transparent overlay render a first-blood popup with entrance and particle
+  effects, honoring `prefers-reduced-motion`).
 - Award console.
 - Certificate data export.
 - Host scripts.
@@ -755,6 +757,10 @@ File-type data is stored in RustFS:
 - Enhanced balloon statistics.
 - Worker local test-data cache.
 - Contest cloning.
+- Go and Rust judge languages (implemented: single-file `main.go` /
+  `main.rs` compilation in fixed `judge-runtime-go:1.24` and
+  `judge-runtime-rust:1.88` images, 1× time multiplier, editor snippets,
+  and end-to-end submission support).
 
 ### 24.3 P2 Extended Capabilities
 
@@ -764,7 +770,10 @@ Status as of the current implementation; items marked (implemented) were deliver
 - Interactive problems (implemented).
 - Output-only problems (implemented).
 - Code similarity detection (implemented).
-- Advanced live-stream packaging.
+- Advanced live-stream packaging (implemented as an OBS graphics packaging
+  layer: a director console, a composited `/live/program` stage, and a
+  transparent `/live/overlay`; server-side stream production — RTMP/HLS —
+  remains future work).
 - Custom screen templates (implemented).
 - Multi-venue synchronization.
 - Public problem bank and training system (implemented).
