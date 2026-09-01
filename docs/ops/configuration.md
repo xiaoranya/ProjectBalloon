@@ -34,6 +34,7 @@ sudo systemctl restart project-balloon-api project-balloon-judge-worker
 | `PROJECT_BALLOON_API_BIND` | `127.0.0.1:8080` | API listening socket; the reverse proxy connects here |
 | `PROJECT_BALLOON_DEPLOYMENT_MODE` | `standard` | `competition` enables non-overlapping schedules and IP-bound workstation pairing and disables daily features |
 | `PROJECT_BALLOON_TRUSTED_PROXY_CIDRS` | `127.0.0.1/32,::1/128` | CIDRs whose `X-Forwarded-*` headers the API trusts |
+| `PROJECT_BALLOON_METRICS_TOKEN` | unset | Optional bearer token guarding `GET /metrics` (constant-time comparison); empty keeps the endpoint open — set it whenever the port is reachable beyond loopback or an isolated monitoring network |
 | `RUST_LOG` | `info` | Structured log level for API and Worker |
 | `XCPC_API_PROXY_TARGET` | `http://127.0.0.1:18080` | Frontend dev-server proxy target (Vite only) |
 
@@ -148,6 +149,8 @@ an independently generated CSRF secret.
 | `JUDGE_HEALTH_PORT` | `9101` | Loopback-only port for `GET /livez` (always 200) and `GET /readyz` (200 once a consume session is up and no recent session failure); the compose healthcheck probes `readyz` |
 | `JUDGE_HEALTH_SESSION_ERROR_WINDOW_SECONDS` | `60` | How long a recent broker-session failure keeps `readyz` at 503 |
 | `JUDGE_HEARTBEAT_INTERVAL_SECONDS` | `5` | Heartbeat publication interval |
+| `JUDGE_DOCKER_CONNECT_TIMEOUT_SECONDS` | `10` | Docker Engine API client connect timeout for sandbox container control |
+| `JUDGE_DOCKER_API_TIMEOUT_MILLISECONDS` | `5000` | Per-call Docker Engine API timeout for sandbox operations (create, start, exec, wait); must be positive |
 | `JUDGE_REQUEST_TIMEOUT_MILLISECONDS` | `10000` | Storage/sandbox request timeout |
 | `JUDGE_MAX_ARTIFACT_BYTES` | `314572800` | Maximum artifact size accepted per task |
 | `JUDGE_TESTDATA_CACHE_MAX_BYTES` | `8589934592` | Size cap for the on-disk testdata zip cache; least-recently-used entries (by mtime, refreshed on every cache hit) are evicted with a log line past the cap. `0` disables the cap |
@@ -193,6 +196,7 @@ enforce the time limit itself.
 |---|---|---|
 | `PROJECT_BALLOON_DATABASE_MODE` | `direct` | `direct` uses host PostgreSQL client tools; `compose` is for legacy single-host deployments |
 | `BACKUP_OBJECT_STORAGE_ENDPOINT` | `http://127.0.0.1:9000` | Override when RustFS is not reachable from the backup host at the default endpoint |
+| `BACKUP_MAX_AGE_HOURS` | `26` | Staleness threshold used by `scripts/backup/check-freshness.sh` (one missed daily run plus slack) |
 
 ## See Also
 
