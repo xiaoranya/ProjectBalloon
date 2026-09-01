@@ -54,6 +54,7 @@ sudo systemctl restart project-balloon-api project-balloon-judge-worker
 | `PROJECT_BALLOON_OBJECT_STORAGE_SOURCE_BUCKET` | `xcpc-sources` | 提交源文件 |
 | `PROJECT_BALLOON_OBJECT_STORAGE_FORCE_PATH_STYLE` | `true` | 面向 RustFS 的 path-style 桶寻址 |
 | `PROJECT_BALLOON_OBJECT_STORAGE_REQUEST_TIMEOUT_MILLISECONDS` | `5000` | 每次 S3 请求超时 |
+| `PROJECT_BALLOON_OBJECT_STORAGE_UPLOAD_TIMEOUT_MILLISECONDS` | `300000` | 上传（PUT）的 S3 请求超时；上传体积大，与 5 秒请求超时分开设置 |
 
 API 在启动时创建其配置的桶。桶名属于部署配置，绝不通过公共 API 返回。
 
