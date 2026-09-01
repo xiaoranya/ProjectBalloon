@@ -758,8 +758,8 @@ File-type data is stored in RustFS:
 - Worker local test-data cache.
 - Contest cloning.
 - Go and Rust judge languages (implemented: single-file `main.go` /
-  `main.rs` compilation in fixed `judge-runtime-go:1.24` and
-  `judge-runtime-rust:1.88` images, 1× time multiplier, editor snippets,
+  `main.rs` compilation in fixed `judge-runtime-go:1.27` and
+  `judge-runtime-rust:1.98` images, 1× time multiplier, editor snippets,
   and end-to-end submission support).
 
 ### 24.3 P2 Extended Capabilities

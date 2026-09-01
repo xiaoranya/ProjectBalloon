@@ -1,4 +1,4 @@
-FROM golang:1.24-bookworm
+FROM golang:1.27-bookworm
 
 RUN set -eux; \
     export DEBIAN_FRONTEND=noninteractive; \
@@ -6,7 +6,7 @@ RUN set -eux; \
     apt-get upgrade -y; \
     apt-get install -y --no-install-recommends time; \
     rm -rf /var/lib/apt/lists/*; \
-    go version | head -1 | awk '{print $NF}' > /VERSION; \
+    go version | head -1 | awk '{print $3}' | sed 's/^go//' > /VERSION; \
     /usr/bin/time --version | head -1
 
 RUN groupadd --gid 1000 judge \

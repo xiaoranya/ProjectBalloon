@@ -1,4 +1,4 @@
-FROM rust:1.88-slim-bookworm
+FROM rust:1.98-slim-bookworm
 
 RUN set -eux; \
     export DEBIAN_FRONTEND=noninteractive; \

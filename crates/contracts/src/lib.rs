@@ -649,8 +649,8 @@ mod tests {
             active_tasks: 0,
             languages: vec!["c".to_owned(), "go".to_owned(), "rust".to_owned()],
             runtime_versions: std::collections::BTreeMap::from([
-                ("go".to_owned(), "1.24".to_owned()),
-                ("rust".to_owned(), "1.88".to_owned()),
+                ("go".to_owned(), "1.27".to_owned()),
+                ("rust".to_owned(), "1.98".to_owned()),
             ]),
             sandbox_runtime: None,
         };

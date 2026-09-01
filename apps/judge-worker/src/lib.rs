@@ -127,9 +127,9 @@ impl WorkerConfig {
         let python_image = lookup("JUDGE_PYTHON_IMAGE")
             .unwrap_or_else(|| "judge-runtime-python:3.12.13".to_owned());
         let go_image =
-            lookup("JUDGE_GO_IMAGE").unwrap_or_else(|| "judge-runtime-go:1.24".to_owned());
+            lookup("JUDGE_GO_IMAGE").unwrap_or_else(|| "judge-runtime-go:1.27".to_owned());
         let rust_image =
-            lookup("JUDGE_RUST_IMAGE").unwrap_or_else(|| "judge-runtime-rust:1.88".to_owned());
+            lookup("JUDGE_RUST_IMAGE").unwrap_or_else(|| "judge-runtime-rust:1.98".to_owned());
         let docker_connect_timeout_seconds = parse_positive(
             "JUDGE_DOCKER_CONNECT_TIMEOUT_SECONDS",
             lookup("JUDGE_DOCKER_CONNECT_TIMEOUT_SECONDS").unwrap_or_else(|| "10".to_owned()),
@@ -297,8 +297,8 @@ mod tests {
         assert_eq!(config.cpp_image, "judge-runtime-cpp:12.2.0");
         assert_eq!(config.java_image, "judge-runtime-java:21");
         assert_eq!(config.python_image, "judge-runtime-python:3.12.13");
-        assert_eq!(config.go_image, "judge-runtime-go:1.24");
-        assert_eq!(config.rust_image, "judge-runtime-rust:1.88");
+        assert_eq!(config.go_image, "judge-runtime-go:1.27");
+        assert_eq!(config.rust_image, "judge-runtime-rust:1.98");
     }
 
     #[test]

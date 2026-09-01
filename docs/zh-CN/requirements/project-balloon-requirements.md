@@ -759,7 +759,7 @@ audit_logs
 - 气球统计增强。
 - Worker 测试数据本地缓存。
 - 比赛克隆。
-- Go 与 Rust 评测语言（已实现：固定 `judge-runtime-go:1.24` 与 `judge-runtime-rust:1.88` 镜像中的单文件 `main.go` / `main.rs` 编译，1 倍时间乘数，编辑器代码片段，以及端到端提交支持）。
+- Go 与 Rust 评测语言（已实现：固定 `judge-runtime-go:1.27` 与 `judge-runtime-rust:1.98` 镜像中的单文件 `main.go` / `main.rs` 编译，1 倍时间乘数，编辑器代码片段，以及端到端提交支持）。
 
 ### 24.3 P2 扩展能力
 

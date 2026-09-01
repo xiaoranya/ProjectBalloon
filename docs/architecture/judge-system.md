@@ -148,8 +148,8 @@ removed after every outcome.
 
 All six source languages compile or syntax-check and execute through Bollard
 against fixed `judge-runtime-c/cpp:12.2.0`, `judge-runtime-java:21`,
-`judge-runtime-python:3.12.13`, `judge-runtime-go:1.24`, and
-`judge-runtime-rust:1.88` images. Java receives a 2× time multiplier and
+`judge-runtime-python:3.12.13`, `judge-runtime-go:1.27`, and
+`judge-runtime-rust:1.98` images. Java receives a 2× time multiplier and
 Python 3×; C, C++, Go, and Rust remain 1×. Go compiles a single `main.go`
 file with its build caches on the read-write `/work` mount and a serial
 (`GOMAXPROCS=1`) build so the sandbox PID limit is respected; Rust compiles a
