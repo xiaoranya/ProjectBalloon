@@ -720,7 +720,6 @@ async fn stage_testdata_field(
     field: &mut axum::extract::multipart::Field<'_>,
 ) -> Result<(StagedUploadFile, u64, String), AppError> {
     use sha2::Digest as _;
-    use std::os::unix::fs::OpenOptionsExt;
     use tokio::io::AsyncWriteExt as _;
 
     const MAX_TESTDATA_BYTES: u64 = 256 * 1024 * 1024;
@@ -729,10 +728,16 @@ async fn stage_testdata_field(
         .await
         .map_err(|error| AppError::internal("prepare test-data staging directory", error))?;
     let path = staging_dir.join(format!("testdata-{}.zip", uuid::Uuid::new_v4()));
-    let file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
+    let mut open_options = std::fs::OpenOptions::new();
+    open_options.write(true).create_new(true);
+    // Only POSIX platforms carry the mode bits that keep the staged upload
+    // readable by its owner alone; Windows denies other users by default.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        open_options.mode(0o600);
+    }
+    let file = open_options
         .open(&path)
         .map_err(|error| AppError::internal("create test-data staging file", error))?;
     let mut writer = tokio::fs::File::from(file);
