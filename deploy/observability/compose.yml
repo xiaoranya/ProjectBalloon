@@ -12,6 +12,13 @@ services:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
+    mem_limit: ${PROMETHEUS_MEM_LIMIT:-1g}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks: [project-balloon]
     restart: unless-stopped
 
@@ -29,6 +36,13 @@ services:
       - grafana-data:/var/lib/grafana
     ports:
       - "${GRAFANA_BIND_ADDRESS:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"
+    mem_limit: ${GRAFANA_MEM_LIMIT:-512m}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     networks: [project-balloon]
     restart: unless-stopped
 
@@ -38,6 +52,13 @@ services:
     volumes:
       - ./loki/loki.yml:/etc/loki/config.yml:ro
       - loki-data:/loki
+    mem_limit: ${LOKI_MEM_LIMIT:-512m}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:3100/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks: [project-balloon]
     restart: unless-stopped
 
@@ -48,6 +69,13 @@ services:
       - ./promtail/promtail.yml:/etc/promtail/config.yml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - promtail-data:/var/lib/promtail
+    mem_limit: ${PROMTAIL_MEM_LIMIT:-256m}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:9080/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks: [project-balloon]
     restart: unless-stopped
 
@@ -55,6 +83,13 @@ services:
     image: prometheuscommunity/postgres-exporter:v0.16.0
     environment:
       DATA_SOURCE_NAME: ${POSTGRES_EXPORTER_DSN:?set POSTGRES_EXPORTER_DSN}
+    mem_limit: ${POSTGRES_EXPORTER_MEM_LIMIT:-128m}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:9187/metrics"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks: [project-balloon]
     restart: unless-stopped
 
@@ -64,6 +99,12 @@ services:
       - --path.rootfs=/host
     volumes:
       - /:/host:ro,rslave
+    mem_limit: ${NODE_EXPORTER_MEM_LIMIT:-128m}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:9100/metrics"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     networks: [project-balloon]
     restart: unless-stopped
 
