@@ -110,13 +110,33 @@ fn language_config_maps_every_supported_language() {
         ("cpp", "main.cpp", "g++"),
         ("java", "Main.java", "javac"),
         ("python", "main.py", "python3"),
+        ("go", "main.go", "go"),
+        ("rust", "main.rs", "rustc"),
     ] {
         let config = LanguageConfig::for_task(&task_with_language(language)).expect("supported");
         assert_eq!(config.source_filename(), source);
         assert_eq!(config.compile_command()[0], compile_prefix);
     }
-    assert!(LanguageConfig::for_task(&task_with_language("rust")).is_err());
     assert!(LanguageConfig::for_task(&task_with_language("")).is_err());
+    assert!(LanguageConfig::for_task(&task_with_language("kotlin")).is_err());
+}
+
+#[test]
+fn go_compilation_keeps_its_caches_on_the_work_mount() {
+    let go = LanguageConfig::for_task(&task_with_language("go")).expect("go");
+    assert_eq!(
+        go.compile_env(),
+        vec![
+            "GOCACHE=/work/.gocache".to_owned(),
+            "GOPATH=/work/.go".to_owned(),
+            "GOMAXPROCS=1".to_owned(),
+        ],
+        "the Go build caches must live on the read-write /work mount and the build must stay serial"
+    );
+    assert_eq!(go.run_command(256), "/work/program");
+    let rust = LanguageConfig::for_task(&task_with_language("rust")).expect("rust");
+    assert!(rust.compile_env().is_empty(), "rustc needs no extra compile environment");
+    assert_eq!(rust.run_command(256), "/work/program");
 }
 
 #[test]

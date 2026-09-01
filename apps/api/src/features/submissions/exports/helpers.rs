@@ -200,6 +200,8 @@ pub(super) fn source_path(row: &ExportRow) -> String {
         "cpp" => "cpp",
         "java" => "java",
         "python" => "py",
+        "go" => "go",
+        "rust" => "rs",
         _ => "txt",
     };
     format!(

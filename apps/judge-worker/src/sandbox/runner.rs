@@ -57,13 +57,22 @@ impl DockerSandbox {
             cpp_image: config.cpp_image,
             java_image: config.java_image,
             python_image: config.python_image,
+            go_image: config.go_image,
+            rust_image: config.rust_image,
             docker_api_timeout: config.docker_api_timeout,
         })
     }
 
     pub async fn preflight(&self) -> Result<(), SandboxError> {
         self.docker.ping().await.map_err(|error| SandboxError::Api(error.to_string()))?;
-        for image in [&self.c_image, &self.cpp_image, &self.java_image, &self.python_image] {
+        for image in [
+            &self.c_image,
+            &self.cpp_image,
+            &self.java_image,
+            &self.python_image,
+            &self.go_image,
+            &self.rust_image,
+        ] {
             self.docker
                 .inspect_image(image)
                 .await
@@ -134,6 +143,8 @@ impl DockerSandbox {
             LanguageConfig::Cpp => &self.cpp_image,
             LanguageConfig::Java => &self.java_image,
             LanguageConfig::Python => &self.python_image,
+            LanguageConfig::Go => &self.go_image,
+            LanguageConfig::Rust => &self.rust_image,
         };
         let run_memory_bytes = i64::from(task.memory_limit_mb) * 1024 * 1024;
         let container_id = self
@@ -211,8 +222,14 @@ impl DockerSandbox {
         run_memory_bytes: i64,
         interactive: bool,
     ) -> Result<SandboxJudgement, SandboxError> {
-        let compile =
-            self.run_exec(container_id, language.compile_command(), COMPILE_WALL_LIMIT).await?;
+        let compile = self
+            .run_exec(
+                container_id,
+                language.compile_command(),
+                &language.compile_env(),
+                COMPILE_WALL_LIMIT,
+            )
+            .await?;
         self.kill_contestant_processes(container_id).await?;
         let compile_log = truncate_log(&compile.logs, 64 * 1024);
         if compile.timed_out || compile.exit_code != 0 {
@@ -271,7 +288,7 @@ impl DockerSandbox {
                 standard_shell(&program, output_blocks)
             };
             let command = vec!["/bin/sh".to_owned(), "-c".to_owned(), shell];
-            let mut run = self.run_exec(container_id, command, wall_limit).await?;
+            let mut run = self.run_exec(container_id, command, &[], wall_limit).await?;
             self.kill_contestant_processes(container_id).await?;
             // Contestant-writable diagnostic files are fetched in a separate
             // exec and appended only AFTER the GNU-time marker has been parsed:
@@ -469,6 +486,7 @@ impl DockerSandbox {
         &self,
         container_id: &str,
         command: Vec<String>,
+        env: &[String],
         wall_limit: Duration,
     ) -> Result<ContainerRun, SandboxError> {
         // Baseline for the CPU-time fallback: docker stats totals are
@@ -483,6 +501,7 @@ impl DockerSandbox {
                     attach_stdout: Some(true),
                     attach_stderr: Some(true),
                     cmd: Some(command),
+                    env: if env.is_empty() { None } else { Some(env.to_vec()) },
                     user: Some(self.user.clone()),
                     working_dir: Some("/work".to_owned()),
                     ..ExecConfig::default()
@@ -612,7 +631,7 @@ impl DockerSandbox {
             "-c".to_owned(),
             "cat /work/program.err /work/interactor.err 2>/dev/null".to_owned(),
         ];
-        match self.run_exec(container_id, command, COMPILE_WALL_LIMIT).await {
+        match self.run_exec(container_id, command, &[], COMPILE_WALL_LIMIT).await {
             Ok(run) => truncate_log(&run.logs, MAX_EXEC_LOG_BYTES),
             Err(error) => {
                 warn!(

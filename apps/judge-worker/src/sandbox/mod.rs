@@ -109,6 +109,8 @@ pub struct DockerSandbox {
     cpp_image: String,
     java_image: String,
     python_image: String,
+    go_image: String,
+    rust_image: String,
     /// Bound for every individual Docker API call (kill, inspect, remove, …).
     docker_api_timeout: Duration,
 }
@@ -122,6 +124,8 @@ pub struct DockerSandboxConfig {
     pub cpp_image: String,
     pub java_image: String,
     pub python_image: String,
+    pub go_image: String,
+    pub rust_image: String,
     /// Client timeout in seconds for establishing the Docker connection.
     pub docker_connect_timeout_seconds: u64,
     /// Bound for every individual Docker API call.

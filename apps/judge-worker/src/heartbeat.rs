@@ -181,6 +181,8 @@ impl WorkerHeartbeatPublisher {
                 "cpp".to_owned(),
                 "java".to_owned(),
                 "python".to_owned(),
+                "go".to_owned(),
+                "rust".to_owned(),
             ],
             runtime_versions: self.runtime_versions.clone(),
             sandbox_runtime: self.sandbox_runtime.clone(),

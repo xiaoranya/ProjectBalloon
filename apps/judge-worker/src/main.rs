@@ -47,6 +47,8 @@ async fn main() -> Result<()> {
         cpp_image: config.cpp_image.clone(),
         java_image: config.java_image.clone(),
         python_image: config.python_image.clone(),
+        go_image: config.go_image.clone(),
+        rust_image: config.rust_image.clone(),
         docker_connect_timeout_seconds: config.docker_connect_timeout_seconds,
         docker_api_timeout: config.docker_api_timeout,
     })?;
@@ -82,6 +84,8 @@ async fn main() -> Result<()> {
         ("cpp".to_owned(), image_version(&config.cpp_image)),
         ("java".to_owned(), image_version(&config.java_image)),
         ("python".to_owned(), image_version(&config.python_image)),
+        ("go".to_owned(), image_version(&config.go_image)),
+        ("rust".to_owned(), image_version(&config.rust_image)),
     ]);
     let health = HealthState::new(config.health_session_error_window);
     let worker = RabbitJudgeWorker::new(

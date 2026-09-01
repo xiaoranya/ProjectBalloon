@@ -40,6 +40,8 @@ pub struct WorkerConfig {
     pub cpp_image: String,
     pub java_image: String,
     pub python_image: String,
+    pub go_image: String,
+    pub rust_image: String,
     pub health_port: u16,
     pub health_session_error_window: Duration,
     /// Upper bound on judged cases per task used for the per-task wall-clock
@@ -124,6 +126,10 @@ impl WorkerConfig {
             lookup("JUDGE_JAVA_IMAGE").unwrap_or_else(|| "judge-runtime-java:21".to_owned());
         let python_image = lookup("JUDGE_PYTHON_IMAGE")
             .unwrap_or_else(|| "judge-runtime-python:3.12.13".to_owned());
+        let go_image =
+            lookup("JUDGE_GO_IMAGE").unwrap_or_else(|| "judge-runtime-go:1.24".to_owned());
+        let rust_image =
+            lookup("JUDGE_RUST_IMAGE").unwrap_or_else(|| "judge-runtime-rust:1.88".to_owned());
         let docker_connect_timeout_seconds = parse_positive(
             "JUDGE_DOCKER_CONNECT_TIMEOUT_SECONDS",
             lookup("JUDGE_DOCKER_CONNECT_TIMEOUT_SECONDS").unwrap_or_else(|| "10".to_owned()),
@@ -167,6 +173,8 @@ impl WorkerConfig {
             ("JUDGE_CPP_IMAGE", &cpp_image),
             ("JUDGE_JAVA_IMAGE", &java_image),
             ("JUDGE_PYTHON_IMAGE", &python_image),
+            ("JUDGE_GO_IMAGE", &go_image),
+            ("JUDGE_RUST_IMAGE", &rust_image),
         ] {
             validate_text(name, value)?;
         }
@@ -211,6 +219,8 @@ impl WorkerConfig {
             cpp_image,
             java_image,
             python_image,
+            go_image,
+            rust_image,
             health_port,
             health_session_error_window: Duration::from_secs(health_session_error_window_seconds),
             max_task_cases,

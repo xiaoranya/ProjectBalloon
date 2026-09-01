@@ -34,6 +34,8 @@ fn p0_language_time_multipliers_are_explicit() {
     assert_eq!(language_multiplier("cpp"), 1.0);
     assert_eq!(language_multiplier("java"), 2.0);
     assert_eq!(language_multiplier("python"), 3.0);
+    assert_eq!(language_multiplier("go"), 1.0);
+    assert_eq!(language_multiplier("rust"), 1.0);
 }
 
 #[async_trait]

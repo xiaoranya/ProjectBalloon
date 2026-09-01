@@ -318,7 +318,6 @@ pub(super) fn language_multiplier(language: &str) -> f64 {
     match language {
         "java" => 2.0,
         "python" => 3.0,
-        "c" | "cpp" => 1.0,
         _ => 1.0,
     }
 }

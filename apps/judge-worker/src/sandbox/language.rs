@@ -8,6 +8,8 @@ pub(super) enum LanguageConfig {
     Cpp,
     Java,
     Python,
+    Go,
+    Rust,
 }
 
 impl LanguageConfig {
@@ -17,6 +19,8 @@ impl LanguageConfig {
             "cpp" => Ok(Self::Cpp),
             "java" => Ok(Self::Java),
             "python" => Ok(Self::Python),
+            "go" => Ok(Self::Go),
+            "rust" => Ok(Self::Rust),
             other => Err(SandboxError::UnsupportedLanguage(other.to_owned())),
         }
     }
@@ -27,6 +31,8 @@ impl LanguageConfig {
             Self::Cpp => "main.cpp",
             Self::Java => "Main.java",
             Self::Python => "main.py",
+            Self::Go => "main.go",
+            Self::Rust => "main.rs",
         }
     }
 
@@ -60,12 +66,48 @@ impl LanguageConfig {
                 "py_compile".to_owned(),
                 "/work/main.py".to_owned(),
             ],
+            // Single-file build: `go build` on a bare main.go needs no
+            // go.mod, and the module caches must live on the read-write
+            // /work mount because the 64 MiB /tmp tmpfs is too small.
+            Self::Go => vec![
+                "go".to_owned(),
+                "build".to_owned(),
+                "-o".to_owned(),
+                "/work/program".to_owned(),
+                "/work/main.go".to_owned(),
+            ],
+            // Standard library only: rustc with no cargo registry access.
+            Self::Rust => vec![
+                "rustc".to_owned(),
+                "--edition".to_owned(),
+                "2021".to_owned(),
+                "-O".to_owned(),
+                "-o".to_owned(),
+                "/work/program".to_owned(),
+                "/work/main.rs".to_owned(),
+            ],
+        }
+    }
+
+    /// Extra environment the compile exec needs. Go must keep its build
+    /// caches on the read-write /work mount (the 64 MiB /tmp tmpfs is too
+    /// small and the image's HOME is not writable), and must build
+    /// serially: the container's 64-pid limit cannot absorb the fan-out of
+    /// concurrent compile tools a full stdlib build would otherwise spawn.
+    pub(super) fn compile_env(self) -> Vec<String> {
+        match self {
+            Self::Go => vec![
+                "GOCACHE=/work/.gocache".to_owned(),
+                "GOPATH=/work/.go".to_owned(),
+                "GOMAXPROCS=1".to_owned(),
+            ],
+            _ => Vec::new(),
         }
     }
 
     pub(super) fn run_command(self, memory_limit_mb: i32) -> String {
         match self {
-            Self::C | Self::Cpp => "/work/program".to_owned(),
+            Self::C | Self::Cpp | Self::Go | Self::Rust => "/work/program".to_owned(),
             Self::Java => {
                 let heap_mb = (memory_limit_mb / 2).max(16);
                 format!("java -Xms16m -Xmx{heap_mb}m -cp /work Main")

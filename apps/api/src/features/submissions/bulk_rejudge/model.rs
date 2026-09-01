@@ -32,12 +32,13 @@ impl BatchRejudgeFilter {
             return Err(AppError::validation("submittedFrom", "must not be after submittedTo"));
         }
         self.language = self.language.map(|value| value.trim().to_ascii_lowercase());
-        if self
-            .language
-            .as_ref()
-            .is_some_and(|value| !matches!(value.as_str(), "c" | "cpp" | "java" | "python"))
-        {
-            return Err(AppError::validation("language", "must be c, cpp, java, or python"));
+        if self.language.as_ref().is_some_and(|value| {
+            !matches!(value.as_str(), "c" | "cpp" | "java" | "go" | "rust" | "python")
+        }) {
+            return Err(AppError::validation(
+                "language",
+                "must be c, cpp, java, go, rust, or python",
+            ));
         }
         self.verdict = self.verdict.map(|value| value.trim().to_ascii_uppercase());
         const VERDICTS: &[&str] = &[
@@ -242,8 +243,14 @@ mod tests {
         .expect("valid filter");
         assert_eq!(validated_filter.language.as_deref(), Some("cpp"));
         assert_eq!(validated_filter.verdict.as_deref(), Some("WRONG_ANSWER"));
+        for language in ["go", "rust"] {
+            let validated = BatchRejudgeFilter { language: Some(language.to_owned()), ..filter() }
+                .validate()
+                .expect("go and rust are supported rejudge filter languages");
+            assert_eq!(validated.language.as_deref(), Some(language));
+        }
         assert!(
-            BatchRejudgeFilter { language: Some("rust".to_owned()), ..filter() }
+            BatchRejudgeFilter { language: Some("kotlin".to_owned()), ..filter() }
                 .validate()
                 .is_err()
         );

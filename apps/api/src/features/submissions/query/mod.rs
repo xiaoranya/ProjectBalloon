@@ -75,11 +75,13 @@ impl SimilarityQuery {
             ));
         }
         let language = self.language.map(|value| value.trim().to_ascii_lowercase());
-        if language
-            .as_ref()
-            .is_some_and(|value| !matches!(value.as_str(), "c" | "cpp" | "java" | "python"))
-        {
-            return Err(AppError::validation("language", "must be c, cpp, java, or python"));
+        if language.as_ref().is_some_and(|value| {
+            !matches!(value.as_str(), "c" | "cpp" | "java" | "go" | "rust" | "python")
+        }) {
+            return Err(AppError::validation(
+                "language",
+                "must be c, cpp, java, go, rust, or python",
+            ));
         }
         Ok((
             self.problem_id,
@@ -101,11 +103,13 @@ impl SimilarityPairQuery {
             ));
         }
         let language = self.language.map(|value| value.trim().to_ascii_lowercase());
-        if language
-            .as_ref()
-            .is_some_and(|value| !matches!(value.as_str(), "c" | "cpp" | "java" | "python"))
-        {
-            return Err(AppError::validation("language", "must be c, cpp, java, or python"));
+        if language.as_ref().is_some_and(|value| {
+            !matches!(value.as_str(), "c" | "cpp" | "java" | "go" | "rust" | "python")
+        }) {
+            return Err(AppError::validation(
+                "language",
+                "must be c, cpp, java, go, rust, or python",
+            ));
         }
         let min_similarity_percent = i32::try_from(self.min_similarity_percent).unwrap_or(100);
         Ok((self.problem_id, language.filter(|value| !value.is_empty()), min_similarity_percent))

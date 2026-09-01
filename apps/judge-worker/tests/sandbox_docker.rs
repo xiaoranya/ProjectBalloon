@@ -65,6 +65,62 @@ async fn python_submission_passes_in_locked_down_container() {
 }
 
 #[tokio::test]
+#[ignore = "requires Docker and the fixed judge-runtime-go image"]
+async fn go_submission_compiles_and_passes_in_locked_down_container() {
+    let judgement = judge(
+        "go",
+        br#"package main
+
+import "fmt"
+
+func main() {
+	var a, b int64
+	if _, err := fmt.Scanf("%d %d", &a, &b); err != nil {
+		return
+	}
+	fmt.Println(a + b)
+}
+"#,
+        128,
+    )
+    .await;
+    assert_accepted(&judgement);
+}
+
+#[tokio::test]
+#[ignore = "requires Docker and the fixed judge-runtime-rust image"]
+async fn rust_submission_compiles_and_passes_in_locked_down_container() {
+    let judgement = judge(
+        "rust",
+        br#"use std::io::Read;
+
+fn main() {
+    let mut input = String::new();
+    std::io::stdin().read_to_string(&mut input).unwrap();
+    let mut parts = input.split_whitespace();
+    let a: i64 = parts.next().unwrap().parse().unwrap();
+    let b: i64 = parts.next().unwrap().parse().unwrap();
+    println!("{}", a + b);
+}
+"#,
+        128,
+    )
+    .await;
+    assert_accepted(&judgement);
+}
+
+#[tokio::test]
+#[ignore = "requires Docker and the fixed go/rust runtime images"]
+async fn invalid_go_and_rust_sources_are_compile_errors() {
+    let go = judge("go", b"package main\nfunc main( {\n", 128).await;
+    assert_eq!(go.verdict, JudgeVerdict::CompileError);
+    assert!(go.runs.is_empty());
+    let rust = judge("rust", b"fn main( {\n", 128).await;
+    assert_eq!(rust.verdict, JudgeVerdict::CompileError);
+    assert!(rust.runs.is_empty());
+}
+
+#[tokio::test]
 #[ignore = "requires Docker and the fixed judge-runtime-cpp image"]
 async fn invalid_cpp_is_compile_error() {
     let judgement = judge("cpp", b"int main( {", 128).await;
@@ -298,6 +354,8 @@ fn test_sandbox(root: std::path::PathBuf) -> DockerSandbox {
         cpp_image: "judge-runtime-cpp:12.2.0".to_owned(),
         java_image: "judge-runtime-java:21".to_owned(),
         python_image: "judge-runtime-python:3.12.13".to_owned(),
+        go_image: "judge-runtime-go:1.24".to_owned(),
+        rust_image: "judge-runtime-rust:1.88".to_owned(),
         docker_connect_timeout_seconds: 10,
         docker_api_timeout: std::time::Duration::from_secs(5),
     })

@@ -107,6 +107,8 @@ async fn rabbit_rustfs_cpp_pipeline_publishes_confirmed_result() {
         cpp_image: "judge-runtime-cpp:12.2.0".to_owned(),
         java_image: "judge-runtime-java:21".to_owned(),
         python_image: "judge-runtime-python:3.12.13".to_owned(),
+        go_image: "judge-runtime-go:1.24".to_owned(),
+        rust_image: "judge-runtime-rust:1.88".to_owned(),
         docker_connect_timeout_seconds: 10,
         docker_api_timeout: std::time::Duration::from_secs(5),
     })
@@ -306,6 +308,8 @@ int main(int argc, char **argv) {
         cpp_image: "judge-runtime-cpp:12.2.0".to_owned(),
         java_image: "judge-runtime-java:21".to_owned(),
         python_image: "judge-runtime-python:3.12.13".to_owned(),
+        go_image: "judge-runtime-go:1.24".to_owned(),
+        rust_image: "judge-runtime-rust:1.88".to_owned(),
         docker_connect_timeout_seconds: 10,
         docker_api_timeout: std::time::Duration::from_secs(5),
     })
