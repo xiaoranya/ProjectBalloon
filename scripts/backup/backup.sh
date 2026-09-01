@@ -76,6 +76,51 @@ if [ -d "$ROOT/deploy" ]; then
 else
   tar -C "$ROOT" -czf "$TMP/deploy-config.tar.gz" docs
 fi
+
+# Snapshot the deployment environment with every credential-bearing value
+# replaced, so a restored host can rebuild its env file from the archive plus
+# the operator's secret store instead of reconstructing variable names from
+# documentation. Values of *_KEY/*_SECRET/*_PASSWORD/*_TOKEN and credential
+# URLs (DATABASE_URL, *_URL, *_DSN) are masked.
+[ -f "$PB_ENV_FILE" ] || pb_die "environment file not found: $PB_ENV_FILE"
+mkdir -p "$TMP/config"
+while IFS= read -r line || [ -n "$line" ]; do
+  line="${line%$'\r'}"
+  if [[ "$line" =~ ^[[:space:]]*(#|$) ]] || \
+     [[ ! "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+    printf '%s\n' "$line"
+  else
+    key="${BASH_REMATCH[1]}"
+    if [[ "$key" =~ .*(KEY|SECRET|PASSWORD|TOKEN|URL|DSN)$ ]]; then
+      printf '%s=CHANGE_ME_redacted_from_backup\n' "$key"
+    else
+      printf '%s\n' "$line"
+    fi
+  fi
+done < "$PB_ENV_FILE" > "$TMP/config/project-balloon.env.masked"
+
+{
+  printf '%s\n' '# ProjectBalloon restore checklist'
+  printf '%s\n' ''
+  printf '%s\n' 'This archive was produced by scripts/backup/backup.sh. Restore order:'
+  printf '%s\n' ''
+  printf '%s\n' '1. Verify integrity: `sha256sum -c SHA256SUMS` inside the backup directory.'
+  printf '%s\n' '2. Read manifest.txt; confirm database= matches the target deployment.'
+  printf '%s\n' '3. Rebuild /etc/project-balloon/project-balloon.env (or'
+  printf '%s\n' '   deploy/compose/.env.rust) from config/project-balloon.env.masked,'
+  printf '%s\n' '   filling every CHANGE_ME_redacted_from_backup value from the'
+  printf '%s\n' '   operator secret store.'
+  printf '%s\n' '4. Stop the application services (restore.sh stops them in direct mode;'
+  printf '%s\n' '   stop monitor/app first in legacy Compose mode).'
+  printf '%s\n' '5. Run restore.sh with'
+  printf '%s\n' '   PROJECT_BALLOON_RESTORE_ACK=I_UNDERSTAND_THIS_REPLACES_CURRENT_DATA.'
+  printf '%s\n' '6. Restore is not a service restart: start project-balloon-api and'
+  printf '%s\n' '   project-balloon-judge-worker (or compose app) explicitly.'
+  printf '%s\n' '7. Verify http://127.0.0.1:8080/livez and /api/health, then follow'
+  printf '%s\n' '   docs/ops/backup-restore.md "Post-restore verification".'
+  printf '%s\n' '8. Only after verification, delete the superseded pre-restore data.'
+} > "$TMP/RESTORE-CHECKLIST.md"
+
 {
   printf 'format=project-balloon-backup-v1\n'
   printf 'created_at=%s\n' "$STAMP"

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily ProjectBalloon backup schedule
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=project-balloon-backup.service
+
+[Install]
+WantedBy=timers.target

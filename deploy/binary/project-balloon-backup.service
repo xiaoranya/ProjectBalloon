@@ -1,0 +1,23 @@
+[Unit]
+Description=ProjectBalloon backup (PostgreSQL and object storage)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as root: reads the 0640 root:project-balloon env file, reaches
+# PostgreSQL and object storage, and writes the restricted backup directory.
+ExecStart=@PREFIX@/scripts/backup/backup.sh @BACKUP_DIR@
+# Asserts that the canonical backup directory actually holds a fresh backup;
+# catches a drifted output path or clock skew as a failed unit.
+ExecStartPost=@PREFIX@/scripts/backup/check-freshness.sh @BACKUP_DIR@
+SyslogIdentifier=project-balloon-backup
+TimeoutStartSec=2h
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=@BACKUP_DIR@
+
+[Install]
+WantedBy=multi-user.target
