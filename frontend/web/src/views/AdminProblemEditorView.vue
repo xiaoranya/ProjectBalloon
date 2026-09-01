@@ -84,6 +84,7 @@ import type {
   ProblemTestdataVersionResponse,
 } from '../api/types';
 import { useI18n } from '../i18n';
+import { numericQueryId } from '../utils/route-params';
 
 const route = useRoute();
 const router = useRouter();
@@ -140,12 +141,8 @@ async function loadProblem() {
 }
 
 function backToList() {
-  const contestId = Number(route.query.contestId);
-  void router.push(
-    Number.isInteger(contestId) && contestId > 0
-      ? `/admin/contests/${contestId}`
-      : '/admin/problems',
-  );
+  const contestId = numericQueryId(route.query.contestId);
+  void router.push(contestId ? `/admin/contests/${contestId}` : '/admin/problems');
 }
 
 onMounted(loadProblem);

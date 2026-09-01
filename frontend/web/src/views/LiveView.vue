@@ -103,6 +103,7 @@ import {
   type PublishedPresentation,
 } from '../api/presentation';
 import { useI18n } from '../i18n';
+import { numericQueryId } from '../utils/route-params';
 const { t } = useI18n();
 
 const props = withDefaults(
@@ -110,7 +111,7 @@ const props = withDefaults(
   { view: 'scoreboard' },
 );
 const route = useRoute();
-const contestId = Number(route.query.contestId);
+const contestId = numericQueryId(route.query.contestId);
 const token = new URLSearchParams(location.hash.slice(1)).get('token') || '';
 const presentation = ref<PublishedPresentation | null>(null);
 const metrics = ref<PresentationMetrics | null>(null);
@@ -173,6 +174,7 @@ const showBrand = computed(
 // ScoreboardView, so a slow response cannot overwrite a newer one on a big screen.
 let loadGeneration = 0;
 async function load() {
+  if (!contestId) return;
   const generation = ++loadGeneration;
   try {
     const nextPresentation = await presentationApi.published(contestId, 'LIVE', token);

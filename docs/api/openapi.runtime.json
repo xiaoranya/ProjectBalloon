@@ -15896,6 +15896,16 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "A metrics token is configured and the bearer token is missing or wrong",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
           }
         },
         "security": [

@@ -379,7 +379,7 @@ describe('problem-editor panels', () => {
     expect(activateButtons[0].attributes('disabled')).toBeDefined();
     await button(wrapper, '下载当前 ZIP').trigger('click');
     await flushPromises();
-    expect(adminProblemApi.downloadTestdata).toHaveBeenCalledWith(12);
+    expect(adminProblemApi.downloadTestdata).toHaveBeenCalledWith(12, expect.anything());
 
     await activateButtons[1].trigger('click');
     await flushPromises();

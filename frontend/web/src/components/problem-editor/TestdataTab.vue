@@ -33,6 +33,26 @@
         }}</ElButton>
       </ElCol>
     </ElRow>
+    <div v-if="downloading" class="download-progress" data-testid="download-progress">
+      <span>{{
+        downloading.kind === 'current'
+          ? t('正在下载当前测试数据 ZIP')
+          : t('正在下载测试数据 v{version}', { version: downloading.version })
+      }}</span>
+      <ElProgress
+        class="download-progress-bar"
+        :percentage="downloadPercentage"
+        :indeterminate="!downloadProgress?.total"
+        :show-text="false"
+      />
+      <span v-if="downloadProgress" class="download-progress-bytes">
+        <template v-if="downloadProgress.total">{{
+          formatBytes(downloadProgress.loaded) + ' / ' + formatBytes(downloadProgress.total)
+        }}</template>
+        <template v-else>{{ formatBytes(downloadProgress.loaded) }}</template>
+      </span>
+      <ElButton link type="danger" @click="cancelDownload">{{ t('取消下载') }}</ElButton>
+    </div>
     <ElSpace wrap :size="14" class="file-upload-row">
       <input
         ref="testdataInput"
@@ -84,9 +104,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { adminProblemApi } from '../../api/admin-problems';
+import { adminProblemApi, type DownloadOptions } from '../../api/admin-problems';
 import { getErrorMessage } from '../../api/client';
 import type { ProblemResponse, ProblemTestdataVersionResponse } from '../../api/types';
 import { formatBytes } from '../../utils/format';
@@ -107,6 +127,17 @@ const testdataFile = ref<File | null>(null);
 const testdataInput = ref<HTMLInputElement>();
 const uploadingTestdata = ref(false);
 const activatingVersion = ref<number | null>(null);
+
+type DownloadTarget = { kind: 'current' } | { kind: 'version'; version: number };
+const downloading = ref<DownloadTarget | null>(null);
+const downloadProgress = ref<{ loaded: number; total: number } | null>(null);
+let downloadController: AbortController | null = null;
+
+const downloadPercentage = computed(() => {
+  const progress = downloadProgress.value;
+  if (!progress || !progress.total) return 0;
+  return Math.min(100, Math.round((progress.loaded * 100) / progress.total));
+});
 
 watch(
   () => props.initialTestdataVersions,
@@ -158,26 +189,53 @@ async function uploadTestdata() {
 }
 
 async function downloadTestdata() {
-  if (!props.problem || props.problem.testdataVersion === 0) return;
-  try {
-    const blob = await adminProblemApi.downloadTestdata(props.problem.id);
-    downloadBlob(
-      blob,
-      `problem-${props.problem.id}-testdata-v${props.problem.testdataVersion}.zip`,
-    );
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
+  if (!props.problem || props.problem.testdataVersion === 0 || downloading.value) return;
+  const id = props.problem.id;
+  downloading.value = { kind: 'current' };
+  await performDownload(`problem-${id}-testdata-v${props.problem.testdataVersion}.zip`, (options) =>
+    adminProblemApi.downloadTestdata(id, options),
+  );
 }
 
 async function downloadTestdataVersion(version: number) {
-  if (!props.problem) return;
+  if (!props.problem || downloading.value) return;
+  const id = props.problem.id;
+  downloading.value = { kind: 'version', version };
+  await performDownload(`problem-${id}-testdata-v${version}.zip`, (options) =>
+    adminProblemApi.downloadTestdataVersion(id, version, options),
+  );
+}
+
+/**
+ * Runs one download with a cancellation signal and byte progress. A caller
+ * abort is reported as an explicit cancellation — every other failure keeps
+ * the standard error message.
+ */
+async function performDownload(filename: string, run: (options: DownloadOptions) => Promise<Blob>) {
+  downloadController = new AbortController();
   try {
-    const blob = await adminProblemApi.downloadTestdataVersion(props.problem.id, version);
-    downloadBlob(blob, `problem-${props.problem.id}-testdata-v${version}.zip`);
+    const blob = await run({
+      signal: downloadController.signal,
+      onProgress: (loaded, total) => {
+        downloadProgress.value = { loaded, total };
+      },
+    });
+    downloadBlob(blob, filename);
   } catch (error) {
-    ElMessage.error(getErrorMessage(error));
+    if (downloadController?.signal.aborted) {
+      ElMessage.info(t('下载已取消'));
+    } else {
+      ElMessage.error(getErrorMessage(error));
+    }
+  } finally {
+    downloading.value = null;
+    downloadProgress.value = null;
+    downloadController = null;
   }
+}
+
+function cancelDownload() {
+  downloadController?.abort();
 }
 
 async function activateTestdataVersion(version: number) {
@@ -255,5 +313,20 @@ function downloadBlob(blob: Blob, filename: string) {
   width: 100%;
   flex-wrap: wrap;
   margin-bottom: 24px;
+}
+.download-progress {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.download-progress-bar {
+  flex: 1;
+  min-width: 160px;
+}
+.download-progress-bytes {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
 }
 </style>

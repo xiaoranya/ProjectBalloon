@@ -15504,6 +15504,15 @@ export interface operations {
                     "text/plain": string;
                 };
             };
+            /** @description A metrics token is configured and the bearer token is missing or wrong */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
         };
     };
 }
