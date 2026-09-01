@@ -1,0 +1,88 @@
+name: Bug report
+description: Report a defect in the API, judge worker, frontend, deployment, or documentation.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Before submitting:
+
+        - Search [existing issues](https://github.com/xiaoranya/ProjectBalloon/issues?q=is%3Aissue) to avoid duplicates.
+        - Security vulnerabilities must **not** be reported here. See [SECURITY.md](https://github.com/xiaoranya/ProjectBalloon/blob/main/SECURITY.md) for the private reporting process.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A concise description of the misbehavior, including what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Minimal, deterministic steps starting from a fresh state. Include the
+        exact requests, problem data, submission source, or commands involved.
+        For judge behavior, state the language and whether the run was
+        interactive or batch.
+      placeholder: |
+        1. Create contest X with problem Y ...
+        2. Submit source Z in language L ...
+        3. Observe verdict ...
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - apps/api (Axum API)
+        - apps/judge-worker (sandbox / judging pipeline)
+        - frontend/web
+        - deploy (binary package / compose / runtime images)
+        - crates/contracts or migrations (API compatibility)
+        - docs
+        - other
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Deployment mode
+      description: How the affected instance was running.
+      options:
+        - Official binary package install
+        - Compose local development stack
+        - Docker integration test harness (scripts/test/docker-integration.sh)
+        - Local cargo/npm development
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: Version and environment details
+      description: |
+        VERSION file or `git rev-parse HEAD` of the running build, OS, and for
+        frontend issues the browser and viewport. Include judge runtime image
+        tags if the bug involves Go/Rust judging.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs and output
+      description: |
+        API/worker logs, judge output, or terminal output. Redact secrets,
+        tokens, credentials, and personal data before pasting.
+      render: shell
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues and found no duplicate.
+          required: true
+        - label: This is not a security vulnerability (those follow SECURITY.md).
+          required: true
+        - label: Logs and outputs above are redacted of secrets and personal data.
+          required: true
