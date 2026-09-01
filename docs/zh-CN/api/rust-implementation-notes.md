@@ -168,7 +168,7 @@ Rust API 在 `/api/teams` 与 `/api/contests/{contestId}/teams` 下提供队伍 
 
 ## 题库核心
 
-第一个 Rust 题库切片在 `/api/problems` 暴露仅超级管理员的 CRUD。它校验小写 kebab-case slug、有界正资源限制、语言标签与封闭的 P0 判题语言集（`c`、`cpp`、`java` 与 `python`）。更新请求要求 `expectedVersion`，并发修改返回 `PROBLEM_VERSION_STALE`。
+第一个 Rust 题库切片在 `/api/problems` 暴露仅超级管理员的 CRUD。它校验小写 kebab-case slug、有界正资源限制、语言标签与封闭的判题语言集（`c`、`cpp`、`java`、`go`、`rust` 与 `python`）。更新请求要求 `expectedVersion`，并发修改返回 `PROBLEM_VERSION_STALE`。
 
 题目删除是软删除，存在任何比赛分配时以 `PROBLEM_ASSIGNED_TO_CONTEST` 拒绝。PostgreSQL 强制正限制与仅活动 slug 唯一性。创建、更新与删除在同一事务中写入 `PROBLEM_CREATED`、`PROBLEM_UPDATED` 与 `PROBLEM_DELETED` 审计事件。
 
@@ -238,7 +238,7 @@ PostgreSQL 结果事务经过集成测试。实时 Docker 验证覆盖 Publisher
 
 Rust Worker 执行 RabbitMQ 消费 / 结果确认 / ACK 边界、RustFS 源码与不可变测试数据获取、产物大小与 SHA-256 验证、哈希键本地测试数据缓存、安全根级用例解压与保证的每任务清理。C 与 C++ 通过 Bollard 使用固定运行时镜像，而不是主机进程执行。每次判定创建一个容器：编译与每个顺序用例运行使用该容器内的 Docker exec，然后强制移除容器。编译使用有界 1 GiB 配额，用例执行前 cgroup 减少到任务内存限制。规范输出保留在容器外；只有当前输入暂存到其工作目录。容器请求强制执行已评审的本地开发沙箱控制：无网络、只读根、非 root 用户、丢弃 capability、`no-new-privileges`、PID、CPU、内存、输出与墙钟限制。
 
-被忽略的集成测试使用真实固定 C++ 镜像与完整的 RabbitMQ → RustFS → cache/hash → compile/run → 确认 JudgeResult 路径。真实锁定容器测试覆盖 C、C++、Java 21 与 Python 3.12。Java 使用显式 2 倍时间乘数，Python 3 倍。生产 rootless Podman/runsc 验证仍是后续工作。Docker cgroup 统计现在填充每次运行与聚合的峰值内存字段，cgroup CPU 纳秒驱动报告的运行时间与语言调整后的 CPU 限制。有界墙钟截止时间仍作为安全限制与短进程回退。Worker 现在发布带确认、带版本的 RabbitMQ 心跳，包含稳定进程实例 ID、容量、活动任务数、P0 语言、镜像版本标签与沙箱运行时。API 将其存储在 PostgreSQL 中，并在 `/api/health` 暴露在线 / 过期计数与当前容量。`JUDGE_TASK_PREFETCH` 是 Worker 执行容量：任务并发运行至该上限，优雅关闭排空已接受的工作而不消费新投递。自动化 Docker 故障测试在任务位于 handler 内部时重启 RabbitMQ。原始未确认投递被重新入队，Worker 重连，且恰好一个确认结果对稳定判定标识符保持可见。
+被忽略的集成测试使用真实固定 C++ 镜像与完整的 RabbitMQ → RustFS → cache/hash → compile/run → 确认 JudgeResult 路径。真实锁定容器测试覆盖 C、C++、Java 21、Python 3.12、Go 1.24 与 Rust 1.88。Java 使用显式 2 倍时间乘数，Python 3 倍；Go 与 Rust 保持 1 倍。生产 rootless Podman/runsc 验证仍是后续工作。Docker cgroup 统计现在填充每次运行与聚合的峰值内存字段，cgroup CPU 纳秒驱动报告的运行时间与语言调整后的 CPU 限制。有界墙钟截止时间仍作为安全限制与短进程回退。Worker 现在发布带确认、带版本的 RabbitMQ 心跳，包含稳定进程实例 ID、容量、活动任务数、支持的语言、镜像版本标签与沙箱运行时。API 将其存储在 PostgreSQL 中，并在 `/api/health` 暴露在线 / 过期计数与当前容量。`JUDGE_TASK_PREFETCH` 是 Worker 执行容量：任务并发运行至该上限，优雅关闭排空已接受的工作而不消费新投递。自动化 Docker 故障测试在任务位于 handler 内部时重启 RabbitMQ。原始未确认投递被重新入队，Worker 重连，且恰好一个确认结果对稳定判定标识符保持可见。
 
 第一个 ICPC 记分板 API 切片暴露 `GET /api/contests/{contestId}/scoreboard` 与范围保护的 `GET /api/admin/contests/{contestId}/scoreboard`。两者都接受 `groupName` 与 `participationType` 筛选。在配置的 freeze 间隔内，公共变体只使用 `freezeAt` 之前的提交重建单元；管理员变体读取实时 PostgreSQL 投影。排序为解题数降序、罚时升序、最后解题升序，然后队伍 ID。STAR 与 PRACTICE 行保持可见，但只有 OFFICIAL 行获得 `officialRank`。每题目 First Blood 是 OFFICIAL 与 STAR 队伍中最早可见的 AC，队伍 ID 作为确定性同时间决胜键；PRACTICE 队伍被排除。匹配的公共与管理 CSV 导出在相同路径加 `.csv` 后缀可用，并使用已筛选 / 冻结的响应，因此导出不能绕过记分板可见性规则。
 
@@ -248,7 +248,7 @@ Rust Worker 执行 RabbitMQ 消费 / 结果确认 / ACK 边界、RustFS 源码�
 
 比赛管理员可以通过 `POST /api/admin/contests/{contestId}/submissions/{submissionId}/rejudge` 重判一个已完成提交。JSON body 要求 `expectedJudgementId`，使并发操作员操作乐观且确定。在一个事务中，API 取代旧判定、终态取消任何未发送的旧 Outbox 任务、创建新活动判定与 Judge 任务、将提交重置为 `PENDING`、重建受影响的记分板投影、发出 TEAM 与 STAFF 事件并记录审计条目。并发逃逸的旧任务仍可能被投递，但其结果作为已被取代而确认，不能覆盖新活动判定。拒绝归档比赛与非终态活动判定。
 
-提交浏览可通过 `GET /api/contests/{contestId}/submissions` 与 `GET /api/contests/{contestId}/submissions/{submissionId}` 供认证队伍使用，另有匹配的 `/api/admin/contests/{contestId}/submissions` 管理员路径。列表分页，并支持队伍、题目、状态与 P0 语言筛选。队伍查询始终将显式 `team_accounts` 身份作为数据库谓词添加，因此提交 ID 不能枚举另一队伍的元数据或源码对象。详情在授权后从对象存储加载 UTF-8 源码，并包含带排序 runs 的活动与已被取代判定历史。编译日志与 stderr 尾部保持纯文本、移除控制字符，并在序列化前有界。
+提交浏览可通过 `GET /api/contests/{contestId}/submissions` 与 `GET /api/contests/{contestId}/submissions/{submissionId}` 供认证队伍使用，另有匹配的 `/api/admin/contests/{contestId}/submissions` 管理员路径。列表分页，并支持队伍、题目、状态与语言筛选。队伍查询始终将显式 `team_accounts` 身份作为数据库谓词添加，因此提交 ID 不能枚举另一队伍的元数据或源码对象。详情在授权后从对象存储加载 UTF-8 源码，并包含带排序 runs 的活动与已被取代判定历史。编译日志与 stderr 尾部保持纯文本、移除控制字符，并在序列化前有界。
 
 批量重判使用持久表 `batch_rejudge_tasks` 与 `batch_rejudge_items`，通过 `/api/admin/contests/{contestId}/rejudge-tasks` 下的比赛范围预览、创建、列表、详情、暂停与恢复端点。创建要求精确预览计数、确认文本 `REJUDGE {count}` 与幂等键；最多 10,000 个已完成活动判定可按题目、队伍、语言、判定或提交时间选择。后台 runner 使用 `FOR UPDATE SKIP LOCKED` 与 30 秒租约认领项。暂停停止新认领；恢复保留未完成项。每个创建的判定存储唯一批次项 ID，因此提交重判后但在更新进度前崩溃的 API 会恢复同一判定而不是调度另一个。任务计数器在记录每个结果的同一事务中从终态项行重新计算。
 

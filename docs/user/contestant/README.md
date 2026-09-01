@@ -65,7 +65,7 @@ gives you these pages:
 2. Choose the language.
 3. Upload or paste your source file.
 
-Supported languages are the judge runtime images: C, C++, Java, and Python.
+Supported languages are the judge runtime images: C, C++, Java, Go, Rust, and Python.
 
 There is a rate limit of 20 submissions per team per minute; exceeding it
 returns a rate-limit error, so wait and retry rather than spamming.

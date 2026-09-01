@@ -51,6 +51,53 @@ accounts with the matching permissions; see the
 - Live pages may be token-protected. Rotate rehearsal-shared tokens before the
   official contest.
 
+### Live Program Packaging (director console, composite page, overlay)
+
+The live program is an OBS graphics packaging layer: a staff director console
+drives a composited program page and a transparent overlay, both consumed as
+OBS browser sources. No external streaming service is involved.
+
+| Surface | Route | Access |
+| --- | --- | --- |
+| Director console | `/live/program/control` | staff, `LIVE_MANAGE` |
+| Composite program page | `/live/program` | public broadcast token |
+| Transparent overlay | `/live/overlay?parts=ticker,popup,clock` | public broadcast token |
+
+Recommended OBS setup:
+
+1. Add the composite page `/live/program` as the **main browser source**
+   (1920×1080, 60 fps). It renders the active scene — scoreboard, first
+   blood, balloons, freeze countdown, statistics, resolver, awards, or title
+   card — plus the ticker and clock.
+2. Add the overlay `/live/overlay` as a second, **upper-layer browser source**
+   with a transparent background. Use `?parts=ticker,popup,clock` to show
+   only the selected elements; it never duplicates the stage.
+3. Keep the director console `/live/program/control` on an operator screen.
+   Scene changes, the transition duration (100–5000 ms), the clock, the
+   ticker, and the RESOLVER run are controlled there with optimistic
+   concurrency (a concurrent edit returns `LIVE_PROGRAM_VERSION_CONFLICT`
+   and the console reloads the current program automatically).
+
+Director console keyboard shortcuts:
+
+| Key | Action |
+| --- | --- |
+| `1` | SCOREBOARD scene |
+| `2` | FIRST_BLOOD scene |
+| `3` | BALLOONS scene |
+| `4` | FREEZE_COUNTDOWN scene |
+| `5` | STATISTICS scene |
+| `6` | RESOLVER scene |
+| `7` | AWARDS scene |
+| `8` | TITLE_CARD scene |
+| `T` | Toggle the ticker |
+| `C` | Toggle the clock |
+
+The composite page follows program changes instantly over SSE and falls
+back to 10-second polling if the stream is interrupted. First-blood
+animations play on the composite page and the overlay popup layer; both
+honor `prefers-reduced-motion`.
+
 ## Balloons (`/balloon`)
 
 - Balloon tasks are generated automatically for first accepted submissions

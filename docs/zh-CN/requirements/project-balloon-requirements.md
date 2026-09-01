@@ -229,7 +229,7 @@ Judge Runtime 镜像名称必须使用固定版本，不使用 `latest` 标签�
 提交功能包括：
 
 - 队伍选择题目和语言提交代码。
-- P0 支持 C、C++、Java、Python；P1 支持 Go、Rust。
+- 支持 C、C++、Java、Go、Rust 与 Python。
 - 支持提交状态查询。
 - 支持提交详情查看。
 - 支持编译错误信息查看。
@@ -722,7 +722,7 @@ audit_logs
 - 题目管理和测试数据管理。
 - 代码提交。
 - 判题队列和 Judge Worker。
-- C/C++/Java/Python 支持。
+- C/C++/Java/Go/Rust/Python 支持。
 - ICPC/XCPC 榜单。
 - First Blood。
 - Clarification。
@@ -751,7 +751,7 @@ audit_logs
 - CUPS 打印机状态同步增强。
 - 大屏播放列表。
 - 多大屏分组同步。
-- First Blood 动画。
+- First Blood 动画（已实现：直播节目页与透明叠加层渲染一血弹窗，带入场与粒子动效，并遵循 `prefers-reduced-motion` 降级）。
 - 颁奖控制台。
 - 证书数据导出。
 - 主持人脚本。
@@ -759,6 +759,7 @@ audit_logs
 - 气球统计增强。
 - Worker 测试数据本地缓存。
 - 比赛克隆。
+- Go 与 Rust 评测语言（已实现：固定 `judge-runtime-go:1.24` 与 `judge-runtime-rust:1.88` 镜像中的单文件 `main.go` / `main.rs` 编译，1 倍时间乘数，编辑器代码片段，以及端到端提交支持）。
 
 ### 24.3 P2 扩展能力
 
@@ -768,7 +769,7 @@ audit_logs
 - 交互题（已实现）。
 - Output-only 题（已实现）。
 - 代码相似度检测（已实现）。
-- 高级直播包装。
+- 高级直播包装（已以 OBS 图形包装层形态实现：导播台、合成 `/live/program` 舞台页与透明 `/live/overlay` 叠加层；服务端视频流产出 —— RTMP/HLS —— 仍为后续工作）。
 - 自定义大屏模板（已实现）。
 - 多会场同步。
 - 公开题库和训练系统（已实现）。
