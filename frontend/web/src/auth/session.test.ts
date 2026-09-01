@@ -71,3 +71,43 @@ describe('session state', () => {
     expect(session.state.initialized).toBe(true);
   });
 });
+
+describe('boot initialization', () => {
+  beforeEach(() => {
+    mocks.apiRequest.mockReset();
+    mocks.clearCsrfToken.mockReset();
+  });
+
+  it('re-probes on the next navigation after a failed boot and succeeds later', async () => {
+    vi.resetModules();
+    const { useSession: freshUseSession } = await import('./session');
+    const fresh = freshUseSession();
+
+    mocks.apiRequest.mockRejectedValueOnce(new Error('network down'));
+    await fresh.initialize();
+    expect(fresh.state.initialized).toBe(false);
+    expect(fresh.state.user).toBeNull();
+
+    mocks.apiRequest
+      .mockResolvedValueOnce({ mode: 'competition', activeContest: null })
+      .mockResolvedValueOnce(user);
+    await fresh.initialize();
+    expect(fresh.state.initialized).toBe(true);
+    expect(fresh.state.user).toEqual(user);
+    expect(fresh.state.deployment.mode).toBe('competition');
+  });
+
+  it('does not stack concurrent probes while a failed probe is retried', async () => {
+    vi.resetModules();
+    const { useSession: freshUseSession } = await import('./session');
+    const fresh = freshUseSession();
+
+    mocks.apiRequest.mockRejectedValue(new Error('network down'));
+    await Promise.all([fresh.initialize(), fresh.initialize(), fresh.initialize()]);
+    expect(mocks.apiRequest).toHaveBeenCalledTimes(1);
+    expect(fresh.state.initialized).toBe(false);
+
+    await fresh.initialize();
+    expect(mocks.apiRequest).toHaveBeenCalledTimes(2);
+  });
+});

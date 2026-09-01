@@ -179,6 +179,11 @@ const english: Record<string, string> = {
   服务器处理请求时发生错误: 'The server could not process the request',
   '请求失败（{status}）': 'Request failed ({status})',
   发生未知错误: 'An unknown error occurred',
+  '请求超时，请检查网络后重试': 'The request timed out. Check the network and try again.',
+  '网络连接失败，请检查网络后重试': 'Network request failed. Check the network and try again.',
+  '连接中断，{seconds} 秒后自动重试': 'Connection lost; retrying in {seconds}s',
+  '榜单自动刷新暂时失败，数据可能已过期':
+    'Auto-refresh is failing; the scoreboard shown may be out of date',
   题目列表: 'Problems',
   当前比赛还没有题目: 'This contest has no problems yet',
   暂无提交记录: 'No submissions yet',

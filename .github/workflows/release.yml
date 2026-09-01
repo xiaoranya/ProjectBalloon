@@ -182,10 +182,122 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  ci-gate:
+    # Release gate: CI does not run on tag pushes, so without this job a tag on
+    # a red commit could be published. It resolves the tagged commit and polls
+    # the Checks API until every required CI check-run on that exact SHA
+    # completes, passing only when all of them succeeded. CI is triggered by
+    # pushes to main, so tag releases from main only: the gate is fail-closed
+    # and fails (fast on any failed check, else by timeout) when the tagged
+    # commit has no complete set of CI check runs. Keep REQUIRED_CHECKS in sync
+    # with the job names in ci.yml.
+    name: CI success gate
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+      checks: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REQUIRED_CHECKS: |-
+        Rust checks
+        Integration checks
+        Coverage summary
+        Frontend checks
+        API compatibility snapshot
+        Dependency and license checks
+        Judge runtime build (judge-runtime-c)
+        Judge runtime build (judge-runtime-cpp)
+        Judge runtime build (judge-runtime-java)
+        Judge runtime build (judge-runtime-python)
+        Compose configuration
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Wait for required CI checks on the tagged commit
+        run: |
+          set -euo pipefail
+          # An empty required list would make this gate pass vacuously.
+          [ -n "${REQUIRED_CHECKS//[[:space:]]/}" ] || {
+            echo 'CI gate misconfigured: REQUIRED_CHECKS is empty' >&2
+            exit 1
+          }
+          sha="$(git rev-parse "HEAD^{commit}")"
+          echo "Gating release on required CI checks for commit $sha"
+          # CI's slowest job times out at 60 minutes; poll well past that so a
+          # tag pushed while CI is still running waits instead of failing.
+          deadline=$(( $(date +%s) + 110 * 60 ))
+          # If no check runs exist at all shortly after the tag push, the
+          # commit was never covered by CI (tags do not trigger it).
+          grace_deadline=$(( $(date +%s) + 15 * 60 ))
+          saw_any_check=0
+          while :; do
+            # Transient Checks API errors are retried on the next poll.
+            if gh api --paginate \
+                "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100" \
+                --jq '.check_runs[] | [.id, .name, .status, (.conclusion // "")] | @tsv' \
+                > check_runs.tsv; then
+              [ -s check_runs.tsv ] && saw_any_check=1
+            else
+              echo 'Checks API request failed; retrying on the next poll'
+              : > check_runs.tsv
+            fi
+            # A job name can appear several times (re-runs); gate on the most
+            # recent attempt, which is the one with the highest check-run id.
+            declare -A latest_id=() latest_state=()
+            while IFS=$'\t' read -r id name status conclusion; do
+              [ -n "$name" ] || continue
+              if [ "${latest_id[$name]:-0}" -lt "$id" ]; then
+                latest_id[$name]=$id
+                latest_state[$name]="${status}:${conclusion}"
+              fi
+            done < check_runs.tsv
+            missing=() pending=() failed=()
+            while IFS= read -r name; do
+              [ -n "$name" ] || continue
+              state="${latest_state[$name]:-}"
+              if [ -z "$state" ]; then
+                missing+=("$name")
+              elif [ "$state" = 'completed:success' ]; then
+                :
+              elif [ "${state%%:*}" = 'completed' ]; then
+                failed+=("$name [$state]")
+              else
+                pending+=("$name [$state]")
+              fi
+            done < <(printf '%s\n' "$REQUIRED_CHECKS")
+            if [ "${#failed[@]}" -gt 0 ]; then
+              echo "CI gate failed: required checks did not succeed on $sha:" >&2
+              printf '  - %s\n' "${failed[@]}" >&2
+              exit 1
+            fi
+            if [ "${#missing[@]}" -eq 0 ] && [ "${#pending[@]}" -eq 0 ]; then
+              echo "CI gate passed: all required checks succeeded on $sha"
+              exit 0
+            fi
+            if [ "$saw_any_check" -eq 0 ] && [ "$(date +%s)" -ge "$grace_deadline" ]; then
+              echo "CI gate failed: no CI check runs exist for $sha after 15 minutes." >&2
+              echo 'CI only runs on pushes to main, so tags must point at commits CI covered; re-tag a green main commit.' >&2
+              exit 1
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "CI gate timed out after 110 minutes waiting for CI on $sha (fail-closed):" >&2
+              printf '  missing: %s\n' "${missing[*]:-}" >&2
+              printf '  pending: %s\n' "${pending[*]:-}" >&2
+              exit 1
+            fi
+            echo "Waiting for CI on $sha: ${#missing[@]} missing, ${#pending[@]} pending; polling again in 30s"
+            sleep 30
+          done
+
   publish:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [package, judge-images]
+    needs: [ci-gate, package, judge-images]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

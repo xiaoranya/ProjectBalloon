@@ -1,65 +1,93 @@
 use std::{collections::HashMap, path::Path};
 
+use thiserror::Error;
+
 use crate::sandbox::{
     MAX_TESTDATA_ARCHIVE_BYTES, MAX_TESTDATA_EXTRACTED_BYTES, MAX_TESTDATA_FILES, SandboxError,
 };
+
+/// Failure of the contestant-provided output-only archive. The archive bytes
+/// are authenticated as contestant input (SHA-256 verified against the task
+/// source), so every validation problem is the submission's fault and must
+/// surface as a contestant verdict instead of an infrastructure failure.
+#[derive(Debug, Error)]
+pub(super) enum OutputArchiveError {
+    #[error("output archive is invalid: {0}")]
+    Invalid(String),
+    #[error("output archive expands beyond the extraction budget")]
+    BudgetBreached,
+    #[error("artifact cache I/O failed: {0}")]
+    Io(#[from] std::io::Error),
+}
 
 pub(super) async fn extract_cases(
     archive: std::path::PathBuf,
     destination: std::path::PathBuf,
 ) -> Result<usize, SandboxError> {
-    tokio::task::spawn_blocking(move || extract_cases_blocking(&archive, &destination))
-        .await
-        .map_err(|error| SandboxError::InvalidTestdata(error.to_string()))?
+    tokio::task::spawn_blocking(move || {
+        extract_cases_blocking(&archive, &destination, MAX_TESTDATA_EXTRACTED_BYTES)
+    })
+    .await
+    .map_err(|error| SandboxError::InvalidTestdata(error.to_string()))?
 }
 
 pub(super) async fn extract_output_cases(
     archive: Vec<u8>,
     destination: std::path::PathBuf,
-) -> Result<(), SandboxError> {
-    tokio::task::spawn_blocking(move || extract_output_cases_blocking(&archive, &destination))
-        .await
-        .map_err(|error| SandboxError::InvalidTestdata(error.to_string()))?
+) -> Result<(), OutputArchiveError> {
+    tokio::task::spawn_blocking(move || {
+        extract_output_cases_blocking(&archive, &destination, MAX_TESTDATA_EXTRACTED_BYTES)
+    })
+    .await
+    // A cancelled extraction task is a worker-side defect, not the submission's.
+    .map_err(|error| OutputArchiveError::Io(std::io::Error::other(error.to_string())))?
 }
 
 pub(super) fn extract_output_cases_blocking(
     archive: &[u8],
     destination: &Path,
-) -> Result<(), SandboxError> {
+    budget: u64,
+) -> Result<(), OutputArchiveError> {
     use std::io::Read;
     let reader = std::io::Cursor::new(archive);
-    let mut zip = zip::ZipArchive::new(reader).map_err(|error| {
-        SandboxError::InvalidTestdata(format!("invalid output archive: {error}"))
-    })?;
+    let mut zip = zip::ZipArchive::new(reader)
+        .map_err(|error| OutputArchiveError::Invalid(format!("invalid output archive: {error}")))?;
     if zip.len() > MAX_TESTDATA_FILES {
-        return Err(SandboxError::InvalidTestdata("output archive has too many files".to_owned()));
+        return Err(OutputArchiveError::Invalid("output archive has too many files".to_owned()));
     }
+    let mut remaining = budget;
     for index in 0..zip.len() {
-        let mut entry = zip
-            .by_index(index)
-            .map_err(|error| SandboxError::InvalidTestdata(error.to_string()))?;
+        let mut entry =
+            zip.by_index(index).map_err(|error| OutputArchiveError::Invalid(error.to_string()))?;
         if entry.is_dir() {
             continue;
         }
-        let name = entry.enclosed_name().ok_or_else(|| {
-            SandboxError::InvalidTestdata("unsafe output archive path".to_owned())
-        })?;
+        let name = entry
+            .enclosed_name()
+            .ok_or_else(|| OutputArchiveError::Invalid("unsafe output archive path".to_owned()))?;
         if name.components().count() != 1
             || name.extension().and_then(std::ffi::OsStr::to_str) != Some("out")
         {
-            return Err(SandboxError::InvalidTestdata(
+            return Err(OutputArchiveError::Invalid(
                 "output archive must contain only root-level .out files".to_owned(),
             ));
         }
-        if entry.size() > MAX_TESTDATA_EXTRACTED_BYTES {
-            return Err(SandboxError::InvalidTestdata("output file is too large".to_owned()));
-        }
         let mut content = Vec::new();
-        entry
-            .read_to_end(&mut content)
-            .map_err(|error| SandboxError::InvalidTestdata(error.to_string()))?;
+        // Never trust the declared entry size: zip metadata is
+        // contestant-controlled and may lie. Inflate at most one byte past the
+        // remaining budget so the actual output is bounded no matter what the
+        // headers claim.
+        let mut limited = (&mut entry).take(remaining.saturating_add(1));
+        limited.read_to_end(&mut content).map_err(|error| {
+            OutputArchiveError::Invalid(format!("unreadable output entry: {error}"))
+        })?;
+        let extracted = u64::try_from(content.len()).unwrap_or(u64::MAX);
+        if extracted > remaining {
+            return Err(OutputArchiveError::BudgetBreached);
+        }
+        remaining -= extracted;
         std::fs::write(destination.join(name.file_name().expect("file name")), content)
-            .map_err(SandboxError::Io)?;
+            .map_err(OutputArchiveError::Io)?;
     }
     Ok(())
 }
@@ -67,6 +95,7 @@ pub(super) fn extract_output_cases_blocking(
 pub(super) fn extract_cases_blocking(
     archive: &Path,
     destination: &Path,
+    budget: u64,
 ) -> Result<usize, SandboxError> {
     use std::io::Read;
 
@@ -84,7 +113,7 @@ pub(super) fn extract_cases_blocking(
         ));
     }
     let mut cases: HashMap<String, CasePair> = HashMap::new();
-    let mut extracted_bytes = 0_u64;
+    let mut remaining = budget;
     for index in 0..zip.len() {
         let mut entry = zip
             .by_index(index)
@@ -104,19 +133,25 @@ pub(super) fn extract_cases_blocking(
         if !matches!(extension, Some("in" | "out")) {
             continue;
         }
-        extracted_bytes = extracted_bytes.saturating_add(entry.size());
-        if extracted_bytes > MAX_TESTDATA_EXTRACTED_BYTES {
-            return Err(SandboxError::InvalidTestdata(
-                "test-data archive expands beyond the limit".to_owned(),
-            ));
-        }
         let stem = enclosed
             .file_stem()
             .and_then(std::ffi::OsStr::to_str)
             .ok_or_else(|| SandboxError::InvalidTestdata("invalid test-case name".to_owned()))?
             .to_owned();
         let mut content = Vec::new();
-        entry.read_to_end(&mut content)?;
+        // The declared entry size comes from untrusted zip metadata; bound the
+        // actual inflate output so a lying header cannot exhaust worker
+        // memory. The classification stays InvalidTestdata: testdata is
+        // problem-admin owned, not contestant input.
+        let mut limited = (&mut entry).take(remaining.saturating_add(1));
+        limited.read_to_end(&mut content)?;
+        let extracted = u64::try_from(content.len()).unwrap_or(u64::MAX);
+        if extracted > remaining {
+            return Err(SandboxError::InvalidTestdata(
+                "test-data archive expands beyond the limit".to_owned(),
+            ));
+        }
+        remaining -= extracted;
         let pair = cases.entry(stem).or_default();
         match extension {
             Some("in") if pair.0.is_none() => pair.0 = Some(content),

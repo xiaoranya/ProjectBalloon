@@ -71,6 +71,7 @@ impl AppConfig {
             object_storage_source_bucket: object_storage.source_bucket,
             object_storage_force_path_style: object_storage.force_path_style,
             object_storage_request_timeout: object_storage.request_timeout,
+            object_storage_upload_timeout: object_storage.upload_timeout,
             object_cleanup_poll_interval: object_storage.cleanup_poll_interval,
             object_cleanup_lease: object_storage.cleanup_lease,
             object_cleanup_retry_base: object_storage.cleanup_retry_base,
@@ -406,6 +407,7 @@ struct ObjectStorageSettings {
     source_bucket: String,
     force_path_style: bool,
     request_timeout: Duration,
+    upload_timeout: Duration,
     cleanup_poll_interval: Duration,
     cleanup_lease: Duration,
     cleanup_retry_base: Duration,
@@ -439,6 +441,14 @@ fn parse_object_storage(
         lookup("PROJECT_BALLOON_OBJECT_STORAGE_REQUEST_TIMEOUT_MILLISECONDS")
             .unwrap_or_else(|| DEFAULT_OBJECT_STORAGE_REQUEST_TIMEOUT_MILLISECONDS.to_string()),
     )?;
+    // Uploads (multipart testdata archives, multi-GiB export PUTs) legitimately
+    // run orders of magnitude longer than metadata operations, so they carry
+    // their own timeout instead of sharing the short request budget.
+    let upload_timeout_milliseconds = parse_positive(
+        "PROJECT_BALLOON_OBJECT_STORAGE_UPLOAD_TIMEOUT_MILLISECONDS",
+        lookup("PROJECT_BALLOON_OBJECT_STORAGE_UPLOAD_TIMEOUT_MILLISECONDS")
+            .unwrap_or_else(|| DEFAULT_OBJECT_STORAGE_UPLOAD_TIMEOUT_MILLISECONDS.to_string()),
+    )?;
     let cleanup_poll_milliseconds = parse_positive(
         "PROJECT_BALLOON_OBJECT_CLEANUP_POLL_MILLISECONDS",
         lookup("PROJECT_BALLOON_OBJECT_CLEANUP_POLL_MILLISECONDS")
@@ -470,6 +480,7 @@ fn parse_object_storage(
         source_bucket,
         force_path_style,
         request_timeout: Duration::from_millis(request_timeout_milliseconds),
+        upload_timeout: Duration::from_millis(upload_timeout_milliseconds),
         cleanup_poll_interval: Duration::from_millis(cleanup_poll_milliseconds),
         cleanup_lease: Duration::from_secs(cleanup_lease_seconds),
         cleanup_retry_base: Duration::from_millis(cleanup_retry_base_milliseconds),

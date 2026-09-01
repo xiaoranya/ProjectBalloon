@@ -23,7 +23,9 @@ use project_balloon_contracts::{
 };
 use project_balloon_judge_worker::{
     heartbeat::{WorkerActivity, WorkerHeartbeatPublisher, WorkerHeartbeatPublisherConfig},
-    rabbit::{JudgeTaskHandler, RabbitJudgeWorker, RabbitJudgeWorkerConfig, TaskFailure},
+    rabbit::{
+        InFlightTasks, JudgeTaskHandler, RabbitJudgeWorker, RabbitJudgeWorkerConfig, TaskFailure,
+    },
 };
 use project_balloon_test_support::valid_judge_task;
 use time::OffsetDateTime;
@@ -59,6 +61,8 @@ async fn capacity_two_runs_in_parallel_and_shutdown_drains_in_flight_tasks() {
             prefetch: 2,
             request_timeout: Duration::from_secs(5),
             reconnect_delay: Duration::from_millis(100),
+            max_task_cases: 64,
+            in_flight: InFlightTasks::new(),
             health: None,
         },
         gate.clone(),
@@ -154,6 +158,8 @@ async fn broker_restart_requeues_unacknowledged_in_flight_task() {
             prefetch: 1,
             request_timeout: Duration::from_secs(2),
             reconnect_delay: Duration::from_millis(100),
+            max_task_cases: 64,
+            in_flight: InFlightTasks::new(),
             health: None,
         },
         handler.clone(),

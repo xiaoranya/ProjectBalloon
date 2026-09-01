@@ -25,6 +25,7 @@ const DEFAULT_OBJECT_STORAGE_REGION: &str = "us-east-1";
 const DEFAULT_OBJECT_STORAGE_PROBLEM_BUCKET: &str = "xcpc-problems";
 const DEFAULT_OBJECT_STORAGE_SOURCE_BUCKET: &str = "xcpc-sources";
 const DEFAULT_OBJECT_STORAGE_REQUEST_TIMEOUT_MILLISECONDS: u64 = 5_000;
+const DEFAULT_OBJECT_STORAGE_UPLOAD_TIMEOUT_MILLISECONDS: u64 = 300_000;
 const DEFAULT_OBJECT_CLEANUP_POLL_MILLISECONDS: u64 = 5_000;
 const DEFAULT_OBJECT_CLEANUP_LEASE_SECONDS: u64 = 30;
 const DEFAULT_OBJECT_CLEANUP_RETRY_BASE_MILLISECONDS: u64 = 1_000;
@@ -102,6 +103,7 @@ pub struct AppConfig {
     pub object_storage_source_bucket: String,
     pub object_storage_force_path_style: bool,
     pub object_storage_request_timeout: Duration,
+    pub object_storage_upload_timeout: Duration,
     pub object_cleanup_poll_interval: Duration,
     pub object_cleanup_lease: Duration,
     pub object_cleanup_retry_base: Duration,

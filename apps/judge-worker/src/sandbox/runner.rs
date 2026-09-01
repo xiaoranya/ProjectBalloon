@@ -16,8 +16,9 @@ use bollard::{
 use futures_util::StreamExt;
 use project_balloon_contracts::{JudgeRunResult, JudgeTask, JudgeVerdict};
 use tokio::time::{Instant, timeout};
+use tracing::warn;
 
-use crate::sandbox::archive::{extract_cases, extract_output_cases};
+use crate::sandbox::archive::{OutputArchiveError, extract_cases, extract_output_cases};
 use crate::sandbox::compare::standard_output_matches;
 use crate::sandbox::fs::{
     create_private_dir, nonempty, read_regular_output_no_follow, remove_dir_if_present,
@@ -29,8 +30,9 @@ use crate::sandbox::metrics::{
     ContainerResourceUsage, collect_resource_usage, extract_gnu_time_metrics, nonzero_milliseconds,
 };
 use crate::sandbox::{
-    DOCKER_API_TIMEOUT, DockerSandbox, DockerSandboxConfig, MAX_EXEC_LOG_BYTES, SandboxError,
-    SandboxJudgement,
+    COMPILE_WALL_LIMIT, DOCKER_API_TIMEOUT, DockerSandbox, DockerSandboxConfig, MAX_EXEC_LOG_BYTES,
+    SandboxError, SandboxJudgement, effective_time_limit, is_container_missing,
+    is_container_name_conflict, judgement_container_name, run_wall_limit,
 };
 
 impl DockerSandbox {
@@ -79,7 +81,16 @@ impl DockerSandbox {
         match (result, cleanup) {
             (Ok(judgement), Ok(())) => Ok(judgement),
             (Err(error), _) => Err(error),
-            (Ok(_), Err(error)) => Err(SandboxError::Io(error)),
+            // A finished judgement is never re-run over cleanup trouble: the
+            // leftover directory is reclaimed by the orphan sweeper.
+            (Ok(judgement), Err(error)) => {
+                warn!(
+                    judgement_id = %task.judgement_id,
+                    error = %error,
+                    "job directory cleanup failed after a completed judgement; keeping the result"
+                );
+                Ok(judgement)
+            }
         }
     }
 
@@ -117,7 +128,7 @@ impl DockerSandbox {
         let run_memory_bytes = i64::from(task.memory_limit_mb) * 1024 * 1024;
         let container_id = self
             .create_judgement_container(
-                &format!("pb-judge-{}", task.judgement_id),
+                &judgement_container_name(task.judgement_id),
                 image,
                 &work_dir,
                 run_memory_bytes.max(1024 * 1024 * 1024),
@@ -144,62 +155,37 @@ impl DockerSandbox {
         )
         .await
         {
-            Ok(result) => result.map_err(|error| SandboxError::Api(error.to_string())),
+            Ok(Ok(())) => Ok(()),
+            // Already gone: a concurrent sweep or a previous removal won.
+            Ok(Err(error)) if is_container_missing(&error) => Ok(()),
+            Ok(Err(error)) => Err(SandboxError::Api(error.to_string())),
             Err(_) => Err(SandboxError::Api("timed out removing sandbox container".to_owned())),
         };
         match (result, cleanup) {
             (Ok(judgement), Ok(())) => Ok(judgement),
             (Err(error), _) => Err(error),
-            (Ok(_), Err(error)) => Err(error),
+            // A finished judgement is never re-run because its container could
+            // not be removed: the leftover is reclaimed by the orphan sweeper.
+            (Ok(judgement), Err(error)) => {
+                warn!(
+                    judgement_id = %task.judgement_id,
+                    container_id = %container_id,
+                    error = %error,
+                    "sandbox container cleanup failed after a completed judgement; keeping the result"
+                );
+                Ok(judgement)
+            }
         }
     }
 
     async fn judge_output_only(
         &self,
-        _task: &JudgeTask,
+        task: &JudgeTask,
         source: &[u8],
         archive: &Path,
         job_dir: &Path,
     ) -> Result<SandboxJudgement, SandboxError> {
-        let data_dir = job_dir.join("data");
-        create_private_dir(&data_dir).await?;
-        let case_count = extract_cases(archive.to_owned(), data_dir.clone()).await?;
-        let output_dir = job_dir.join("outputs");
-        create_private_dir(&output_dir).await?;
-        extract_output_cases(source.to_owned(), output_dir.clone()).await?;
-        let mut runs = Vec::with_capacity(case_count);
-        for test_index in 1..=case_count {
-            let expected = tokio::fs::read(data_dir.join(format!("{test_index}.out"))).await?;
-            let actual = tokio::fs::read(output_dir.join(format!("{test_index}.out"))).await.ok();
-            let verdict = if actual
-                .as_deref()
-                .is_some_and(|actual| standard_output_matches(&expected, actual))
-            {
-                JudgeVerdict::Accepted
-            } else {
-                JudgeVerdict::WrongAnswer
-            };
-            runs.push(JudgeRunResult {
-                test_index: i32::try_from(test_index).unwrap_or(i32::MAX),
-                verdict,
-                time_ms: 0,
-                memory_kb: 0,
-                exit_code: Some(0),
-                stderr_tail: None,
-            });
-        }
-        let verdict = if runs.iter().all(|run| run.verdict == JudgeVerdict::Accepted) {
-            JudgeVerdict::Accepted
-        } else {
-            JudgeVerdict::WrongAnswer
-        };
-        Ok(SandboxJudgement {
-            verdict,
-            total_time_ms: 0,
-            peak_memory_kb: 0,
-            compile_log: None,
-            runs,
-        })
+        run_output_only(task, source, archive, job_dir).await
     }
 
     // Sandbox limits and paths are passed separately to keep the container policy visible.
@@ -215,9 +201,8 @@ impl DockerSandbox {
         run_memory_bytes: i64,
         interactive: bool,
     ) -> Result<SandboxJudgement, SandboxError> {
-        let compile = self
-            .run_exec(container_id, language.compile_command(), Duration::from_secs(30))
-            .await?;
+        let compile =
+            self.run_exec(container_id, language.compile_command(), COMPILE_WALL_LIMIT).await?;
         self.kill_contestant_processes(container_id).await?;
         let compile_log = truncate_log(&compile.logs, 64 * 1024);
         if compile.timed_out || compile.exit_code != 0 {
@@ -230,7 +215,8 @@ impl DockerSandbox {
             });
         }
 
-        self.docker
+        if let Err(update_error) = self
+            .docker
             .update_container(
                 container_id,
                 ContainerUpdateBody {
@@ -240,15 +226,25 @@ impl DockerSandbox {
                 },
             )
             .await
-            .map_err(|error| SandboxError::Api(error.to_string()))?;
+        {
+            let fallback = self
+                .docker
+                .update_container(
+                    container_id,
+                    ContainerUpdateBody {
+                        memory: Some(run_memory_bytes),
+                        ..ContainerUpdateBody::default()
+                    },
+                )
+                .await;
+            memory_update_outcome(update_error, fallback)?;
+        }
 
         let mut runs = Vec::with_capacity(case_count);
         let mut total_time_ms = 0_i32;
         let effective_time_limit_ms =
             effective_time_limit(task.time_limit_ms, task.language_multiplier);
-        let wall_limit = Duration::from_millis(
-            u64::try_from(effective_time_limit_ms).unwrap_or(1).saturating_mul(3).max(1_000),
-        );
+        let wall_limit = run_wall_limit(effective_time_limit_ms);
         for test_index in 1..=case_count {
             let input_path = work_dir.join("current.in");
             tokio::fs::copy(data_dir.join(format!("{test_index}.in")), &input_path).await?;
@@ -345,6 +341,25 @@ impl DockerSandbox {
         })
     }
 
+    /// Force-removes a sandbox container addressed by name, tolerating an
+    /// already-vanished target.
+    pub(super) async fn remove_container_by_name(&self, name: &str) -> Result<(), SandboxError> {
+        match timeout(
+            DOCKER_API_TIMEOUT,
+            self.docker.remove_container(
+                name,
+                Some(RemoveContainerOptionsBuilder::default().force(true).build()),
+            ),
+        )
+        .await
+        {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) if is_container_missing(&error) => Ok(()),
+            Ok(Err(error)) => Err(SandboxError::Api(error.to_string())),
+            Err(_) => Err(SandboxError::Api("timed out removing sandbox container".to_owned())),
+        }
+    }
+
     async fn create_judgement_container(
         &self,
         name: &str,
@@ -390,18 +405,27 @@ impl DockerSandbox {
             host_config: Some(host_config),
             ..ContainerCreateBody::default()
         };
-        let container = self
+        let options =
+            bollard::query_parameters::CreateContainerOptionsBuilder::default().name(name).build();
+        let container = match self
             .docker
-            .create_container(
-                Some(
-                    bollard::query_parameters::CreateContainerOptionsBuilder::default()
-                        .name(name)
-                        .build(),
-                ),
-                body,
-            )
+            .create_container(Some(options.clone()), body.clone())
             .await
-            .map_err(|error| SandboxError::Api(error.to_string()))?;
+        {
+            Ok(container) => container,
+            // A previous run of this judgement (SIGKILL, OOM, drain expiry)
+            // can leave its container behind. Remove the stale one once and
+            // retry instead of failing the redelivered task.
+            Err(error) if is_container_name_conflict(&error) => {
+                warn!(name = %name, error = %error, "sandbox container name already exists; removing the stale container and retrying");
+                self.remove_container_by_name(name).await?;
+                self.docker
+                    .create_container(Some(options), body)
+                    .await
+                    .map_err(|error| SandboxError::Api(error.to_string()))?
+            }
+            Err(error) => return Err(SandboxError::Api(error.to_string())),
+        };
         if let Err(error) =
             self.docker.start_container(&container.id, None::<StartContainerOptions>).await
         {
@@ -592,6 +616,109 @@ impl DockerSandbox {
     }
 }
 
+/// Output-only judging never touches Docker: it extracts the trusted testdata
+/// archive and the contestant output archive, then compares bytes. The
+/// contestant archive is authenticated contestant input, so its validation
+/// failures are the submission's fault and surface as WrongAnswer — only the
+/// problem-testdata path keeps the InvalidTestdata (infrastructure)
+/// classification.
+pub(super) async fn run_output_only(
+    task: &JudgeTask,
+    source: &[u8],
+    archive: &Path,
+    job_dir: &Path,
+) -> Result<SandboxJudgement, SandboxError> {
+    let data_dir = job_dir.join("data");
+    create_private_dir(&data_dir).await?;
+    let case_count = extract_cases(archive.to_owned(), data_dir.clone()).await?;
+    let output_dir = job_dir.join("outputs");
+    create_private_dir(&output_dir).await?;
+    if let Err(error) = extract_output_cases(source.to_owned(), output_dir.clone()).await {
+        return match error {
+            // Worker-side I/O (cache directory, cancelled extraction task) is
+            // not the submission's fault and stays an infrastructure failure.
+            OutputArchiveError::Io(io_error) => Err(SandboxError::Io(io_error)),
+            validation_error => {
+                let reason = validation_error.to_string();
+                warn!(
+                    judgement_id = %task.judgement_id,
+                    reason = %reason,
+                    "output-only archive rejected as a contestant fault"
+                );
+                Ok(invalid_output_submission(&reason))
+            }
+        };
+    }
+    let mut runs = Vec::with_capacity(case_count);
+    for test_index in 1..=case_count {
+        let expected = tokio::fs::read(data_dir.join(format!("{test_index}.out"))).await?;
+        let actual = tokio::fs::read(output_dir.join(format!("{test_index}.out"))).await.ok();
+        let verdict =
+            if actual.as_deref().is_some_and(|actual| standard_output_matches(&expected, actual)) {
+                JudgeVerdict::Accepted
+            } else {
+                JudgeVerdict::WrongAnswer
+            };
+        runs.push(JudgeRunResult {
+            test_index: i32::try_from(test_index).unwrap_or(i32::MAX),
+            verdict,
+            time_ms: 0,
+            memory_kb: 0,
+            exit_code: Some(0),
+            stderr_tail: None,
+        });
+    }
+    let verdict = if runs.iter().all(|run| run.verdict == JudgeVerdict::Accepted) {
+        JudgeVerdict::Accepted
+    } else {
+        JudgeVerdict::WrongAnswer
+    };
+    Ok(SandboxJudgement { verdict, total_time_ms: 0, peak_memory_kb: 0, compile_log: None, runs })
+}
+
+/// Builds the contestant-facing verdict for an unusable output-only archive.
+/// A single synthetic WrongAnswer run carries the reason because the result
+/// contract only permits empty run lists for compilation/infrastructure
+/// verdicts, and this must never be reported as a SystemError.
+fn invalid_output_submission(reason: &str) -> SandboxJudgement {
+    SandboxJudgement {
+        verdict: JudgeVerdict::WrongAnswer,
+        total_time_ms: 0,
+        peak_memory_kb: 0,
+        compile_log: None,
+        runs: vec![JudgeRunResult {
+            test_index: 1,
+            verdict: JudgeVerdict::WrongAnswer,
+            time_ms: 0,
+            memory_kb: 0,
+            exit_code: Some(0),
+            stderr_tail: nonempty(truncate_log(reason, 16 * 1024)),
+        }],
+    }
+}
+
+/// Resolves a failed memory+swap container update. Hosts without swap
+/// accounting reject the swap limit while still accepting the plain memory
+/// limit, so the failure is only fatal when the memory-only update fails too
+/// — which is how a genuine sandbox API failure is distinguished.
+fn memory_update_outcome(
+    combined_error: bollard::errors::Error,
+    fallback: Result<(), bollard::errors::Error>,
+) -> Result<(), SandboxError> {
+    match fallback {
+        Ok(()) => {
+            warn!(
+                container_update_error = %combined_error,
+                "sandbox rejected the memory+swap update (host without swap accounting?); the memory limit alone was applied"
+            );
+            Ok(())
+        }
+        Err(fallback_error) => Err(SandboxError::Api(format!(
+            "sandbox container memory update failed (with swap limit: {combined_error}; without: {fallback_error})"
+        ))),
+    }
+}
+
 struct ContainerRun {
     exit_code: i64,
     timed_out: bool,
@@ -600,13 +727,6 @@ struct ContainerRun {
     cpu_time_ms: Option<i32>,
     peak_memory_kb: i32,
     logs: String,
-}
-
-/// Applies the language multiplier to the task time limit, clamped to at least
-/// one millisecond.
-fn effective_time_limit(task_time_limit_ms: i32, language_multiplier: f64) -> i32 {
-    (f64::from(task_time_limit_ms) * language_multiplier).ceil().clamp(1.0, f64::from(i32::MAX))
-        as i32
 }
 
 /// POSIX shells express `ulimit -f` in 512-byte blocks, while the task contract
@@ -698,5 +818,77 @@ mod tests {
         assert_eq!(output_file_blocks(64), 128);
         assert_eq!(output_file_blocks(1), 2);
         assert_eq!(output_file_blocks(0), 1);
+    }
+}
+
+#[cfg(test)]
+mod memory_and_container_tests {
+    use project_balloon_contracts::JudgeVerdict;
+
+    use super::{invalid_output_submission, memory_update_outcome};
+    use crate::sandbox::{SandboxError, is_container_missing, is_container_name_conflict};
+
+    fn docker_error(status_code: u16, message: &str) -> bollard::errors::Error {
+        bollard::errors::Error::DockerResponseServerError {
+            status_code,
+            message: message.to_owned(),
+        }
+    }
+
+    #[test]
+    fn memory_swap_rejection_is_recovered_by_the_memory_only_update() {
+        let kernel_without_swap_accounting =
+            docker_error(500, "Your kernel does not support swap limit capabilities");
+        // The memory-only fallback succeeds: the failure is not fatal.
+        assert!(memory_update_outcome(kernel_without_swap_accounting, Ok(())).is_ok());
+
+        // A genuine API failure fails the fallback too and must surface.
+        let combined = docker_error(500, "driver failed programming external connectivity");
+        let fallback = Err(docker_error(500, "OCI runtime update failed"));
+        let error = memory_update_outcome(combined, fallback).expect_err("genuine failure");
+        assert!(matches!(error, SandboxError::Api(_)));
+    }
+
+    #[test]
+    fn container_conflict_and_missing_statuses_are_recognized() {
+        assert!(is_container_name_conflict(&docker_error(
+            409,
+            "Conflict. The container name is already in use"
+        )));
+        assert!(!is_container_name_conflict(&docker_error(500, "internal error")));
+        assert!(is_container_missing(&docker_error(404, "No such container")));
+        assert!(!is_container_missing(&docker_error(409, "Conflict")));
+    }
+
+    #[test]
+    fn invalid_output_submission_is_a_contract_valid_wrong_answer() {
+        let judgement = invalid_output_submission("output archive is invalid: broken");
+        assert_eq!(judgement.verdict, JudgeVerdict::WrongAnswer);
+        assert_eq!(judgement.runs.len(), 1);
+        assert_eq!(judgement.runs[0].verdict, JudgeVerdict::WrongAnswer);
+        assert_eq!(judgement.runs[0].test_index, 1);
+        assert_eq!(
+            judgement.runs[0].stderr_tail.as_deref(),
+            Some("output archive is invalid: broken")
+        );
+
+        // A bare WrongAnswer with no runs would be contract-invalid; the
+        // synthetic run exists precisely to keep the result valid.
+        let mut result = project_balloon_contracts::JudgeResult {
+            schema_version: project_balloon_contracts::JUDGE_RESULT_SCHEMA_VERSION,
+            message_id: uuid::Uuid::new_v4(),
+            judgement_id: uuid::Uuid::new_v4(),
+            submission_id: 42,
+            worker_id: "worker-under-test".to_owned(),
+            verdict: judgement.verdict,
+            total_time_ms: judgement.total_time_ms,
+            peak_memory_kb: judgement.peak_memory_kb,
+            compile_log: judgement.compile_log,
+            started_at: time::OffsetDateTime::now_utc(),
+            completed_at: time::OffsetDateTime::now_utc(),
+            runs: judgement.runs,
+        };
+        result.message_id = result.judgement_id;
+        result.validate().expect("contestant outcome must be contract-valid");
     }
 }

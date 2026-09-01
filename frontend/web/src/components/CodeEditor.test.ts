@@ -80,15 +80,31 @@ describe('CodeEditor', () => {
     expect(editor.value).toBe(maliciousSource);
   });
 
-  it('emits debounced plain-text content back to v-model', async () => {
+  it('emits every content change straight back to v-model without a debounce window', async () => {
     const editor = stubEditor();
     const wrapper = mount(CodeEditor, { props: { modelValue: '' } });
 
+    editor.value = 'int x;';
+    editor.triggerContentChange();
+    await nextTick();
+    expect(wrapper.emitted('update:modelValue')).toEqual([['int x;']]);
+
+    // A submit fired immediately after another keystroke must not miss it.
     editor.value = maliciousSource;
     editor.triggerContentChange();
-    await vi.advanceTimersByTimeAsync(200);
+    await nextTick();
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([maliciousSource]);
+  });
+
+  it('does not echo programmatic v-model updates back to the parent', async () => {
+    stubEditor();
+    const wrapper = mount(CodeEditor, { props: { modelValue: 'int a;' } });
+    const editor = createEditor.mock.results[0].value as ReturnType<typeof stubEditor>;
+
+    await wrapper.setProps({ modelValue: maliciousSource });
     await nextTick();
 
-    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([maliciousSource]);
+    expect(editor.value).toBe(maliciousSource);
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined();
   });
 });

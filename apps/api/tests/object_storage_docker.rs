@@ -25,6 +25,7 @@ async fn rustfs_put_get_delete_round_trip() {
                 secret_key: required_env("PROJECT_BALLOON_TEST_S3_SECRET_KEY"),
                 force_path_style: true,
                 request_timeout: Duration::from_secs(5),
+                upload_timeout: Duration::from_secs(300),
             })
             .expect("object storage credentials must be valid"),
         ),

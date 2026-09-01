@@ -195,16 +195,33 @@ impl FromRequestParts<AppState> for OptionalAuthContext {
         if jar.get(SESSION_COOKIE_NAME).is_none() {
             return Ok(Self { session: None });
         }
-        let session = authenticate(parts, state).await?;
-        Ok(Self { session: Some(session) })
+        // A stale, expired, or tampered cookie must degrade to anonymous on
+        // public surfaces (public scoreboard, public CSV, anonymous SSE): a
+        // browser mid-contest would otherwise receive 401s until the cookie
+        // clears. AuthContext stays strict for protected surfaces.
+        match authenticate(parts, state).await {
+            Ok(session) => Ok(Self { session: Some(session) }),
+            Err(error) => {
+                tracing::debug!(?error, "invalid optional session cookie treated as anonymous");
+                Ok(Self { session: None })
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::AuthContext;
+    use std::time::Duration;
+
+    use axum::extract::FromRequestParts;
+    use axum::http::{Request, header};
+    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+
+    use super::{AuthContext, OptionalAuthContext};
+    use crate::features::auth::SESSION_COOKIE_NAME;
     use crate::features::auth::model::{UserType, user_for_test};
     use crate::features::auth::service::AuthenticatedSession;
+    use crate::state::AppState;
 
     fn context(workstation_binding_id: Option<i64>, password_reset_required: bool) -> AuthContext {
         let mut user = user_for_test(UserType::Staff, &[]);
@@ -248,5 +265,59 @@ mod tests {
     #[test]
     fn account_sessions_pass_the_account_only_gate() {
         assert!(context(None, false).require_account_session().is_ok());
+    }
+
+    /// A pool pointed at a port nobody listens on: every authentication
+    /// attempt fails, which is the behavior under test for stale cookies.
+    fn unreachable_state() -> AppState {
+        let options: PgConnectOptions =
+            "postgres://127.0.0.1:1/unreachable".parse().expect("connect options");
+        let pool = PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(500))
+            .connect_lazy_with(options);
+        AppState::new(
+            pool,
+            Duration::from_secs(1),
+            Duration::from_secs(60),
+            false,
+            b"testing-csrf-secret-material-0123456789",
+            16,
+            false,
+        )
+    }
+
+    fn parts_with_session_cookie(token: &str) -> axum::http::request::Parts {
+        Request::builder()
+            .header(header::COOKIE, format!("{SESSION_COOKIE_NAME}={token}"))
+            .body(())
+            .expect("request")
+            .into_parts()
+            .0
+    }
+
+    #[tokio::test]
+    async fn missing_session_cookie_is_anonymous() {
+        let state = unreachable_state();
+        let mut parts = Request::builder().body(()).expect("request").into_parts().0;
+        let context =
+            OptionalAuthContext::from_request_parts(&mut parts, &state).await.expect("anonymous");
+        assert!(context.user().is_none());
+    }
+
+    #[tokio::test]
+    async fn stale_or_tampered_session_cookie_degrades_to_anonymous() {
+        let state = unreachable_state();
+        let mut parts = parts_with_session_cookie("tampered-session-token");
+        let context = OptionalAuthContext::from_request_parts(&mut parts, &state)
+            .await
+            .expect("an invalid cookie must degrade to anonymous, not reject");
+        assert!(context.user().is_none());
+    }
+
+    #[tokio::test]
+    async fn strict_context_still_rejects_an_invalid_session_cookie() {
+        let state = unreachable_state();
+        let mut parts = parts_with_session_cookie("tampered-session-token");
+        assert!(AuthContext::from_request_parts(&mut parts, &state).await.is_err());
     }
 }

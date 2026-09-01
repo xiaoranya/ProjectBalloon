@@ -11,7 +11,7 @@ use axum::{
 use futures_util::{StreamExt, stream};
 use project_balloon_contracts::{RealtimeEvent, RealtimeScope};
 use serde_json::Value;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use uuid::Uuid;
 
 use crate::{
@@ -41,6 +41,7 @@ pub async fn subscribe_public(
             .await?;
     Ok(stream_response(
         state.realtime().subscribe(),
+        state.shutdown_receiver(),
         contest_id,
         RealtimeScope::Public,
         None,
@@ -80,6 +81,7 @@ pub async fn subscribe_staff(
             .await?;
     Ok(stream_response(
         state.realtime().subscribe(),
+        state.shutdown_receiver(),
         contest_id,
         RealtimeScope::Staff,
         None,
@@ -109,6 +111,7 @@ pub async fn subscribe_team(
     .await?;
     Ok(stream_response(
         state.realtime().subscribe(),
+        state.shutdown_receiver(),
         contest_id,
         RealtimeScope::Team,
         Some(team_id),
@@ -220,8 +223,13 @@ async fn load_replay(
     Ok(events)
 }
 
+/// Frames each subscription into an SSE response. The stream ends when the
+/// hub's sender drops *or* the process shutdown watch fires; the latter is the
+/// only way to end the stream during graceful shutdown, because the hub's
+/// sender lives in the `AppState` the server future is itself awaiting.
 fn stream_response(
     receiver: broadcast::Receiver<RealtimeEnvelope>,
+    shutdown: watch::Receiver<bool>,
     contest_id: i64,
     scope: RealtimeScope,
     team_id: Option<i64>,
@@ -230,30 +238,47 @@ fn stream_response(
     let replay_frames = stream::iter(replay).map(|event| event_frame(&event));
     let connected =
         stream::once(async move { event_frame(&RealtimeEvent::connected(contest_id, scope)) });
-    let messages = stream::unfold(receiver, move |mut receiver| async move {
-        loop {
-            match receiver.recv().await {
-                Ok(envelope)
-                    if envelope.event.contest_id == contest_id
-                        && envelope.event.scope == scope
-                        && envelope.team_id == team_id =>
-                {
-                    return Some((event_frame(&envelope.event), receiver));
+    let messages = stream::unfold(
+        (receiver, shutdown),
+        move |(mut receiver, mut shutdown)| async move {
+            loop {
+                if *shutdown.borrow_and_update() {
+                    return None;
                 }
-                Ok(_) => {}
-                Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                    tracing::warn!(
-                        %contest_id,
-                        %skipped,
-                        scope = %scope.as_str(),
-                        team_id,
-                        "realtime subscriber lagged; dropped events will not be replayed"
-                    );
+                tokio::select! {
+                    changed = shutdown.changed() => {
+                        // A dropped sender means no shutdown can ever be signaled
+                        // through this clone; fall back to the hub's own close.
+                        if changed.is_ok() && *shutdown.borrow_and_update() {
+                            return None;
+                        }
+                    }
+                    received = receiver.recv() => {
+                        match received {
+                            Ok(envelope)
+                                if envelope.event.contest_id == contest_id
+                                    && envelope.event.scope == scope
+                                    && envelope.team_id == team_id =>
+                            {
+                                return Some((event_frame(&envelope.event), (receiver, shutdown)));
+                            }
+                            Ok(_) => {}
+                            Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                                tracing::warn!(
+                                    %contest_id,
+                                    %skipped,
+                                    scope = %scope.as_str(),
+                                    team_id,
+                                    "realtime subscriber lagged; dropped events will not be replayed"
+                                );
+                            }
+                            Err(broadcast::error::RecvError::Closed) => return None,
+                        }
+                    }
                 }
-                Err(broadcast::error::RecvError::Closed) => return None,
             }
-        }
-    });
+        },
+    );
     let stream = replay_frames.chain(connected).chain(messages);
     let mut response = Sse::new(stream)
         .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("heartbeat"))
@@ -282,11 +307,50 @@ fn event_frame(event: &RealtimeEvent) -> Result<Event, Infallible> {
 mod tests {
     use axum::extract::FromRequestParts;
     use axum::http::Request;
+    use futures_util::StreamExt;
     use sqlx::PgPool;
+    use tokio::sync::watch;
     use uuid::Uuid;
 
-    use super::{LastEventId, load_replay};
+    use super::{LastEventId, load_replay, stream_response};
     use crate::features::realtime::handlers::RealtimeScope;
+    use crate::features::realtime::hub::{RealtimeEnvelope, RealtimeHub};
+
+    #[tokio::test]
+    async fn sse_stream_terminates_when_shutdown_fires() {
+        let hub = RealtimeHub::new(4, false);
+        let receiver = hub.subscribe();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let response =
+            stream_response(receiver, shutdown_rx, 7, RealtimeScope::Public, None, Vec::new());
+        let mut frames = response.into_body().into_data_stream();
+        let connected = frames.next().await.expect("the connected frame must arrive");
+        assert!(!connected.expect("connected frame bytes").is_empty());
+
+        shutdown_tx.send(true).expect("shutdown channel must be open");
+        assert!(frames.next().await.is_none(), "the stream must end once the shutdown watch fires");
+    }
+
+    #[tokio::test]
+    async fn sse_stream_keeps_delivering_until_shutdown_fires() {
+        let hub = RealtimeHub::new(4, false);
+        let receiver = hub.subscribe();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let response =
+            stream_response(receiver, shutdown_rx, 7, RealtimeScope::Staff, None, Vec::new());
+        let mut frames = response.into_body().into_data_stream();
+        let _connected = frames.next().await.expect("the connected frame must arrive");
+
+        let event = project_balloon_contracts::RealtimeEvent::connected(7, RealtimeScope::Staff);
+        hub.publish(RealtimeEnvelope { event, team_id: None });
+        assert!(
+            frames.next().await.is_some(),
+            "published in-scope events must still stream before shutdown"
+        );
+
+        shutdown_tx.send(true).expect("shutdown channel must be open");
+        assert!(frames.next().await.is_none());
+    }
 
     #[tokio::test]
     async fn last_event_id_is_read_from_header_then_query() {

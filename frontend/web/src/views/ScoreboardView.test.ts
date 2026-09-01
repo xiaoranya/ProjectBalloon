@@ -66,4 +66,27 @@ describe('ScoreboardView', () => {
     expect(wrapper.findAll('.score-cell')).toHaveLength(2);
     wrapper.unmount();
   });
+
+  it('keeps the last scoreboard and warns instead of failing silently when polls fail', async () => {
+    vi.useFakeTimers();
+    const wrapper = mount(ScoreboardView);
+    try {
+      await flushPromises();
+      expect(wrapper.text()).not.toContain('榜单自动刷新暂时失败');
+
+      mocks.getScoreboard.mockRejectedValue(new Error('poll failed'));
+      await vi.advanceTimersByTimeAsync(15_000);
+      await flushPromises();
+      expect(wrapper.text()).toContain('Blue Team');
+      expect(wrapper.text()).toContain('榜单自动刷新暂时失败');
+
+      mocks.getScoreboard.mockResolvedValue(scoreboard);
+      await vi.advanceTimersByTimeAsync(15_000);
+      await flushPromises();
+      expect(wrapper.text()).not.toContain('榜单自动刷新暂时失败');
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
 });

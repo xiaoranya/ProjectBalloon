@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 
 use crate::{
     artifacts::{ArtifactError, ArtifactManager, PreparedArtifacts},
-    rabbit::{JudgeTaskHandler, TaskFailure},
+    rabbit::{JudgeTaskHandler, TaskFailure, retry_budget_exhausted},
     sandbox::{DockerSandbox, SandboxError, SandboxJudgement},
 };
 
@@ -68,8 +68,6 @@ pub struct JudgeEngine<A: ArtifactPreparer = ArtifactManager, S: SandboxJudge = 
     artifacts: A,
     sandbox: S,
 }
-
-const MAX_TASK_RETRIES: u32 = 8;
 
 impl JudgeEngine<ArtifactManager, DockerSandbox> {
     #[must_use]
@@ -175,12 +173,6 @@ impl<A: ArtifactPreparer, S: SandboxJudge> JudgeTaskHandler for JudgeEngine<A, S
     }
 }
 
-/// The retry budget bounds how often a retryable failure may bounce back to
-/// the queue before the task degrades into a SystemError verdict.
-fn retry_budget_exhausted(retry_count: u32) -> bool {
-    retry_count >= MAX_TASK_RETRIES
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -195,12 +187,11 @@ mod tests {
     use project_balloon_test_support::valid_judge_task;
 
     use super::{
-        ArtifactError, ArtifactPreparer, JudgeEngine, SandboxError, SandboxJudge,
-        retry_budget_exhausted, truncate_utf8,
+        ArtifactError, ArtifactPreparer, JudgeEngine, SandboxError, SandboxJudge, truncate_utf8,
     };
     use crate::{
         artifacts::PreparedArtifacts,
-        rabbit::{JudgeTaskHandler, TaskFailureKind},
+        rabbit::{JudgeTaskHandler, TaskFailureKind, retry_budget_exhausted},
         sandbox::SandboxJudgement,
     };
 

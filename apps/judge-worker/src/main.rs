@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    net::SocketAddr,
+    sync::Arc,
+};
 
 use anyhow::{Context, Result};
 use project_balloon_judge_worker::{
@@ -6,11 +10,10 @@ use project_balloon_judge_worker::{
     artifacts::{ArtifactManager, S3ArtifactSource, S3ArtifactSourceConfig},
     health::{HealthState, serve_health},
     heartbeat::{WorkerActivity, WorkerHeartbeatPublisher, WorkerHeartbeatPublisherConfig},
-    rabbit::{RabbitJudgeWorker, RabbitJudgeWorkerConfig},
-    sandbox::{DockerSandbox, DockerSandboxConfig},
+    rabbit::{InFlightTasks, RabbitJudgeWorker, RabbitJudgeWorkerConfig},
+    sandbox::{DockerSandbox, DockerSandboxConfig, run_orphan_sweeps},
     worker::JudgeEngine,
 };
-use std::net::SocketAddr;
 use tokio::sync::watch;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -44,6 +47,18 @@ async fn main() -> Result<()> {
         java_image: config.java_image.clone(),
         python_image: config.python_image.clone(),
     })?;
+    // Startup orphan sweep: nothing is in flight yet, so every leftover
+    // pb-judge-* container and job directory belongs to a SIGKILLed or OOM
+    // killed run and must go before the first delivery can recreate it.
+    let sweep =
+        sandbox.sweep_orphans(&HashSet::new()).await.context("sandbox orphan sweep failed")?;
+    info!(
+        containers = sweep.containers,
+        job_dirs = sweep.job_dirs,
+        "startup sandbox orphan sweep complete"
+    );
+    let in_flight = InFlightTasks::new();
+    let gc_sandbox = sandbox.clone();
     let engine = Arc::new(JudgeEngine::new(config.worker_id.clone(), artifacts, sandbox));
     engine
         .preflight()
@@ -74,6 +89,8 @@ async fn main() -> Result<()> {
             prefetch: config.task_prefetch,
             request_timeout: config.request_timeout,
             reconnect_delay: config.reconnect_delay,
+            max_task_cases: config.max_task_cases,
+            in_flight: in_flight.clone(),
             health: Some(health.clone()),
         },
         engine,
@@ -95,6 +112,12 @@ async fn main() -> Result<()> {
     );
     let worker_task = tokio::spawn(worker.run(shutdown_rx.clone()));
     let heartbeat_task = tokio::spawn(heartbeat.run(shutdown.subscribe()));
+    let gc_task = tokio::spawn(run_orphan_sweeps(
+        gc_sandbox,
+        in_flight.clone(),
+        config.gc_interval,
+        shutdown_rx.clone(),
+    ));
     let health_addr = SocketAddr::from(([127, 0, 0, 1], config.health_port));
     let health_task = tokio::spawn(serve_health(health_addr, health, shutdown_rx.clone()));
     shutdown_signal().await;
@@ -102,6 +125,7 @@ async fn main() -> Result<()> {
     let _sent = shutdown.send(true);
     worker_task.await.context("Judge worker task failed")?;
     heartbeat_task.await.context("Worker heartbeat task failed")?;
+    gc_task.await.context("Judge worker orphan sweep task failed")?;
     // The health server exits on the same shutdown watch; its own readiness
     // promise ends with the process.
     match health_task.await {

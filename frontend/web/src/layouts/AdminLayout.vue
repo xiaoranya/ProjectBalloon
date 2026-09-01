@@ -86,7 +86,13 @@ const accountTypeLabel = computed(() => {
 });
 
 async function logout() {
-  await session.logout();
+  // session.logout() clears the session in its finally block even when the
+  // request fails; navigate regardless so the UI never half-clears.
+  try {
+    await session.logout();
+  } catch {
+    // The logout request outcome does not change the local session state.
+  }
   await router.replace('/admin/login');
 }
 </script>

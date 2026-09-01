@@ -19,7 +19,7 @@ use crate::features::judge_dispatch::{
     error::JudgeDispatchError,
     heartbeat_processor::WorkerHeartbeatProcessor,
     payload::{HeartbeatPayload, message_id_mismatch, parse_heartbeat},
-    topology,
+    topology, within_request_timeout,
 };
 
 pub struct RabbitWorkerHeartbeatConsumer {
@@ -71,17 +71,37 @@ impl RabbitWorkerHeartbeatConsumer {
         )
         .await
         .map_err(|_| JudgeDispatchError::Timeout("heartbeat consumer connection"))??;
-        let channel = connection.create_channel().await?;
-        topology::declare(&channel).await?;
-        channel.basic_qos(self.prefetch, BasicQosOptions::default()).await?;
-        let mut consumer = channel
-            .basic_consume(
+        // Every channel-setup await is bounded so a stalling broker takes the
+        // reconnect path instead of wedging the consumer task.
+        let channel = within_request_timeout(
+            "heartbeat consumer channel",
+            self.request_timeout,
+            connection.create_channel(),
+        )
+        .await?;
+        within_request_timeout(
+            "heartbeat consumer topology declaration",
+            self.request_timeout,
+            topology::declare(&channel),
+        )
+        .await?;
+        within_request_timeout(
+            "heartbeat consumer qos",
+            self.request_timeout,
+            channel.basic_qos(self.prefetch, BasicQosOptions::default()),
+        )
+        .await?;
+        let mut consumer = within_request_timeout(
+            "heartbeat consumer subscription",
+            self.request_timeout,
+            channel.basic_consume(
                 JUDGE_HEARTBEATS_QUEUE.into(),
                 format!("project-balloon-api-heartbeats-{}", Uuid::new_v4()).into(),
                 BasicConsumeOptions::default(),
                 FieldTable::default(),
-            )
-            .await?;
+            ),
+        )
+        .await?;
         let processor = WorkerHeartbeatProcessor::new(self.database.clone());
         loop {
             tokio::select! {

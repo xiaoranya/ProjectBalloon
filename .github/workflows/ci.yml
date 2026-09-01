@@ -4,9 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Nightly scheduled run so npm advisories in production dependencies surface
+  # after merge; scheduled runs execute only the npm-audit job and skip the rest.
+  schedule:
+    - cron: '20 3 * * *'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # The event name keeps scheduled runs in their own group so a nightly
+  # npm-audit run never cancels an in-progress push or pull_request run.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -15,6 +21,7 @@ permissions:
 jobs:
   rust:
     name: Rust checks
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -51,6 +58,7 @@ jobs:
 
   integration:
     name: Integration checks
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:
@@ -212,6 +220,7 @@ jobs:
 
   coverage:
     name: Coverage summary
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     services:
@@ -309,6 +318,7 @@ jobs:
 
   frontend:
     name: Frontend checks
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -322,14 +332,40 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/web/package-lock.json
       - run: npm ci
+      - name: Audit production dependencies for high or critical advisories
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
       - run: npm run format:check
       - run: npm test -- --run
       - run: npm run openapi:diff -- --check
       - run: npm run build
 
+  npm-audit:
+    # Scheduled-only companion to the frontend job's audit step: advisories
+    # published against an already-merged lockfile still fail a workflow the
+    # next night without paying for full CI.
+    name: Scheduled npm audit
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit production dependencies for high or critical advisories
+        run: npm audit --omit=dev --audit-level=high
+
   compatibility:
     name: API compatibility snapshot
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -341,6 +377,7 @@ jobs:
 
   quality:
     name: Dependency and license checks
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -354,6 +391,7 @@ jobs:
     # check runs still show the expanded matrix name instead of the literal
     # ${{ matrix.name }} (skipped jobs never expand their matrix).
     name: Judge runtime build (${{ matrix.name }})
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -403,6 +441,7 @@ jobs:
 
   compose:
     name: Compose configuration
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

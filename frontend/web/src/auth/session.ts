@@ -24,10 +24,13 @@ async function initialize() {
     try {
       state.deployment = await apiRequest<DeploymentInfo>('/api/deployment');
       state.user = await apiRequest<CurrentUserResponse>('/api/auth/me');
+      state.initialized = true;
     } catch {
+      // Boot probe failed (e.g. a transient network blip). Leave `initialized`
+      // false so the next navigation re-probes instead of permanently
+      // treating the visitor as logged out and the deployment as standard.
       state.user = null;
     } finally {
-      state.initialized = true;
       state.loading = false;
       initialization = null;
     }

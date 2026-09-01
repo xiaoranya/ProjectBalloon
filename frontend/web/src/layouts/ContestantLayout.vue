@@ -103,7 +103,14 @@ async function handleCommand(command: string) {
     return;
   }
   if (command === 'logout') {
-    await session.logout();
+    // session.logout() clears the session in its finally block even when the
+    // request fails; always toast and navigate so the UI never half-clears.
+    try {
+      await session.logout();
+    } catch {
+      // Swallowed deliberately: the outcome of the logout request does not
+      // change the local session state or the destination.
+    }
     ElMessage.success(t('已退出登录'));
     await router.push('/login');
   }

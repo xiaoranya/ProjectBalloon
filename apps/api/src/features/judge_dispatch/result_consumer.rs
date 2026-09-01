@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::features::judge_dispatch::{
     error::JudgeDispatchError, payload::message_id_mismatch,
-    result_processor::JudgeResultProcessor, topology,
+    result_processor::JudgeResultProcessor, topology, within_request_timeout,
 };
 
 pub struct RabbitJudgeResultConsumer {
@@ -71,18 +71,39 @@ impl RabbitJudgeResultConsumer {
         )
         .await
         .map_err(|_| JudgeDispatchError::Timeout("result consumer connection"))??;
-        let channel = connection.create_channel().await?;
-        topology::declare(&channel).await?;
-        channel.basic_qos(self.prefetch, BasicQosOptions::default()).await?;
+        // Every channel-setup await is bounded: a broker that accepts TCP but
+        // stalls on AMQP frames must take the reconnect path, not wedge the
+        // consumer task.
+        let channel = within_request_timeout(
+            "result consumer channel",
+            self.request_timeout,
+            connection.create_channel(),
+        )
+        .await?;
+        within_request_timeout(
+            "result consumer topology declaration",
+            self.request_timeout,
+            topology::declare(&channel),
+        )
+        .await?;
+        within_request_timeout(
+            "result consumer qos",
+            self.request_timeout,
+            channel.basic_qos(self.prefetch, BasicQosOptions::default()),
+        )
+        .await?;
         let consumer_tag = format!("project-balloon-api-results-{}", Uuid::new_v4());
-        let mut consumer = channel
-            .basic_consume(
+        let mut consumer = within_request_timeout(
+            "result consumer subscription",
+            self.request_timeout,
+            channel.basic_consume(
                 topology::RESULTS_QUEUE.into(),
                 consumer_tag.into(),
                 BasicConsumeOptions::default(),
                 FieldTable::default(),
-            )
-            .await?;
+            ),
+        )
+        .await?;
         let processor = JudgeResultProcessor::new(self.database.clone());
         loop {
             tokio::select! {

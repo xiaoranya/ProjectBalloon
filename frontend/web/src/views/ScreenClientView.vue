@@ -12,6 +12,9 @@
       <h1>{{ currentView }}</h1>
       <span v-if="errorMessage">{{ errorMessage }}</span
       ><span v-else>{{ t('等待控制台下发画面切换命令') }}</span>
+      <span v-if="retryDelaySeconds > 0" class="retrying">{{
+        t('连接中断，{seconds} 秒后自动重试', { seconds: retryDelaySeconds })
+      }}</span>
     </section>
   </main>
 </template>
@@ -30,10 +33,15 @@ const registration = ref<ScreenRegistration | null>(null);
 const currentView = ref<ScreenViewTarget>('SCOREBOARD');
 const online = ref(false);
 const errorMessage = ref('');
+const retryDelaySeconds = ref(0);
 const heartbeatIntervalMs = 10_000;
+const retryInitialMs = 2_000;
+const retryMaxMs = 60_000;
 const storageKey = contestId ? `project-balloon:screen:${contestId}` : '';
 let heartbeatTimer: number | undefined;
 let boundaryTimer: number | undefined;
+let retryTimer: number | undefined;
+let retryAttempt = 0;
 let heartbeatInFlight = false;
 let stopped = false;
 
@@ -57,6 +65,31 @@ function scheduleHeartbeat() {
     heartbeatTimer = undefined;
     void heartbeat();
   }, heartbeatIntervalMs);
+}
+
+function clearRetryTimer() {
+  if (retryTimer !== undefined) {
+    window.clearTimeout(retryTimer);
+    retryTimer = undefined;
+  }
+  retryDelaySeconds.value = 0;
+}
+
+/**
+ * Retries unattended boot/re-registration with capped exponential backoff
+ * (2s, 4s, 8s, ... capped at 60s) so a screen powered on before the network
+ * is up, or whose token the server invalidated, recovers without a human.
+ */
+function scheduleRetry(retry: () => void) {
+  if (stopped || retryTimer !== undefined) return;
+  const delayMs = Math.min(retryInitialMs * 2 ** retryAttempt, retryMaxMs);
+  retryAttempt += 1;
+  retryDelaySeconds.value = Math.round(delayMs / 1000);
+  retryTimer = window.setTimeout(() => {
+    retryTimer = undefined;
+    retryDelaySeconds.value = 0;
+    if (!stopped) void retry();
+  }, delayMs);
 }
 
 async function heartbeat() {
@@ -91,15 +124,62 @@ async function heartbeat() {
     online.value = true;
     errorMessage.value = '';
   } catch (error) {
+    online.value = false;
+    errorMessage.value = getErrorMessage(error);
     if (error instanceof ApiError && error.code === 'SCREEN_TOKEN_INVALID') {
       localStorage.removeItem(storageKey);
       registration.value = null;
+      scheduleRetry(start);
     }
-    online.value = false;
-    errorMessage.value = getErrorMessage(error);
   } finally {
     heartbeatInFlight = false;
     scheduleHeartbeat();
+  }
+}
+
+async function ensureRegistration(): Promise<ScreenRegistration> {
+  if (!contestId) {
+    // Unreachable: start() is only called after the contestId check in onMounted.
+    throw new Error('contestId is required');
+  }
+  const stored = localStorage.getItem(storageKey);
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored) as Partial<ScreenRegistration>;
+      if (
+        parsed.contestId === contestId &&
+        typeof parsed.instanceId === 'number' &&
+        typeof parsed.clientToken === 'string' &&
+        parsed.clientToken
+      ) {
+        return parsed as ScreenRegistration;
+      }
+      localStorage.removeItem(storageKey);
+    } catch {
+      localStorage.removeItem(storageKey);
+    }
+  }
+  const registered = await screenApi.register(contestId, screenName);
+  if (stopped) return registered;
+  registration.value = registered;
+  localStorage.setItem(storageKey, JSON.stringify(registered));
+  return registered;
+}
+
+async function start() {
+  if (stopped) return;
+  try {
+    const value = await ensureRegistration();
+    if (stopped) return;
+    registration.value = value;
+    retryAttempt = 0;
+    currentView.value = value.currentView;
+    await heartbeat();
+  } catch (error) {
+    if (stopped) return;
+    online.value = false;
+    errorMessage.value = getErrorMessage(error);
+    scheduleRetry(start);
   }
 }
 
@@ -108,41 +188,12 @@ onMounted(async () => {
     errorMessage.value = t('请使用 ?contestId= 指定比赛');
     return;
   }
-  try {
-    const stored = localStorage.getItem(storageKey);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as Partial<ScreenRegistration>;
-        if (
-          parsed.contestId === contestId &&
-          typeof parsed.instanceId === 'number' &&
-          typeof parsed.clientToken === 'string' &&
-          parsed.clientToken
-        ) {
-          registration.value = parsed as ScreenRegistration;
-        } else {
-          localStorage.removeItem(storageKey);
-        }
-      } catch {
-        localStorage.removeItem(storageKey);
-      }
-    }
-    if (!registration.value) {
-      const registered = await screenApi.register(contestId, screenName);
-      if (stopped) return;
-      registration.value = registered;
-      localStorage.setItem(storageKey, JSON.stringify(registration.value));
-    }
-    if (stopped) return;
-    currentView.value = registration.value.currentView;
-    await heartbeat();
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error);
-  }
+  await start();
 });
 
 onBeforeUnmount(() => {
   stopped = true;
+  clearRetryTimer();
   if (heartbeatTimer !== undefined) window.clearTimeout(heartbeatTimer);
   if (boundaryTimer !== undefined) window.clearTimeout(boundaryTimer);
 });
@@ -181,5 +232,8 @@ onBeforeUnmount(() => {
 .screen-client section h1 {
   font-size: clamp(56px, 10vw, 150px);
   margin: 12px;
+}
+.screen-client section .retrying {
+  color: #f59e0b;
 }
 </style>
