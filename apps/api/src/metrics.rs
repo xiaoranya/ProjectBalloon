@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use sqlx::{FromRow, PgPool};
+use subtle::ConstantTimeEq;
 
 use crate::{error::AppError, state::AppState};
 use axum::routing::get;
@@ -32,10 +33,19 @@ struct MetricsSnapshot {
     path = "/metrics",
     operation_id = "getPrometheusMetrics",
     tag = "observability",
-    responses((status = 200, description = "Prometheus text exposition", body = String, content_type = "text/plain")),
+    responses(
+        (status = 200, description = "Prometheus text exposition", body = String, content_type = "text/plain"),
+        (status = 401, description = "A metrics token is configured and the bearer token is missing or wrong", body = crate::error::ApiErrorBody)
+    ),
     security(())
 )]
-pub(crate) async fn prometheus(State(state): State<AppState>) -> Result<Response, AppError> {
+pub(crate) async fn prometheus(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Response, AppError> {
+    if let Some(expected) = state.metrics_token() {
+        authorize_metrics_request(&headers, expected)?;
+    }
     let snapshot = collect_snapshot(state.database())
         .await
         .map_err(|error| AppError::internal("collect Prometheus metrics", error))?;
@@ -48,6 +58,27 @@ pub(crate) async fn prometheus(State(state): State<AppState>) -> Result<Response
         body,
     )
         .into_response())
+}
+
+/// Enforces the optional `/metrics` bearer token. Queue depths, worker
+/// capacity, and submission volumes are operational data that must not be
+/// world-readable wherever a token is configured.
+fn authorize_metrics_request(headers: &axum::http::HeaderMap, expected: &str) -> Result<(), AppError> {
+    const BEARER_PREFIX: &str = "Bearer ";
+    let provided = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix(BEARER_PREFIX))
+        .unwrap_or("");
+    // Constant-time comparison so response timing cannot probe the token.
+    if bool::from(expected.as_bytes().ct_eq(provided.as_bytes())) {
+        Ok(())
+    } else {
+        Err(AppError::unauthorized(
+            "METRICS_UNAUTHORIZED",
+            "Metrics endpoint requires a valid bearer token",
+        ))
+    }
 }
 
 async fn collect_snapshot(database: &PgPool) -> Result<MetricsSnapshot, sqlx::Error> {
@@ -176,9 +207,38 @@ pub fn routes() -> axum::Router<crate::state::AppState> {
 
 #[cfg(test)]
 mod tests {
+    use axum::http::{HeaderMap, header};
     use sqlx::PgPool;
 
-    use crate::metrics::{MetricsSnapshot, collect_snapshot, render};
+    use crate::metrics::{MetricsSnapshot, authorize_metrics_request, collect_snapshot, render};
+
+    fn bearer_headers(token: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, format!("Bearer {token}").parse().expect("header"));
+        headers
+    }
+
+    #[test]
+    fn metrics_token_authorizes_only_the_configured_bearer() {
+        assert!(authorize_metrics_request(&bearer_headers("secret-token"), "secret-token").is_ok());
+    }
+
+    #[test]
+    fn metrics_token_rejects_missing_wrong_and_malformed_credentials() {
+        let empty = HeaderMap::new();
+        assert!(authorize_metrics_request(&empty, "secret-token").is_err());
+        assert!(authorize_metrics_request(&bearer_headers("wrong"), "secret-token").is_err());
+        assert!(authorize_metrics_request(&bearer_headers(""), "secret-token").is_err());
+        let mut basic_only = HeaderMap::new();
+        basic_only
+            .insert(header::AUTHORIZATION, "Basic dXNlcjpwYXNz".parse().expect("header"));
+        assert!(authorize_metrics_request(&basic_only, "secret-token").is_err());
+    }
+
+    #[test]
+    fn metrics_token_rejects_a_token_that_merely_prefixes_the_expected_one() {
+        assert!(authorize_metrics_request(&bearer_headers("secret-toke"), "secret-token").is_err());
+    }
 
     #[test]
     fn prometheus_output_has_help_type_and_values() {

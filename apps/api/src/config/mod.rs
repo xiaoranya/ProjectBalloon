@@ -70,6 +70,7 @@ pub struct AppConfig {
     pub deployment_mode: DeploymentMode,
     pub bind_address: SocketAddr,
     pub trusted_proxy_cidrs: Vec<IpNet>,
+    pub metrics_token: Option<String>,
     pub database_url: String,
     pub database_max_connections: u32,
     pub database_acquire_timeout: Duration,

@@ -1,9 +1,9 @@
 use std::{
     collections::{BTreeSet, HashSet},
-    io::{Cursor, Read},
+    io::{Read, Seek},
+    path::Path,
 };
 
-use bytes::Bytes;
 use zip::{CompressionMethod, ZipArchive};
 
 use crate::error::AppError;
@@ -18,15 +18,26 @@ pub struct ArchiveSummary {
     pub case_count: i32,
 }
 
-pub async fn validate(content: Bytes) -> Result<ArchiveSummary, AppError> {
-    tokio::task::spawn_blocking(move || validate_sync(&content))
-        .await
-        .map_err(|error| AppError::internal("join test-data archive validation", error))?
+/// Validates an archive staged on disk. The streaming upload path uses this so
+/// a 256 MiB ZIP never has to be buffered in memory to be checked.
+pub async fn validate_file(path: &Path) -> Result<ArchiveSummary, AppError> {
+    let path = path.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let file = std::fs::File::open(&path)
+            .map_err(|_| invalid("must be a structurally valid ZIP archive"))?;
+        validate_reader(file)
+    })
+    .await
+    .map_err(|error| AppError::internal("join test-data archive validation", error))?
 }
 
-fn validate_sync(content: &[u8]) -> Result<ArchiveSummary, AppError> {
-    let mut archive = ZipArchive::new(Cursor::new(content))
-        .map_err(|_| invalid("must be a structurally valid ZIP archive"))?;
+fn validate_reader<R: Read + Seek>(reader: R) -> Result<ArchiveSummary, AppError> {
+    validate_sync_archive(ZipArchive::new(reader).map_err(|_| invalid("must be a structurally valid ZIP archive"))?)
+}
+
+fn validate_sync_archive<R: Read + Seek>(
+    mut archive: ZipArchive<R>,
+) -> Result<ArchiveSummary, AppError> {
     if archive.is_empty() || archive.len() > MAX_ENTRIES {
         return Err(invalid("must contain between 1 and 10000 entries"));
     }
@@ -136,7 +147,7 @@ mod tests {
     use bytes::Bytes;
     use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-    use crate::features::problems::testdata_archive::validate_sync;
+    use crate::features::problems::testdata_archive::validate_reader;
 
     fn archive(entries: &[(&str, &[u8])]) -> Bytes {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -161,26 +172,26 @@ mod tests {
     #[test]
     fn valid_regular_entries_are_accepted() {
         let content = archive(&[("1.in", b"1\n"), ("1.out", b"2\n")]);
-        assert_eq!(validate_sync(&content).expect("valid archive").case_count, 1);
+        assert_eq!(validate_reader(Cursor::new(&content)).expect("valid archive").case_count, 1);
     }
 
     #[test]
     fn traversal_paths_are_rejected() {
         let traversal = archive(&[("../escape.in", b"bad")]);
-        assert!(validate_sync(&traversal).is_err());
+        assert!(validate_reader(Cursor::new(&traversal)).is_err());
     }
 
     #[test]
     fn missing_pairs_and_nested_cases_are_rejected() {
-        assert!(validate_sync(&archive(&[("1.in", b"one")])).is_err());
+        assert!(validate_reader(Cursor::new(&archive(&[("1.in", b"one")]))).is_err());
         assert!(
-            validate_sync(&archive(&[("cases/1.in", b"one"), ("cases/1.out", b"one")])).is_err()
+            validate_reader(Cursor::new(&archive(&[("cases/1.in", b"one"), ("cases/1.out", b"one")]))).is_err()
         );
     }
 
     #[test]
     fn excessive_compression_ratio_is_rejected() {
-        assert!(validate_sync(&compressed_bomb_fixture()).is_err());
+        assert!(validate_reader(Cursor::new(&compressed_bomb_fixture())).is_err());
     }
 
     fn empty_archive() -> Bytes {
@@ -256,46 +267,46 @@ mod tests {
 
     #[test]
     fn empty_archives_are_rejected() {
-        assert!(validate_sync(&empty_archive()).is_err());
+        assert!(validate_reader(Cursor::new(&empty_archive())).is_err());
     }
 
     #[test]
     fn directory_entries_are_rejected() {
-        assert!(validate_sync(&directory_fixture()).is_err());
+        assert!(validate_reader(Cursor::new(&directory_fixture())).is_err());
     }
 
     #[test]
     fn symlink_unix_modes_are_rejected() {
         let content = with_unix_modes(&symlink_fixture_bytes(), 0o120777);
-        assert!(validate_sync(&content).is_err());
+        assert!(validate_reader(Cursor::new(&content)).is_err());
     }
 
     #[test]
     fn encrypted_entries_are_rejected() {
         let content = with_encrypted_bits(archive(&[("1.in", b"1"), ("1.out", b"2")]).to_vec());
-        assert!(validate_sync(&content).is_err());
+        assert!(validate_reader(Cursor::new(&content)).is_err());
     }
 
     #[test]
     fn oversized_declared_entries_are_rejected() {
         let content =
             with_declared_entry_size(&archive(&[("1.in", b"1"), ("1.out", b"2")]), 0x1000_0001);
-        assert!(validate_sync(&content).is_err());
+        assert!(validate_reader(Cursor::new(&content)).is_err());
     }
 
     #[test]
     fn overlong_entry_paths_are_rejected() {
         let long = format!("{}.in", "a".repeat(510));
         let content = archive(&[(long.as_str(), b"1"), ("1.out", b"2")]);
-        assert!(validate_sync(&content).is_err());
+        assert!(validate_reader(Cursor::new(&content)).is_err());
     }
 
     #[test]
     fn unpaired_and_unsafe_case_names_are_rejected() {
         assert!(
-            validate_sync(&archive(&[("1.in", b"1"), ("2.in", b"2"), ("1.out", b"3")])).is_err()
+            validate_reader(Cursor::new(&archive(&[("1.in", b"1"), ("2.in", b"2"), ("1.out", b"3")]))).is_err()
         );
-        assert!(validate_sync(&archive(&[("dir\\1.in", b"1"), ("1.out", b"2")])).is_err());
-        assert!(validate_sync(&archive(&[("1\x00.in", b"1"), ("1.out", b"2")])).is_err());
+        assert!(validate_reader(Cursor::new(&archive(&[("dir\\1.in", b"1"), ("1.out", b"2")]))).is_err());
+        assert!(validate_reader(Cursor::new(&archive(&[("1\x00.in", b"1"), ("1.out", b"2")]))).is_err());
     }
 }

@@ -8,10 +8,11 @@ use std::{
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-use crate::features::problems::service::ProblemService;
+use crate::features::problems::service::{ProblemService, StagedTestdataUpload};
 use crate::{
     features::auth::model::{AuthUser, UserType},
     features::problems::model::{
@@ -268,6 +269,44 @@ fn testdata_zip(case_name: &str, content: &[u8]) -> Bytes {
         writer.write_all(content).expect("write test-data fixture entry");
     }
     Bytes::from(writer.finish().expect("finish test-data fixture").into_inner())
+}
+
+/// Materialises a test-data archive to a temporary file, mirroring what the
+/// streaming upload handler stages before calling the service.
+fn staged_testdata(content: Bytes) -> StagedTestdataFixture {
+    let path = std::env::temp_dir().join(format!("pb-testdata-{}.zip", uuid::Uuid::new_v4()));
+    std::fs::write(&path, &content).expect("write staged test-data fixture");
+    StagedTestdataFixture {
+        path: path.clone(),
+        staged: StagedTestdataUpload {
+            path,
+            bytes: content.len() as u64,
+            sha256: hex::encode(Sha256::digest(&content)),
+        },
+    }
+}
+
+struct StagedTestdataFixture {
+    path: std::path::PathBuf,
+    staged: StagedTestdataUpload,
+}
+
+impl StagedTestdataFixture {
+    /// Clones the staged-upload descriptor; the backing file outlives it and
+    /// is removed when the fixture is dropped.
+    fn upload(&self) -> StagedTestdataUpload {
+        StagedTestdataUpload {
+            path: self.staged.path.clone(),
+            bytes: self.staged.bytes,
+            sha256: self.staged.sha256.clone(),
+        }
+    }
+}
+
+impl Drop for StagedTestdataFixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -628,7 +667,7 @@ async fn contest_manager_must_manage_every_problem_assignment_before_upload(pool
     service
         .upload_testdata(
             problem_id,
-            testdata_zip("sample", b"test data"),
+            staged_testdata(testdata_zip("sample", b"test data")).upload(),
             &actor,
             IpAddr::V4(Ipv4Addr::LOCALHOST),
             &storage,
@@ -700,7 +739,7 @@ async fn testdata_versions_are_immutable_and_current_pointer_is_downloadable(poo
     let first = service
         .upload_testdata(
             problem_id,
-            first_content.clone(),
+            staged_testdata(first_content.clone()).upload(),
             &actor,
             IpAddr::V4(Ipv4Addr::LOCALHOST),
             &storage,
@@ -711,7 +750,7 @@ async fn testdata_versions_are_immutable_and_current_pointer_is_downloadable(poo
     let second = service
         .upload_testdata(
             problem_id,
-            second_content.clone(),
+            staged_testdata(second_content.clone()).upload(),
             &actor,
             IpAddr::V4(Ipv4Addr::LOCALHOST),
             &storage,
@@ -789,7 +828,7 @@ async fn testdata_versions_are_immutable_and_current_pointer_is_downloadable(poo
     let third = service
         .upload_testdata(
             problem_id,
-            third_content.clone(),
+            staged_testdata(third_content.clone()).upload(),
             &actor,
             IpAddr::V4(Ipv4Addr::LOCALHOST),
             &storage,

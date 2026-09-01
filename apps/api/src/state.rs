@@ -33,6 +33,9 @@ pub struct AppState {
     database: PgPool,
     readiness_timeout: Duration,
     deployment_mode: DeploymentMode,
+    /// Optional bearer token guarding `/metrics`; `None` keeps it open for
+    /// loop-back or firewalled deployments.
+    metrics_token: Option<Arc<str>>,
     auth: Arc<AuthService>,
     awards: Arc<AwardService>,
     balloons: Arc<BalloonService>,
@@ -151,6 +154,7 @@ impl AppState {
             database,
             readiness_timeout,
             deployment_mode: DeploymentMode::Standard,
+            metrics_token: None,
             auth,
             awards,
             balloons,
@@ -205,6 +209,17 @@ impl AppState {
             ContestService::new(self.database.clone()).with_competition_mode(mode.is_competition()),
         );
         self
+    }
+
+    #[must_use]
+    pub fn with_metrics_token(mut self, token: Option<String>) -> Self {
+        self.metrics_token = token.map(Arc::from);
+        self
+    }
+
+    #[must_use]
+    pub fn metrics_token(&self) -> Option<&str> {
+        self.metrics_token.as_deref()
     }
 
     #[must_use]
