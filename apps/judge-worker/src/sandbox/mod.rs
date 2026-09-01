@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 mod archive;
 mod compare;
-mod fs;
+pub(crate) mod fs;
 pub mod gc;
 mod language;
 mod metrics;
@@ -19,7 +19,6 @@ mod tests;
 pub use gc::{OrphanSweep, run_orphan_sweeps};
 
 const MAX_EXEC_LOG_BYTES: usize = 64 * 1024;
-const DOCKER_API_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_TESTDATA_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_TESTDATA_FILES: usize = 10_000;
 const MAX_TESTDATA_EXTRACTED_BYTES: u64 = 512 * 1024 * 1024;
@@ -110,6 +109,8 @@ pub struct DockerSandbox {
     cpp_image: String,
     java_image: String,
     python_image: String,
+    /// Bound for every individual Docker API call (kill, inspect, remove, …).
+    docker_api_timeout: Duration,
 }
 
 pub struct DockerSandboxConfig {
@@ -121,4 +122,8 @@ pub struct DockerSandboxConfig {
     pub cpp_image: String,
     pub java_image: String,
     pub python_image: String,
+    /// Client timeout in seconds for establishing the Docker connection.
+    pub docker_connect_timeout_seconds: u64,
+    /// Bound for every individual Docker API call.
+    pub docker_api_timeout: Duration,
 }

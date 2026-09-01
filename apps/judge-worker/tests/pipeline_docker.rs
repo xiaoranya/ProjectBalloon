@@ -107,6 +107,8 @@ async fn rabbit_rustfs_cpp_pipeline_publishes_confirmed_result() {
         cpp_image: "judge-runtime-cpp:12.2.0".to_owned(),
         java_image: "judge-runtime-java:21".to_owned(),
         python_image: "judge-runtime-python:3.12.13".to_owned(),
+        docker_connect_timeout_seconds: 10,
+        docker_api_timeout: std::time::Duration::from_secs(5),
     })
     .expect("connect Docker sandbox");
     let engine = Arc::new(JudgeEngine::new("pipeline-worker".to_owned(), artifacts, sandbox));
@@ -304,6 +306,8 @@ int main(int argc, char **argv) {
         cpp_image: "judge-runtime-cpp:12.2.0".to_owned(),
         java_image: "judge-runtime-java:21".to_owned(),
         python_image: "judge-runtime-python:3.12.13".to_owned(),
+        docker_connect_timeout_seconds: 10,
+        docker_api_timeout: std::time::Duration::from_secs(5),
     })
     .expect("connect Docker sandbox");
     let engine =

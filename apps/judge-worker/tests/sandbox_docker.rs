@@ -298,6 +298,8 @@ fn test_sandbox(root: std::path::PathBuf) -> DockerSandbox {
         cpp_image: "judge-runtime-cpp:12.2.0".to_owned(),
         java_image: "judge-runtime-java:21".to_owned(),
         python_image: "judge-runtime-python:3.12.13".to_owned(),
+        docker_connect_timeout_seconds: 10,
+        docker_api_timeout: std::time::Duration::from_secs(5),
     })
     .expect("connect sandbox client")
 }

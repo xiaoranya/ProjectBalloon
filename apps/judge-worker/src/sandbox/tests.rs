@@ -401,3 +401,22 @@ async fn invalid_output_archive_is_a_wrong_answer_not_a_system_error() {
     result.validate().expect("contestant outcome must be contract-valid");
     std::fs::remove_dir_all(work).expect("cleanup");
 }
+
+#[test]
+fn io_errors_carry_operation_and_path_context_but_keep_their_kind() {
+    use std::path::Path;
+
+    use crate::sandbox::fs::with_path_context;
+
+    let missing = Path::new("/nonexistent-jobs/abc/data/1.out");
+    let error = with_path_context(
+        std::fs::read(missing).expect_err("reading a missing path must fail"),
+        "read expected output",
+        missing,
+    );
+    assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+    assert!(
+        error.to_string().contains("read expected output /nonexistent-jobs/abc/data/1.out"),
+        "context must include the operation and path, got {error}"
+    );
+}

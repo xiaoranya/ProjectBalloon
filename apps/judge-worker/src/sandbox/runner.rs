@@ -23,15 +23,15 @@ use crate::sandbox::compare::standard_output_matches;
 use crate::sandbox::fs::{
     create_private_dir, nonempty, read_regular_output_no_follow, remove_dir_if_present,
     remove_file_if_present, set_executable_file_permissions, set_private_file_permissions,
-    truncate_log,
+    truncate_log, with_path_context,
 };
 use crate::sandbox::language::LanguageConfig;
 use crate::sandbox::metrics::{
     ContainerResourceUsage, GNU_TIME_REPORT_FORMAT, collect_resource_usage,
-    extract_gnu_time_metrics, nonzero_milliseconds,
+    extract_gnu_time_metrics, nonzero_milliseconds, snapshot_container_cpu,
 };
 use crate::sandbox::{
-    COMPILE_WALL_LIMIT, DOCKER_API_TIMEOUT, DockerSandbox, DockerSandboxConfig, MAX_EXEC_LOG_BYTES,
+    COMPILE_WALL_LIMIT, DockerSandbox, DockerSandboxConfig, MAX_EXEC_LOG_BYTES,
     SandboxError, SandboxJudgement, effective_time_limit, is_container_missing,
     is_container_name_conflict, judgement_container_name, run_wall_limit,
 };
@@ -42,8 +42,12 @@ impl DockerSandbox {
             .socket
             .to_str()
             .ok_or_else(|| SandboxError::Api("sandbox socket path is not UTF-8".to_owned()))?;
-        let docker = Docker::connect_with_local(socket, 10, bollard::API_DEFAULT_VERSION)
-            .map_err(|error| SandboxError::Api(error.to_string()))?;
+        let docker = Docker::connect_with_local(
+            socket,
+            config.docker_connect_timeout_seconds,
+            bollard::API_DEFAULT_VERSION,
+        )
+        .map_err(|error| SandboxError::Api(error.to_string()))?;
         Ok(Self {
             docker,
             cache_dir: config.cache_dir,
@@ -53,6 +57,7 @@ impl DockerSandbox {
             cpp_image: config.cpp_image,
             java_image: config.java_image,
             python_image: config.python_image,
+            docker_api_timeout: config.docker_api_timeout,
         })
     }
 
@@ -110,11 +115,15 @@ impl DockerSandbox {
         let work_dir = job_dir.join("work");
         create_private_dir(&work_dir).await?;
         let source_path = work_dir.join(language.source_filename());
-        tokio::fs::write(&source_path, source).await?;
+        tokio::fs::write(&source_path, source)
+            .await
+            .map_err(|error| with_path_context(error, "write submission source", &source_path))?;
         set_private_file_permissions(&source_path).await?;
         if let Some(interactor) = interactor {
             let path = work_dir.join("interactor");
-            tokio::fs::write(&path, interactor).await?;
+            tokio::fs::write(&path, interactor)
+                .await
+                .map_err(|error| with_path_context(error, "write interactor", &path))?;
             set_executable_file_permissions(&path).await?;
         }
         let data_dir = job_dir.join("data");
@@ -148,7 +157,7 @@ impl DockerSandbox {
             )
             .await;
         let cleanup = match timeout(
-            DOCKER_API_TIMEOUT,
+            self.docker_api_timeout,
             self.docker.remove_container(
                 &container_id,
                 Some(RemoveContainerOptionsBuilder::default().force(true).build()),
@@ -248,7 +257,11 @@ impl DockerSandbox {
         let wall_limit = run_wall_limit(effective_time_limit_ms);
         for test_index in 1..=case_count {
             let input_path = work_dir.join("current.in");
-            tokio::fs::copy(data_dir.join(format!("{test_index}.in")), &input_path).await?;
+            tokio::fs::copy(data_dir.join(format!("{test_index}.in")), &input_path)
+                .await
+                .map_err(|error| {
+                    with_path_context(error, "copy test-case input", &input_path)
+                })?;
             set_private_file_permissions(&input_path).await?;
             let actual_path = work_dir.join("actual.out");
             remove_file_if_present(&actual_path).await?;
@@ -318,7 +331,10 @@ impl DockerSandbox {
             } else if interactive {
                 JudgeVerdict::Accepted
             } else {
-                let expected = tokio::fs::read(data_dir.join(format!("{test_index}.out"))).await?;
+                let expected_path = data_dir.join(format!("{test_index}.out"));
+                let expected = tokio::fs::read(&expected_path)
+                    .await
+                    .map_err(|error| with_path_context(error, "read expected output", &expected_path))?;
                 if standard_output_matches(&expected, output.as_deref().unwrap_or_default()) {
                     JudgeVerdict::Accepted
                 } else {
@@ -354,7 +370,7 @@ impl DockerSandbox {
     /// already-vanished target.
     pub(super) async fn remove_container_by_name(&self, name: &str) -> Result<(), SandboxError> {
         match timeout(
-            DOCKER_API_TIMEOUT,
+            self.docker_api_timeout,
             self.docker.remove_container(
                 name,
                 Some(RemoveContainerOptionsBuilder::default().force(true).build()),
@@ -439,7 +455,7 @@ impl DockerSandbox {
             self.docker.start_container(&container.id, None::<StartContainerOptions>).await
         {
             let _cleanup = timeout(
-                DOCKER_API_TIMEOUT,
+                self.docker_api_timeout,
                 self.docker.remove_container(
                     &container.id,
                     Some(RemoveContainerOptionsBuilder::default().force(true).build()),
@@ -457,6 +473,10 @@ impl DockerSandbox {
         command: Vec<String>,
         wall_limit: Duration,
     ) -> Result<ContainerRun, SandboxError> {
+        // Baseline for the CPU-time fallback: docker stats totals are
+        // cumulative for the whole container, so the exec's share is the
+        // difference between two snapshots taken around the exec.
+        let base_cpu_ns = snapshot_container_cpu(&self.docker, container_id).await;
         let exec = self
             .docker
             .create_exec(
@@ -509,7 +529,7 @@ impl DockerSandbox {
                 Ok(None) => break Ok(false),
                 Err(_) => {
                     let kill_result = match timeout(
-                        DOCKER_API_TIMEOUT,
+                        self.docker_api_timeout,
                         self.docker.kill_container(
                             container_id,
                             None::<bollard::query_parameters::KillContainerOptions>,
@@ -531,10 +551,23 @@ impl DockerSandbox {
         stats_task.abort();
         let _stats_result = stats_task.await;
         let timed_out = output_result?;
+        let streamed_cpu_ns = resource_usage.cpu_time_ns.load(Ordering::Relaxed);
+        let docker_cpu_ns = match (base_cpu_ns, snapshot_container_cpu(&self.docker, container_id).await)
+        {
+            // Both snapshots landed: the exec's own CPU time.
+            (Some(base), Some(total)) => total.saturating_sub(base),
+            // The trailing snapshot failed (container killed or exited during
+            // a timeout/OOM) — subtract the baseline from the last streamed
+            // cumulative sample instead.
+            (Some(base), None) => streamed_cpu_ns.saturating_sub(base),
+            // No baseline at all: fall back to the raw cumulative value, which
+            // errs on the high side but never fakes a timeout.
+            (None, _) => streamed_cpu_ns,
+        };
         let exit_code = if timed_out {
             124
         } else {
-            timeout(DOCKER_API_TIMEOUT, self.docker.inspect_exec(&exec.id))
+            timeout(self.docker_api_timeout, self.docker.inspect_exec(&exec.id))
                 .await
                 .map_err(|_| SandboxError::Api("timed out inspecting sandbox exec".to_owned()))?
                 .map_err(|error| SandboxError::Api(error.to_string()))?
@@ -542,7 +575,7 @@ impl DockerSandbox {
                 .ok_or_else(|| SandboxError::Api("sandbox exec has no exit code".to_owned()))?
         };
         let oom_killed = timeout(
-            DOCKER_API_TIMEOUT,
+            self.docker_api_timeout,
             self.docker.inspect_container(container_id, None::<InspectContainerOptions>),
         )
         .await
@@ -556,7 +589,7 @@ impl DockerSandbox {
             timed_out,
             oom_killed,
             elapsed_ms: i32::try_from(started.elapsed().as_millis()).unwrap_or(i32::MAX),
-            cpu_time_ms: nonzero_milliseconds(resource_usage.cpu_time_ns.load(Ordering::Relaxed)),
+            cpu_time_ms: nonzero_milliseconds(docker_cpu_ns),
             peak_memory_kb: i32::try_from(
                 resource_usage.peak_memory_bytes.load(Ordering::Relaxed) / 1024,
             )
@@ -566,7 +599,7 @@ impl DockerSandbox {
     }
 
     async fn kill_contestant_processes(&self, container_id: &str) -> Result<(), SandboxError> {
-        timeout(DOCKER_API_TIMEOUT, self.kill_contestant_processes_inner(container_id))
+        timeout(self.docker_api_timeout, self.kill_contestant_processes_inner(container_id))
             .await
             .map_err(|_| SandboxError::Api("timed out cleaning sandbox processes".to_owned()))?
     }
@@ -683,7 +716,10 @@ pub(super) async fn run_output_only(
     }
     let mut runs = Vec::with_capacity(case_count);
     for test_index in 1..=case_count {
-        let expected = tokio::fs::read(data_dir.join(format!("{test_index}.out"))).await?;
+        let expected_path = data_dir.join(format!("{test_index}.out"));
+        let expected = tokio::fs::read(&expected_path)
+            .await
+            .map_err(|error| with_path_context(error, "read expected output", &expected_path))?;
         let actual = tokio::fs::read(output_dir.join(format!("{test_index}.out"))).await.ok();
         let verdict =
             if actual.as_deref().is_some_and(|actual| standard_output_matches(&expected, actual)) {

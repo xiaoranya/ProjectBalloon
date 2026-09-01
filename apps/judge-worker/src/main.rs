@@ -47,6 +47,8 @@ async fn main() -> Result<()> {
         cpp_image: config.cpp_image.clone(),
         java_image: config.java_image.clone(),
         python_image: config.python_image.clone(),
+        docker_connect_timeout_seconds: config.docker_connect_timeout_seconds,
+        docker_api_timeout: config.docker_api_timeout,
     })?;
     // Startup orphan sweep: nothing is in flight yet, so every leftover
     // pb-judge-* container and job directory belongs to a SIGKILLed or OOM

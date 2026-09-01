@@ -2,6 +2,7 @@ use std::{collections::HashMap, path::Path};
 
 use thiserror::Error;
 
+use crate::sandbox::fs::with_path_context;
 use crate::sandbox::{
     MAX_TESTDATA_ARCHIVE_BYTES, MAX_TESTDATA_EXTRACTED_BYTES, MAX_TESTDATA_FILES, SandboxError,
 };
@@ -86,8 +87,14 @@ pub(super) fn extract_output_cases_blocking(
             return Err(OutputArchiveError::BudgetBreached);
         }
         remaining -= extracted;
-        std::fs::write(destination.join(name.file_name().expect("file name")), content)
-            .map_err(OutputArchiveError::Io)?;
+        let entry_path = destination.join(name.file_name().expect("file name"));
+        std::fs::write(&entry_path, content).map_err(|error| {
+            OutputArchiveError::Io(crate::sandbox::fs::with_path_context(
+                error,
+                "write output entry",
+                &entry_path,
+            ))
+        })?;
     }
     Ok(())
 }
@@ -101,10 +108,15 @@ pub(super) fn extract_cases_blocking(
 
     type CasePair = (Option<Vec<u8>>, Option<Vec<u8>>);
 
-    if std::fs::metadata(archive)?.len() > MAX_TESTDATA_ARCHIVE_BYTES {
+    if std::fs::metadata(archive)
+        .map_err(|error| SandboxError::Io(with_path_context(error, "inspect test-data archive", archive)))?
+        .len()
+        > MAX_TESTDATA_ARCHIVE_BYTES
+    {
         return Err(SandboxError::InvalidTestdata("test-data archive is too large".to_owned()));
     }
-    let file = std::fs::File::open(archive)?;
+    let file = std::fs::File::open(archive)
+        .map_err(|error| SandboxError::Io(with_path_context(error, "open test-data archive", archive)))?;
     let mut zip = zip::ZipArchive::new(file)
         .map_err(|error| SandboxError::InvalidTestdata(error.to_string()))?;
     if zip.len() > MAX_TESTDATA_FILES {
@@ -144,7 +156,12 @@ pub(super) fn extract_cases_blocking(
         // memory. The classification stays InvalidTestdata: testdata is
         // problem-admin owned, not contestant input.
         let mut limited = (&mut entry).take(remaining.saturating_add(1));
-        limited.read_to_end(&mut content)?;
+        limited.read_to_end(&mut content).map_err(|error| {
+            SandboxError::Io(std::io::Error::other(format!(
+                "inflate test-data entry {}: {error}",
+                enclosed.display()
+            )))
+        })?;
         let extracted = u64::try_from(content.len()).unwrap_or(u64::MAX);
         if extracted > remaining {
             return Err(SandboxError::InvalidTestdata(
@@ -170,18 +187,19 @@ pub(super) fn extract_cases_blocking(
     ordered.sort_by(|left, right| left.0.cmp(&right.0));
     for (offset, (_name, (input, output))) in ordered.into_iter().enumerate() {
         let index = offset + 1;
-        std::fs::write(
-            destination.join(format!("{index}.in")),
-            input.ok_or_else(|| SandboxError::InvalidTestdata("missing input".to_owned()))?,
-        )?;
-        std::fs::write(
-            destination.join(format!("{index}.out")),
-            output.ok_or_else(|| SandboxError::InvalidTestdata("missing output".to_owned()))?,
-        )?;
+        let input_path = destination.join(format!("{index}.in"));
+        std::fs::write(&input_path, input.ok_or_else(|| SandboxError::InvalidTestdata("missing input".to_owned()))?)
+            .map_err(|error| SandboxError::Io(with_path_context(error, "write test-case input", &input_path)))?;
+        let output_path = destination.join(format!("{index}.out"));
+        std::fs::write(&output_path, output.ok_or_else(|| SandboxError::InvalidTestdata("missing output".to_owned()))?)
+            .map_err(|error| SandboxError::Io(with_path_context(error, "write test-case output", &output_path)))?;
     }
     Ok(ordered_len(destination)?)
 }
 
 fn ordered_len(destination: &Path) -> Result<usize, std::io::Error> {
-    Ok(std::fs::read_dir(destination)?.count() / 2)
+    let count = std::fs::read_dir(destination)
+        .map_err(|error| with_path_context(error, "read extracted test cases", destination))?
+        .count();
+    Ok(count / 2)
 }

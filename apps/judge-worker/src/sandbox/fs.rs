@@ -49,6 +49,19 @@ pub(super) fn truncate_log(log: &str, max_bytes: usize) -> String {
     log[..end].to_owned()
 }
 
+/// Attaches the failing operation and path to a filesystem error while
+/// preserving its [`std::io::ErrorKind`], so operator-facing judgement logs
+/// say `open /jobs/…/data/1.out: No such file or directory` instead of a bare
+/// `os error 2`. Every `tokio::fs` / `std::fs` call site whose error reaches
+/// the compile log goes through this.
+pub(crate) fn with_path_context(
+    error: std::io::Error,
+    operation: &'static str,
+    path: &Path,
+) -> std::io::Error {
+    std::io::Error::new(error.kind(), format!("{operation} {}: {error}", path.display()))
+}
+
 pub(super) fn nonempty(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
@@ -57,7 +70,7 @@ pub(super) async fn remove_dir_if_present(path: &Path) -> Result<(), std::io::Er
     match tokio::fs::remove_dir_all(path).await {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error),
+        Err(error) => Err(with_path_context(error, "remove job directory", path)),
     }
 }
 
@@ -65,25 +78,33 @@ pub(super) async fn remove_file_if_present(path: &Path) -> Result<(), std::io::E
     match tokio::fs::remove_file(path).await {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error),
+        Err(error) => Err(with_path_context(error, "remove file", path)),
     }
 }
 
 pub(super) async fn create_private_dir(path: &Path) -> Result<(), std::io::Error> {
-    tokio::fs::create_dir_all(path).await?;
+    tokio::fs::create_dir_all(path)
+        .await
+        .map_err(|error| with_path_context(error, "create private directory", path))?;
     #[cfg(unix)]
-    tokio::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o700)).await?;
+    tokio::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o700))
+        .await
+        .map_err(|error| with_path_context(error, "set private directory permissions", path))?;
     Ok(())
 }
 
 pub(super) async fn set_private_file_permissions(path: &Path) -> Result<(), std::io::Error> {
     #[cfg(unix)]
-    tokio::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o600)).await?;
+    tokio::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o600))
+        .await
+        .map_err(|error| with_path_context(error, "set file permissions", path))?;
     Ok(())
 }
 
 pub(super) async fn set_executable_file_permissions(path: &Path) -> Result<(), std::io::Error> {
     #[cfg(unix)]
-    tokio::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o700)).await?;
+    tokio::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o700))
+        .await
+        .map_err(|error| with_path_context(error, "set executable permissions", path))?;
     Ok(())
 }
