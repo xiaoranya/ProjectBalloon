@@ -156,8 +156,8 @@ API 在启动时创建其配置的桶。桶名属于部署配置，绝不通过�
 | `JUDGE_CPP_IMAGE` | `judge-runtime-cpp:12.2.0` | C++ 运行时镜像标签 |
 | `JUDGE_JAVA_IMAGE` | `judge-runtime-java:21` | Java 21 运行时镜像标签 |
 | `JUDGE_PYTHON_IMAGE` | `judge-runtime-python:3.12.13` | Python 3.12 运行时镜像标签 |
-| `JUDGE_GO_IMAGE` | `judge-runtime-go:1.24` | Go 1.24 运行时镜像标签 |
-| `JUDGE_RUST_IMAGE` | `judge-runtime-rust:1.88` | Rust 1.88 运行时镜像标签 |
+| `JUDGE_GO_IMAGE` | `judge-runtime-go:1.27` | Go 1.27 运行时镜像标签 |
+| `JUDGE_RUST_IMAGE` | `judge-runtime-rust:1.98` | Rust 1.98 运行时镜像标签 |
 
 运行时镜像标签必须固定；绝不允许 `latest`。生产必须使用 rootless Podman socket、uid/gid `10001:10001` 与 `runsc`。
 

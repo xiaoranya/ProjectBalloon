@@ -10,8 +10,8 @@ images=(
   judge-runtime-cpp:12.2.0
   judge-runtime-java:21
   judge-runtime-python:3.12.13
-  judge-runtime-go:1.24
-  judge-runtime-rust:1.88
+  judge-runtime-go:1.27
+  judge-runtime-rust:1.98
 )
 
 rm -f "$OUT"/*.tar "$OUT/SHA256SUMS"

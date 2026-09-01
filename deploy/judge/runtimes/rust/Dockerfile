@@ -1,8 +1,9 @@
-FROM rust:1.88-slim-bookworm
+FROM rust:1.98-slim-bookworm
 
 RUN set -eux; \
     export DEBIAN_FRONTEND=noninteractive; \
     apt-get update; \
+    apt-get upgrade -y; \
     apt-get install -y --no-install-recommends time; \
     rm -rf /var/lib/apt/lists/*; \
     rustc --version | head -1 | awk '{print $2}' > /VERSION; \
