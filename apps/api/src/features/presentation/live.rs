@@ -140,7 +140,7 @@ pub struct PresentationMetrics {
     submissions: SubmissionMetrics,
 }
 
-fn require_live_operator(actor: &AuthUser) -> Result<(), AppError> {
+pub(super) fn require_live_operator(actor: &AuthUser) -> Result<(), AppError> {
     if actor.is_super_admin()
         || actor.has_permission(crate::features::auth::permissions::LIVE_MANAGE)
     {
@@ -152,11 +152,11 @@ fn require_live_operator(actor: &AuthUser) -> Result<(), AppError> {
         ))
     }
 }
-fn hash(value: &str) -> String {
+pub(super) fn hash(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
 }
 
-async fn require_access(
+pub(super) async fn require_access(
     database: &PgPool,
     contest: i64,
     mode: &str,
@@ -221,7 +221,7 @@ async fn require_access(
     })
 }
 
-fn supplied_token(headers: &HeaderMap) -> Option<&str> {
+pub(super) fn supplied_token(headers: &HeaderMap) -> Option<&str> {
     headers
         .get("x-broadcast-token")
         .and_then(|value| value.to_str().ok())

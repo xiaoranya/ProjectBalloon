@@ -194,6 +194,9 @@ const SWAGGER_UI_PATH: &str = "/api/docs";
         presentation::list_tokens,
         presentation::create_token,
         presentation::revoke_token,
+        presentation::get_program,
+        presentation::update_program,
+        presentation::get_published_program,
         presentation::list_playlists,
         presentation::create_playlist,
         presentation::update_playlist,
@@ -418,11 +421,15 @@ mod tests {
         ("/api/presentation-configs/{contest_id}/live/tokens", "get"),
         ("/api/presentation-configs/{contest_id}/live/tokens", "post"),
         ("/api/presentation-configs/{contest_id}/live/tokens/{token_id}", "delete"),
+        ("/api/presentation-configs/{contest_id}/live/program", "get"),
+        ("/api/presentation-configs/{contest_id}/live/program", "put"),
+        ("/api/public/presentations/{contest_id}/program", "get"),
         ("/api/public/screens/register", "post"),
         ("/api/public/screens/{instance_id}/heartbeat", "post"),
         ("/api/screen-instances/{contest_id}", "get"),
         ("/api/screen-instances/{contest_id}/{instance_id}/commands", "post"),
         ("/api/screen-instances/{contest_id}/{instance_id}", "delete"),
+        ("/api/presentation-configs/{contest_id}/live/program", "get"),
         ("/api/contests/{contest_id}/screen-playlists", "get"),
         ("/api/contests/{contest_id}/screen-playlists", "post"),
         ("/api/screen-playlists/{playlist_id}", "put"),
@@ -566,6 +573,7 @@ mod tests {
         ("/api/contests/{contest_id}/problems/{problem_id}", "patch"),
         ("/api/contests/{contest_id}/problems/{problem_id}", "delete"),
         ("/api/contests/{contest_id}/problems/reorder", "put"),
+        ("/api/presentation-configs/{contest_id}/live/program", "put"),
         ("/api/contests/{contest_id}/announcements", "post"),
     ];
 
@@ -611,7 +619,7 @@ mod tests {
             })
             .sum::<usize>();
         // Update this snapshot count when a documented endpoint is intentionally added or removed.
-        assert_eq!(operation_count, 203);
+        assert_eq!(operation_count, 206);
 
         for (path, method) in EXPECTED_OPERATIONS {
             assert!(
@@ -698,6 +706,11 @@ mod tests {
         assert!(
             document["paths"]["/api/public/presentations/{contest_id}"]["get"]["security"][1]
                 ["broadcast_token_header"]
+                .is_array()
+        );
+        assert!(
+            document["paths"]["/api/public/presentations/{contest_id}/program"]["get"]["security"]
+                [1]["broadcast_token_header"]
                 .is_array()
         );
         assert!(document["components"]["securitySchemes"]["broadcast_token_query"].is_null());

@@ -1876,6 +1876,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/presentation-configs/{contest_id}/live/program": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getLiveProgram"];
+        put: operations["updateLiveProgram"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/presentation-configs/{contest_id}/live/tokens": {
         parameters: {
             query?: never;
@@ -2220,6 +2236,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["getPresentationMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/presentations/{contest_id}/program": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPublishedLiveProgram"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3582,6 +3614,34 @@ export interface components {
             /** Format: int64 */
             version: number;
         };
+        LiveProgramRequest: {
+            currentScene: string;
+            /** Format: int64 */
+            expectedVersion: number;
+            /** Format: int64 */
+            resolverRunId?: number | null;
+            showClock: boolean;
+            tickerEnabled: boolean;
+            titleCardText?: string | null;
+            /** Format: int32 */
+            transitionMilliseconds: number;
+        };
+        LiveProgramResponse: {
+            /** Format: int64 */
+            contestId: number;
+            currentScene: string;
+            /** Format: int64 */
+            resolverRunId?: number | null;
+            showClock: boolean;
+            tickerEnabled: boolean;
+            titleCardText?: string | null;
+            /** Format: int32 */
+            transitionMilliseconds: number;
+            /** Format: date-time */
+            updatedAt?: string | null;
+            /** Format: int64 */
+            version: number;
+        };
         LoginRequest: {
             password: string;
             username: string;
@@ -4161,6 +4221,22 @@ export interface components {
             tags?: string[];
             visibility: string;
         };
+        PublishedLiveProgram: {
+            /** Format: int64 */
+            contestId: number;
+            currentScene: string;
+            /** Format: int64 */
+            resolverRunId?: number | null;
+            /** Format: date-time */
+            serverTime: string;
+            showClock: boolean;
+            tickerEnabled: boolean;
+            titleCardText?: string | null;
+            /** Format: int32 */
+            transitionMilliseconds: number;
+            /** Format: int64 */
+            version: number;
+        };
         PublishedPresentation: {
             announcements: components["schemas"]["PresentationAnnouncement"][];
             config: components["schemas"]["ConfigResponse"];
@@ -4311,6 +4387,18 @@ export interface components {
             totalSteps: number;
             /** Format: date-time */
             updatedAt: string;
+        };
+        ResolverRunOption: {
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: int32 */
+            currentStep: number;
+            /** Format: int64 */
+            id: number;
+            official: boolean;
+            status: string;
+            /** Format: int32 */
+            totalSteps: number;
         };
         ResolverRunResponse: {
             autoPlayEnabled: boolean;
@@ -4537,6 +4625,10 @@ export interface components {
             updatedAt: string;
             userType: components["schemas"]["UserType"];
             username: string;
+        };
+        StaffLiveProgramResponse: {
+            program: components["schemas"]["LiveProgramResponse"];
+            resolverRuns: components["schemas"]["ResolverRunOption"][];
         };
         SubmissionDetail: components["schemas"]["SubmissionSummary"] & {
             judgements: components["schemas"]["JudgementDetail"][];
@@ -12333,6 +12425,116 @@ export interface operations {
             };
         };
     };
+    getLiveProgram: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contest_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffLiveProgramResponse"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    updateLiveProgram: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contest_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LiveProgramRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveProgramResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
     listBroadcastTokens: {
         parameters: {
             query?: never;
@@ -14007,6 +14209,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PresentationMetrics"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    getPublishedLiveProgram: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contest_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishedLiveProgram"];
                 };
             };
             401: {

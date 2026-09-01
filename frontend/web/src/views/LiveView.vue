@@ -1,95 +1,46 @@
 <template>
   <main class="live-page" :class="templateClass" :style="liveStyle">
-    <header>
-      <div>
-        <small v-if="showBrand">ProjectBalloon · LIVE</small>
-        <h1>{{ presentation?.config.title || presentation?.contestName || 'LIVE' }}</h1>
-        <p>{{ presentation?.config.subtitle }}</p>
-      </div>
-      <span>{{ presentation?.contestStatus }}</span>
-    </header>
+    <LiveHeaderBar
+      :title="presentation?.config.title || presentation?.contestName || 'LIVE'"
+      :subtitle="presentation?.config.subtitle"
+      :status="presentation?.contestStatus"
+      :show-brand="showBrand"
+      :template="presentation?.config.template || 'DEFAULT'"
+    />
     <ElAlert v-if="errorMessage" type="error" :closable="false" show-icon :title="errorMessage" />
-    <section v-if="presentation && view === 'scoreboard'" class="board">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>{{ t('队伍') }}</th>
-            <th>{{ presentation.scoreboard.scoringMode === 'ICPC' ? t('解题') : t('总分') }}</th>
-            <th v-if="presentation.scoreboard.scoringMode === 'ICPC'">{{ t('罚时') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="row in presentation.scoreboard.rows.slice(0, presentation.config.rowLimit)"
-            :key="row.teamId"
-          >
-            <td>{{ row.rank }}</td>
-            <td>
-              <strong>{{ row.teamName }}</strong
-              ><small>{{ row.school }}</small>
-            </td>
-            <td>
-              {{
-                presentation.scoreboard.scoringMode === 'ICPC'
-                  ? row.solvedCount
-                  : (row.totalScoreMilli / 1000).toFixed(3).replace(/\.?0+$/, '')
-              }}
-            </td>
-            <td v-if="presentation.scoreboard.scoringMode === 'ICPC'">{{ row.penaltyMinutes }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <aside v-if="announcement">
-        <strong>{{ announcement.title }}</strong>
-        <p>{{ announcement.body }}</p>
-      </aside>
-    </section>
-    <section v-else-if="presentation && view === 'first-blood'" class="hero">
-      <p>FIRST BLOOD</p>
-      <h2>{{ firstBlood?.teamName || t('等待首杀') }}</h2>
-      <strong>{{ firstBloodProblem }}</strong>
-    </section>
-    <section v-else-if="presentation && view === 'freeze'" class="hero">
-      <p>FREEZE COUNTDOWN</p>
-      <h2>{{ countdown }}</h2>
-    </section>
-    <section v-else-if="metrics && view === 'balloons'" class="metrics">
-      <article>
-        <span>{{ t('气球总数') }}</span
-        ><strong>{{ metrics.balloons.total }}</strong>
-      </article>
-      <article>
-        <span>{{ t('已送达') }}</span
-        ><strong>{{ metrics.balloons.delivered }}</strong>
-      </article>
-      <article>
-        <span>{{ t('配送中') }}</span
-        ><strong>{{ metrics.balloons.preparing + metrics.balloons.delivering }}</strong>
-      </article>
-      <article>
-        <span>{{ t('首杀') }}</span
-        ><strong>{{ metrics.balloons.firstBlood }}</strong>
-      </article>
-    </section>
-    <section v-else-if="metrics" class="metrics">
-      <article>
-        <span>{{ t('提交') }}</span
-        ><strong>{{ metrics.submissions.total }}</strong>
-      </article>
-      <article>
-        <span>{{ t('通过') }}</span
-        ><strong>{{ metrics.submissions.accepted }}</strong>
-      </article>
-      <article>
-        <span>{{ t('通过率') }}</span
-        ><strong>{{ acceptance }}%</strong>
-      </article>
-      <article>
-        <span>{{ t('评测中') }}</span
-        ><strong>{{ metrics.submissions.pending }}</strong>
-      </article>
-    </section>
+    <LiveScoreboardPanel
+      v-if="presentation && view === 'scoreboard'"
+      :scoreboard="presentation.scoreboard"
+      :row-limit="presentation.config.rowLimit"
+      :announcement="announcement"
+      :template="presentation.config.template"
+    />
+    <LiveHeroPanel
+      v-else-if="presentation && view === 'first-blood'"
+      variant="first-blood"
+      :title="firstBlood?.teamName || t('等待首杀')"
+      :detail="firstBloodProblem"
+      :pulse-key="firstBloodKey"
+      :template="presentation.config.template"
+    />
+    <LiveHeroPanel
+      v-else-if="presentation && view === 'freeze'"
+      variant="freeze"
+      :title="countdown"
+      :template="presentation.config.template"
+    />
+    <LiveMetricsPanel
+      v-else-if="metrics && view === 'balloons'"
+      :metrics="metrics"
+      variant="balloons"
+      :template="presentation?.config.template"
+    />
+    <LiveMetricsPanel
+      v-else-if="metrics"
+      :metrics="metrics"
+      variant="statistics"
+      :template="presentation?.config.template"
+    />
   </main>
 </template>
 
@@ -102,6 +53,10 @@ import {
   type PresentationMetrics,
   type PublishedPresentation,
 } from '../api/presentation';
+import LiveHeaderBar from '../components/live/LiveHeaderBar.vue';
+import LiveHeroPanel from '../components/live/LiveHeroPanel.vue';
+import LiveMetricsPanel from '../components/live/LiveMetricsPanel.vue';
+import LiveScoreboardPanel from '../components/live/LiveScoreboardPanel.vue';
 import { useI18n } from '../i18n';
 import { numericQueryId } from '../utils/route-params';
 const { t } = useI18n();
@@ -135,6 +90,9 @@ const firstBloodProblem = computed(() => {
   const id = row.problems.find((cell) => cell.firstBlood)?.problemId;
   return board.problems.find((item) => item.problemId === id)?.alias ?? '';
 });
+const firstBloodKey = computed(() =>
+  firstBlood.value ? `${firstBlood.value.teamId}:${firstBloodProblem.value}` : null,
+);
 const countdown = computed(() => {
   const target = presentation.value?.freezeAt;
   if (!target) return '--:--:--';
@@ -143,11 +101,6 @@ const countdown = computed(() => {
     .map((v) => String(v).padStart(2, '0'))
     .join(':');
 });
-const acceptance = computed(() =>
-  metrics.value?.submissions.total
-    ? Math.round((metrics.value.submissions.accepted / metrics.value.submissions.total) * 100)
-    : 0,
-);
 const templateClass = computed(
   () => `template-${(presentation.value?.config.template || 'DEFAULT').toLowerCase()}`,
 );
@@ -222,67 +175,6 @@ onBeforeUnmount(() => {
   grid-template-rows: auto 1fr;
   gap: 24px;
 }
-.live-page header {
-  display: flex;
-  justify-content: space-between;
-  border-bottom: 2px solid var(--accent);
-}
-.live-page h1 {
-  margin: 4px 0;
-}
-.live-page header > span,
-.hero p {
-  color: var(--accent);
-  letter-spacing: 0.2em;
-}
-.board {
-  display: grid;
-  grid-template-columns: 1fr 320px;
-  gap: 24px;
-}
-.board table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: clamp(18px, 2vw, 30px);
-}
-th,
-td {
-  padding: var(--custom-density, 14px);
-  border-bottom: 1px solid #203047;
-  text-align: left;
-}
-.board small {
-  display: block;
-  color: var(--muted-light);
-}
-.board aside,
-.metrics article {
-  background: #101d2d;
-  border-left: 4px solid var(--accent);
-  padding: 24px;
-}
-.hero {
-  display: grid;
-  place-content: center;
-  text-align: center;
-}
-.hero h2 {
-  font-size: clamp(64px, 12vw, 170px);
-  margin: 10px;
-}
-.metrics {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
-  align-content: center;
-}
-.metrics article {
-  display: grid;
-}
-.metrics strong {
-  font-size: clamp(54px, 9vw, 120px);
-  color: var(--accent);
-}
 .template-cinematic {
   background: #080b14;
   background:
@@ -293,52 +185,19 @@ td {
     ),
     #080b14;
 }
-.template-cinematic h1 {
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
 .template-minimal {
   background: #fff;
   color: #101828;
 }
-.template-minimal header {
-  border-bottom-width: 1px;
-}
-.template-minimal .board aside,
-.template-minimal .metrics article {
-  background: #f2f4f7;
-  color: #101828;
-  box-shadow: none;
-}
-.template-minimal .board small {
-  color: #667085;
-}
 .template-split {
   background: linear-gradient(90deg, #07111f 0 58%, #101d2d 58%);
-}
-.template-split .board {
-  grid-template-columns: 1.4fr 0.8fr;
-}
-.template-split .board aside {
-  border-left-width: 8px;
 }
 .template-custom {
   background: var(--custom-background);
   color: var(--custom-foreground);
   font-family: var(--custom-font), sans-serif;
 }
-.template-custom .board aside,
-.template-custom .metrics article {
-  background: rgb(255 255 255 / 8%);
-  background: color-mix(in srgb, var(--custom-foreground) 8%, var(--custom-background));
-}
 @media (max-width: 800px) {
-  .board {
-    grid-template-columns: 1fr;
-  }
-  .metrics {
-    grid-template-columns: 1fr;
-  }
   .template-split {
     background: #07111f;
   }

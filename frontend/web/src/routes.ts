@@ -182,6 +182,22 @@ export const routes: RouteRecordRaw[] = [
     props: { view: 'statistics' },
   },
   {
+    path: '/live/program',
+    name: 'live-program',
+    component: () => import('./views/LiveProgramView.vue'),
+  },
+  {
+    path: '/live/program/control',
+    name: 'live-program-control',
+    component: () => import('./views/LiveProgramControlView.vue'),
+    meta: { requiresAuth: true, requiresStaff: true, requiredPermission: 'LIVE_MANAGE' },
+  },
+  {
+    path: '/live/overlay',
+    name: 'live-overlay',
+    component: () => import('./views/LiveOverlayView.vue'),
+  },
+  {
     path: '/admin',
     component: () => import('./layouts/AdminLayout.vue'),
     meta: { requiresAuth: true, requiresStaff: true },

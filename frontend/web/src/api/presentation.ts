@@ -103,6 +103,58 @@ export interface PresentationMetrics {
     trend: Array<{ bucket: string; total: number; accepted: number }>;
   };
 }
+export type LiveScene =
+  | 'SCOREBOARD'
+  | 'FIRST_BLOOD'
+  | 'BALLOONS'
+  | 'FREEZE_COUNTDOWN'
+  | 'STATISTICS'
+  | 'RESOLVER'
+  | 'AWARDS'
+  | 'TITLE_CARD';
+export interface LiveProgramState {
+  contestId: number;
+  currentScene: LiveScene;
+  resolverRunId: number | null;
+  transitionMilliseconds: number;
+  showClock: boolean;
+  tickerEnabled: boolean;
+  titleCardText: string | null;
+  version: number;
+  updatedAt: string | null;
+}
+export interface ResolverRunOption {
+  id: number;
+  official: boolean;
+  status: string;
+  currentStep: number;
+  totalSteps: number;
+  createdAt: string;
+}
+export interface StaffLiveProgram {
+  program: LiveProgramState;
+  resolverRuns: ResolverRunOption[];
+}
+export interface PublishedLiveProgram {
+  contestId: number;
+  currentScene: LiveScene;
+  resolverRunId: number | null;
+  transitionMilliseconds: number;
+  showClock: boolean;
+  tickerEnabled: boolean;
+  titleCardText: string | null;
+  serverTime: string;
+  version: number;
+}
+export interface LiveProgramUpdatePayload {
+  currentScene: LiveScene;
+  resolverRunId: number | null;
+  transitionMilliseconds: number;
+  showClock: boolean;
+  tickerEnabled: boolean;
+  titleCardText: string | null;
+  expectedVersion: number;
+}
 
 export const presentationApi = {
   config(contestId: number, mode: PresentationMode) {
@@ -148,6 +200,21 @@ export const presentationApi = {
   },
   templates() {
     return apiRequest<PresentationTemplate[]>('/api/presentation-templates');
+  },
+  program(contestId: number) {
+    return apiRequest<StaffLiveProgram>(`/api/presentation-configs/${contestId}/live/program`);
+  },
+  updateProgram(contestId: number, payload: LiveProgramUpdatePayload) {
+    return apiRequest<LiveProgramState>(`/api/presentation-configs/${contestId}/live/program`, {
+      method: 'PUT',
+      body: payload,
+    });
+  },
+  publishedProgram(contestId: number, token?: string) {
+    return apiRequest<PublishedLiveProgram>(`/api/public/presentations/${contestId}/program`, {
+      suppressUnauthorizedHandler: true,
+      ...(token ? { headers: { 'X-Broadcast-Token': token } } : {}),
+    });
   },
   createTemplate(payload: PresentationTemplatePayload) {
     return apiRequest<PresentationTemplate>('/api/presentation-templates', {

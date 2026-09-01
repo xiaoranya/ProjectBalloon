@@ -506,6 +506,7 @@ const businessMessages: Record<string, string> = {
   SCREEN_PLAYLIST_IN_USE: '播放列表正在被大屏使用，不能删除',
   SCREEN_PLAYLIST_NAME_TAKEN: '播放列表名称已存在',
   SCREEN_PLAYLIST_VERSION_CONFLICT: '播放列表已被其他人修改，请刷新后重试',
+  LIVE_PROGRAM_VERSION_CONFLICT: '导播状态已被其他人修改，请刷新后重试',
   SCREEN_PRESENTATION_NOT_PUBLISHED: '展示内容尚未发布',
   SCREEN_REGISTRATION_RATE_LIMITED: '大屏注册过于频繁，请稍后再试',
   SCREEN_TOKEN_INVALID: '大屏令牌无效或已过期',

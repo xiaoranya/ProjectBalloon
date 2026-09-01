@@ -6,6 +6,8 @@ mod orchestration;
 pub use orchestration::*;
 mod live;
 pub use live::*;
+mod program;
+pub use program::*;
 
 pub use handlers::*;
 pub use model::*;
@@ -29,6 +31,11 @@ pub fn routes() -> axum::Router<crate::state::AppState> {
             "/api/presentation-configs/{contest_id}/live/tokens/{token_id}",
             delete(revoke_token),
         )
+        .route(
+            "/api/presentation-configs/{contest_id}/live/program",
+            get(get_program).put(update_program),
+        )
+        .route("/api/public/presentations/{contest_id}/program", get(get_published_program))
         .route("/api/public/screens/register", post(register))
         .route("/api/public/screens/{instance_id}/heartbeat", post(heartbeat))
         .route("/api/screen-instances/{contest_id}", get(list_instances))
