@@ -63,7 +63,10 @@ pub(crate) async fn prometheus(
 /// Enforces the optional `/metrics` bearer token. Queue depths, worker
 /// capacity, and submission volumes are operational data that must not be
 /// world-readable wherever a token is configured.
-fn authorize_metrics_request(headers: &axum::http::HeaderMap, expected: &str) -> Result<(), AppError> {
+fn authorize_metrics_request(
+    headers: &axum::http::HeaderMap,
+    expected: &str,
+) -> Result<(), AppError> {
     const BEARER_PREFIX: &str = "Bearer ";
     let provided = headers
         .get(header::AUTHORIZATION)
@@ -230,8 +233,7 @@ mod tests {
         assert!(authorize_metrics_request(&bearer_headers("wrong"), "secret-token").is_err());
         assert!(authorize_metrics_request(&bearer_headers(""), "secret-token").is_err());
         let mut basic_only = HeaderMap::new();
-        basic_only
-            .insert(header::AUTHORIZATION, "Basic dXNlcjpwYXNz".parse().expect("header"));
+        basic_only.insert(header::AUTHORIZATION, "Basic dXNlcjpwYXNz".parse().expect("header"));
         assert!(authorize_metrics_request(&basic_only, "secret-token").is_err());
     }
 

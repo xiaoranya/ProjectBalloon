@@ -231,8 +231,7 @@ async fn defer_result_for_retry(
     request_timeout: Duration,
 ) -> Result<(), JudgeDispatchError> {
     let mut headers = FieldTable::default();
-    headers
-        .insert(ShortString::from("x-retry-count"), AMQPValue::LongInt(next_retry_count));
+    headers.insert(ShortString::from("x-retry-count"), AMQPValue::LongInt(next_retry_count));
     let mut properties = BasicProperties::default()
         .with_content_type("application/json".into())
         .with_delivery_mode(2)

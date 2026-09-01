@@ -738,17 +738,12 @@ async fn stage_testdata_field(
     let mut writer = tokio::fs::File::from(file);
     let mut hasher = sha2::Sha256::new();
     let mut total: u64 = 0;
-    while let Some(chunk) = field
-        .chunk()
-        .await
-        .map_err(|_| AppError::validation("file", "could not be read"))?
+    while let Some(chunk) =
+        field.chunk().await.map_err(|_| AppError::validation("file", "could not be read"))?
     {
         total = total.saturating_add(chunk.len() as u64);
         if total > MAX_TESTDATA_BYTES {
-            return Err(AppError::validation(
-                "file",
-                "must contain between 1 byte and 256 MiB",
-            ));
+            return Err(AppError::validation("file", "must contain between 1 byte and 256 MiB"));
         }
         hasher.update(&chunk);
         writer
@@ -759,9 +754,6 @@ async fn stage_testdata_field(
     if total == 0 {
         return Err(AppError::validation("file", "must contain between 1 byte and 256 MiB"));
     }
-    writer
-        .flush()
-        .await
-        .map_err(|error| AppError::internal("stage test-data upload", error))?;
+    writer.flush().await.map_err(|error| AppError::internal("stage test-data upload", error))?;
     Ok((StagedUploadFile(path), total, hex::encode(hasher.finalize())))
 }

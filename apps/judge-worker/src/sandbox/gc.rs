@@ -88,11 +88,13 @@ impl DockerSandbox {
             }
         };
         let mut removed = 0;
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|error| SandboxError::Io(crate::sandbox::fs::with_path_context(error, "read job directory entry", &jobs_dir)))?
-        {
+        while let Some(entry) = entries.next_entry().await.map_err(|error| {
+            SandboxError::Io(crate::sandbox::fs::with_path_context(
+                error,
+                "read job directory entry",
+                &jobs_dir,
+            ))
+        })? {
             // Only ever touch directories named after a judgement; unknown
             // cache entries are left alone.
             let Ok(judgement_id) = entry.file_name().to_string_lossy().parse::<Uuid>() else {

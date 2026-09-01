@@ -458,9 +458,7 @@ async fn verify_topology(channel: &Channel, task_queue: &str) -> Result<(), Rabb
     retry_arguments
         .insert(ShortString::from("x-message-ttl"), AMQPValue::LongInt(RETRY_TTL_MILLISECONDS));
     channel.queue_declare(JUDGE_RETRY_QUEUE.into(), durable_queue, retry_arguments).await?;
-    channel
-        .queue_declare(JUDGE_DEAD_QUEUE.into(), durable_queue, FieldTable::default())
-        .await?;
+    channel.queue_declare(JUDGE_DEAD_QUEUE.into(), durable_queue, FieldTable::default()).await?;
     channel
         .queue_declare(
             JUDGE_RESULTS_QUEUE.into(),

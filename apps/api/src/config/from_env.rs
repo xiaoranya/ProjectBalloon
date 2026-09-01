@@ -132,19 +132,19 @@ fn parse_deployment(
     // Optional bearer token guarding /metrics. Absent or empty keeps the
     // endpoint open (loop-back or firewalled deployments); anything else must
     // be a header-safe token.
-    let metrics_token = match lookup("PROJECT_BALLOON_METRICS_TOKEN").map(|value| value.trim().to_owned())
-    {
-        Some(value) if value.is_empty() => None,
-        Some(value) if value.chars().any(char::is_control) => {
-            return Err(ConfigError::Invalid {
-                name: "PROJECT_BALLOON_METRICS_TOKEN",
-                value,
-                reason: "must not contain control characters",
-            });
-        }
-        Some(value) => Some(value),
-        None => None,
-    };
+    let metrics_token =
+        match lookup("PROJECT_BALLOON_METRICS_TOKEN").map(|value| value.trim().to_owned()) {
+            Some(value) if value.is_empty() => None,
+            Some(value) if value.chars().any(char::is_control) => {
+                return Err(ConfigError::Invalid {
+                    name: "PROJECT_BALLOON_METRICS_TOKEN",
+                    value,
+                    reason: "must not contain control characters",
+                });
+            }
+            Some(value) => Some(value),
+            None => None,
+        };
     Ok(DeploymentSettings { deployment_mode, bind_address, trusted_proxy_cidrs, metrics_token })
 }
 

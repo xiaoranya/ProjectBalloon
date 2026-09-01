@@ -31,9 +31,9 @@ use crate::sandbox::metrics::{
     extract_gnu_time_metrics, nonzero_milliseconds, snapshot_container_cpu,
 };
 use crate::sandbox::{
-    COMPILE_WALL_LIMIT, DockerSandbox, DockerSandboxConfig, MAX_EXEC_LOG_BYTES,
-    SandboxError, SandboxJudgement, effective_time_limit, is_container_missing,
-    is_container_name_conflict, judgement_container_name, run_wall_limit,
+    COMPILE_WALL_LIMIT, DockerSandbox, DockerSandboxConfig, MAX_EXEC_LOG_BYTES, SandboxError,
+    SandboxJudgement, effective_time_limit, is_container_missing, is_container_name_conflict,
+    judgement_container_name, run_wall_limit,
 };
 
 impl DockerSandbox {
@@ -259,9 +259,7 @@ impl DockerSandbox {
             let input_path = work_dir.join("current.in");
             tokio::fs::copy(data_dir.join(format!("{test_index}.in")), &input_path)
                 .await
-                .map_err(|error| {
-                    with_path_context(error, "copy test-case input", &input_path)
-                })?;
+                .map_err(|error| with_path_context(error, "copy test-case input", &input_path))?;
             set_private_file_permissions(&input_path).await?;
             let actual_path = work_dir.join("actual.out");
             remove_file_if_present(&actual_path).await?;
@@ -332,9 +330,9 @@ impl DockerSandbox {
                 JudgeVerdict::Accepted
             } else {
                 let expected_path = data_dir.join(format!("{test_index}.out"));
-                let expected = tokio::fs::read(&expected_path)
-                    .await
-                    .map_err(|error| with_path_context(error, "read expected output", &expected_path))?;
+                let expected = tokio::fs::read(&expected_path).await.map_err(|error| {
+                    with_path_context(error, "read expected output", &expected_path)
+                })?;
                 if standard_output_matches(&expected, output.as_deref().unwrap_or_default()) {
                     JudgeVerdict::Accepted
                 } else {
@@ -552,18 +550,18 @@ impl DockerSandbox {
         let _stats_result = stats_task.await;
         let timed_out = output_result?;
         let streamed_cpu_ns = resource_usage.cpu_time_ns.load(Ordering::Relaxed);
-        let docker_cpu_ns = match (base_cpu_ns, snapshot_container_cpu(&self.docker, container_id).await)
-        {
-            // Both snapshots landed: the exec's own CPU time.
-            (Some(base), Some(total)) => total.saturating_sub(base),
-            // The trailing snapshot failed (container killed or exited during
-            // a timeout/OOM) — subtract the baseline from the last streamed
-            // cumulative sample instead.
-            (Some(base), None) => streamed_cpu_ns.saturating_sub(base),
-            // No baseline at all: fall back to the raw cumulative value, which
-            // errs on the high side but never fakes a timeout.
-            (None, _) => streamed_cpu_ns,
-        };
+        let docker_cpu_ns =
+            match (base_cpu_ns, snapshot_container_cpu(&self.docker, container_id).await) {
+                // Both snapshots landed: the exec's own CPU time.
+                (Some(base), Some(total)) => total.saturating_sub(base),
+                // The trailing snapshot failed (container killed or exited during
+                // a timeout/OOM) — subtract the baseline from the last streamed
+                // cumulative sample instead.
+                (Some(base), None) => streamed_cpu_ns.saturating_sub(base),
+                // No baseline at all: fall back to the raw cumulative value, which
+                // errs on the high side but never fakes a timeout.
+                (None, _) => streamed_cpu_ns,
+            };
         let exit_code = if timed_out {
             124
         } else {

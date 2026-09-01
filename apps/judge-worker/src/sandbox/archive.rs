@@ -109,14 +109,17 @@ pub(super) fn extract_cases_blocking(
     type CasePair = (Option<Vec<u8>>, Option<Vec<u8>>);
 
     if std::fs::metadata(archive)
-        .map_err(|error| SandboxError::Io(with_path_context(error, "inspect test-data archive", archive)))?
+        .map_err(|error| {
+            SandboxError::Io(with_path_context(error, "inspect test-data archive", archive))
+        })?
         .len()
         > MAX_TESTDATA_ARCHIVE_BYTES
     {
         return Err(SandboxError::InvalidTestdata("test-data archive is too large".to_owned()));
     }
-    let file = std::fs::File::open(archive)
-        .map_err(|error| SandboxError::Io(with_path_context(error, "open test-data archive", archive)))?;
+    let file = std::fs::File::open(archive).map_err(|error| {
+        SandboxError::Io(with_path_context(error, "open test-data archive", archive))
+    })?;
     let mut zip = zip::ZipArchive::new(file)
         .map_err(|error| SandboxError::InvalidTestdata(error.to_string()))?;
     if zip.len() > MAX_TESTDATA_FILES {
@@ -188,11 +191,21 @@ pub(super) fn extract_cases_blocking(
     for (offset, (_name, (input, output))) in ordered.into_iter().enumerate() {
         let index = offset + 1;
         let input_path = destination.join(format!("{index}.in"));
-        std::fs::write(&input_path, input.ok_or_else(|| SandboxError::InvalidTestdata("missing input".to_owned()))?)
-            .map_err(|error| SandboxError::Io(with_path_context(error, "write test-case input", &input_path)))?;
+        std::fs::write(
+            &input_path,
+            input.ok_or_else(|| SandboxError::InvalidTestdata("missing input".to_owned()))?,
+        )
+        .map_err(|error| {
+            SandboxError::Io(with_path_context(error, "write test-case input", &input_path))
+        })?;
         let output_path = destination.join(format!("{index}.out"));
-        std::fs::write(&output_path, output.ok_or_else(|| SandboxError::InvalidTestdata("missing output".to_owned()))?)
-            .map_err(|error| SandboxError::Io(with_path_context(error, "write test-case output", &output_path)))?;
+        std::fs::write(
+            &output_path,
+            output.ok_or_else(|| SandboxError::InvalidTestdata("missing output".to_owned()))?,
+        )
+        .map_err(|error| {
+            SandboxError::Io(with_path_context(error, "write test-case output", &output_path))
+        })?;
     }
     Ok(ordered_len(destination)?)
 }

@@ -420,9 +420,10 @@ mod tests {
             ("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY", "worker-access".to_owned()),
             ("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY", "worker-secret".to_owned()),
         ];
-        let config =
-            WorkerConfig::from_lookup(|name| credentials.iter().find(|(key, _)| *key == name).map(|(_, value)| value.clone()))
-                .expect("credential-only config is valid");
+        let config = WorkerConfig::from_lookup(|name| {
+            credentials.iter().find(|(key, _)| *key == name).map(|(_, value)| value.clone())
+        })
+        .expect("credential-only config is valid");
         assert_eq!(config.docker_connect_timeout_seconds, 10);
         assert_eq!(config.docker_api_timeout, Duration::from_millis(5_000));
 
@@ -447,5 +448,4 @@ mod tests {
             Err(ConfigError::Invalid { name: "JUDGE_DOCKER_API_TIMEOUT_MILLISECONDS", .. })
         ));
     }
-
 }

@@ -32,7 +32,9 @@ pub async fn validate_file(path: &Path) -> Result<ArchiveSummary, AppError> {
 }
 
 fn validate_reader<R: Read + Seek>(reader: R) -> Result<ArchiveSummary, AppError> {
-    validate_sync_archive(ZipArchive::new(reader).map_err(|_| invalid("must be a structurally valid ZIP archive"))?)
+    validate_sync_archive(
+        ZipArchive::new(reader).map_err(|_| invalid("must be a structurally valid ZIP archive"))?,
+    )
 }
 
 fn validate_sync_archive<R: Read + Seek>(
@@ -185,7 +187,11 @@ mod tests {
     fn missing_pairs_and_nested_cases_are_rejected() {
         assert!(validate_reader(Cursor::new(&archive(&[("1.in", b"one")]))).is_err());
         assert!(
-            validate_reader(Cursor::new(&archive(&[("cases/1.in", b"one"), ("cases/1.out", b"one")]))).is_err()
+            validate_reader(Cursor::new(&archive(&[
+                ("cases/1.in", b"one"),
+                ("cases/1.out", b"one")
+            ])))
+            .is_err()
         );
     }
 
@@ -304,9 +310,19 @@ mod tests {
     #[test]
     fn unpaired_and_unsafe_case_names_are_rejected() {
         assert!(
-            validate_reader(Cursor::new(&archive(&[("1.in", b"1"), ("2.in", b"2"), ("1.out", b"3")]))).is_err()
+            validate_reader(Cursor::new(&archive(&[
+                ("1.in", b"1"),
+                ("2.in", b"2"),
+                ("1.out", b"3")
+            ])))
+            .is_err()
         );
-        assert!(validate_reader(Cursor::new(&archive(&[("dir\\1.in", b"1"), ("1.out", b"2")]))).is_err());
-        assert!(validate_reader(Cursor::new(&archive(&[("1\x00.in", b"1"), ("1.out", b"2")]))).is_err());
+        assert!(
+            validate_reader(Cursor::new(&archive(&[("dir\\1.in", b"1"), ("1.out", b"2")])))
+                .is_err()
+        );
+        assert!(
+            validate_reader(Cursor::new(&archive(&[("1\x00.in", b"1"), ("1.out", b"2")]))).is_err()
+        );
     }
 }
