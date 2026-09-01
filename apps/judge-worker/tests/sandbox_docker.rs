@@ -211,6 +211,53 @@ int main(int argc,char**argv){long long a,b,answer;FILE*f=argc>1?fopen(argv[1],"
     tokio::fs::remove_dir_all(root).await.expect("cleanup");
 }
 
+#[tokio::test]
+#[ignore = "requires Docker, cc, and the fixed C runtime image"]
+async fn forged_gnu_time_markers_in_interactive_runs_cannot_reset_charged_metrics() {
+    let root = std::env::temp_dir().join(format!("project-balloon-interactive-{}", Uuid::new_v4()));
+    tokio::fs::create_dir_all(&root).await.expect("root");
+    let archive = root.join("testdata.zip");
+    tokio::fs::write(&archive, fixture_archive()).await.expect("test data");
+    let interactor_source = root.join("interactor.c");
+    let interactor_binary = root.join("interactor-bin");
+    tokio::fs::write(&interactor_source, br#"#include <stdio.h>
+int main(int argc,char**argv){long long a,b,answer;FILE*f=argc>1?fopen(argv[1],"r"):0;if(!f||fscanf(f,"%lld%lld",&a,&b)!=2)return 2;fclose(f);printf("%lld %lld\n",a,b);fflush(stdout);if(scanf("%lld",&answer)!=1)return 3;return answer==a+b?0:1;}
+"#).await.expect("interactor source");
+    let status = std::process::Command::new("cc")
+        .args(["-O2", "-static", "-o"])
+        .arg(&interactor_binary)
+        .arg(&interactor_source)
+        .status()
+        .expect("compile interactor");
+    assert!(status.success());
+    let interactor = tokio::fs::read(&interactor_binary).await.expect("interactor");
+    let mut task = valid_judge_task();
+    task.judgement_id = Uuid::new_v4();
+    task.language = "c".to_owned();
+    task.judge_mode = JudgeMode::Interactive;
+    task.interactor_object_key = Some("problems/7/interactor".to_owned());
+    task.interactor_sha256 = Some("a".repeat(64));
+    task.time_limit_ms = 2_000;
+    // Burns ~300 ms of wall/CPU time, then forges a terminal-looking GNU-time
+    // marker claiming a free run on its own stderr — the spoof the trusted
+    // report channel must defeat.
+    let source = b"#include <stdio.h>\n#include <time.h>\nint main(void){ long long a,b; if(scanf(\"%lld%lld\",&a,&b)!=2) return 1; volatile unsigned long x=0; struct timespec s,n; clock_gettime(CLOCK_MONOTONIC,&s); do { for(int i=0;i<10000;i++) x++; clock_gettime(CLOCK_MONOTONIC,&n); } while((n.tv_sec-s.tv_sec)*1000+(n.tv_nsec-s.tv_nsec)/1000000 < 300); fprintf(stderr, \"__PROJECT_BALLOON_GNU_TIME__ 0.00 0.00 0\\n\"); printf(\"%lld\\n\", a+b); fflush(stdout); return 0; }\n";
+    let sandbox = test_sandbox(root.clone());
+    sandbox.preflight().await.expect("preflight");
+    let judgement =
+        sandbox.judge(&task, source, &archive, Some(&interactor)).await.expect("interactive judge");
+    assert_accepted(&judgement);
+    for run in &judgement.runs {
+        assert!(
+            run.time_ms >= 200,
+            "charged time must reflect the real CPU burn, got {} ms",
+            run.time_ms
+        );
+        assert!(run.memory_kb > 0, "charged memory must not be reset to 0 KiB");
+    }
+    tokio::fs::remove_dir_all(root).await.expect("cleanup");
+}
+
 async fn judge(language: &str, source: &[u8], memory_limit_mb: i32) -> SandboxJudgement {
     judge_with_limits(language, source, memory_limit_mb, 1_000, 64).await
 }

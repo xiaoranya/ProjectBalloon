@@ -150,6 +150,7 @@ an independently generated CSRF secret.
 | `JUDGE_HEARTBEAT_INTERVAL_SECONDS` | `5` | Heartbeat publication interval |
 | `JUDGE_REQUEST_TIMEOUT_MILLISECONDS` | `10000` | Storage/sandbox request timeout |
 | `JUDGE_MAX_ARTIFACT_BYTES` | `314572800` | Maximum artifact size accepted per task |
+| `JUDGE_TESTDATA_CACHE_MAX_BYTES` | `8589934592` | Size cap for the on-disk testdata zip cache; least-recently-used entries (by mtime, refreshed on every cache hit) are evicted with a log line past the cap. `0` disables the cap |
 | `PROJECT_BALLOON_JUDGE_STUCK_REQUEUE_INTERVAL_SECONDS` | `60` | How often the API re-enqueues judge tasks whose submission has been stuck in `JUDGING` for over 30 minutes with a SENT outbox row (self-healing complement to the `SubmissionsStuckJudging` alert; requeued tasks never exceed the dispatcher's max attempts) |
 
 ## Sandbox

@@ -137,6 +137,7 @@ API 在启动时创建其配置的桶。桶名属于部署配置，绝不通过�
 | `JUDGE_HEARTBEAT_INTERVAL_SECONDS` | `5` | 心跳发布间隔 |
 | `JUDGE_REQUEST_TIMEOUT_MILLISECONDS` | `10000` | 存储 / 沙箱请求超时 |
 | `JUDGE_MAX_ARTIFACT_BYTES` | `314572800` | 每个任务接受的最大产物大小 |
+| `JUDGE_TESTDATA_CACHE_MAX_BYTES` | `8589934592` | 本地测试数据 zip 缓存的大小上限；超过上限时按最近最少使用（以 mtime 为准，缓存命中会刷新）淘汰并记录日志。`0` 表示不设上限 |
 
 ## 沙箱
 

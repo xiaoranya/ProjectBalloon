@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{Arc, RwLock},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use async_trait::async_trait;
@@ -17,7 +17,8 @@ use object_store::{
 use project_balloon_contracts::JudgeTask;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tokio::{io::AsyncReadExt, time::timeout};
+use tokio::{io::AsyncReadExt, sync::Mutex as AsyncMutex, time::timeout};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 #[derive(Debug, Error)]
@@ -173,6 +174,11 @@ pub struct ArtifactManager {
     problem_bucket: String,
     source_bucket: String,
     max_artifact_bytes: u64,
+    testdata_cache_max_bytes: u64,
+    /// Serializes testdata-cache eviction within this worker process. Cache
+    /// entries themselves are safe to share across concurrent judgements; the
+    /// size scan plus removal is the only read-modify-write step.
+    evict_lock: Arc<AsyncMutex<()>>,
 }
 
 impl ArtifactManager {
@@ -183,8 +189,17 @@ impl ArtifactManager {
         problem_bucket: String,
         source_bucket: String,
         max_artifact_bytes: u64,
+        testdata_cache_max_bytes: u64,
     ) -> Self {
-        Self { source, cache_dir, problem_bucket, source_bucket, max_artifact_bytes }
+        Self {
+            source,
+            cache_dir,
+            problem_bucket,
+            source_bucket,
+            max_artifact_bytes,
+            testdata_cache_max_bytes,
+            evict_lock: Arc::new(AsyncMutex::new(())),
+        }
     }
 
     pub async fn preflight(&self) -> Result<(), ArtifactError> {
@@ -231,7 +246,12 @@ impl ArtifactManager {
         if let Ok(metadata) = tokio::fs::metadata(&path).await {
             self.validate_size_u64(metadata.len())?;
             match verify_file_hash(&path, &task.testdata_sha256, self.max_artifact_bytes).await {
-                Ok(()) => return Ok(path),
+                Ok(()) => {
+                    // Refresh the recency marker so eviction stays a true LRU:
+                    // hits must outlive stale-but-newer inserts.
+                    refresh_recency(&path).await;
+                    return Ok(path);
+                }
                 Err(ArtifactError::HashMismatch { .. }) => {}
                 Err(error) => return Err(error),
             }
@@ -245,7 +265,76 @@ impl ArtifactManager {
         tokio::fs::write(&temporary, &content).await?;
         set_private_file_permissions(&temporary).await?;
         tokio::fs::rename(&temporary, &path).await?;
+        self.evict_testdata_cache(&path).await;
         Ok(path)
+    }
+
+    /// Evicts least-recently-used cache entries (by mtime, which cache hits
+    /// refresh) until the directory fits the configured cap. The entry just
+    /// stored is never evicted by its own insertion; eviction trouble is
+    /// logged, never fatal — missing entries are safely re-fetched.
+    async fn evict_testdata_cache(&self, keep: &std::path::Path) {
+        if self.testdata_cache_max_bytes == 0 {
+            return;
+        }
+        let _eviction = self.evict_lock.lock().await;
+        let mut entries: Vec<(PathBuf, u64, SystemTime)> = Vec::new();
+        let mut total = 0_u64;
+        let mut read_dir = match tokio::fs::read_dir(self.testdata_cache_dir()).await {
+            Ok(read_dir) => read_dir,
+            Err(error) => {
+                warn!(error = %error, "testdata cache eviction could not list the cache directory");
+                return;
+            }
+        };
+        while let Ok(Some(entry)) = read_dir.next_entry().await {
+            let Ok(metadata) = entry.metadata().await else { continue };
+            if !metadata.is_file() {
+                continue;
+            }
+            total = total.saturating_add(metadata.len());
+            entries.push((
+                entry.path(),
+                metadata.len(),
+                metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+            ));
+        }
+        entries.sort_by(|left, right| left.2.cmp(&right.2).then_with(|| left.0.cmp(&right.0)));
+        for (path, size, _) in entries {
+            if total <= self.testdata_cache_max_bytes {
+                break;
+            }
+            if path == keep {
+                continue;
+            }
+            match remove_if_present(&path).await {
+                Ok(()) => {
+                    total = total.saturating_sub(size);
+                    info!(
+                        file = %path.display(),
+                        bytes = size,
+                        remaining_bytes = total,
+                        cap_bytes = self.testdata_cache_max_bytes,
+                        "evicted testdata cache entry under LRU pressure"
+                    );
+                }
+                Err(error) => {
+                    warn!(
+                        file = %path.display(),
+                        error = %error,
+                        "testdata cache eviction could not remove an entry; stopping this pass"
+                    );
+                    break;
+                }
+            }
+        }
+        if total > self.testdata_cache_max_bytes {
+            warn!(
+                remaining_bytes = total,
+                cap_bytes = self.testdata_cache_max_bytes,
+                "testdata cache remains above its size cap after eviction"
+            );
+        }
     }
 
     fn validate_size(&self, bytes: usize) -> Result<(), ArtifactError> {
@@ -306,6 +395,23 @@ async fn remove_if_present(path: &std::path::Path) -> Result<(), std::io::Error>
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
+    }
+}
+
+/// Best-effort mtime refresh marking a cache hit as recently used. A failed
+/// refresh only degrades LRU towards FIFO; it must not fail the judgement.
+async fn refresh_recency(path: &std::path::Path) {
+    let refresh = tokio::task::spawn_blocking({
+        let path = path.to_owned();
+        move || -> std::io::Result<()> {
+            std::fs::File::options()
+                .write(true)
+                .open(&path)?
+                .set_times(std::fs::FileTimes::new().set_modified(std::time::SystemTime::now()))
+        }
+    });
+    if let Err(error) = refresh.await.expect("recency refresh task must not panic") {
+        warn!(file = %path.display(), error = %error, "could not refresh testdata cache recency marker");
     }
 }
 
@@ -375,6 +481,7 @@ mod tests {
             "problems".to_owned(),
             "sources".to_owned(),
             1024,
+            0,
         );
         manager.preflight().await.expect("preflight");
 
@@ -418,6 +525,7 @@ mod tests {
             "problems".to_owned(),
             "sources".to_owned(),
             1024,
+            0,
         );
         let error = manager.prepare(&task).await.expect_err("tampered source must fail");
         assert!(matches!(error, ArtifactError::HashMismatch { kind: "source", .. }));
@@ -434,10 +542,175 @@ mod tests {
             "problems".to_owned(),
             "sources".to_owned(),
             1024,
+            0,
         );
         assert!(manager.validate_size_u64(0).is_ok());
         assert!(manager.validate_size_u64(1024).is_ok());
         assert!(matches!(manager.validate_size_u64(1025), Err(ArtifactError::TooLarge(1024))));
         assert!(manager.validate_size_u64(u64::MAX).is_err());
+    }
+
+    fn cache_manager(
+        source: Arc<MemorySource>,
+        cache: std::path::PathBuf,
+        max_artifact_bytes: u64,
+        testdata_cache_max_bytes: u64,
+    ) -> ArtifactManager {
+        ArtifactManager::new(
+            source,
+            cache,
+            "problems".to_owned(),
+            "sources".to_owned(),
+            max_artifact_bytes,
+            testdata_cache_max_bytes,
+        )
+    }
+
+    fn task_with_testdata(content: &[u8], key: &str, base: &JudgeTask) -> JudgeTask {
+        let mut task = base.clone();
+        task.source_sha256 = hex::encode(Sha256::digest(b"int main() { return 0; }"));
+        task.testdata_object_key = key.to_owned();
+        task.testdata_sha256 = hex::encode(Sha256::digest(content));
+        task
+    }
+
+    async fn backdate_mtime(path: &std::path::Path, seconds_ago: u64) {
+        let modified = SystemTime::now() - Duration::from_secs(seconds_ago);
+        tokio::task::spawn_blocking({
+            let path = path.to_owned();
+            move || {
+                std::fs::File::options()
+                    .write(true)
+                    .open(&path)?
+                    .set_times(std::fs::FileTimes::new().set_modified(modified))
+            }
+        })
+        .await
+        .expect("backdate task must not panic")
+        .expect("backdate file");
+    }
+
+    #[tokio::test]
+    async fn testdata_cache_eviction_is_lru_under_pressure() {
+        let base = valid_judge_task();
+        let contents: Vec<Vec<u8>> =
+            vec![vec![b'a'; 100], vec![b'b'; 200], vec![b'c'; 300], vec![b'd'; 400]];
+        let objects: Vec<(String, Bytes)> = contents
+            .iter()
+            .enumerate()
+            .map(|(index, content)| {
+                (format!("problems/testdata-{index}"), Bytes::from(content.clone()))
+            })
+            .collect();
+        let source_object = ("sources".to_owned(), base.source_object_key.clone());
+        let memory = Arc::new(MemorySource {
+            objects: HashMap::from([(
+                source_object,
+                Bytes::from_static(b"int main() { return 0; }"),
+            )])
+            .into_iter()
+            .chain(objects.into_iter().map(|(key, value)| (("problems".to_owned(), key), value)))
+            .collect(),
+            reads: Mutex::default(),
+        });
+        let cache = std::env::temp_dir().join(format!("project-balloon-lru-{}", Uuid::new_v4()));
+        // The cap fits exactly the two newest entries, so pushing the fourth
+        // entry in must evict the two oldest.
+        let manager = cache_manager(memory.clone(), cache.clone(), 4096, 700);
+        manager.preflight().await.expect("preflight");
+
+        let mut paths = Vec::new();
+        for (index, seconds_ago) in [(0_usize, 5_000_u64), (1, 4_000), (2, 3_000)] {
+            let task =
+                task_with_testdata(&contents[index], &format!("problems/testdata-{index}"), &base);
+            let path = manager.prepare(&task).await.expect("prepare").testdata_archive;
+            backdate_mtime(&path, seconds_ago).await;
+            paths.push(path);
+        }
+        let hot_task = task_with_testdata(&contents[3], "problems/testdata-3", &base);
+        let hot_path =
+            manager.prepare(&hot_task).await.expect("prepare hot entry").testdata_archive;
+
+        assert!(!paths[0].exists(), "oldest entry must be evicted");
+        assert!(!paths[1].exists(), "second-oldest entry must be evicted");
+        assert!(paths[2].exists(), "recent entry must survive");
+        assert!(hot_path.exists(), "the just-stored entry must survive");
+        tokio::fs::remove_dir_all(cache).await.expect("remove test cache");
+    }
+
+    #[tokio::test]
+    async fn cache_hits_refresh_recency_and_survive_pressure() {
+        let base = valid_judge_task();
+        let contents: Vec<Vec<u8>> = vec![vec![b'a'; 100], vec![b'b'; 200], vec![b'c'; 300]];
+        let memory = Arc::new(MemorySource {
+            objects: HashMap::from([
+                (
+                    ("sources".to_owned(), base.source_object_key.clone()),
+                    Bytes::from_static(b"int main() { return 0; }"),
+                ),
+                (
+                    ("problems".to_owned(), "problems/t0".to_owned()),
+                    Bytes::from(contents[0].clone()),
+                ),
+                (
+                    ("problems".to_owned(), "problems/t1".to_owned()),
+                    Bytes::from(contents[1].clone()),
+                ),
+                (
+                    ("problems".to_owned(), "problems/t2".to_owned()),
+                    Bytes::from(contents[2].clone()),
+                ),
+            ]),
+            reads: Mutex::default(),
+        });
+        let cache =
+            std::env::temp_dir().join(format!("project-balloon-lru-hit-{}", Uuid::new_v4()));
+        // The cap is one byte below the total of all three entries, so the
+        // insert of the third must evict exactly the least-recently-used one.
+        let manager = cache_manager(memory, cache.clone(), 4096, 599);
+        manager.preflight().await.expect("preflight");
+
+        let old_task = task_with_testdata(&contents[0], "problems/t0", &base);
+        let old_path = manager.prepare(&old_task).await.expect("prepare old").testdata_archive;
+        backdate_mtime(&old_path, 5_000).await;
+        let older_task = task_with_testdata(&contents[1], "problems/t1", &base);
+        let older_path = manager.prepare(&older_task).await.expect("prepare").testdata_archive;
+        backdate_mtime(&older_path, 4_000).await;
+
+        // A cache hit refreshes recency: despite the oldest insert time, the
+        // hit entry must now be newer than the untouched middle entry.
+        manager.prepare(&old_task).await.expect("cache hit");
+        let new_task = task_with_testdata(&contents[2], "problems/t2", &base);
+        let new_path = manager.prepare(&new_task).await.expect("prepare new").testdata_archive;
+
+        assert!(old_path.exists(), "the refreshed hit must survive eviction");
+        assert!(!older_path.exists(), "the untouched entry must be evicted instead");
+        assert!(new_path.exists(), "the just-stored entry must survive");
+        tokio::fs::remove_dir_all(cache).await.expect("remove test cache");
+    }
+
+    #[tokio::test]
+    async fn an_oversized_entry_is_kept_even_when_it_alone_exceeds_the_cap() {
+        let base = valid_judge_task();
+        let content = vec![b'x'; 500];
+        let memory = Arc::new(MemorySource {
+            objects: HashMap::from([
+                (
+                    ("sources".to_owned(), base.source_object_key.clone()),
+                    Bytes::from_static(b"int main() { return 0; }"),
+                ),
+                (("problems".to_owned(), "problems/big".to_owned()), Bytes::from(content.clone())),
+            ]),
+            reads: Mutex::default(),
+        });
+        let cache =
+            std::env::temp_dir().join(format!("project-balloon-lru-cap-{}", Uuid::new_v4()));
+        let manager = cache_manager(memory, cache.clone(), 4096, 10);
+        manager.preflight().await.expect("preflight");
+
+        let task = task_with_testdata(&content, "problems/big", &base);
+        let path = manager.prepare(&task).await.expect("prepare oversized entry").testdata_archive;
+        assert!(path.exists(), "the only entry must never be evicted by its own insert");
+        tokio::fs::remove_dir_all(cache).await.expect("remove test cache");
     }
 }
