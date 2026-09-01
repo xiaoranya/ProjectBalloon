@@ -297,6 +297,39 @@ mod tests {
         assert_eq!(config.cpp_image, "judge-runtime-cpp:12.2.0");
         assert_eq!(config.java_image, "judge-runtime-java:21");
         assert_eq!(config.python_image, "judge-runtime-python:3.12.13");
+        assert_eq!(config.go_image, "judge-runtime-go:1.24");
+        assert_eq!(config.rust_image, "judge-runtime-rust:1.88");
+    }
+
+    #[test]
+    fn configuration_rejects_empty_and_control_runtimes() {
+        for name in ["JUDGE_GO_IMAGE", "JUDGE_RUST_IMAGE"] {
+            let values = HashMap::from([
+                (
+                    "PROJECT_BALLOON_RABBITMQ_URL",
+                    "amqp://worker:secret@127.0.0.1:5672/%2f".to_owned(),
+                ),
+                ("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY", "worker-access".to_owned()),
+                ("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY", "worker-secret".to_owned()),
+                (name, "  ".to_owned()),
+            ]);
+            let error = WorkerConfig::from_lookup(|lookup| values.get(lookup).cloned())
+                .expect_err("empty runtime image must fail");
+            assert_eq!(error, ConfigError::Empty { name }, "{name} blank must be rejected");
+
+            let values = HashMap::from([
+                (
+                    "PROJECT_BALLOON_RABBITMQ_URL",
+                    "amqp://worker:secret@127.0.0.1:5672/%2f".to_owned(),
+                ),
+                ("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY", "worker-access".to_owned()),
+                ("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY", "worker-secret".to_owned()),
+                (name, "judge\u{7}runtime".to_owned()),
+            ]);
+            let error = WorkerConfig::from_lookup(|lookup| values.get(lookup).cloned())
+                .expect_err("control characters must fail");
+            assert_eq!(error, ConfigError::ControlCharacter { name }, "{name} control char");
+        }
     }
 
     #[test]
