@@ -26,6 +26,9 @@ pub struct WorkerConfig {
     pub problem_bucket: String,
     pub source_bucket: String,
     pub max_artifact_bytes: u64,
+    /// Size cap (bytes) for the on-disk testdata zip cache; least-recently-used
+    /// entries are evicted past it. Zero disables the cap.
+    pub testdata_cache_max_bytes: u64,
     pub sandbox_socket: PathBuf,
     pub sandbox_runtime: Option<String>,
     pub sandbox_user: String,
@@ -97,6 +100,11 @@ impl WorkerConfig {
             "JUDGE_MAX_ARTIFACT_BYTES",
             lookup("JUDGE_MAX_ARTIFACT_BYTES")
                 .unwrap_or_else(|| (300_u64 * 1024 * 1024).to_string()),
+        )?;
+        let testdata_cache_max_bytes = parse_size_cap(
+            "JUDGE_TESTDATA_CACHE_MAX_BYTES",
+            lookup("JUDGE_TESTDATA_CACHE_MAX_BYTES")
+                .unwrap_or_else(|| (8_u64 * 1024 * 1024 * 1024).to_string()),
         )?;
         let sandbox_socket = lookup("XCPC_SANDBOX_SOCKET")
             .map(PathBuf::from)
@@ -181,6 +189,7 @@ impl WorkerConfig {
             problem_bucket,
             source_bucket,
             max_artifact_bytes,
+            testdata_cache_max_bytes,
             sandbox_socket,
             sandbox_runtime,
             sandbox_user,
@@ -207,6 +216,14 @@ where
         return Err(ConfigError::Invalid { name, reason: "must be greater than zero" });
     }
     Ok(parsed)
+}
+
+/// Parses a byte-size cap where zero is a meaningful value (it disables the
+/// cap), unlike [`parse_positive`].
+fn parse_size_cap(name: &'static str, value: String) -> Result<u64, ConfigError> {
+    value
+        .parse::<u64>()
+        .map_err(|_| ConfigError::Invalid { name, reason: "expected a non-negative integer" })
 }
 
 fn validate_text(name: &'static str, value: &str) -> Result<(), ConfigError> {
@@ -252,6 +269,7 @@ mod tests {
         assert_eq!(config.task_prefetch, 1);
         assert_eq!(config.heartbeat_interval, std::time::Duration::from_secs(5));
         assert_eq!(config.max_artifact_bytes, 300 * 1024 * 1024);
+        assert_eq!(config.testdata_cache_max_bytes, 8 * 1024 * 1024 * 1024);
         assert_eq!(config.cpp_image, "judge-runtime-cpp:12.2.0");
         assert_eq!(config.java_image, "judge-runtime-java:21");
         assert_eq!(config.python_image, "judge-runtime-python:3.12.13");
@@ -330,6 +348,55 @@ mod tests {
             let error = WorkerConfig::from_lookup(|lookup| values.get(lookup).cloned())
                 .expect_err("non-positive values must fail");
             assert_eq!(error, ConfigError::Invalid { name, reason }, "{name}={value}");
+        }
+    }
+
+    #[test]
+    fn testdata_cache_cap_accepts_explicit_and_zero_values() {
+        let credentials = [
+            ("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY", "worker-access".to_owned()),
+            ("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY", "worker-secret".to_owned()),
+        ];
+        let base = HashMap::from([(
+            "PROJECT_BALLOON_RABBITMQ_URL",
+            "amqp://worker:secret@127.0.0.1:5672/%2f".to_owned(),
+        )])
+        .into_iter()
+        .chain(credentials.iter().cloned())
+        .collect::<HashMap<_, _>>();
+
+        let values = HashMap::from([("JUDGE_TESTDATA_CACHE_MAX_BYTES", "1073741824".to_owned())])
+            .into_iter()
+            .chain(base.clone())
+            .collect::<HashMap<_, _>>();
+        let config = WorkerConfig::from_lookup(|name| values.get(name).cloned())
+            .expect("explicit cache cap must be valid");
+        assert_eq!(config.testdata_cache_max_bytes, 1_073_741_824);
+
+        // Zero disables the cap.
+        let values = HashMap::from([("JUDGE_TESTDATA_CACHE_MAX_BYTES", "0".to_owned())])
+            .into_iter()
+            .chain(base)
+            .collect::<HashMap<_, _>>();
+        let config = WorkerConfig::from_lookup(|name| values.get(name).cloned())
+            .expect("a zero cap must be valid");
+        assert_eq!(config.testdata_cache_max_bytes, 0);
+
+        for value in ["-1", "plenty"] {
+            let values = HashMap::from([("JUDGE_TESTDATA_CACHE_MAX_BYTES", value.to_owned())])
+                .into_iter()
+                .chain(credentials.iter().cloned())
+                .collect::<HashMap<_, _>>();
+            let error = WorkerConfig::from_lookup(|name| values.get(name).cloned())
+                .expect_err("invalid cache caps must fail");
+            assert_eq!(
+                error,
+                ConfigError::Invalid {
+                    name: "JUDGE_TESTDATA_CACHE_MAX_BYTES",
+                    reason: "expected a non-negative integer",
+                },
+                "JUDGE_TESTDATA_CACHE_MAX_BYTES={value}"
+            );
         }
     }
 }

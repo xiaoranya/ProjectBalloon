@@ -53,6 +53,13 @@ rediscovered during an incident.
 | Deployment | P2 | `.env.example` gains the 5 vars the code reads, plus a judge-worker validation warning comment |
 | Deployment | P2 | Toolchain pinned to 1.94.1 in `rust-toolchain.toml`; CI, release, and docker-integration workflows derive their pins from it (closed in the 0.1.0-alpha.4 release-prep pass) |
 
+## Closed in the Second Remediation Pass (2026-09-01)
+
+| Area | Severity | Item |
+| --- | --- | --- |
+| Judge worker | P2 | Interactive GNU-time report is emitted directly on the exec stderr stream — a channel the contestant process holds no descriptor for; contestant-writable diagnostics (`program.err`, `interactor.err`) are read back by a separate exec and appended only after the marker has been parsed, so a forged marker can no longer be the last one. Regression-tested with a docker-integration spoof attempt |
+| Judge worker | P2 | Testdata cache is bounded by a size-capped LRU (`JUDGE_TESTDATA_CACHE_MAX_BYTES`, default 8 GiB, `0` disables): cache hits refresh their mtime, inserts evict oldest-mtime entries first with eviction logging, and the entry just stored is never evicted by its own insertion |
+
 ## Open Items
 
 ### API
@@ -92,22 +99,6 @@ rediscovered during an incident.
   the task path.
 
 ### Judge worker
-
-- **[P2] Interactive mode: contestant can spoof GNU-time metrics via
-  `/work/time.err`.** The contestant runs as the same UID as the interactor
-  and can append fake marker bytes that `rfind` picks up, charging 0 ms/0 KB
-  and bypassing TLE/PLE while the wall-clock kill still applies.
-  *Why open:* the fix reroutes the time-report fd or cross-validates against
-  container stats — a sandbox behavioral change that needs docker-integration
-  test coverage of its own. *Fix sketch:* write the report to an fd the
-  contestant process cannot open, or verify the marker is terminal and
-  consistent with container CPU stats.
-
-- **[P2] Testdata cache grows without bound.** Every problem-version zip
-  stays under the cache dir forever; a large contest can exhaust disk
-  mid-round. Missing entries are safely re-fetched and hash-verified.
-  *Fix sketch:* size-capped LRU eviction with eviction logging and a pressure
-  test.
 
 - **[P2] Topology verification is passive.** Passive declares do not compare
   dead-letter arguments or bindings; a mis-declared `judge.tasks` would turn

@@ -27,7 +27,8 @@ use crate::sandbox::fs::{
 };
 use crate::sandbox::language::LanguageConfig;
 use crate::sandbox::metrics::{
-    ContainerResourceUsage, collect_resource_usage, extract_gnu_time_metrics, nonzero_milliseconds,
+    ContainerResourceUsage, GNU_TIME_REPORT_FORMAT, collect_resource_usage,
+    extract_gnu_time_metrics, nonzero_milliseconds,
 };
 use crate::sandbox::{
     COMPILE_WALL_LIMIT, DOCKER_API_TIMEOUT, DockerSandbox, DockerSandboxConfig, MAX_EXEC_LOG_BYTES,
@@ -254,19 +255,27 @@ impl DockerSandbox {
             let output_blocks = output_file_blocks(task.output_limit_kb);
             let program = language.run_command(task.memory_limit_mb);
             let shell = if interactive {
-                format!(
-                    "export LC_ALL=C; ulimit -f {output_blocks}; rm -f /work/to_program /work/to_interactor /work/actual.out /work/program.status /work/time.err; mkfifo /work/to_program /work/to_interactor; exec 3<>/work/to_program; exec 4<>/work/to_interactor; /work/interactor /work/current.in <&4 >&3 2>/work/interactor.err & interactor_pid=$!; /usr/bin/time --quiet --format '__PROJECT_BALLOON_GNU_TIME__ %U %S %M' 2>/work/time.err sh -c '{program} <&3 2>/work/program.err; printf \"%s\" \"$?\" >/work/program.status' | tee /work/actual.out >&4 & program_pid=$!; exec 3>&- 4>&-; wait $program_pid; program_status=$(cat /work/program.status 2>/dev/null || printf '1'); wait $interactor_pid; interactor_status=$?; cat /work/program.err /work/interactor.err /work/time.err >&2; [ $program_status -eq 0 ] || exit 10; [ $interactor_status -eq 0 ] || exit 20"
-                )
+                interactive_shell(&program, output_blocks)
             } else {
-                format!(
-                    "export LC_ALL=C; ulimit -f {output_blocks}; exec /usr/bin/time --quiet --format '__PROJECT_BALLOON_GNU_TIME__ %U %S %M' {program} < /work/current.in > /work/actual.out"
-                )
+                standard_shell(&program, output_blocks)
             };
             let command = vec!["/bin/sh".to_owned(), "-c".to_owned(), shell];
             let mut run = self.run_exec(container_id, command, wall_limit).await?;
             self.kill_contestant_processes(container_id).await?;
+            // Contestant-writable diagnostic files are fetched in a separate
+            // exec and appended only AFTER the GNU-time marker has been parsed:
+            // the parser trusts the last marker, so forged bytes must never be
+            // able to follow the real report in the stream it parses.
+            let diagnostics = if interactive {
+                self.fetch_interactor_diagnostics(container_id).await
+            } else {
+                String::new()
+            };
             let (sanitized_logs, gnu_time) = extract_gnu_time_metrics(&run.logs);
             run.logs = sanitized_logs;
+            if !diagnostics.is_empty() {
+                run.logs.push_str(&diagnostics);
+            }
             if gnu_time.is_none() && !run.timed_out && !run.oom_killed && run.exit_code != 137 {
                 return Err(SandboxError::Api(format!(
                     "GNU time did not produce resource metrics for a completed run (exit_code={}, stderr={:?})",
@@ -562,6 +571,29 @@ impl DockerSandbox {
             .map_err(|_| SandboxError::Api("timed out cleaning sandbox processes".to_owned()))?
     }
 
+    /// Reads the interactive-run diagnostic files (contestant and interactor
+    /// stderr) in a follow-up exec. Their content is contestant-writable, so
+    /// they must never be concatenated into the exec stream the GNU-time
+    /// marker is parsed from, and losing them must not fail a completed run.
+    async fn fetch_interactor_diagnostics(&self, container_id: &str) -> String {
+        let command = vec![
+            "/bin/sh".to_owned(),
+            "-c".to_owned(),
+            "cat /work/program.err /work/interactor.err 2>/dev/null".to_owned(),
+        ];
+        match self.run_exec(container_id, command, COMPILE_WALL_LIMIT).await {
+            Ok(run) => truncate_log(&run.logs, MAX_EXEC_LOG_BYTES),
+            Err(error) => {
+                warn!(
+                    container_id = %container_id,
+                    error = %error,
+                    "failed to fetch interactive diagnostic logs; continuing without them"
+                );
+                String::new()
+            }
+        }
+    }
+
     async fn kill_contestant_processes_inner(
         &self,
         container_id: &str,
@@ -736,6 +768,40 @@ fn output_file_blocks(output_limit_kb: i32) -> i64 {
     i64::from(output_limit_kb).saturating_mul(2).max(1)
 }
 
+/// Shell for a standard (non-interactive) run. The GNU-time report is the
+/// terminal write on the exec stderr stream: the parser trusts the LAST
+/// marker, and the contestant's own stderr can only precede the report.
+fn standard_shell(program: &str, output_blocks: i64) -> String {
+    format!(
+        "export LC_ALL=C; ulimit -f {output_blocks}; exec /usr/bin/time --quiet \
+         --format '{GNU_TIME_REPORT_FORMAT}' {program} < /work/current.in > /work/actual.out"
+    )
+}
+
+/// Shell for an interactive run. The GNU-time report goes straight to the exec
+/// stderr stream — a channel the contestant process holds no descriptor for.
+/// It must not be redirected into a /work file: every file under /work is
+/// writable by the contestant UID, and the old script concatenated
+/// `/work/time.err` (plus the contestant's own `/work/program.err`) into the
+/// stream AFTER the report, letting a forged last marker reset the charged
+/// CPU time and peak memory. The diagnostic files are read back separately by
+/// [`DockerSandbox::fetch_interactor_diagnostics`].
+fn interactive_shell(program: &str, output_blocks: i64) -> String {
+    format!(
+        "export LC_ALL=C; ulimit -f {output_blocks}; rm -f /work/to_program /work/to_interactor \
+         /work/actual.out /work/program.status /work/program.err /work/interactor.err; \
+         mkfifo /work/to_program /work/to_interactor; exec 3<>/work/to_program; \
+         exec 4<>/work/to_interactor; /work/interactor /work/current.in <&4 >&3 \
+         2>/work/interactor.err & interactor_pid=$!; /usr/bin/time --quiet \
+         --format '{GNU_TIME_REPORT_FORMAT}' sh -c '{program} <&3 2>/work/program.err; \
+         printf \"%s\" \"$?\" >/work/program.status' | tee /work/actual.out >&4 & \
+         program_pid=$!; exec 3>&- 4>&-; wait $program_pid; program_status=$(cat \
+         /work/program.status 2>/dev/null || printf '1'); wait $interactor_pid; \
+         interactor_status=$?; [ $program_status -eq 0 ] || exit 10; \
+         [ $interactor_status -eq 0 ] || exit 20"
+    )
+}
+
 /// Decides the resource-driven verdicts (memory, output, time). These strictly
 /// precede the interactive protocol and the byte comparison; `None` means the
 /// run finished inside its limits and the output must be judged.
@@ -765,7 +831,10 @@ fn resource_verdict(
 mod tests {
     use project_balloon_contracts::JudgeVerdict;
 
-    use super::{effective_time_limit, output_file_blocks, resource_verdict};
+    use super::{
+        GNU_TIME_REPORT_FORMAT, effective_time_limit, interactive_shell, output_file_blocks,
+        resource_verdict, standard_shell,
+    };
 
     #[test]
     fn resource_verdicts_precede_output_comparison() {
@@ -818,6 +887,40 @@ mod tests {
         assert_eq!(output_file_blocks(64), 128);
         assert_eq!(output_file_blocks(1), 2);
         assert_eq!(output_file_blocks(0), 1);
+    }
+
+    #[test]
+    fn interactive_shell_keeps_the_time_report_off_contestant_writable_paths() {
+        let shell = interactive_shell("/work/program", 128);
+        // The report is parsed as the last marker on the exec stderr stream:
+        // it must not be cached in a /work file (same-UID writable), and no
+        // contestant-writable file may be concatenated into that stream after
+        // it — those diagnostics are read back by a separate exec instead.
+        assert!(!shell.contains("/work/time.err"));
+        assert!(!shell.contains("cat /work/program.err"));
+        assert!(!shell.contains("cat /work/interactor.err"));
+        assert!(shell.contains(&format!("--format '{GNU_TIME_REPORT_FORMAT}'")));
+        // Per-case diagnostics still land in their files for the follow-up
+        // exec, and stale files from an earlier case are cleared first.
+        assert!(shell.contains("2>/work/program.err"));
+        assert!(shell.contains("2>/work/interactor.err"));
+        assert!(shell.contains(
+            "rm -f /work/to_program /work/to_interactor /work/actual.out /work/program.status \
+             /work/program.err /work/interactor.err"
+        ));
+        // The status plumbing the host parses stays intact.
+        assert!(shell.contains("exit 10"));
+        assert!(shell.contains("exit 20"));
+    }
+
+    #[test]
+    fn standard_shell_ends_with_the_report_terminal_on_stderr() {
+        let shell = standard_shell("/work/program", 64);
+        assert!(shell.contains(&format!("--format '{GNU_TIME_REPORT_FORMAT}'")));
+        assert!(shell.ends_with("> /work/actual.out"));
+        // Nothing may be appended after the timed command: the report must be
+        // the last write on the exec stderr stream.
+        assert!(!shell.contains("/work/program.err"));
     }
 }
 

@@ -94,6 +94,7 @@ async fn rabbit_rustfs_cpp_pipeline_publishes_confirmed_result() {
         problem_bucket.clone(),
         source_bucket.clone(),
         10 * 1024 * 1024,
+        0,
     );
     Docker::connect_with_unix_defaults().expect("Docker socket must be available");
     let sandbox = DockerSandbox::connect(DockerSandboxConfig {
@@ -290,6 +291,7 @@ int main(int argc, char **argv) {
         problem_bucket.clone(),
         source_bucket.clone(),
         10 * 1024 * 1024,
+        0,
     );
     Docker::connect_with_unix_defaults().expect("Docker socket must be available");
     let sandbox = DockerSandbox::connect(DockerSandboxConfig {

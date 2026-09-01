@@ -65,6 +65,18 @@ fn ignores_forged_non_trailing_gnu_time_metrics() {
 }
 
 #[test]
+fn a_marker_after_the_report_wins_so_the_report_must_stay_terminal() {
+    // The parser trusts the LAST marker. Both judge shells therefore have to
+    // keep the real report as the terminal write on the exec stderr stream;
+    // contestant-writable bytes must never be concatenated after it.
+    let (logs, metrics) = extract_gnu_time_metrics(
+        "__PROJECT_BALLOON_GNU_TIME__ 0.30 0.05 8192\n__PROJECT_BALLOON_GNU_TIME__ 0.00 0.00 0\n",
+    );
+    assert_eq!(logs, "__PROJECT_BALLOON_GNU_TIME__ 0.30 0.05 8192");
+    assert_eq!(metrics, Some(GnuTimeMetrics { cpu_time_ms: 0, peak_memory_kb: 0 }));
+}
+
+#[test]
 fn extracts_gnu_time_when_program_stderr_has_no_trailing_newline() {
     let (logs, metrics) = extract_gnu_time_metrics(
         "contestant diagnostic__PROJECT_BALLOON_GNU_TIME__ 0.12 0.03 4096\n",

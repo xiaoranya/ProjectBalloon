@@ -6,6 +6,10 @@ use std::sync::{
 use bollard::{Docker, query_parameters::StatsOptionsBuilder};
 use futures_util::StreamExt;
 
+/// GNU time `--format` shared by both judge paths; [`extract_gnu_time_metrics`]
+/// parses the marker this emits.
+pub(super) const GNU_TIME_REPORT_FORMAT: &str = "__PROJECT_BALLOON_GNU_TIME__ %U %S %M";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct GnuTimeMetrics {
     pub(super) cpu_time_ms: i32,

@@ -36,6 +36,7 @@ async fn main() -> Result<()> {
         config.problem_bucket.clone(),
         config.source_bucket.clone(),
         config.max_artifact_bytes,
+        config.testdata_cache_max_bytes,
     );
     let sandbox = DockerSandbox::connect(DockerSandboxConfig {
         socket: config.sandbox_socket.clone(),
