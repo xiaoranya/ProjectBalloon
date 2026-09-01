@@ -6,10 +6,16 @@ on:
       - main
     paths:
       - 'docs/**'
+  # Build docs-only pull requests so broken VitePress content or config is
+  # caught before merge; the Pages deploy below stays exclusive to main.
+  pull_request:
+    paths:
+      - 'docs/**'
   workflow_dispatch:
 
 concurrency:
-  group: pages
+  # Per-ref groups: a docs PR build never cancels an in-progress main deploy.
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -33,13 +39,18 @@ jobs:
       - run: npm ci
       - run: npm run docs:build
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+        if: github.event_name == 'push'
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: github.event_name == 'push'
         with:
           path: docs/.vitepress/dist
 
   deploy:
     name: Deploy to GitHub Pages
     needs: build
+    # Pages credentials are only available on protected-branch pushes; PR and
+    # manual runs stop after the build check.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
