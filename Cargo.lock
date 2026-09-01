@@ -2438,7 +2438,7 @@ dependencies = [
 
 [[package]]
 name = "project-balloon-api"
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 dependencies = [
  "ammonia",
  "anyhow",
@@ -2480,7 +2480,7 @@ dependencies = [
 
 [[package]]
 name = "project-balloon-contracts"
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -2491,7 +2491,7 @@ dependencies = [
 
 [[package]]
 name = "project-balloon-domain"
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 dependencies = [
  "thiserror",
  "time",
@@ -2500,7 +2500,7 @@ dependencies = [
 
 [[package]]
 name = "project-balloon-judge-worker"
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2529,7 +2529,7 @@ dependencies = [
 
 [[package]]
 name = "project-balloon-test-support"
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 dependencies = [
  "project-balloon-contracts",
  "uuid",
