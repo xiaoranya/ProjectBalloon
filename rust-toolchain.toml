@@ -1,4 +1,6 @@
 [toolchain]
-channel = "stable"
+# Pinned exactly; CI and release workflows derive their toolchain from this
+# version so shipped binaries are built by the same compiler CI tested.
+channel = "1.94.1"
 components = ["clippy", "rustfmt"]
 profile = "minimal"

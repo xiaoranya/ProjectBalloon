@@ -63,6 +63,7 @@ submission sources, exports, print PDFs).
 | `PROJECT_BALLOON_OBJECT_STORAGE_SOURCE_BUCKET` | `xcpc-sources` | Submission source files |
 | `PROJECT_BALLOON_OBJECT_STORAGE_FORCE_PATH_STYLE` | `true` | Path-style bucket addressing for RustFS |
 | `PROJECT_BALLOON_OBJECT_STORAGE_REQUEST_TIMEOUT_MILLISECONDS` | `5000` | Per-request S3 timeout |
+| `PROJECT_BALLOON_OBJECT_STORAGE_UPLOAD_TIMEOUT_MILLISECONDS` | `300000` | Per-request S3 timeout for uploads (PUT); uploads are large, so it is separate from the 5s request timeout |
 
 The API creates its configured buckets on startup. Bucket names are deployment
 configuration and are never returned through public APIs.

@@ -51,6 +51,7 @@ rediscovered during an incident.
 | Deployment | P1 | npm audit for production dependencies: PR-time step plus nightly scheduled job |
 | Deployment | P1 | Compose passes through `PROJECT_BALLOON_JUDGE_STUCK_REQUEUE_INTERVAL_SECONDS`, `JUDGE_HEALTH_PORT`, `JUDGE_HEALTH_SESSION_ERROR_WINDOW_SECONDS` |
 | Deployment | P2 | `.env.example` gains the 5 vars the code reads, plus a judge-worker validation warning comment |
+| Deployment | P2 | Toolchain pinned to 1.94.1 in `rust-toolchain.toml`; CI, release, and docker-integration workflows derive their pins from it (closed in the 0.1.0-alpha.4 release-prep pass) |
 
 ## Open Items
 
@@ -163,12 +164,6 @@ rediscovered during an incident.
   correct ownership; a root-owned auto-created bind mount breaks the worker's
   cache writes confusingly. Fix sketch: create/verify ownership in
   `scripts/deploy/install.sh`.
-
-- **[P2] Toolchain channels float.** `rust-toolchain.toml` uses `stable`
-  while CI pins 1.94.0 and Docker images pin 1.94.1. *Why open:* pinning is a
-  coordinated change across three files and should be its own commit with a
-  full CI run. *Fix sketch:* pin an exact channel in `rust-toolchain.toml`
-  and derive CI/Docker pins from it.
 
 - **[P3] install.sh reports success before services are proven live**;
   poll `/livez` (and `/api/health`) with a deadline instead of a single
