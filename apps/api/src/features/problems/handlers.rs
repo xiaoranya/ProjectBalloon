@@ -444,7 +444,7 @@ pub async fn upload_testdata(
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<ProblemTestdataResponse>), AppError> {
     let mut upload = None;
-    while let Some(field) = multipart
+    while let Some(mut field) = multipart
         .next_field()
         .await
         .map_err(|_| AppError::validation("request", "must be valid multipart data"))?
@@ -466,18 +466,27 @@ pub async fn upload_testdata(
         {
             return Err(AppError::validation("file", "media type must be application/zip"));
         }
-        upload = Some(
-            field.bytes().await.map_err(|_| AppError::validation("file", "could not be read"))?,
-        );
+        upload = Some(stage_testdata_field(&mut field).await?);
     }
-    let content = upload
+    let (staging_file, bytes, sha256) = upload
         .ok_or_else(|| AppError::validation("request", "must contain exactly one file field"))?;
     let storage = require_storage(&state)?;
     let response = state
         .problems()
-        .upload_testdata(problem_id, content, context.user(), peer.ip(), storage)
-        .await?;
-    Ok((StatusCode::CREATED, Json(response)))
+        .upload_testdata(
+            problem_id,
+            crate::features::problems::service::StagedTestdataUpload {
+                path: staging_file.path().to_owned(),
+                bytes,
+                sha256,
+            },
+            context.user(),
+            peer.ip(),
+            storage,
+        )
+        .await;
+    drop(staging_file);
+    Ok((StatusCode::CREATED, Json(response?)))
 }
 
 #[utoipa::path(post, path = "/api/problems/{problem_id}/interactor", operation_id = "uploadProblemInteractor", tag = "problems", params(("problem_id" = i64, Path)), request_body(content = inline(InteractorUploadRequest), content_type = "multipart/form-data"), responses((status = 200, body = ProblemResponse), (status = 400, body = crate::error::ApiErrorBody), (status = 401, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody), (status = 409, body = crate::error::ApiErrorBody), (status = 503, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
@@ -685,4 +694,66 @@ fn validate_attachment_content_type(content_type: Option<&str>) -> Result<(), Ap
     } else {
         Err(AppError::validation("file", "has an unsupported content type"))
     }
+}
+
+/// Backing file for a streamed test-data upload. Removal happens on drop so
+/// every early-return path in the handler leaves no staging debris behind.
+struct StagedUploadFile(std::path::PathBuf);
+
+impl StagedUploadFile {
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+impl Drop for StagedUploadFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Streams one multipart field to a private temporary file while hashing and
+/// size-capping the bytes as they arrive. A full 256 MiB archive therefore
+/// never materialises in request memory, and an oversized upload is rejected
+/// as soon as the streamed total crosses the cap.
+async fn stage_testdata_field(
+    field: &mut axum::extract::multipart::Field<'_>,
+) -> Result<(StagedUploadFile, u64, String), AppError> {
+    use sha2::Digest as _;
+    use std::os::unix::fs::OpenOptionsExt;
+    use tokio::io::AsyncWriteExt as _;
+
+    const MAX_TESTDATA_BYTES: u64 = 256 * 1024 * 1024;
+    let staging_dir = std::env::temp_dir().join("project-balloon-uploads");
+    tokio::fs::create_dir_all(&staging_dir)
+        .await
+        .map_err(|error| AppError::internal("prepare test-data staging directory", error))?;
+    let path = staging_dir.join(format!("testdata-{}.zip", uuid::Uuid::new_v4()));
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)
+        .map_err(|error| AppError::internal("create test-data staging file", error))?;
+    let mut writer = tokio::fs::File::from(file);
+    let mut hasher = sha2::Sha256::new();
+    let mut total: u64 = 0;
+    while let Some(chunk) =
+        field.chunk().await.map_err(|_| AppError::validation("file", "could not be read"))?
+    {
+        total = total.saturating_add(chunk.len() as u64);
+        if total > MAX_TESTDATA_BYTES {
+            return Err(AppError::validation("file", "must contain between 1 byte and 256 MiB"));
+        }
+        hasher.update(&chunk);
+        writer
+            .write_all(&chunk)
+            .await
+            .map_err(|error| AppError::internal("stage test-data upload", error))?;
+    }
+    if total == 0 {
+        return Err(AppError::validation("file", "must contain between 1 byte and 256 MiB"));
+    }
+    writer.flush().await.map_err(|error| AppError::internal("stage test-data upload", error))?;
+    Ok((StagedUploadFile(path), total, hex::encode(hasher.finalize())))
 }

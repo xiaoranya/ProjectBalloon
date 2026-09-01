@@ -79,10 +79,22 @@ impl DockerSandbox {
             Ok(entries) => entries,
             // No jobs directory yet: nothing to sweep.
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-            Err(error) => return Err(SandboxError::Io(error)),
+            Err(error) => {
+                return Err(SandboxError::Io(crate::sandbox::fs::with_path_context(
+                    error,
+                    "list job directory",
+                    &jobs_dir,
+                )));
+            }
         };
         let mut removed = 0;
-        while let Some(entry) = entries.next_entry().await.map_err(SandboxError::Io)? {
+        while let Some(entry) = entries.next_entry().await.map_err(|error| {
+            SandboxError::Io(crate::sandbox::fs::with_path_context(
+                error,
+                "read job directory entry",
+                &jobs_dir,
+            ))
+        })? {
             // Only ever touch directories named after a judgement; unknown
             // cache entries are left alone.
             let Ok(judgement_id) = entry.file_name().to_string_lossy().parse::<Uuid>() else {
@@ -166,6 +178,8 @@ mod tests {
             cpp_image: "judge-runtime-cpp:12.2.0".to_owned(),
             java_image: "judge-runtime-java:21".to_owned(),
             python_image: "judge-runtime-python:3.12.13".to_owned(),
+            docker_connect_timeout_seconds: 10,
+            docker_api_timeout: std::time::Duration::from_secs(5),
         })
         .expect("connect sandbox client")
     }

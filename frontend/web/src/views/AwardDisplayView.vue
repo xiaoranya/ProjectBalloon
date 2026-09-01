@@ -78,13 +78,19 @@ import {
   type ContestRealtimeSubscription,
 } from '../realtime/contest-events';
 import { useI18n } from '../i18n';
+import { numericQueryId } from '../utils/route-params';
 const { t } = useI18n();
 const route = useRoute();
-const contestId = Number(route.query.contestId) || null;
+const contestId = numericQueryId(route.query.contestId);
 const presentation = ref<AwardPresentation | null>(null);
 const errorMessage = ref('');
 const disconnected = ref(false);
 const now = ref(Date.now());
+// The rotation clock is anchored to the last server sync instead of ticking a
+// local counter: `+= 1000` drifts whenever SSE stalls and timers throttle, so
+// each tick recomputes elapsed time from performance.now() against the anchor.
+let serverTimeAnchor = Date.now();
+let performanceAnchor = 0;
 let realtime: ContestRealtimeSubscription | undefined;
 let clockTimer: number | undefined;
 const category = computed(() => {
@@ -106,13 +112,20 @@ async function load() {
   if (!contestId) return;
   try {
     presentation.value = await awardsApi.presentation(contestId);
-    now.value = new Date(presentation.value.serverTime).getTime();
+    resyncClock(new Date(presentation.value.serverTime).getTime());
     disconnected.value = false;
     errorMessage.value = '';
   } catch (error) {
     if (presentation.value) disconnected.value = true;
     else errorMessage.value = getErrorMessage(error);
   }
+}
+
+/** Re-anchors the monotonic rotation clock to the latest server time. */
+function resyncClock(serverTime: number) {
+  serverTimeAnchor = serverTime;
+  performanceAnchor = performance.now();
+  now.value = serverTime;
 }
 async function toggleFullscreen() {
   if (document.fullscreenElement) await document.exitFullscreen();
@@ -121,7 +134,7 @@ async function toggleFullscreen() {
 onMounted(async () => {
   await load();
   clockTimer = window.setInterval(() => {
-    now.value += 1000;
+    now.value = serverTimeAnchor + (performance.now() - performanceAnchor);
   }, 1000);
   if (contestId)
     realtime = subscribeContestEvents({

@@ -199,6 +199,7 @@ async fn build_app_state(
         ),
     };
     state = state.with_deployment_mode(config.deployment_mode);
+    state = state.with_metrics_token(config.metrics_token.clone());
     state = state.with_shutdown(shutdown);
     if config.deployment_mode.is_competition() {
         state.competition().validate_schedule_integrity().await.map_err(|error| {

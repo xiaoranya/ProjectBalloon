@@ -589,3 +589,5 @@ mod statements;
 mod testdata;
 #[cfg(test)]
 mod tests;
+
+pub use testdata::StagedTestdataUpload;

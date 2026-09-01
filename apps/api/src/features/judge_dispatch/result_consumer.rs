@@ -2,12 +2,13 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use lapin::{
-    Connection, ConnectionProperties,
+    BasicProperties, Channel, Connection, ConnectionProperties,
     message::Delivery,
     options::{
-        BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicQosOptions, BasicRejectOptions,
+        BasicAckOptions, BasicConsumeOptions, BasicPublishOptions, BasicQosOptions,
+        BasicRejectOptions, ConfirmSelectOptions,
     },
-    types::FieldTable,
+    types::{AMQPValue, FieldTable, ShortString},
 };
 use project_balloon_contracts::JudgeResult;
 use sqlx::PgPool;
@@ -19,6 +20,12 @@ use crate::features::judge_dispatch::{
     error::JudgeDispatchError, payload::message_id_mismatch,
     result_processor::JudgeResultProcessor, topology, within_request_timeout,
 };
+
+/// A transiently failing result is parked on the retry queue (10 s TTL) and
+/// dead-letters to `judge.dead` — which marks the submission `SYSTEM_ERROR` —
+/// once this many processing attempts have been exhausted. Generous enough to
+/// ride out a database failover, tight enough to terminate poison messages.
+const MAX_RESULT_PROCESSING_RETRIES: i32 = 20;
 
 pub struct RabbitJudgeResultConsumer {
     database: PgPool,
@@ -92,6 +99,16 @@ impl RabbitJudgeResultConsumer {
             channel.basic_qos(self.prefetch, BasicQosOptions::default()),
         )
         .await?;
+        // Publisher confirms on the republish path: a retry copy must be known
+        // accepted by the broker before the original delivery is acknowledged,
+        // otherwise a stalled broker could lose the result entirely. Consumer
+        // acknowledgements are not publishes and never emit confirms.
+        within_request_timeout(
+            "result consumer confirm select",
+            self.request_timeout,
+            channel.confirm_select(ConfirmSelectOptions::default()),
+        )
+        .await?;
         let consumer_tag = format!("project-balloon-api-results-{}", Uuid::new_v4());
         let mut consumer = within_request_timeout(
             "result consumer subscription",
@@ -112,7 +129,12 @@ impl RabbitJudgeResultConsumer {
                         return Err(JudgeDispatchError::ConsumerCancelled("Judge result"));
                     };
                     let delivery = delivery?;
-                    process_delivery(&processor, &delivery).await?;
+                    process_delivery(
+                        &channel,
+                        &processor,
+                        &delivery,
+                        self.request_timeout,
+                    ).await?;
                 }
                 changed = shutdown.changed() => {
                     if changed.is_err() || *shutdown.borrow() {
@@ -125,8 +147,10 @@ impl RabbitJudgeResultConsumer {
 }
 
 async fn process_delivery(
+    channel: &Channel,
     processor: &JudgeResultProcessor,
     delivery: &Delivery,
+    request_timeout: Duration,
 ) -> Result<(), JudgeDispatchError> {
     let result = match serde_json::from_slice::<JudgeResult>(&delivery.data) {
         Ok(result) => result,
@@ -170,16 +194,77 @@ async fn process_delivery(
             reject_permanently(delivery).await
         }
         Err(error) => {
+            let retry_count = result_retry_count(delivery);
+            if retry_count >= MAX_RESULT_PROCESSING_RETRIES {
+                error!(
+                    message_id = %result.message_id,
+                    submission_id = result.submission_id,
+                    judgement_id = %result.judgement_id,
+                    retry_count,
+                    %error,
+                    "exhausted Judge result retries; dead-lettering for SYSTEM_ERROR recovery"
+                );
+                return reject_permanently(delivery).await;
+            }
+            defer_result_for_retry(channel, delivery, retry_count + 1, request_timeout).await?;
+            delivery.ack(BasicAckOptions::default()).await?;
             warn!(
                 message_id = %result.message_id,
                 submission_id = result.submission_id,
                 judgement_id = %result.judgement_id,
+                retry_count = retry_count + 1,
                 %error,
-                "requeueing Judge result after transient database failure"
+                "deferred Judge result to the retry queue after a transient failure"
             );
-            delivery.nack(BasicNackOptions { multiple: false, requeue: true }).await?;
-            Err(JudgeDispatchError::from(error))
+            Ok(())
         }
+    }
+}
+
+/// Republishes the result onto the delayed-retry queue. The copy carries the
+/// `x-retry-count` header so processing attempts stay bounded across the
+/// results → retry → results cycles.
+async fn defer_result_for_retry(
+    channel: &Channel,
+    delivery: &Delivery,
+    next_retry_count: i32,
+    request_timeout: Duration,
+) -> Result<(), JudgeDispatchError> {
+    let mut headers = FieldTable::default();
+    headers.insert(ShortString::from("x-retry-count"), AMQPValue::LongInt(next_retry_count));
+    let mut properties = BasicProperties::default()
+        .with_content_type("application/json".into())
+        .with_delivery_mode(2)
+        .with_headers(headers);
+    if let Some(message_id) = delivery.properties.message_id() {
+        properties = properties.with_message_id(message_id.to_owned());
+    }
+    let confirm = timeout(
+        request_timeout,
+        channel.basic_publish(
+            topology::RESULTS_RETRY_EXCHANGE.into(),
+            topology::RESULTS_RETRY_ROUTING_KEY.into(),
+            BasicPublishOptions::default(),
+            delivery.data.as_slice(),
+            properties,
+        ),
+    )
+    .await
+    .map_err(|_| JudgeDispatchError::Timeout("result retry republish"))??;
+    timeout(request_timeout, confirm)
+        .await
+        .map_err(|_| JudgeDispatchError::Timeout("result retry publisher confirm"))??;
+    Ok(())
+}
+
+/// Reads the processing-attempt counter from the retry-cycle headers.
+fn result_retry_count(delivery: &Delivery) -> i32 {
+    let Some(headers) = delivery.properties.headers().as_ref() else { return 0 };
+    match headers.inner().get("x-retry-count") {
+        Some(AMQPValue::LongInt(value)) => *value,
+        Some(AMQPValue::ShortInt(value)) => i32::from(*value),
+        Some(AMQPValue::LongLongInt(value)) => i32::try_from(*value).unwrap_or(i32::MAX),
+        _ => 0,
     }
 }
 

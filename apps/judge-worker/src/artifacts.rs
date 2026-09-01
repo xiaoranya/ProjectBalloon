@@ -21,6 +21,8 @@ use tokio::{io::AsyncReadExt, sync::Mutex as AsyncMutex, time::timeout};
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use crate::sandbox::fs::with_path_context;
+
 #[derive(Debug, Error)]
 pub enum ArtifactError {
     #[error("artifact request timed out")]
@@ -262,9 +264,13 @@ impl ArtifactManager {
         self.validate_size(content.len())?;
         verify_hash("test data", &content, &task.testdata_sha256)?;
         let temporary = path.with_extension(format!("{}.tmp", Uuid::new_v4()));
-        tokio::fs::write(&temporary, &content).await?;
+        tokio::fs::write(&temporary, &content)
+            .await
+            .map_err(|error| with_path_context(error, "write test-data cache entry", &temporary))?;
         set_private_file_permissions(&temporary).await?;
-        tokio::fs::rename(&temporary, &path).await?;
+        tokio::fs::rename(&temporary, &path)
+            .await
+            .map_err(|error| with_path_context(error, "publish test-data cache entry", &path))?;
         self.evict_testdata_cache(&path).await;
         Ok(path)
     }
@@ -364,12 +370,17 @@ async fn verify_file_hash(
     expected: &str,
     max_bytes: u64,
 ) -> Result<(), ArtifactError> {
-    let mut file = tokio::fs::File::open(path).await?;
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|error| with_path_context(error, "open cached test data", path))?;
     let mut hasher = Sha256::new();
     let mut total = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
     loop {
-        let read = file.read(&mut buffer).await?;
+        let read = file
+            .read(&mut buffer)
+            .await
+            .map_err(|error| with_path_context(error, "read cached test data", path))?;
         if read == 0 {
             break;
         }
@@ -416,15 +427,21 @@ async fn refresh_recency(path: &std::path::Path) {
 }
 
 async fn create_private_dir(path: &std::path::Path) -> Result<(), std::io::Error> {
-    tokio::fs::create_dir_all(path).await?;
+    tokio::fs::create_dir_all(path)
+        .await
+        .map_err(|error| with_path_context(error, "create test-data cache directory", path))?;
     #[cfg(unix)]
-    tokio::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o700)).await?;
+    tokio::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o700))
+        .await
+        .map_err(|error| with_path_context(error, "set cache directory permissions", path))?;
     Ok(())
 }
 
 async fn set_private_file_permissions(path: &std::path::Path) -> Result<(), std::io::Error> {
     #[cfg(unix)]
-    tokio::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o600)).await?;
+    tokio::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o600))
+        .await
+        .map_err(|error| with_path_context(error, "set cache file permissions", path))?;
     Ok(())
 }
 

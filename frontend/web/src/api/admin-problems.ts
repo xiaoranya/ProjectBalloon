@@ -1,4 +1,4 @@
-import { apiRequest } from './client';
+import { DOWNLOAD_TIMEOUT_MS, apiRequest } from './client';
 import type {
   JudgeLanguage,
   PageResponse,
@@ -9,6 +9,12 @@ import type {
   ProblemTestdataResponse,
   ProblemTestdataVersionResponse,
 } from './types';
+
+/** Options for large-file downloads: external cancellation and byte progress. */
+export interface DownloadOptions {
+  signal?: AbortSignal;
+  onProgress?: (loaded: number, total: number) => void;
+}
 
 export interface ProblemPayload {
   slug: string;
@@ -132,11 +138,13 @@ export const adminProblemApi = {
       }),
     );
   },
-  downloadAttachment(problemId: number, attachmentId: number) {
+  downloadAttachment(problemId: number, attachmentId: number, options: DownloadOptions = {}) {
     return apiRequest<Blob>(`/api/problems/${problemId}/attachments/${attachmentId}`, {
       responseType: 'blob',
-      // 大文件下载不适用默认 30s 超时；网络层故障仍会转换为 NETWORK_ERROR。
-      timeoutMs: 0,
+      // 附件上限 20 MiB，但慢速网络下 30s 仍可能不够；统一使用下载预算。
+      timeoutMs: DOWNLOAD_TIMEOUT_MS,
+      signal: options.signal,
+      onProgress: options.onProgress,
     });
   },
   uploadTestdata(problemId: number, file: File) {
@@ -158,11 +166,13 @@ export const adminProblemApi = {
       body,
     });
   },
-  downloadTestdata(problemId: number) {
+  downloadTestdata(problemId: number, options: DownloadOptions = {}) {
     return apiRequest<Blob>(`/api/problems/${problemId}/testdata`, {
       responseType: 'blob',
-      // 测试数据 ZIP 最大 256 MiB，不适用默认 30s 超时。
-      timeoutMs: 0,
+      // 测试数据 ZIP 最大 256 MiB；使用长下载预算并对停滞的传输设限。
+      timeoutMs: DOWNLOAD_TIMEOUT_MS,
+      signal: options.signal,
+      onProgress: options.onProgress,
     });
   },
   listTestdataVersions(problemId: number) {
@@ -170,11 +180,13 @@ export const adminProblemApi = {
       `/api/problems/${problemId}/testdata/versions`,
     );
   },
-  downloadTestdataVersion(problemId: number, version: number) {
+  downloadTestdataVersion(problemId: number, version: number, options: DownloadOptions = {}) {
     return apiRequest<Blob>(`/api/problems/${problemId}/testdata/versions/${version}`, {
       responseType: 'blob',
-      // 测试数据 ZIP 最大 256 MiB，不适用默认 30s 超时。
-      timeoutMs: 0,
+      // 测试数据 ZIP 最大 256 MiB；使用长下载预算并对停滞的传输设限。
+      timeoutMs: DOWNLOAD_TIMEOUT_MS,
+      signal: options.signal,
+      onProgress: options.onProgress,
     });
   },
   activateTestdataVersion(problemId: number, version: number, expectedCurrentVersion: number) {

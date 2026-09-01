@@ -41,6 +41,14 @@ export function clearCsrfToken() {
 /** Every request is bounded so hung requests cannot starve the connection pool. */
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+/**
+ * Long cap for large-file downloads (testdata ZIPs up to 256 MiB, attachments).
+ * A transfer that stalls must still end instead of hanging forever, but a
+ * legitimately slow transfer of a big archive needs far more than the default
+ * 30 s — so downloads carry their own budget instead of `timeoutMs: 0`.
+ */
+export const DOWNLOAD_TIMEOUT_MS = 600_000;
+
 /** Non-JSON error bodies (e.g. an HTML 502 page) are truncated before display. */
 const RAW_BODY_MESSAGE_LIMIT = 200;
 
@@ -184,6 +192,34 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
   suppressUnauthorizedHandler?: boolean;
   /** Per-request timeout in ms; 0 disables the timeout. Defaults to 30s. */
   timeoutMs?: number;
+  /**
+   * Streams a blob response and reports cumulative bytes as chunks arrive.
+   * `total` comes from Content-Length and is 0 when the server omits it.
+   */
+  onProgress?: (loaded: number, total: number) => void;
+}
+
+async function downloadBlob(
+  response: Response,
+  onProgress: (loaded: number, total: number) => void,
+): Promise<Blob> {
+  if (!response.body) {
+    return response.blob();
+  }
+  const total = Number(response.headers.get('content-length') ?? 0);
+  const reader = response.body.getReader();
+  const chunks: BlobPart[] = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      chunks.push(value as BlobPart);
+      loaded += value.byteLength;
+      onProgress(loaded, total);
+    }
+  }
+  return new Blob(chunks);
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -192,6 +228,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     responseType,
     suppressUnauthorizedHandler = false,
     timeoutMs,
+    onProgress,
     ...fetchOptions
   } = options;
   const method = (fetchOptions.method ?? 'GET').toUpperCase();
@@ -249,6 +286,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
         return (await response.text()) as T;
       }
       if (responseType === 'blob') {
+        if (onProgress) {
+          return (await downloadBlob(response, onProgress)) as T;
+        }
         return (await response.blob()) as T;
       }
       return (await response.json()) as T;
@@ -261,6 +301,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 }
 
 const businessMessages: Record<string, string> = {
+  METRICS_UNAUTHORIZED: '没有权限访问监控指标',
   CONTEST_NOT_RUNNING: '比赛当前不接受提交',
   TEAM_NOT_FOUND: '当前账号没有关联参赛队',
   TEAM_NOT_IN_CONTEST: '当前队伍未加入这场比赛',

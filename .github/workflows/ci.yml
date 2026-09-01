@@ -307,13 +307,17 @@ jobs:
           done
       # Counts every environment-backed suite except the Docker-image ones
       # (sandbox_docker, pipeline_docker) and the RabbitMQ broker-restart pair,
-      # which stay exclusive to the Integration checks and Docker workflows;
-      # the summary quantifies total CI-visible coverage after every PR.
+      # which stay exclusive to the Integration checks and Docker workflows.
+      # The line threshold is a tripwire, not a target: this scope measures
+      # ~61% line coverage (estimated locally on the identical scope,
+      # 2026-09), so 55% fails only when a meaningful set of tests silently
+      # stops executing — not on ordinary incremental changes.
       - run: >-
           cargo llvm-cov --workspace --all-features --locked --summary-only
           --lib --bins
           --test archived_contest_readonly --test bootstrap_postgres --test migration_freeze
           --test object_storage_docker --test practice_postgres --test schema_status_constraints
+          --fail-under-lines 55
           -- --include-ignored
 
   frontend:

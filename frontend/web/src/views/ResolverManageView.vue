@@ -87,6 +87,7 @@ import ResolverMetricsRow from '../components/resolver-manage/ResolverMetricsRow
 import ResolverRunCard from '../components/resolver-manage/ResolverRunCard.vue';
 import ResolverControlCard from '../components/resolver-manage/ResolverControlCard.vue';
 import ResolverWorkspaceRow from '../components/resolver-manage/ResolverWorkspaceRow.vue';
+import { numericQueryId } from '../utils/route-params';
 
 const route = useRoute();
 const router = useRouter();
@@ -145,7 +146,7 @@ async function loadContext() {
     if (request !== generation || id !== contestId.value) return;
     runs.value = nextRuns;
     sources.value = nextSources;
-    const requested = Number(route.query.runId);
+    const requested = numericQueryId(route.query.runId);
     runId.value = nextRuns.some((item) => item.id === requested)
       ? requested
       : (nextRuns[0]?.id ?? null);
@@ -281,7 +282,7 @@ async function toggleAutoPlay() {
 onMounted(async () => {
   try {
     contests.value = (await contestApi.listContests()).content;
-    const requested = Number(route.query.contestId);
+    const requested = numericQueryId(route.query.contestId);
     contestId.value = contests.value.some((item) => item.id === requested)
       ? requested
       : (contests.value[0]?.id ?? null);

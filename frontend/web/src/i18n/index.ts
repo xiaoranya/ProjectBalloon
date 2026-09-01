@@ -1034,6 +1034,10 @@ const english: Record<string, string> = {
   上传测试数据: 'Upload Test Data',
   确认上传: 'Confirm upload',
   '测试数据 v{version} 已上传': 'Test data v{version} uploaded',
+  '正在下载当前测试数据 ZIP': 'Downloading current test data ZIP',
+  '正在下载测试数据 v{version}': 'Downloading test data v{version}',
+  取消下载: 'Cancel download',
+  下载已取消: 'Download cancelled',
   '确认将测试数据 v{version} 设为当前版本？后续提交将使用该版本。':
     'Set test data v{version} as current? Future submissions will use this version.',
   激活历史版本: 'Activate Historical Version',

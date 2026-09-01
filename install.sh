@@ -4,6 +4,7 @@ set -euo pipefail
 PACKAGE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREFIX="${PROJECT_BALLOON_PREFIX:-/opt/project-balloon}"
 CONFIG_DIR="${PROJECT_BALLOON_CONFIG_DIR:-/etc/project-balloon}"
+BACKUP_DIR="${PROJECT_BALLOON_BACKUP_DIR:-/var/backups/project-balloon}"
 SYSTEMD_DIR="/etc/systemd/system"
 APP_GROUP="project-balloon"
 API_USER="project-balloon-api"
@@ -29,6 +30,7 @@ Options:
   --skip-nginx            Do not install the bundled Nginx configuration
   --prefix PATH           Installation prefix (default: /opt/project-balloon)
   --config-dir PATH       Configuration directory (default: /etc/project-balloon)
+  --backup-dir PATH       Scheduled backup output directory (default: /var/backups/project-balloon)
   --container-cli NAME    Use docker or podman for image import
   --container-group NAME  Socket group for the Judge Worker
   --judge-images DIR      Judge Runtime image archive directory (default: judge-images/ bundled in the package)
@@ -64,6 +66,11 @@ while [ "$#" -gt 0 ]; do
       CONFIG_DIR="$2"
       shift
       ;;
+    --backup-dir)
+      [ "$#" -ge 2 ] || die '--backup-dir requires a value'
+      BACKUP_DIR="$2"
+      shift
+      ;;
     --container-cli)
       [ "$#" -ge 2 ] || die '--container-cli requires docker or podman'
       CONTAINER_CLI="$2"
@@ -94,13 +101,18 @@ esac
 
 [ "$(id -u)" -eq 0 ] || die 'run this installer as root'
 [ -d "$PACKAGE_ROOT/bin" ] || die "missing binary directory in package: $PACKAGE_ROOT/bin"
+# Normalize the prefix through symlinks before guarding it: the rm/cp below
+# operate on the resolved path, so the guard must classify the same path.
+PREFIX="$(readlink -m -- "$PREFIX")"
 case "$PREFIX" in
-  /|/etc|/usr|/var|/opt) die "refusing unsafe installation prefix: $PREFIX" ;;
+  /|/bin|/boot|/dev|/etc|/home|/lib|/lib32|/lib64|/libx32|/media|/mnt|/opt|/proc|/root|/run|/sbin|/srv|/sys|/tmp|/usr|/var)
+    die "refusing unsafe installation prefix: $PREFIX" ;;
 esac
 command -v systemctl >/dev/null 2>&1 || die 'systemd is required'
 command -v install >/dev/null 2>&1 || die 'install is required'
 command -v getent >/dev/null 2>&1 || die 'getent is required'
 command -v sha256sum >/dev/null 2>&1 || die 'sha256sum is required'
+command -v readlink >/dev/null 2>&1 || die 'readlink is required'
 
 if [ -f "$PACKAGE_ROOT/PACKAGE-SHA256SUMS" ]; then
   log 'verifying release package checksums'
@@ -173,7 +185,14 @@ fi
 install -d -o root -g root -m 0755 "$PREFIX"
 install -d -o root -g root -m 0755 "$PREFIX/bin"
 install -d -o root -g root -m 0755 "$PREFIX/scripts/backup" "$PREFIX/scripts/lib" "$PREFIX/docs"
-rm -rf "$PREFIX/web"
+# Move the previous frontend bundle aside instead of rm -rf: if the copy below
+# fails, the serving tree is recoverable and the newest two bundles are kept.
+WEB_BACKUP=""
+if [ -d "$PREFIX/web" ] && [ -n "$(ls -A "$PREFIX/web" 2>/dev/null)" ]; then
+  WEB_BACKUP="$PREFIX/web.old-$(date -u +%Y%m%dT%H%M%SZ)"
+  mv "$PREFIX/web" "$WEB_BACKUP"
+  log "previous frontend bundle moved aside: $WEB_BACKUP"
+fi
 install -d -o root -g root -m 0755 "$PREFIX/web"
 
 if [ "$INSTALL_API" -eq 1 ]; then
@@ -192,6 +211,10 @@ cp -a "$PACKAGE_ROOT/scripts/lib/." "$PREFIX/scripts/lib/"
 cp -a "$PACKAGE_ROOT/docs/." "$PREFIX/docs/"
 chown -R root:root "$PREFIX/scripts" "$PREFIX/docs"
 find "$PREFIX/scripts" -type f -name '*.sh' -exec chmod 0755 {} +
+# Keep the two most recent superseded bundles; prune anything older.
+if [ -n "$WEB_BACKUP" ]; then
+  find "$PREFIX" -maxdepth 1 -type d -name 'web.old-*' | sort | head -n -2 | xargs -r rm -rf --
+fi
 
 install -d -o root -g root -m 0755 "$CONFIG_DIR"
 ENV_FILE="$CONFIG_DIR/project-balloon.env"
@@ -220,12 +243,24 @@ if grep -Eq 'CHANGE_ME|^[[:space:]]*DATABASE_URL[[:space:]]*=[[:space:]]*$' "$EN
 fi
 
 unset JUDGE_CACHE_DIR XCPC_SANDBOX_SOCKET XCPC_SANDBOX_RUNTIME \
-  PROJECT_BALLOON_CUPS_ENABLED PROJECT_BALLOON_CUPS_PRINTER
+  PROJECT_BALLOON_CUPS_ENABLED PROJECT_BALLOON_CUPS_PRINTER \
+  PROJECT_BALLOON_API_BIND JUDGE_HEALTH_PORT
 pb_load_env_file "$ENV_FILE" JUDGE_CACHE_DIR XCPC_SANDBOX_SOCKET XCPC_SANDBOX_RUNTIME \
-  PROJECT_BALLOON_CUPS_ENABLED PROJECT_BALLOON_CUPS_PRINTER
+  PROJECT_BALLOON_CUPS_ENABLED PROJECT_BALLOON_CUPS_PRINTER \
+  PROJECT_BALLOON_API_BIND JUDGE_HEALTH_PORT
 JUDGE_CACHE_DIR="${JUDGE_CACHE_DIR:-/var/cache/project-balloon/judge}"
 XCPC_SANDBOX_SOCKET="${XCPC_SANDBOX_SOCKET:-/var/run/docker.sock}"
 PROJECT_BALLOON_CUPS_ENABLED="${PROJECT_BALLOON_CUPS_ENABLED:-false}"
+# Startup liveness targets, derived from the rendered configuration.
+API_BIND="${PROJECT_BALLOON_API_BIND:-127.0.0.1:8080}"
+api_host="${API_BIND%:*}"
+api_port="${API_BIND##*:}"
+case "$api_host" in
+  0.0.0.0|::|"[::]") api_host=127.0.0.1 ;;
+esac
+API_LIVEZ_URL="http://${api_host}:${api_port}/livez"
+JUDGE_LIVEZ_URL="http://127.0.0.1:${JUDGE_HEALTH_PORT:-9101}/livez"
+HTTP_STARTUP_DEADLINE="${PROJECT_BALLOON_INSTALL_HTTP_DEADLINE:-120}"
 
 if [ "$INSTALL_WORKER" -eq 1 ]; then
   install -d -o "$WORKER_USER" -g "$APP_GROUP" -m 0700 "$JUDGE_CACHE_DIR"
@@ -284,6 +319,7 @@ render_unit() {
     -e "s|@API_SUPPLEMENTARY_GROUPS@|$api_groups|g" \
     -e "s|@CONTAINER_GROUP@|$container_group|g" \
     -e "s|@JUDGE_CACHE_DIR@|$JUDGE_CACHE_DIR|g" \
+    -e "s|@BACKUP_DIR@|$BACKUP_DIR|g" \
     "$PACKAGE_ROOT/systemd/$name" > "$SYSTEMD_DIR/$name"
   chmod 0644 "$SYSTEMD_DIR/$name"
 }
@@ -298,13 +334,24 @@ fi
 if [ "$INSTALL_WORKER" -eq 1 ]; then
   render_unit project-balloon-judge-worker.service "$API_SUPPLEMENTARY_GROUPS" "$CONTAINER_GROUP"
 fi
+if [ "$INSTALL_API" -eq 1 ]; then
+  # Scheduled backups run on the API host: PROJECT_BALLOON_DATABASE_MODE=direct
+  # reads DATABASE_URL from this host's env file.
+  install -d -o root -g root -m 0700 "$BACKUP_DIR"
+  render_unit project-balloon-backup.service "$API_SUPPLEMENTARY_GROUPS" "${CONTAINER_GROUP:-$APP_GROUP}"
+  render_unit project-balloon-backup.timer "$API_SUPPLEMENTARY_GROUPS" "${CONTAINER_GROUP:-$APP_GROUP}"
+fi
 systemctl daemon-reload
 if [ "$INSTALL_API" -eq 1 ] && [ "$INSTALL_WORKER" -eq 1 ]; then
-  systemctl enable project-balloon-api.service project-balloon-judge-worker.service >/dev/null
+  systemctl enable project-balloon-api.service project-balloon-judge-worker.service \
+    project-balloon-backup.timer >/dev/null
 elif [ "$INSTALL_API" -eq 1 ]; then
-  systemctl enable project-balloon-api.service >/dev/null
+  systemctl enable project-balloon-api.service project-balloon-backup.timer >/dev/null
 else
   systemctl enable project-balloon-judge-worker.service >/dev/null
+fi
+if [ "$NO_START" -eq 0 ] && [ "$INSTALL_API" -eq 1 ]; then
+  systemctl start project-balloon-backup.timer
 fi
 
 if [ "$INSTALL_API" -eq 1 ] && [ "$INSTALL_NGINX" -eq 1 ] && command -v nginx >/dev/null 2>&1; then
@@ -331,12 +378,34 @@ if [ "$CONFIG_CREATED" -ne 0 ]; then
   exit 2
 fi
 
+if [ "$NO_START" -eq 0 ] && { [ "$INSTALL_API" -eq 1 ] || [ "$INSTALL_WORKER" -eq 1 ]; }; then
+  command -v curl >/dev/null 2>&1 || die 'curl is required for startup liveness checks'
+fi
+
+wait_for_http() {
+  # Poll a loopback HTTP endpoint until it answers 2xx, bounded by a deadline.
+  local url="$1" deadline="$2" elapsed=0
+  while ! curl --fail --silent --show-error --output /dev/null --max-time 5 "$url" 2>/dev/null; do
+    sleep 2
+    elapsed=$((elapsed + 2))
+    [ "$elapsed" -lt "$deadline" ] || return 1
+  done
+}
+
 if [ "$NO_START" -eq 0 ] && [ "$INSTALL_API" -eq 1 ]; then
   systemctl restart project-balloon-api.service
   systemctl is-active --quiet project-balloon-api.service || {
     journalctl -u project-balloon-api.service -n 80 --no-pager >&2 || true
     die 'API service did not become active'
   }
+  if wait_for_http "$API_LIVEZ_URL" "$HTTP_STARTUP_DEADLINE"; then
+    log "API liveness confirmed: $API_LIVEZ_URL"
+    curl --fail --silent --output /dev/null --max-time 5 "${API_LIVEZ_URL%/livez}/api/health" \
+      || log "warning: /api/health is not passing yet; check PostgreSQL/object storage reachability"
+  else
+    journalctl -u project-balloon-api.service -n 80 --no-pager >&2 || true
+    die "API /livez did not answer within ${HTTP_STARTUP_DEADLINE}s"
+  fi
 fi
 if [ "$NO_START" -eq 0 ] && [ "$INSTALL_WORKER" -eq 1 ]; then
   systemctl restart project-balloon-judge-worker.service
@@ -344,6 +413,11 @@ if [ "$NO_START" -eq 0 ] && [ "$INSTALL_WORKER" -eq 1 ]; then
     journalctl -u project-balloon-judge-worker.service -n 80 --no-pager >&2 || true
     die 'Judge Worker service did not become active'
   }
+  wait_for_http "$JUDGE_LIVEZ_URL" "$HTTP_STARTUP_DEADLINE" || {
+    journalctl -u project-balloon-judge-worker.service -n 80 --no-pager >&2 || true
+    die "Judge Worker /livez did not answer within ${HTTP_STARTUP_DEADLINE}s"
+  }
+  log "Judge Worker liveness confirmed: $JUDGE_LIVEZ_URL"
 fi
 if [ "$NO_START" -ne 0 ]; then
   log 'services installed but not started (--no-start)'

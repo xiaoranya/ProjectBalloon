@@ -135,6 +135,7 @@ import { presentationApi } from '../api/presentation';
 import { screenApi, type ScreenInstance, type ScreenViewTarget } from '../api/screen';
 import ScreenOrchestrationControl from '../components/ScreenOrchestrationControl.vue';
 import { useI18n } from '../i18n';
+import { numericQueryId } from '../utils/route-params';
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
@@ -263,7 +264,7 @@ function openClient() {
 onMounted(async () => {
   try {
     contests.value = (await contestApi.listContests()).content;
-    const requested = Number(route.query.contestId);
+    const requested = numericQueryId(route.query.contestId);
     contestId.value = contests.value.some((item) => item.id === requested)
       ? requested
       : (contests.value[0]?.id ?? null);

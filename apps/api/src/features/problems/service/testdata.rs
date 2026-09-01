@@ -1,19 +1,32 @@
 use super::*;
 
+/// A test-data archive staged to a temporary file by the upload handler.
+///
+/// The 256 MiB request budget is never held in memory: the handler streams the
+/// multipart field to disk while hashing, and the service streams the file to
+/// object storage from here.
+pub struct StagedTestdataUpload {
+    pub path: std::path::PathBuf,
+    pub bytes: u64,
+    pub sha256: String,
+}
+
+const MAX_TESTDATA_BYTES: u64 = 256 * 1024 * 1024;
+
 impl ProblemService {
     pub async fn upload_testdata(
         &self,
         problem_id: i64,
-        content: Bytes,
+        upload: StagedTestdataUpload,
         actor: &AuthUser,
         request_ip: IpAddr,
         storage: &ObjectStorageHandle,
     ) -> Result<ProblemTestdataResponse, AppError> {
         require_positive_id(problem_id)?;
-        if content.is_empty() || content.len() > 256 * 1024 * 1024 {
+        if upload.bytes == 0 || upload.bytes > MAX_TESTDATA_BYTES {
             return Err(AppError::validation("file", "must contain between 1 byte and 256 MiB"));
         }
-        let archive = testdata_archive::validate(content.clone()).await?;
+        let archive = testdata_archive::validate_file(&upload.path).await?;
         preflight_attachment_change(&self.database, problem_id, actor).await?;
         let (previous_version, maximum_version) = sqlx::query_as::<_, (i32, i32)>(
             r#"
@@ -31,11 +44,11 @@ impl ProblemService {
         let version = maximum_version.checked_add(1).ok_or_else(|| {
             AppError::conflict("TESTDATA_VERSION_EXHAUSTED", "Test-data version is exhausted")
         })?;
-        let sha256 = hex::encode(Sha256::digest(&content));
+        let sha256 = upload.sha256;
         let object_key = keys::testdata(problem_id, version);
         storage
             .backend()
-            .put(storage.problem_bucket(), &object_key, Some("application/zip"), content.clone())
+            .put_file(storage.problem_bucket(), &object_key, Some("application/zip"), &upload.path)
             .await
             .map_err(|error| AppError::internal("upload problem test data", error))?;
         let persisted = self
@@ -44,7 +57,7 @@ impl ProblemService {
                 previous_version,
                 version,
                 archive.case_count,
-                i64::try_from(content.len())
+                i64::try_from(upload.bytes)
                     .map_err(|error| AppError::internal("convert test-data size", error))?,
                 sha256,
                 object_key.clone(),

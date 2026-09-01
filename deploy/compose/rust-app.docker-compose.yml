@@ -61,9 +61,12 @@ services:
       PROJECT_BALLOON_JUDGE_STUCK_REQUEUE_INTERVAL_SECONDS: ${PROJECT_BALLOON_JUDGE_STUCK_REQUEUE_INTERVAL_SECONDS:-60}
       PROJECT_BALLOON_JUDGE_RESULT_PREFETCH: ${PROJECT_BALLOON_JUDGE_RESULT_PREFETCH:-32}
       PROJECT_BALLOON_JUDGE_RESULT_RECONNECT_MILLISECONDS: ${PROJECT_BALLOON_JUDGE_RESULT_RECONNECT_MILLISECONDS:-1000}
+      # Optional bearer token guarding GET /metrics; empty keeps it open.
+      PROJECT_BALLOON_METRICS_TOKEN: ${PROJECT_BALLOON_METRICS_TOKEN:-}
     expose: ["8080"]
     networks: [project-balloon]
     restart: unless-stopped
+    mem_limit: ${API_MEM_LIMIT:-1g}
     healthcheck:
       test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:8080/livez"]
       interval: 10s
@@ -86,6 +89,8 @@ services:
       JUDGE_HEALTH_SESSION_ERROR_WINDOW_SECONDS: ${JUDGE_HEALTH_SESSION_ERROR_WINDOW_SECONDS:-60}
       JUDGE_REQUEST_TIMEOUT_MILLISECONDS: ${JUDGE_REQUEST_TIMEOUT_MILLISECONDS:-10000}
       JUDGE_HEARTBEAT_INTERVAL_SECONDS: ${JUDGE_HEARTBEAT_INTERVAL_SECONDS:-5}
+      JUDGE_DOCKER_CONNECT_TIMEOUT_SECONDS: ${JUDGE_DOCKER_CONNECT_TIMEOUT_SECONDS:-10}
+      JUDGE_DOCKER_API_TIMEOUT_MILLISECONDS: ${JUDGE_DOCKER_API_TIMEOUT_MILLISECONDS:-5000}
       JUDGE_MAX_ARTIFACT_BYTES: ${JUDGE_MAX_ARTIFACT_BYTES:-314572800}
       JUDGE_TESTDATA_CACHE_MAX_BYTES: ${JUDGE_TESTDATA_CACHE_MAX_BYTES:-8589934592}
       XCPC_SANDBOX_SOCKET: ${XCPC_SANDBOX_SOCKET:-/var/run/docker.sock}
@@ -109,6 +114,10 @@ services:
       - ${XCPC_SANDBOX_SOCKET_GID:-${DOCKER_GID:-999}}
     networks: [project-balloon]
     restart: unless-stopped
+    # The worker process (not the sandbox containers) is capped at 2 GiB; the
+    # on-disk testdata cache is bounded separately by JUDGE_TESTDATA_CACHE_MAX_BYTES.
+    mem_limit: ${JUDGE_WORKER_MEM_LIMIT:-2g}
+    cpus: ${JUDGE_WORKER_CPUS:-4}
     healthcheck:
       test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:${JUDGE_HEALTH_PORT:-9101}/readyz"]
       interval: 30s
@@ -127,6 +136,12 @@ services:
         condition: service_healthy
     networks: [project-balloon]
     restart: unless-stopped
+    mem_limit: ${WEB_MEM_LIMIT:-256m}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:80/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
 networks:
   project-balloon:

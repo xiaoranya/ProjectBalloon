@@ -38,6 +38,7 @@ impl AppConfig {
             deployment_mode: deployment.deployment_mode,
             bind_address: deployment.bind_address,
             trusted_proxy_cidrs: deployment.trusted_proxy_cidrs,
+            metrics_token: deployment.metrics_token,
             database_url: database.database_url,
             database_max_connections: database.database_max_connections,
             database_acquire_timeout: database.database_acquire_timeout,
@@ -98,6 +99,7 @@ struct DeploymentSettings {
     deployment_mode: DeploymentMode,
     bind_address: SocketAddr,
     trusted_proxy_cidrs: Vec<IpNet>,
+    metrics_token: Option<String>,
 }
 
 fn parse_deployment(
@@ -127,7 +129,23 @@ fn parse_deployment(
         lookup("PROJECT_BALLOON_TRUSTED_PROXY_CIDRS")
             .unwrap_or_else(|| DEFAULT_TRUSTED_PROXY_CIDRS.to_owned()),
     )?;
-    Ok(DeploymentSettings { deployment_mode, bind_address, trusted_proxy_cidrs })
+    // Optional bearer token guarding /metrics. Absent or empty keeps the
+    // endpoint open (loop-back or firewalled deployments); anything else must
+    // be a header-safe token.
+    let metrics_token =
+        match lookup("PROJECT_BALLOON_METRICS_TOKEN").map(|value| value.trim().to_owned()) {
+            Some(value) if value.is_empty() => None,
+            Some(value) if value.chars().any(char::is_control) => {
+                return Err(ConfigError::Invalid {
+                    name: "PROJECT_BALLOON_METRICS_TOKEN",
+                    value,
+                    reason: "must not contain control characters",
+                });
+            }
+            Some(value) => Some(value),
+            None => None,
+        };
+    Ok(DeploymentSettings { deployment_mode, bind_address, trusted_proxy_cidrs, metrics_token })
 }
 
 struct DatabaseSettings {

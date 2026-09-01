@@ -100,6 +100,7 @@ import AwardMetricsRow from '../components/awards-manage/AwardMetricsRow.vue';
 import AwardsCommandBar from '../components/awards-manage/AwardsCommandBar.vue';
 import AwardCategoriesPanel from '../components/awards-manage/AwardCategoriesPanel.vue';
 import AwardRecipientsPanel from '../components/awards-manage/AwardRecipientsPanel.vue';
+import { numericQueryId } from '../utils/route-params';
 
 const route = useRoute();
 const router = useRouter();
@@ -252,7 +253,7 @@ async function downloadCertificates() {
 onMounted(async () => {
   try {
     contests.value = (await contestApi.listContests()).content;
-    const requested = Number(route.query.contestId);
+    const requested = numericQueryId(route.query.contestId);
     contestId.value = contests.value.some((item) => item.id === requested)
       ? requested
       : (contests.value[0]?.id ?? null);

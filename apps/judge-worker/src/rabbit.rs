@@ -11,13 +11,16 @@ use lapin::{
     message::Delivery,
     options::{
         BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicPublishOptions,
-        BasicQosOptions, ConfirmSelectOptions, ExchangeDeclareOptions, QueueDeclareOptions,
+        BasicQosOptions, ConfirmSelectOptions, ExchangeDeclareOptions, QueueBindOptions,
+        QueueDeclareOptions,
     },
     types::{AMQPValue, FieldTable, LongString, ShortString},
 };
 use project_balloon_contracts::{
-    JUDGE_DEAD_EXCHANGE, JUDGE_DEAD_QUEUE, JUDGE_DEAD_ROUTING_KEY, JUDGE_RESULT_ROUTING_KEY,
-    JUDGE_RESULT_SCHEMA_VERSION, JUDGE_RESULTS_EXCHANGE, JUDGE_RESULTS_QUEUE, JUDGE_RETRY_EXCHANGE,
+    JUDGE_DEAD_EXCHANGE, JUDGE_DEAD_QUEUE, JUDGE_DEAD_ROUTING_KEY, JUDGE_HEARTBEAT_ROUTING_KEY,
+    JUDGE_HEARTBEATS_EXCHANGE, JUDGE_HEARTBEATS_QUEUE, JUDGE_RESULT_ROUTING_KEY,
+    JUDGE_RESULT_SCHEMA_VERSION, JUDGE_RESULTS_EXCHANGE, JUDGE_RESULTS_QUEUE,
+    JUDGE_RESULTS_RETRY_EXCHANGE, JUDGE_RESULTS_RETRY_QUEUE, JUDGE_RETRY_EXCHANGE,
     JUDGE_RETRY_QUEUE, JUDGE_TASKS_EXCHANGE, JudgeMode, JudgeResult, JudgeTask, JudgeVerdict,
 };
 use time::OffsetDateTime;
@@ -253,6 +256,13 @@ impl RabbitJudgeWorker {
             }
             if let Err(reason) = self.consume_session(shutdown.clone()).await {
                 error!(%reason, "Judge task consumer session failed");
+                if reason.to_string().contains("PRECONDITION_FAILED") {
+                    error!(
+                        "RabbitMQ topology mismatch: an existing queue or exchange was declared \
+                         with different arguments. Align the broker topology with the API \
+                         (or delete and let it be re-declared) before the worker can start."
+                    );
+                }
                 if let Some(health) = &self.health {
                     health.record_session_failed(reason.to_string());
                 }
@@ -402,37 +412,112 @@ async fn drain_in_flight(
 }
 
 async fn verify_topology(channel: &Channel, task_queue: &str) -> Result<(), RabbitWorkerError> {
-    let passive_exchange = ExchangeDeclareOptions {
-        passive: true,
-        durable: true,
-        ..ExchangeDeclareOptions::default()
-    };
-    for exchange in
-        [JUDGE_TASKS_EXCHANGE, JUDGE_RETRY_EXCHANGE, JUDGE_RESULTS_EXCHANGE, JUDGE_DEAD_EXCHANGE]
-    {
+    const TASK_ROUTING_KEY: &str = "task";
+    const RETRY_ROUTING_KEY: &str = "retry";
+
+    // Declare instead of passively checking. A passive declare only verifies
+    // that a name exists, so a queue rebuilt with wrong dead-letter arguments
+    // silently swallowed every retry nack. A non-passive declare with the full
+    // argument set fails with PRECONDITION_FAILED whenever an existing queue
+    // or exchange disagrees, turning topology drift into a loud session
+    // failure (surfaced on the health endpoint) instead of dropped messages.
+    // The arguments here must mirror the API's judge_dispatch topology::declare.
+    const RETRY_TTL_MILLISECONDS: i32 = 10_000;
+    const HEARTBEAT_TTL_MILLISECONDS: i32 = 60_000;
+    const HEARTBEAT_MAX_LENGTH: i32 = 10_000;
+
+    let durable_exchange =
+        ExchangeDeclareOptions { durable: true, ..ExchangeDeclareOptions::default() };
+    for exchange in [
+        JUDGE_TASKS_EXCHANGE,
+        JUDGE_RETRY_EXCHANGE,
+        JUDGE_RESULTS_EXCHANGE,
+        JUDGE_RESULTS_RETRY_EXCHANGE,
+        JUDGE_DEAD_EXCHANGE,
+        JUDGE_HEARTBEATS_EXCHANGE,
+    ] {
         channel
             .exchange_declare(
                 exchange.into(),
                 ExchangeKind::Direct,
-                passive_exchange,
+                durable_exchange,
                 FieldTable::default(),
             )
             .await?;
     }
-    for queue in [task_queue, JUDGE_RETRY_QUEUE, JUDGE_DEAD_QUEUE, JUDGE_RESULTS_QUEUE] {
+
+    let durable_queue = QueueDeclareOptions { durable: true, ..QueueDeclareOptions::default() };
+    channel
+        .queue_declare(
+            task_queue.into(),
+            durable_queue,
+            dead_letter_arguments(JUDGE_RETRY_EXCHANGE, RETRY_ROUTING_KEY),
+        )
+        .await?;
+    let mut retry_arguments = dead_letter_arguments(JUDGE_TASKS_EXCHANGE, TASK_ROUTING_KEY);
+    retry_arguments
+        .insert(ShortString::from("x-message-ttl"), AMQPValue::LongInt(RETRY_TTL_MILLISECONDS));
+    channel.queue_declare(JUDGE_RETRY_QUEUE.into(), durable_queue, retry_arguments).await?;
+    channel.queue_declare(JUDGE_DEAD_QUEUE.into(), durable_queue, FieldTable::default()).await?;
+    channel
+        .queue_declare(
+            JUDGE_RESULTS_QUEUE.into(),
+            durable_queue,
+            dead_letter_arguments(JUDGE_DEAD_EXCHANGE, JUDGE_DEAD_ROUTING_KEY),
+        )
+        .await?;
+    let mut results_retry_arguments =
+        dead_letter_arguments(JUDGE_RESULTS_EXCHANGE, JUDGE_RESULT_ROUTING_KEY);
+    results_retry_arguments
+        .insert(ShortString::from("x-message-ttl"), AMQPValue::LongInt(RETRY_TTL_MILLISECONDS));
+    channel
+        .queue_declare(JUDGE_RESULTS_RETRY_QUEUE.into(), durable_queue, results_retry_arguments)
+        .await?;
+    let mut heartbeat_arguments = FieldTable::default();
+    heartbeat_arguments
+        .insert(ShortString::from("x-message-ttl"), AMQPValue::LongInt(HEARTBEAT_TTL_MILLISECONDS));
+    heartbeat_arguments
+        .insert(ShortString::from("x-max-length"), AMQPValue::LongInt(HEARTBEAT_MAX_LENGTH));
+    heartbeat_arguments.insert(
+        ShortString::from("x-overflow"),
+        AMQPValue::LongString(LongString::from("drop-head")),
+    );
+    channel
+        .queue_declare(JUDGE_HEARTBEATS_QUEUE.into(), durable_queue, heartbeat_arguments)
+        .await?;
+
+    for (queue, exchange, routing_key) in [
+        (task_queue, JUDGE_TASKS_EXCHANGE, TASK_ROUTING_KEY),
+        (JUDGE_RETRY_QUEUE, JUDGE_RETRY_EXCHANGE, RETRY_ROUTING_KEY),
+        (JUDGE_DEAD_QUEUE, JUDGE_DEAD_EXCHANGE, JUDGE_DEAD_ROUTING_KEY),
+        (JUDGE_RESULTS_QUEUE, JUDGE_RESULTS_EXCHANGE, JUDGE_RESULT_ROUTING_KEY),
+        (JUDGE_RESULTS_RETRY_QUEUE, JUDGE_RESULTS_RETRY_EXCHANGE, RETRY_ROUTING_KEY),
+        (JUDGE_HEARTBEATS_QUEUE, JUDGE_HEARTBEATS_EXCHANGE, JUDGE_HEARTBEAT_ROUTING_KEY),
+    ] {
         channel
-            .queue_declare(
+            .queue_bind(
                 queue.into(),
-                QueueDeclareOptions {
-                    passive: true,
-                    durable: true,
-                    ..QueueDeclareOptions::default()
-                },
+                exchange.into(),
+                routing_key.into(),
+                QueueBindOptions::default(),
                 FieldTable::default(),
             )
             .await?;
     }
     Ok(())
+}
+
+fn dead_letter_arguments(exchange: &str, routing_key: &str) -> FieldTable {
+    let mut arguments = FieldTable::default();
+    arguments.insert(
+        ShortString::from("x-dead-letter-exchange"),
+        AMQPValue::LongString(LongString::from(exchange)),
+    );
+    arguments.insert(
+        ShortString::from("x-dead-letter-routing-key"),
+        AMQPValue::LongString(LongString::from(routing_key)),
+    );
+    arguments
 }
 
 /// Everything one delivery's processing needs; built once per session and

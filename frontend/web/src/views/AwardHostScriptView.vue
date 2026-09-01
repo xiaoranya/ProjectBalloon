@@ -170,9 +170,20 @@ const saving = ref(false);
 const dirty = ref(false);
 const errorMessage = ref('');
 const now = ref(Date.now());
+// Anchored rotation clock: recompute from performance.now() against the last
+// server sync instead of accumulating `+= 1000`, which drifts while SSE is
+// stalled and background tabs throttle timers.
+let serverTimeAnchor = Date.now();
+let performanceAnchor = 0;
 let generation = 0;
 let realtime: ContestRealtimeSubscription | undefined;
 let clockTimer: number | undefined;
+
+function resyncClock(serverTime: number) {
+  serverTimeAnchor = serverTime;
+  performanceAnchor = performance.now();
+  now.value = serverTime;
+}
 const form = reactive({
   openingText: '',
   closingText: '',
@@ -211,7 +222,7 @@ const statusLabel = computed(() =>
 );
 function apply(value: AwardHostScript) {
   script.value = value;
-  now.value = new Date(value.serverTime).getTime();
+  resyncClock(new Date(value.serverTime).getTime());
   form.openingText = value.openingText;
   form.closingText = value.closingText;
   form.sections = value.sections.map((item) => ({ ...item }));
@@ -285,7 +296,7 @@ onMounted(async () => {
     connect();
     await load(true);
     clockTimer = window.setInterval(() => {
-      now.value += 1000;
+      now.value = serverTimeAnchor + (performance.now() - performanceAnchor);
     }, 1000);
   } catch (error) {
     errorMessage.value = getErrorMessage(error);

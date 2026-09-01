@@ -60,6 +60,26 @@ fn deployment_mode_is_closed_and_accepts_competition() {
 }
 
 #[test]
+fn metrics_token_defaults_to_open_and_accepts_only_header_safe_values() {
+    let defaults = AppConfig::from_lookup(dev_lookup(&HashMap::new())).expect("defaults");
+    assert!(defaults.metrics_token.is_none(), "/metrics stays open by default");
+
+    let values = HashMap::from([("PROJECT_BALLOON_METRICS_TOKEN", "  s3cr3t ".to_owned())]);
+    let config = AppConfig::from_lookup(dev_lookup(&values)).expect("metrics token");
+    assert_eq!(config.metrics_token.as_deref(), Some("s3cr3t"));
+
+    let empty = HashMap::from([("PROJECT_BALLOON_METRICS_TOKEN", "   ".to_owned())]);
+    let config = AppConfig::from_lookup(dev_lookup(&empty)).expect("empty token disables auth");
+    assert!(config.metrics_token.is_none());
+
+    let control = HashMap::from([("PROJECT_BALLOON_METRICS_TOKEN", "bad\nvalue".to_owned())]);
+    assert!(matches!(
+        AppConfig::from_lookup(dev_lookup(&control)),
+        Err(ConfigError::Invalid { name: "PROJECT_BALLOON_METRICS_TOKEN", .. })
+    ));
+}
+
+#[test]
 fn development_csrf_secret_requires_explicit_opt_in() {
     let error = AppConfig::from_lookup(|_| None)
         .expect_err("default secret without opt-in must be rejected");

@@ -32,6 +32,10 @@ pub struct WorkerConfig {
     pub sandbox_socket: PathBuf,
     pub sandbox_runtime: Option<String>,
     pub sandbox_user: String,
+    /// Client timeout in seconds for establishing the Docker connection.
+    pub docker_connect_timeout_seconds: u64,
+    /// Bound for every individual Docker API call the sandbox makes.
+    pub docker_api_timeout: Duration,
     pub c_image: String,
     pub cpp_image: String,
     pub java_image: String,
@@ -120,6 +124,14 @@ impl WorkerConfig {
             lookup("JUDGE_JAVA_IMAGE").unwrap_or_else(|| "judge-runtime-java:21".to_owned());
         let python_image = lookup("JUDGE_PYTHON_IMAGE")
             .unwrap_or_else(|| "judge-runtime-python:3.12.13".to_owned());
+        let docker_connect_timeout_seconds = parse_positive(
+            "JUDGE_DOCKER_CONNECT_TIMEOUT_SECONDS",
+            lookup("JUDGE_DOCKER_CONNECT_TIMEOUT_SECONDS").unwrap_or_else(|| "10".to_owned()),
+        )?;
+        let docker_api_timeout_milliseconds = parse_positive(
+            "JUDGE_DOCKER_API_TIMEOUT_MILLISECONDS",
+            lookup("JUDGE_DOCKER_API_TIMEOUT_MILLISECONDS").unwrap_or_else(|| "5000".to_owned()),
+        )?;
         let health_port = parse_positive::<u64>(
             "JUDGE_HEALTH_PORT",
             lookup("JUDGE_HEALTH_PORT").unwrap_or_else(|| "9101".to_owned()),
@@ -193,6 +205,8 @@ impl WorkerConfig {
             sandbox_socket,
             sandbox_runtime,
             sandbox_user,
+            docker_connect_timeout_seconds,
+            docker_api_timeout: Duration::from_millis(docker_api_timeout_milliseconds),
             c_image,
             cpp_image,
             java_image,
@@ -249,7 +263,7 @@ fn validate_sandbox_user(value: &str) -> Result<(), ConfigError> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, time::Duration};
 
     use crate::{ConfigError, WorkerConfig};
 
@@ -398,5 +412,40 @@ mod tests {
                 "JUDGE_TESTDATA_CACHE_MAX_BYTES={value}"
             );
         }
+    }
+    #[test]
+    fn docker_timeouts_are_configurable_with_defaults() {
+        let credentials = [
+            ("PROJECT_BALLOON_RABBITMQ_URL", "amqp://worker:secret@127.0.0.1:5672/%2f".to_owned()),
+            ("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY", "worker-access".to_owned()),
+            ("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY", "worker-secret".to_owned()),
+        ];
+        let config = WorkerConfig::from_lookup(|name| {
+            credentials.iter().find(|(key, _)| *key == name).map(|(_, value)| value.clone())
+        })
+        .expect("credential-only config is valid");
+        assert_eq!(config.docker_connect_timeout_seconds, 10);
+        assert_eq!(config.docker_api_timeout, Duration::from_millis(5_000));
+
+        let values = HashMap::from([
+            ("JUDGE_DOCKER_CONNECT_TIMEOUT_SECONDS", "30".to_owned()),
+            ("JUDGE_DOCKER_API_TIMEOUT_MILLISECONDS", "15000".to_owned()),
+        ])
+        .into_iter()
+        .chain(credentials.iter().cloned())
+        .collect::<HashMap<_, _>>();
+        let config = WorkerConfig::from_lookup(|name| values.get(name).cloned())
+            .expect("explicit docker timeouts must be valid");
+        assert_eq!(config.docker_connect_timeout_seconds, 30);
+        assert_eq!(config.docker_api_timeout, Duration::from_millis(15_000));
+
+        let values = HashMap::from([("JUDGE_DOCKER_API_TIMEOUT_MILLISECONDS", "0".to_owned())])
+            .into_iter()
+            .chain(credentials.iter().cloned())
+            .collect::<HashMap<_, _>>();
+        assert!(matches!(
+            WorkerConfig::from_lookup(|name| values.get(name).cloned()),
+            Err(ConfigError::Invalid { name: "JUDGE_DOCKER_API_TIMEOUT_MILLISECONDS", .. })
+        ));
     }
 }

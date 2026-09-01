@@ -30,7 +30,32 @@ if grep -Eq '^[A-Za-z_][A-Za-z0-9_]*=.*CHANGE_ME' "$PB_ENV_FILE"; then
   pb_die "$PB_ENV_FILE still contains CHANGE_ME values"
 fi
 
-pb_load_env_file "$PB_ENV_FILE" XCPC_SANDBOX_RUNTIME JUDGE_C_IMAGE
+# The judge cache directory is a host bind mount into the worker container,
+# which runs as XCPC_SANDBOX_USER (default 1000:1000). A root-owned
+# auto-created bind mount would make the worker's cache writes fail with
+# EACCES, so create the directory here and assert its ownership.
+JUDGE_CACHE_DIR="${JUDGE_CACHE_DIR:-/var/lib/project-balloon/judge-cache}"
+case "$JUDGE_CACHE_DIR" in
+  /*) ;;
+  *) pb_die "JUDGE_CACHE_DIR must be an absolute path (got '$JUDGE_CACHE_DIR')" ;;
+esac
+sandbox_user="${XCPC_SANDBOX_USER:-1000:1000}"
+cache_uid="${sandbox_user%%:*}"
+cache_gid="$cache_uid"
+[[ "$sandbox_user" == *:* ]] && cache_gid="${sandbox_user#*:}"
+mkdir -p "$JUDGE_CACHE_DIR"
+cache_owner="$(stat -c '%u:%g' "$JUDGE_CACHE_DIR")"
+if [ "$cache_owner" != "$cache_uid:$cache_gid" ]; then
+  if [ "$(id -u)" -eq 0 ]; then
+    chown "$cache_uid:$cache_gid" "$JUDGE_CACHE_DIR"
+    pb_log "fixed judge cache ownership: $JUDGE_CACHE_DIR -> $cache_uid:$cache_gid"
+  else
+    pb_die "judge cache directory $JUDGE_CACHE_DIR is owned by $cache_owner but the worker container runs as $cache_uid:$cache_gid; run: sudo chown $cache_uid:$cache_gid '$JUDGE_CACHE_DIR'"
+  fi
+fi
+pb_log "judge cache directory ready: $JUDGE_CACHE_DIR ($cache_uid:$cache_gid)"
+
+pb_load_env_file "$PB_ENV_FILE" XCPC_SANDBOX_RUNTIME JUDGE_C_IMAGE JUDGE_CACHE_DIR XCPC_SANDBOX_USER
 if [ -n "${XCPC_SANDBOX_RUNTIME:-}" ]; then
   runtime_json="$(docker info --format '{{json .Runtimes}}' 2>/dev/null || true)"
   printf '%s' "$runtime_json" | grep -Fq "\"$XCPC_SANDBOX_RUNTIME\"" \

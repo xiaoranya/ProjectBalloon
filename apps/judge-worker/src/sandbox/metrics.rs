@@ -76,6 +76,26 @@ pub(super) async fn collect_resource_usage(
     }
 }
 
+/// One-shot cumulative container CPU total in nanoseconds.
+///
+/// Taken immediately before and after each exec: the difference is the exec's
+/// own CPU time. The streamed samples cover the container's whole lifetime, so
+/// on a timeout or OOM kill (where the trailing snapshot fails) their maximum
+/// is only usable relative to the same baseline.
+pub(super) async fn snapshot_container_cpu(docker: &Docker, id: &str) -> Option<u64> {
+    let mut stats =
+        docker.stats(id, Some(StatsOptionsBuilder::default().stream(false).one_shot(true).build()));
+    while let Some(sample) = stats.next().await {
+        let Ok(sample) = sample else { return None };
+        if let Some(cpu_time_ns) =
+            sample.cpu_stats.and_then(|stats| stats.cpu_usage).and_then(|usage| usage.total_usage)
+        {
+            return Some(cpu_time_ns);
+        }
+    }
+    None
+}
+
 pub(super) fn nonzero_milliseconds(nanoseconds: u64) -> Option<i32> {
     (nanoseconds > 0).then(|| {
         let rounded_up = nanoseconds.saturating_add(999_999) / 1_000_000;

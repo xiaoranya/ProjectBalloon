@@ -26,6 +26,7 @@ sudo systemctl restart project-balloon-api project-balloon-judge-worker
 | `PROJECT_BALLOON_API_BIND` | `127.0.0.1:8080` | API 监听 socket；反向代理连接到这里 |
 | `PROJECT_BALLOON_DEPLOYMENT_MODE` | `standard` | `competition` 启用非重叠日程与 IP 绑定工作站配对，并禁用日常功能 |
 | `PROJECT_BALLOON_TRUSTED_PROXY_CIDRS` | `127.0.0.1/32,::1/128` | API 信任其 `X-Forwarded-*` 请求头的 CIDR |
+| `PROJECT_BALLOON_METRICS_TOKEN` | 未设置 | 保护 `GET /metrics` 的可选 bearer token（恒时比较）；留空则端点开放——只要该端口可从回环或隔离的监控网络之外访问就应设置 |
 | `RUST_LOG` | `info` | API 与 Worker 的结构化日志级别 |
 | `XCPC_API_PROXY_TARGET` | `http://127.0.0.1:18080` | 前端开发服务器代理目标（仅 Vite） |
 
@@ -134,10 +135,15 @@ API 在启动时创建其配置的桶。桶名属于部署配置，绝不通过�
 | `JUDGE_TASK_QUEUE` | `judge.tasks` | 消费的任务队列 |
 | `JUDGE_TASK_PREFETCH` | `1` | 并行执行容量；优雅关闭排空进行中的工作 |
 | `JUDGE_RECONNECT_MILLISECONDS` | `1000` | RabbitMQ 重连延迟 |
+| `JUDGE_HEALTH_PORT` | `9101` | 仅绑定回环的 `GET /livez`（恒为 200）与 `GET /readyz`（有消费会话且近期无会话失败时为 200）端口；compose healthcheck 探测 `readyz` |
+| `JUDGE_HEALTH_SESSION_ERROR_WINDOW_SECONDS` | `60` | broker 会话失败后 `readyz` 保持 503 的时长 |
 | `JUDGE_HEARTBEAT_INTERVAL_SECONDS` | `5` | 心跳发布间隔 |
+| `JUDGE_DOCKER_CONNECT_TIMEOUT_SECONDS` | `10` | 沙箱容器控制的 Docker Engine API 客户端建连超时 |
+| `JUDGE_DOCKER_API_TIMEOUT_MILLISECONDS` | `5000` | 沙箱操作的每次 Docker Engine API 调用超时（create、start、exec、wait）；必须为正数 |
 | `JUDGE_REQUEST_TIMEOUT_MILLISECONDS` | `10000` | 存储 / 沙箱请求超时 |
 | `JUDGE_MAX_ARTIFACT_BYTES` | `314572800` | 每个任务接受的最大产物大小 |
 | `JUDGE_TESTDATA_CACHE_MAX_BYTES` | `8589934592` | 本地测试数据 zip 缓存的大小上限；超过上限时按最近最少使用（以 mtime 为准，缓存命中会刷新）淘汰并记录日志。`0` 表示不设上限 |
+| `PROJECT_BALLOON_JUDGE_STUCK_REQUEUE_INTERVAL_SECONDS` | `60` | API 以此频率把卡在 `JUDGING` 超过 30 分钟且 outbox 行为 SENT 的提交的评测任务重新入队（对 `SubmissionsStuckJudging` 告警的自愈补充；重新入队的任务不会超过分发器的最大尝试次数） |
 
 ## 沙箱
 
@@ -159,6 +165,7 @@ API 在启动时创建其配置的桶。桶名属于部署配置，绝不通过�
 |---|---|---|
 | `PROJECT_BALLOON_DATABASE_MODE` | `direct` | `direct` 使用主机 PostgreSQL 客户端工具；`compose` 用于遗留单主机部署 |
 | `BACKUP_OBJECT_STORAGE_ENDPOINT` | `http://127.0.0.1:9000` | 当备份主机无法在默认端点访问 RustFS 时覆盖 |
+| `BACKUP_MAX_AGE_HOURS` | `26` | `scripts/backup/check-freshness.sh` 使用的时效阈值（一次错过的日备加余量） |
 
 ## 另见
 
