@@ -77,6 +77,14 @@ impl JudgeEngine<ArtifactManager, DockerSandbox> {
 }
 
 impl<A: ArtifactPreparer, S: SandboxJudge> JudgeEngine<A, S> {
+    /// Component-injecting constructor for non-default artifact or sandbox
+    /// backends (and the test stubs). The `new` constructor keeps the
+    /// production container-backend shape.
+    #[must_use]
+    pub fn with_components(worker_id: String, artifacts: A, sandbox: S) -> Self {
+        Self { worker_id, artifacts, sandbox }
+    }
+
     pub async fn preflight(&self) -> Result<(), TaskFailure> {
         self.artifacts.preflight().await.map_err(|error| TaskFailure::retry(error.to_string()))?;
         self.sandbox.preflight().await.map_err(|error| TaskFailure::retry(error.to_string()))?;

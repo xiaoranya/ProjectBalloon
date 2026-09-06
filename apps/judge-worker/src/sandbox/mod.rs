@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::HashSet, path::Path, time::Duration};
 
 use bollard::Docker;
 use project_balloon_contracts::{JudgeRunResult, JudgeVerdict};
@@ -6,6 +6,10 @@ use thiserror::Error;
 use uuid::Uuid;
 
 mod archive;
+#[cfg(target_os = "linux")]
+pub mod bwrap;
+#[cfg(target_os = "linux")]
+pub mod cgroup;
 mod compare;
 pub(crate) mod fs;
 pub mod gc;
@@ -16,7 +20,93 @@ mod runner;
 #[cfg(test)]
 mod tests;
 
-pub use gc::{OrphanSweep, run_orphan_sweeps};
+#[cfg(target_os = "linux")]
+pub use bwrap::{BubblewrapSandbox, BubblewrapSandboxConfig};
+pub use gc::{OrphanSweep, SandboxJanitor, run_orphan_sweeps};
+
+/// The sandbox execution backend a worker instance uses. `docker` is the
+/// Docker-compatible (rootless Podman + gVisor in production) container
+/// backend; `bwrap` is the non-container bubblewrap backend that runs
+/// submissions directly against a Linux host with namespaces and cgroup v2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxBackend {
+    Docker,
+    #[cfg(target_os = "linux")]
+    Bubblewrap,
+}
+
+impl SandboxBackend {
+    /// Parses the `SANDBOX_BACKEND` configuration value.
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "docker" => Ok(Self::Docker),
+            #[cfg(target_os = "linux")]
+            "bwrap" | "bubblewrap" => Ok(Self::Bubblewrap),
+            other => {
+                Err(format!("unknown sandbox backend {other:?} (expected \"docker\" or \"bwrap\")"))
+            }
+        }
+    }
+}
+
+/// The concrete sandbox assembled at startup, dispatching [`SandboxJudge`]
+/// and [`SandboxJanitor`] over the configured backend. Exists so `main` can
+/// hold one type across backends and the generic engine stays monomorphized.
+#[derive(Clone)]
+pub enum JudgeSandbox {
+    Docker(Box<DockerSandbox>),
+    #[cfg(target_os = "linux")]
+    Bubblewrap(BubblewrapSandbox),
+}
+
+impl JudgeSandbox {
+    /// Human-readable runtime label reported through worker heartbeats. The
+    /// Docker backend keeps the operator-configurable `XCPC_SANDBOX_RUNTIME`
+    /// override; the bubblewrap backend has no OCI runtime to configure.
+    pub fn runtime_label(&self, docker_runtime: Option<&str>) -> String {
+        match self {
+            Self::Docker(_) => docker_runtime.unwrap_or("docker-default").to_owned(),
+            #[cfg(target_os = "linux")]
+            Self::Bubblewrap(_) => "bwrap-namespaces".to_owned(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::worker::SandboxJudge for JudgeSandbox {
+    async fn preflight(&self) -> Result<(), SandboxError> {
+        match self {
+            Self::Docker(sandbox) => sandbox.preflight().await,
+            #[cfg(target_os = "linux")]
+            Self::Bubblewrap(sandbox) => sandbox.preflight().await,
+        }
+    }
+
+    async fn judge(
+        &self,
+        task: &project_balloon_contracts::JudgeTask,
+        source: &[u8],
+        archive: &Path,
+        interactor: Option<&[u8]>,
+    ) -> Result<SandboxJudgement, SandboxError> {
+        match self {
+            Self::Docker(sandbox) => sandbox.judge(task, source, archive, interactor).await,
+            #[cfg(target_os = "linux")]
+            Self::Bubblewrap(sandbox) => sandbox.judge(task, source, archive, interactor).await,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl SandboxJanitor for JudgeSandbox {
+    async fn sweep_orphans(&self, keep: &HashSet<Uuid>) -> Result<OrphanSweep, SandboxError> {
+        match self {
+            Self::Docker(sandbox) => sandbox.sweep_orphans(keep).await,
+            #[cfg(target_os = "linux")]
+            Self::Bubblewrap(sandbox) => sandbox.sweep_orphans(keep).await,
+        }
+    }
+}
 
 const MAX_EXEC_LOG_BYTES: usize = 64 * 1024;
 const MAX_TESTDATA_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;

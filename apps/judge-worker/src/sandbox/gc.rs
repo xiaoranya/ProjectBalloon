@@ -1,4 +1,4 @@
-use std::{collections::HashMap, collections::HashSet, time::Duration};
+use std::{collections::HashMap, collections::HashSet, path::Path, time::Duration};
 
 use bollard::query_parameters::{ListContainersOptionsBuilder, RemoveContainerOptionsBuilder};
 use tokio::sync::watch;
@@ -8,25 +8,38 @@ use uuid::Uuid;
 use crate::rabbit::InFlightTasks;
 use crate::sandbox::{DockerSandbox, JUDGE_CONTAINER_PREFIX, SandboxError, is_container_missing};
 
-/// What one orphan sweep reclaimed.
+/// What one orphan sweep reclaimed. The container backend fills `containers`;
+/// the bubblewrap backend fills `cgroups`; job directories apply to both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OrphanSweep {
     pub containers: usize,
     pub job_dirs: usize,
+    pub cgroups: usize,
+}
+
+/// Leftover reclamation behind [`JudgeEngine`], backend-agnostic: every
+/// sandbox implementation cleans the resources it owns (container backend:
+/// containers + job directories; bubblewrap backend: job directories +
+/// sandbox cgroups). Runs at startup (nothing is in flight yet, so every
+/// leftover belongs to a SIGKILLed/OOMed run or an expired drain) and
+/// periodically afterwards for the leftovers of cancelled handlers.
+#[async_trait::async_trait]
+pub trait SandboxJanitor: Send + Sync {
+    async fn sweep_orphans(&self, keep: &HashSet<Uuid>) -> Result<OrphanSweep, SandboxError>;
+}
+
+#[async_trait::async_trait]
+impl SandboxJanitor for DockerSandbox {
+    /// Force-removes every `pb-judge-*` container and job directory that does
+    /// not belong to a judgement in `keep`.
+    async fn sweep_orphans(&self, keep: &HashSet<Uuid>) -> Result<OrphanSweep, SandboxError> {
+        let containers = self.sweep_orphan_containers(keep).await?;
+        let job_dirs = sweep_orphan_job_dirs(&self.cache_dir, keep).await?;
+        Ok(OrphanSweep { containers, job_dirs, cgroups: 0 })
+    }
 }
 
 impl DockerSandbox {
-    /// Force-removes every `pb-judge-*` container and job directory that does
-    /// not belong to a judgement in `keep`. Runs at startup (nothing is in
-    /// flight yet, so every leftover belongs to a SIGKILLed/OOMed run or an
-    /// expired drain) and periodically afterwards for the leftovers of
-    /// cancelled handlers.
-    pub async fn sweep_orphans(&self, keep: &HashSet<Uuid>) -> Result<OrphanSweep, SandboxError> {
-        let containers = self.sweep_orphan_containers(keep).await?;
-        let job_dirs = self.sweep_orphan_job_dirs(keep).await?;
-        Ok(OrphanSweep { containers, job_dirs })
-    }
-
     async fn sweep_orphan_containers(&self, keep: &HashSet<Uuid>) -> Result<usize, SandboxError> {
         let options = ListContainersOptionsBuilder::default()
             .all(true)
@@ -72,56 +85,62 @@ impl DockerSandbox {
         }
         Ok(removed)
     }
+}
 
-    async fn sweep_orphan_job_dirs(&self, keep: &HashSet<Uuid>) -> Result<usize, SandboxError> {
-        let jobs_dir = self.cache_dir.join("jobs");
-        let mut entries = match tokio::fs::read_dir(&jobs_dir).await {
-            Ok(entries) => entries,
-            // No jobs directory yet: nothing to sweep.
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-            Err(error) => {
-                return Err(SandboxError::Io(crate::sandbox::fs::with_path_context(
-                    error,
-                    "list job directory",
-                    &jobs_dir,
-                )));
-            }
-        };
-        let mut removed = 0;
-        while let Some(entry) = entries.next_entry().await.map_err(|error| {
-            SandboxError::Io(crate::sandbox::fs::with_path_context(
+/// Removes every job directory that does not belong to a judgement in `keep`.
+/// Shared by both sandbox backends: job directories live under the worker's
+/// own cache and never touch the container engine.
+pub(crate) async fn sweep_orphan_job_dirs(
+    cache_dir: &Path,
+    keep: &HashSet<Uuid>,
+) -> Result<usize, SandboxError> {
+    let jobs_dir = cache_dir.join("jobs");
+    let mut entries = match tokio::fs::read_dir(&jobs_dir).await {
+        Ok(entries) => entries,
+        // No jobs directory yet: nothing to sweep.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => {
+            return Err(SandboxError::Io(crate::sandbox::fs::with_path_context(
                 error,
-                "read job directory entry",
+                "list job directory",
                 &jobs_dir,
-            ))
-        })? {
-            // Only ever touch directories named after a judgement; unknown
-            // cache entries are left alone.
-            let Ok(judgement_id) = entry.file_name().to_string_lossy().parse::<Uuid>() else {
-                continue;
-            };
-            if keep.contains(&judgement_id) {
-                continue;
-            }
-            match tokio::fs::remove_dir_all(entry.path()).await {
-                Ok(()) => removed += 1,
-                Err(error) => warn!(
-                    path = %entry.path().display(),
-                    error = %error,
-                    "orphan sweep could not remove a job directory"
-                ),
-            }
+            )));
         }
-        Ok(removed)
+    };
+    let mut removed = 0;
+    while let Some(entry) = entries.next_entry().await.map_err(|error| {
+        SandboxError::Io(crate::sandbox::fs::with_path_context(
+            error,
+            "read job directory entry",
+            &jobs_dir,
+        ))
+    })? {
+        // Only ever touch directories named after a judgement; unknown
+        // cache entries are left alone.
+        let Ok(judgement_id) = entry.file_name().to_string_lossy().parse::<Uuid>() else {
+            continue;
+        };
+        if keep.contains(&judgement_id) {
+            continue;
+        }
+        match tokio::fs::remove_dir_all(entry.path()).await {
+            Ok(()) => removed += 1,
+            Err(error) => warn!(
+                path = %entry.path().display(),
+                error = %error,
+                "orphan sweep could not remove a job directory"
+            ),
+        }
     }
+    Ok(removed)
 }
 
 /// Sweeps orphans on every `interval` tick until the shutdown watch flips.
 /// The first tick of a tokio interval fires immediately, so the loop starts
 /// with a sweep even though `main` runs one explicitly before the consumer
 /// starts (nothing may race that first sweep while deliveries arrive).
-pub async fn run_orphan_sweeps(
-    sandbox: DockerSandbox,
+pub async fn run_orphan_sweeps<S: SandboxJanitor>(
+    sandbox: S,
     in_flight: InFlightTasks,
     interval: Duration,
     mut shutdown: watch::Receiver<bool>,
@@ -163,28 +182,10 @@ mod tests {
 
     use uuid::Uuid;
 
+    use super::sweep_orphan_job_dirs;
     use crate::sandbox::{
-        DockerSandbox, DockerSandboxConfig, JUDGE_CONTAINER_PREFIX, judgement_container_name,
-        judgement_id_from_container_name,
+        JUDGE_CONTAINER_PREFIX, judgement_container_name, judgement_id_from_container_name,
     };
-
-    fn sandbox_with_cache(cache_dir: std::path::PathBuf) -> DockerSandbox {
-        DockerSandbox::connect(DockerSandboxConfig {
-            socket: "/var/run/docker.sock".into(),
-            cache_dir,
-            runtime: None,
-            user: "1000:1000".to_owned(),
-            c_image: "judge-runtime-c:12.2.0".to_owned(),
-            cpp_image: "judge-runtime-cpp:12.2.0".to_owned(),
-            java_image: "judge-runtime-java:21".to_owned(),
-            python_image: "judge-runtime-python:3.12.13".to_owned(),
-            go_image: "judge-runtime-go:1.27".to_owned(),
-            rust_image: "judge-runtime-rust:1.98".to_owned(),
-            docker_connect_timeout_seconds: 10,
-            docker_api_timeout: std::time::Duration::from_secs(5),
-        })
-        .expect("connect sandbox client")
-    }
 
     #[tokio::test]
     async fn job_dir_sweep_removes_stale_dirs_and_keeps_in_flight_ones() {
@@ -198,9 +199,7 @@ mod tests {
         }
         tokio::fs::create_dir_all(jobs.join("not-a-judgement")).await.expect("unknown entry");
 
-        let sandbox = sandbox_with_cache(root.clone());
-        let removed = sandbox
-            .sweep_orphan_job_dirs(&HashSet::from([in_flight]))
+        let removed = sweep_orphan_job_dirs(&root, &HashSet::from([in_flight]))
             .await
             .expect("sweep job dirs");
 
@@ -217,8 +216,7 @@ mod tests {
     async fn job_dir_sweep_without_jobs_directory_is_empty() {
         let root = std::env::temp_dir().join(format!("pb-gc-{}", Uuid::new_v4()));
         tokio::fs::create_dir_all(&root).await.expect("root");
-        let sandbox = sandbox_with_cache(root.clone());
-        let removed = sandbox.sweep_orphan_job_dirs(&HashSet::new()).await.expect("sweep");
+        let removed = sweep_orphan_job_dirs(&root, &HashSet::new()).await.expect("sweep");
         assert_eq!(removed, 0);
         tokio::fs::remove_dir_all(root).await.expect("cleanup");
     }

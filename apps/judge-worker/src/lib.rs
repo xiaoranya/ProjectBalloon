@@ -8,6 +8,7 @@ pub mod worker;
 use std::{env, path::PathBuf, time::Duration};
 
 use thiserror::Error;
+use tracing::warn;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkerConfig {
@@ -32,6 +33,21 @@ pub struct WorkerConfig {
     pub sandbox_socket: PathBuf,
     pub sandbox_runtime: Option<String>,
     pub sandbox_user: String,
+    /// Which sandbox backend the worker runs submissions with. `docker` uses
+    /// the Docker-compatible container backend; `bwrap` uses the non-container
+    /// bubblewrap backend (Linux only).
+    pub sandbox_backend: crate::sandbox::SandboxBackend,
+    /// Absolute path of the bubblewrap binary (bwrap backend only).
+    pub bwrap_path: PathBuf,
+    /// Host path of the GNU-time-compatible measurement tool (bwrap backend
+    /// only). It is bound into each sandbox at `/usr/bin/time`.
+    pub gnu_time_path: PathBuf,
+    /// Delegated cgroup v2 base directory for the bwrap backend's per-action
+    /// cgroups. Required for that backend unless `cgroup_required` is false.
+    pub cgroup_base: Option<PathBuf>,
+    /// Whether the bwrap backend must fail startup without cgroup v2 instead
+    /// of degrading to rlimit-only enforcement.
+    pub cgroup_required: bool,
     /// Client timeout in seconds for establishing the Docker connection.
     pub docker_connect_timeout_seconds: u64,
     /// Bound for every individual Docker API call the sandbox makes.
@@ -118,6 +134,32 @@ impl WorkerConfig {
         let sandbox_runtime =
             lookup("XCPC_SANDBOX_RUNTIME").filter(|value| !value.trim().is_empty());
         let sandbox_user = lookup("XCPC_SANDBOX_USER").unwrap_or_else(|| "1000:1000".to_owned());
+        let sandbox_backend = match lookup("SANDBOX_BACKEND") {
+            Some(value) => crate::sandbox::SandboxBackend::parse(&value).map_err(|reason| {
+                warn!(value = %value, reason = %reason, "invalid SANDBOX_BACKEND value");
+                ConfigError::Invalid { name: "SANDBOX_BACKEND", reason: "expected docker or bwrap" }
+            })?,
+            None => crate::sandbox::SandboxBackend::Docker,
+        };
+        let bwrap_path = lookup("JUDGE_BWRAP_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/usr/bin/bwrap"));
+        let gnu_time_path = lookup("JUDGE_GNU_TIME_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/usr/bin/time"));
+        let cgroup_base = lookup("JUDGE_CGROUP_BASE").map(PathBuf::from);
+        let cgroup_required = match lookup("JUDGE_CGROUP_REQUIRED") {
+            Some(value) if value.eq_ignore_ascii_case("false") => false,
+            Some(value) if value.eq_ignore_ascii_case("true") || value == "1" => true,
+            Some(value) => {
+                warn!(value = %value, "invalid JUDGE_CGROUP_REQUIRED value");
+                return Err(ConfigError::Invalid {
+                    name: "JUDGE_CGROUP_REQUIRED",
+                    reason: "expected true or false",
+                });
+            }
+            None => true,
+        };
         let c_image =
             lookup("JUDGE_C_IMAGE").unwrap_or_else(|| "judge-runtime-c:12.2.0".to_owned());
         let cpp_image =
@@ -213,6 +255,11 @@ impl WorkerConfig {
             sandbox_socket,
             sandbox_runtime,
             sandbox_user,
+            sandbox_backend,
+            bwrap_path,
+            gnu_time_path,
+            cgroup_base,
+            cgroup_required,
             docker_connect_timeout_seconds,
             docker_api_timeout: Duration::from_millis(docker_api_timeout_milliseconds),
             c_image,
@@ -275,7 +322,69 @@ fn validate_sandbox_user(value: &str) -> Result<(), ConfigError> {
 mod tests {
     use std::{collections::HashMap, time::Duration};
 
+    use crate::sandbox::SandboxBackend;
     use crate::{ConfigError, WorkerConfig};
+
+    fn valid_credentials() -> HashMap<String, String> {
+        HashMap::from([
+            (
+                "PROJECT_BALLOON_RABBITMQ_URL".to_owned(),
+                "amqp://worker:secret@127.0.0.1:5672/%2f".to_owned(),
+            ),
+            ("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY".to_owned(), "worker-access".to_owned()),
+            ("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY".to_owned(), "worker-secret".to_owned()),
+        ])
+    }
+
+    #[test]
+    fn sandbox_backend_defaults_to_docker_and_accepts_explicit_values() {
+        let config = WorkerConfig::from_lookup(|name| valid_credentials().get(name).cloned())
+            .expect("the default backend is docker");
+        assert_eq!(config.sandbox_backend, SandboxBackend::Docker);
+
+        #[cfg(target_os = "linux")]
+        for value in ["bwrap", "Bubblewrap"] {
+            let mut values = valid_credentials();
+            values.insert("SANDBOX_BACKEND".to_owned(), value.to_owned());
+            let config = WorkerConfig::from_lookup(|name| values.get(name).cloned())
+                .expect("bubblewrap backend value must be accepted");
+            assert_eq!(config.sandbox_backend, SandboxBackend::Bubblewrap);
+        }
+
+        let mut values = valid_credentials();
+        values.insert("SANDBOX_BACKEND".to_owned(), " namespaces ".to_owned());
+        let error = WorkerConfig::from_lookup(|name| values.get(name).cloned())
+            .expect_err("unknown backend values must fail");
+        assert_eq!(
+            error,
+            ConfigError::Invalid { name: "SANDBOX_BACKEND", reason: "expected docker or bwrap" }
+        );
+    }
+
+    #[test]
+    fn cgroup_required_rejects_non_boolean_values() {
+        for (value, expected) in
+            [("true", true), ("TRUE", true), ("1", true), ("false", false), ("False", false)]
+        {
+            let mut values = valid_credentials();
+            values.insert("JUDGE_CGROUP_REQUIRED".to_owned(), value.to_owned());
+            let config = WorkerConfig::from_lookup(|name| values.get(name).cloned())
+                .expect("boolean cgroup values must be accepted");
+            assert_eq!(config.cgroup_required, expected, "JUDGE_CGROUP_REQUIRED={value}");
+        }
+
+        let mut values = valid_credentials();
+        values.insert("JUDGE_CGROUP_REQUIRED".to_owned(), "maybe".to_owned());
+        let error = WorkerConfig::from_lookup(|name| values.get(name).cloned())
+            .expect_err("non-boolean cgroup values must fail");
+        assert_eq!(
+            error,
+            ConfigError::Invalid {
+                name: "JUDGE_CGROUP_REQUIRED",
+                reason: "expected true or false"
+            }
+        );
+    }
 
     #[test]
     fn configuration_accepts_explicit_infrastructure_credentials() {

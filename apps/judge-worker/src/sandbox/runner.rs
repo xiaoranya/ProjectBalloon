@@ -283,9 +283,9 @@ impl DockerSandbox {
             let output_blocks = output_file_blocks(task.output_limit_kb);
             let program = language.run_command(task.memory_limit_mb);
             let shell = if interactive {
-                interactive_shell(&program, output_blocks)
+                interactive_shell("/usr/bin/time", &program, output_blocks)
             } else {
-                standard_shell(&program, output_blocks)
+                standard_shell("/usr/bin/time", &program, output_blocks)
             };
             let command = vec!["/bin/sh".to_owned(), "-c".to_owned(), shell];
             let mut run = self.run_exec(container_id, command, &[], wall_limit).await?;
@@ -824,9 +824,12 @@ fn output_file_blocks(output_limit_kb: i32) -> i64 {
 /// Shell for a standard (non-interactive) run. The GNU-time report is the
 /// terminal write on the exec stderr stream: the parser trusts the LAST
 /// marker, and the contestant's own stderr can only precede the report.
-fn standard_shell(program: &str, output_blocks: i64) -> String {
+/// `time_tool` is the GNU-time path *inside* the sandbox (`/usr/bin/time` for
+/// the container backend, the read-only `/work/.pb-time` bind for the
+/// bubblewrap backend).
+pub(super) fn standard_shell(time_tool: &str, program: &str, output_blocks: i64) -> String {
     format!(
-        "export LC_ALL=C; ulimit -f {output_blocks}; exec /usr/bin/time --quiet \
+        "export LC_ALL=C; ulimit -f {output_blocks}; exec {time_tool} --quiet \
          --format '{GNU_TIME_REPORT_FORMAT}' {program} < /work/current.in > /work/actual.out"
     )
 }
@@ -839,13 +842,13 @@ fn standard_shell(program: &str, output_blocks: i64) -> String {
 /// stream AFTER the report, letting a forged last marker reset the charged
 /// CPU time and peak memory. The diagnostic files are read back separately by
 /// [`DockerSandbox::fetch_interactor_diagnostics`].
-fn interactive_shell(program: &str, output_blocks: i64) -> String {
+pub(super) fn interactive_shell(time_tool: &str, program: &str, output_blocks: i64) -> String {
     format!(
         "export LC_ALL=C; ulimit -f {output_blocks}; rm -f /work/to_program /work/to_interactor \
          /work/actual.out /work/program.status /work/program.err /work/interactor.err; \
          mkfifo /work/to_program /work/to_interactor; exec 3<>/work/to_program; \
          exec 4<>/work/to_interactor; /work/interactor /work/current.in <&4 >&3 \
-         2>/work/interactor.err & interactor_pid=$!; /usr/bin/time --quiet \
+         2>/work/interactor.err & interactor_pid=$!; {time_tool} --quiet \
          --format '{GNU_TIME_REPORT_FORMAT}' sh -c '{program} <&3 2>/work/program.err; \
          printf \"%s\" \"$?\" >/work/program.status' | tee /work/actual.out >&4 & \
          program_pid=$!; exec 3>&- 4>&-; wait $program_pid; program_status=$(cat \
@@ -858,7 +861,7 @@ fn interactive_shell(program: &str, output_blocks: i64) -> String {
 /// Decides the resource-driven verdicts (memory, output, time). These strictly
 /// precede the interactive protocol and the byte comparison; `None` means the
 /// run finished inside its limits and the output must be judged.
-fn resource_verdict(
+pub(super) fn resource_verdict(
     oom_killed: bool,
     exit_code: i64,
     timed_out: bool,
@@ -944,7 +947,7 @@ mod tests {
 
     #[test]
     fn interactive_shell_keeps_the_time_report_off_contestant_writable_paths() {
-        let shell = interactive_shell("/work/program", 128);
+        let shell = interactive_shell("/usr/bin/time", "/work/program", 128);
         // The report is parsed as the last marker on the exec stderr stream:
         // it must not be cached in a /work file (same-UID writable), and no
         // contestant-writable file may be concatenated into that stream after
@@ -968,7 +971,7 @@ mod tests {
 
     #[test]
     fn standard_shell_ends_with_the_report_terminal_on_stderr() {
-        let shell = standard_shell("/work/program", 64);
+        let shell = standard_shell("/usr/bin/time", "/work/program", 64);
         assert!(shell.contains(&format!("--format '{GNU_TIME_REPORT_FORMAT}'")));
         assert!(shell.ends_with("> /work/actual.out"));
         // Nothing may be appended after the timed command: the report must be
