@@ -5,13 +5,18 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+#[cfg(target_os = "linux")]
+use project_balloon_judge_worker::sandbox::{BubblewrapSandbox, BubblewrapSandboxConfig};
 use project_balloon_judge_worker::{
     WorkerConfig,
     artifacts::{ArtifactManager, S3ArtifactSource, S3ArtifactSourceConfig},
     health::{HealthState, serve_health},
     heartbeat::{WorkerActivity, WorkerHeartbeatPublisher, WorkerHeartbeatPublisherConfig},
     rabbit::{InFlightTasks, RabbitJudgeWorker, RabbitJudgeWorkerConfig},
-    sandbox::{DockerSandbox, DockerSandboxConfig, run_orphan_sweeps},
+    sandbox::{
+        DockerSandbox, DockerSandboxConfig, JudgeSandbox, SandboxBackend, SandboxJanitor,
+        run_orphan_sweeps,
+    },
     worker::JudgeEngine,
 };
 use tokio::sync::watch;
@@ -38,33 +43,52 @@ async fn main() -> Result<()> {
         config.max_artifact_bytes,
         config.testdata_cache_max_bytes,
     );
-    let sandbox = DockerSandbox::connect(DockerSandboxConfig {
-        socket: config.sandbox_socket.clone(),
-        cache_dir: config.cache_dir.clone(),
-        runtime: config.sandbox_runtime.clone(),
-        user: config.sandbox_user.clone(),
-        c_image: config.c_image.clone(),
-        cpp_image: config.cpp_image.clone(),
-        java_image: config.java_image.clone(),
-        python_image: config.python_image.clone(),
-        go_image: config.go_image.clone(),
-        rust_image: config.rust_image.clone(),
-        docker_connect_timeout_seconds: config.docker_connect_timeout_seconds,
-        docker_api_timeout: config.docker_api_timeout,
-    })?;
+    let sandbox: JudgeSandbox = match config.sandbox_backend {
+        SandboxBackend::Docker => {
+            JudgeSandbox::Docker(Box::new(DockerSandbox::connect(DockerSandboxConfig {
+                socket: config.sandbox_socket.clone(),
+                cache_dir: config.cache_dir.clone(),
+                runtime: config.sandbox_runtime.clone(),
+                user: config.sandbox_user.clone(),
+                c_image: config.c_image.clone(),
+                cpp_image: config.cpp_image.clone(),
+                java_image: config.java_image.clone(),
+                python_image: config.python_image.clone(),
+                go_image: config.go_image.clone(),
+                rust_image: config.rust_image.clone(),
+                docker_connect_timeout_seconds: config.docker_connect_timeout_seconds,
+                docker_api_timeout: config.docker_api_timeout,
+            })?))
+        }
+        #[cfg(target_os = "linux")]
+        SandboxBackend::Bubblewrap => JudgeSandbox::Bubblewrap(
+            BubblewrapSandbox::connect(BubblewrapSandboxConfig {
+                cache_dir: config.cache_dir.clone(),
+                bwrap_path: config.bwrap_path.clone(),
+                gnu_time_path: config.gnu_time_path.clone(),
+                cgroup_base: config.cgroup_base.clone(),
+                cgroup_required: config.cgroup_required,
+            })
+            .await?,
+        ),
+    };
     // Startup orphan sweep: nothing is in flight yet, so every leftover
-    // pb-judge-* container and job directory belongs to a SIGKILLed or OOM
-    // killed run and must go before the first delivery can recreate it.
-    let sweep =
-        sandbox.sweep_orphans(&HashSet::new()).await.context("sandbox orphan sweep failed")?;
+    // pb-judge-* container/cgroup and job directory belongs to a SIGKILLed or
+    // OOM killed run and must go before the first delivery can recreate it.
+    let sweep = SandboxJanitor::sweep_orphans(&sandbox, &HashSet::new())
+        .await
+        .context("sandbox orphan sweep failed")?;
     info!(
         containers = sweep.containers,
         job_dirs = sweep.job_dirs,
+        cgroups = sweep.cgroups,
         "startup sandbox orphan sweep complete"
     );
+    let sandbox_runtime_label = sandbox.runtime_label(config.sandbox_runtime.as_deref());
     let in_flight = InFlightTasks::new();
     let gc_sandbox = sandbox.clone();
-    let engine = Arc::new(JudgeEngine::new(config.worker_id.clone(), artifacts, sandbox));
+    let engine =
+        Arc::new(JudgeEngine::with_components(config.worker_id.clone(), artifacts, sandbox));
     engine
         .preflight()
         .await
@@ -111,9 +135,7 @@ async fn main() -> Result<()> {
             request_timeout: config.request_timeout,
             reconnect_delay: config.reconnect_delay,
             runtime_versions,
-            sandbox_runtime: Some(
-                config.sandbox_runtime.unwrap_or_else(|| "docker-default".to_owned()),
-            ),
+            sandbox_runtime: Some(sandbox_runtime_label),
         },
         activity,
     );
