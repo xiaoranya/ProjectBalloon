@@ -1,4 +1,7 @@
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use argon2::{
+    Argon2, RECOMMENDED_SALT_LEN,
+    password_hash::{PasswordHasher, PasswordVerifier, phc::PasswordHash},
+};
 use std::sync::OnceLock;
 use thiserror::Error;
 use tokio::sync::Semaphore;
@@ -44,11 +47,10 @@ pub fn needs_upgrade(encoded: &str) -> bool {
 }
 
 fn hash_blocking(password: &str) -> Result<String, PasswordError> {
-    let mut salt_bytes = [0_u8; 16];
+    let mut salt_bytes = [0_u8; RECOMMENDED_SALT_LEN];
     getrandom::fill(&mut salt_bytes).map_err(|_| PasswordError::Random)?;
-    let salt = SaltString::encode_b64(&salt_bytes).map_err(|_| PasswordError::Hash)?;
     Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password_with_salt(password.as_bytes(), &salt_bytes)
         .map(|hash| hash.to_string())
         .map_err(|_| PasswordError::Hash)
 }
@@ -95,6 +97,25 @@ mod tests {
         );
         assert!(
             !verify("wrong".to_owned(), encoded)
+                .await
+                .expect("wrong password is a normal mismatch")
+        );
+    }
+
+    // Produced by the argon2 0.5 / password-hash 0.5 pair that generated every
+    // hash currently stored in the database, so the 0.6 upgrade must keep
+    // verifying them instead of locking every existing account out.
+    const PREVIOUS_RELEASE_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$BwcHBwcHBwcHBwcHBwcHBw$eZ8SueF3EIJEgtgpg1rLafWpNVv3dMTwc0KCOxG5CSg";
+
+    #[tokio::test]
+    async fn hashes_from_previous_argon2_release_still_verify() {
+        assert!(
+            verify("correct horse battery staple".to_owned(), PREVIOUS_RELEASE_HASH.to_owned())
+                .await
+                .expect("hash from the previous release must verify")
+        );
+        assert!(
+            !verify("wrong".to_owned(), PREVIOUS_RELEASE_HASH.to_owned())
                 .await
                 .expect("wrong password is a normal mismatch")
         );
