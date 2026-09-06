@@ -1,4 +1,7 @@
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use argon2::{
+    Argon2,
+    password_hash::{PasswordHasher, PasswordVerifier, phc::PasswordHash},
+};
 use std::sync::OnceLock;
 use thiserror::Error;
 use tokio::sync::Semaphore;
@@ -18,8 +21,6 @@ pub enum PasswordError {
     Capacity,
     #[error("password hash is invalid")]
     InvalidHash,
-    #[error("operating-system randomness is unavailable")]
-    Random,
     #[error("password hashing failed")]
     Hash,
 }
@@ -44,11 +45,8 @@ pub fn needs_upgrade(encoded: &str) -> bool {
 }
 
 fn hash_blocking(password: &str) -> Result<String, PasswordError> {
-    let mut salt_bytes = [0_u8; 16];
-    getrandom::fill(&mut salt_bytes).map_err(|_| PasswordError::Random)?;
-    let salt = SaltString::encode_b64(&salt_bytes).map_err(|_| PasswordError::Hash)?;
     Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map(|hash| hash.to_string())
         .map_err(|_| PasswordError::Hash)
 }

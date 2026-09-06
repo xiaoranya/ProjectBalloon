@@ -19,7 +19,7 @@ publish = false
 anyhow = "1.0.103"
 ammonia = "4.1.2"
 async-trait = "0.1.89"
-argon2 = "0.5.3"
+argon2 = "0.6.0"
 axum = { version = "0.8.9", features = ["http1", "json", "multipart", "tokio"] }
 axum-extra = { version = "0.12.6", features = ["cookie"] }
 base64 = "0.23.1"
