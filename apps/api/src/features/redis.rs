@@ -10,8 +10,8 @@
 //! request handler, mirroring the fault-isolation contract of the scoreboard
 //! cache.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use redis::{Cmd, FromRedisValue, Value, aio::ConnectionManager};
@@ -137,18 +137,12 @@ mod tests {
             eprintln!("skipping: PROJECT_BALLOON_TEST_REDIS_URL is not set");
             return;
         };
-        let handle = RedisHandle::connect_with_pool_size(
-            &redis_url,
-            Duration::from_millis(500),
-            4,
-        )
-        .await
-        .expect("connect integration Redis");
-        assert_eq!(handle.pool_size(), 4);
-        let reply: String = handle
-            .query(&mut cmd("PING"))
+        let handle = RedisHandle::connect_with_pool_size(&redis_url, Duration::from_millis(500), 4)
             .await
-            .expect("PING must round-trip over the pool");
+            .expect("connect integration Redis");
+        assert_eq!(handle.pool_size(), 4);
+        let reply: String =
+            handle.query(&mut cmd("PING")).await.expect("PING must round-trip over the pool");
         assert_eq!(reply, "PONG");
     }
 }
