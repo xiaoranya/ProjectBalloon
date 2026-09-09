@@ -44,12 +44,19 @@ const TEAM_COLUMNS: &str = r#"
 
 pub struct TeamService {
     pub(super) database: PgPool,
+    pub(super) outbox: Option<crate::features::realtime::RealtimeOutbox>,
 }
 
 impl TeamService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, outbox: None }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(mut self, outbox: Option<crate::features::realtime::RealtimeOutbox>) -> Self {
+        self.outbox = outbox;
+        self
     }
 
     pub async fn create(
@@ -300,6 +307,7 @@ impl TeamService {
         )
         .await?;
         enqueue_for_team_contests(
+            self.outbox.as_ref(),
             &mut transaction,
             team_id,
             "TEAM_UPDATED",

@@ -3,7 +3,6 @@ use std::net::IpAddr;
 use serde_json::json;
 use sqlx::{PgPool, Postgres, Transaction};
 use time::OffsetDateTime;
-use uuid::Uuid;
 
 use crate::{error::AppError, features::auth::model::AuthUser};
 
@@ -14,12 +13,19 @@ use crate::features::balloons::model::{
 
 pub struct BalloonService {
     database: PgPool,
+    outbox: Option<crate::features::realtime::RealtimeOutbox>,
 }
 
 impl BalloonService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, outbox: None }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(mut self, outbox: Option<crate::features::realtime::RealtimeOutbox>) -> Self {
+        self.outbox = outbox;
+        self
     }
 
     pub(super) async fn list(
@@ -148,7 +154,7 @@ impl BalloonService {
             }
         }
         audit_tx(&mut tx, actor.id, action, id, ip).await?;
-        event_tx(&mut tx, contest_id, id, action).await?;
+        event_tx(self.outbox.as_ref(), contest_id, id, action).await?;
         tx.commit()
             .await
             .map_err(|error| AppError::internal("commit balloon transition", error))?;
@@ -197,7 +203,7 @@ impl BalloonService {
             )
         })?;
         audit_tx(&mut tx, actor.id, "NOTE", id, ip).await?;
-        event_tx(&mut tx, contest_id, id, "NOTE").await?;
+        event_tx(self.outbox.as_ref(), contest_id, id, "NOTE").await?;
         tx.commit().await.map_err(|error| AppError::internal("commit balloon note", error))?;
         load(&self.database, id).await
     }
@@ -350,6 +356,7 @@ const BALLOON_TASK_SQL: &str = r#"SELECT task.id, task.contest_id, task.team_id,
  task.last_dispatched_at FROM balloon_tasks task"#;
 
 pub(crate) async fn generate_for_accepted(
+    outbox: Option<&crate::features::realtime::RealtimeOutbox>,
     tx: &mut Transaction<'_, Postgres>,
     submission_id: i64,
     contest_id: i64,
@@ -417,10 +424,15 @@ pub(crate) async fn generate_for_accepted(
     .bind(problem_id)
     .execute(&mut **tx)
     .await?;
-    sqlx::query("INSERT INTO realtime_outbox (event_id, contest_id, event_type, scope, payload_json) VALUES ($1, $2, 'BALLOON_TASK_CREATED', 'STAFF', $3)")
-        .bind(Uuid::new_v4()).bind(contest_id)
-        .bind(json!({"balloonTaskId": task_id, "teamId": team_id, "problemId": problem_id}))
-        .execute(&mut **tx).await?;
+    let _ = crate::features::realtime::outbox::enqueue_optional(
+        outbox,
+        contest_id,
+        "BALLOON_TASK_CREATED",
+        "STAFF",
+        None,
+        json!({"balloonTaskId": task_id, "teamId": team_id, "problemId": problem_id}),
+    )
+    .await;
     Ok(Some(task_id))
 }
 
@@ -508,16 +520,20 @@ async fn audit_tx(
 }
 
 async fn event_tx(
-    tx: &mut Transaction<'_, Postgres>,
+    outbox: Option<&crate::features::realtime::RealtimeOutbox>,
     contest_id: i64,
     id: i64,
     action: &str,
 ) -> Result<(), AppError> {
-    sqlx::query("INSERT INTO realtime_outbox (event_id, contest_id, event_type, scope, payload_json) VALUES ($1, $2, 'BALLOON_TASK_UPDATED', 'STAFF', $3)")
-        .bind(Uuid::new_v4()).bind(contest_id)
-        .bind(json!({"balloonTaskId": id, "action": action}))
-        .execute(&mut **tx).await.map(|_| ())
-        .map_err(|error| AppError::internal("enqueue balloon event", error))
+    crate::features::realtime::outbox::enqueue_optional(
+        outbox,
+        contest_id,
+        "BALLOON_TASK_UPDATED",
+        "STAFF",
+        None,
+        json!({"balloonTaskId": id, "action": action}),
+    )
+    .await
 }
 
 fn task_not_found() -> AppError {

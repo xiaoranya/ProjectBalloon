@@ -3,7 +3,6 @@ use std::net::IpAddr;
 use project_balloon_domain::{ContestExtensionError, ContestTransitionError};
 use sqlx::{Postgres, Transaction};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
-use uuid::Uuid;
 
 use crate::{
     error::AppError,
@@ -149,29 +148,22 @@ pub(super) async fn record_audit_result(
 }
 
 pub(super) async fn insert_realtime_outbox(
-    transaction: &mut Transaction<'_, Postgres>,
+    outbox: Option<&crate::features::realtime::RealtimeOutbox>,
     contest_id: i64,
     event_type: &'static str,
     scope: &'static str,
     payload_json: &str,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"
-        INSERT INTO realtime_outbox
-            (event_id, contest_id, event_type, scope, payload_json)
-        VALUES
-            ($1, $2, $3, $4, $5::jsonb)
-        "#,
+    let payload = serde_json::from_str(payload_json).unwrap_or(serde_json::Value::Null);
+    crate::features::realtime::outbox::enqueue_optional(
+        outbox,
+        contest_id,
+        event_type,
+        scope,
+        None,
+        payload,
     )
-    .bind(Uuid::new_v4())
-    .bind(contest_id)
-    .bind(event_type)
-    .bind(scope)
-    .bind(payload_json)
-    .execute(&mut **transaction)
     .await
-    .map(|_| ())
-    .map_err(|error| AppError::internal("persist realtime outbox event", error))
 }
 
 pub(super) fn schedule_values(
@@ -385,7 +377,7 @@ mod tests {
         )
         .await
         .expect("record audit result");
-        super::insert_realtime_outbox(&mut tx, contest_id, "CONTESTS_UPDATED", "PUBLIC", "{}")
+        super::insert_realtime_outbox(None, contest_id, "CONTESTS_UPDATED", "PUBLIC", "{}")
             .await
             .expect("insert outbox");
         let audit_rows: i64 =
@@ -395,13 +387,6 @@ mod tests {
                 .await
                 .expect("audit count");
         assert_eq!(audit_rows, 2);
-        let outbox_rows: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM realtime_outbox WHERE contest_id=$1")
-                .bind(contest_id)
-                .fetch_one(&mut *tx)
-                .await
-                .expect("outbox count");
-        assert_eq!(outbox_rows, 1);
         tx.commit().await.expect("commit");
 
         // require_manage: super admins bypass, assigned staff pass, others 404.

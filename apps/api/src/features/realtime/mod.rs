@@ -2,11 +2,13 @@ mod dispatcher;
 mod fanout;
 pub(crate) mod handlers;
 mod hub;
+pub mod outbox;
 
 pub use dispatcher::{DispatcherConfig, OutboxDispatcher};
 pub use fanout::{RealtimePublisher, RedisSubscriber};
 pub use handlers::{subscribe_public, subscribe_staff, subscribe_team};
 pub use hub::RealtimeHub;
+pub use outbox::RealtimeOutbox;
 
 /// Routes owned by this feature, assembled by the root router.
 pub fn routes() -> axum::Router<crate::state::AppState> {

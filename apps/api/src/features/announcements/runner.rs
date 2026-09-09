@@ -5,18 +5,26 @@ use tokio::{sync::watch, time::MissedTickBehavior};
 use tracing::{error, info};
 
 use crate::error::AppError;
+use crate::features::realtime::RealtimeOutbox;
 
 use crate::features::announcements::service::{public_event_tx, schedule_event_tx};
 
 pub struct AnnouncementScheduleRunner {
     database: PgPool,
     poll_interval: Duration,
+    outbox: Option<RealtimeOutbox>,
 }
 
 impl AnnouncementScheduleRunner {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database, poll_interval: Duration::from_secs(1) }
+        Self { database, poll_interval: Duration::from_secs(1), outbox: None }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(mut self, outbox: Option<RealtimeOutbox>) -> Self {
+        self.outbox = outbox;
+        self
     }
 
     pub async fn run(self, mut shutdown: watch::Receiver<bool>) {
@@ -59,14 +67,14 @@ impl AnnouncementScheduleRunner {
                     .bind(id).execute(&mut *tx).await
                     .map_err(|error| AppError::internal("publish scheduled announcement", error))?;
                 automatic_audit_tx(&mut tx, *created_by, "ANNOUNCEMENT_PUBLISHED", *id).await?;
-                public_event_tx(&mut tx, *contest_id, *id, "PUBLISHED").await?;
+                public_event_tx(self.outbox.as_ref(), *contest_id, *id, "PUBLISHED").await?;
             } else {
                 sqlx::query("UPDATE announcements SET status='CANCELLED',pinned=false,cancelled_at=now(),cancelled_by=$2,updated_at=now(),version=version+1 WHERE id=$1 AND status='SCHEDULED'")
                     .bind(id).bind(created_by).execute(&mut *tx).await
                     .map_err(|error| AppError::internal("cancel expired scheduled announcement", error))?;
                 automatic_audit_tx(&mut tx, *created_by, "ANNOUNCEMENT_SCHEDULE_CANCELLED", *id)
                     .await?;
-                schedule_event_tx(&mut tx, *contest_id, *id, "CANCELLED").await?;
+                schedule_event_tx(self.outbox.as_ref(), *contest_id, *id, "CANCELLED").await?;
             }
         }
         tx.commit().await.map_err(|error| {

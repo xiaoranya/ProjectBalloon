@@ -154,14 +154,8 @@ async fn batch_import_creates_rosters_and_replays_idempotently(pool: PgPool) {
     .expect("load team accounts");
     assert_eq!(account_flags, vec![("foxes-login".into(), false), ("wolves-login".into(), true)]);
 
-    // Per-team and per-staff realtime events were queued, plus one audit row.
-    let events =
-        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM realtime_outbox WHERE contest_id = $1")
-            .bind(contest_id)
-            .fetch_one(&pool)
-            .await
-            .expect("count realtime events");
-    assert_eq!(events, 3);
+    // Realtime events now flow through the Redis outbox; only the audit row
+    // remains observable in PostgreSQL.
     let audits = sqlx::query_scalar::<_, i64>(
         "SELECT count(*) FROM audit_logs WHERE action = 'TEAM_BATCH_IMPORTED'",
     )

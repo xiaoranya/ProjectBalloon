@@ -2,7 +2,6 @@ use std::net::IpAddr;
 
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
-use uuid::Uuid;
 
 use crate::{
     error::AppError,
@@ -132,30 +131,22 @@ pub(super) async fn require_manage_team(
 }
 
 pub(super) async fn enqueue_realtime(
-    transaction: &mut Transaction<'_, Postgres>,
+    outbox: Option<&crate::features::realtime::RealtimeOutbox>,
     contest_id: i64,
     event_type: &'static str,
     scope: &'static str,
     team_id: Option<i64>,
     payload: Value,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"
-        INSERT INTO realtime_outbox
-            (event_id, contest_id, event_type, scope, team_id, payload_json)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        "#,
+    crate::features::realtime::outbox::enqueue_optional(
+        outbox,
+        contest_id,
+        event_type,
+        scope,
+        team_id,
+        payload,
     )
-    .bind(Uuid::new_v4())
-    .bind(contest_id)
-    .bind(event_type)
-    .bind(scope)
-    .bind(team_id)
-    .bind(payload)
-    .execute(&mut **transaction)
     .await
-    .map(|_| ())
-    .map_err(|error| AppError::internal("enqueue team realtime event", error))
 }
 
 pub(super) async fn record_audit(

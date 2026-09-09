@@ -23,17 +23,24 @@ use crate::features::contests::model::{
 pub struct ContestService {
     database: PgPool,
     competition_mode: bool,
+    outbox: Option<crate::features::realtime::RealtimeOutbox>,
 }
 
 impl ContestService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database, competition_mode: false }
+        Self { database, competition_mode: false, outbox: None }
     }
 
     #[must_use]
     pub const fn with_competition_mode(mut self, enabled: bool) -> Self {
         self.competition_mode = enabled;
+        self
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(mut self, outbox: Option<crate::features::realtime::RealtimeOutbox>) -> Self {
+        self.outbox = outbox;
         self
     }
 
@@ -578,14 +585,14 @@ impl ContestService {
         })
         .to_string();
         insert_realtime_outbox(
-            &mut transaction,
+            self.outbox.as_ref(),
             contest_id,
             "CONTEST_EXTENDED",
             "PUBLIC",
             &payload,
         )
         .await?;
-        insert_realtime_outbox(&mut transaction, contest_id, "CONTEST_EXTENDED", "STAFF", &payload)
+        insert_realtime_outbox(self.outbox.as_ref(), contest_id, "CONTEST_EXTENDED", "STAFF", &payload)
             .await?;
         transaction
             .commit()

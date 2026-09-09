@@ -186,5 +186,4 @@ async fn screen_registration_heartbeat_commands_and_revocation_are_atomic(pool: 
             .is_err()
     );
     assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM audit_logs WHERE actor_user_id=$1 AND action IN ('PRESENTATION_CONFIG_UPDATED','SCREEN_COMMAND_SENT','SCREEN_INSTANCE_REVOKED')").bind(user).fetch_one(&pool).await.expect("audit"), 4);
-    assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM realtime_outbox WHERE contest_id=$1 AND event_type='PRESENTATION_UPDATED'").bind(contest).fetch_one(&pool).await.expect("outbox"), 1);
 }

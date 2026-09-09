@@ -110,7 +110,7 @@ impl TeamService {
                 .await
                 .map_err(map_contest_team_write_error)?;
                 enqueue_realtime(
-                    &mut transaction,
+                    self.outbox.as_ref(),
                     contest_id,
                     "CONTEST_TEAMS_CHANGED",
                     "TEAM",
@@ -161,7 +161,7 @@ impl TeamService {
         .await?;
         if let Some(contest_id) = request.contest_id {
             enqueue_realtime(
-                &mut transaction,
+                self.outbox.as_ref(),
                 contest_id,
                 "CONTEST_TEAMS_CHANGED",
                 "STAFF",

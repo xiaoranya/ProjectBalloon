@@ -55,6 +55,7 @@ impl TeamService {
         .await
         .map_err(map_contest_team_write_error)?;
         roster_changed(
+            self.outbox.as_ref(),
             &mut transaction,
             actor.id,
             contest_id,
@@ -118,6 +119,7 @@ impl TeamService {
             ));
         }
         roster_changed(
+            self.outbox.as_ref(),
             &mut transaction,
             actor.id,
             contest_id,
@@ -187,6 +189,7 @@ pub(super) async fn lock_open_contest(
 }
 
 async fn roster_changed(
+    outbox: Option<&crate::features::realtime::RealtimeOutbox>,
     transaction: &mut Transaction<'_, Postgres>,
     actor_id: i64,
     contest_id: i64,
@@ -205,7 +208,7 @@ async fn roster_changed(
     )
     .await?;
     enqueue_realtime(
-        transaction,
+        outbox,
         contest_id,
         "CONTEST_TEAMS_CHANGED",
         "STAFF",
@@ -214,7 +217,7 @@ async fn roster_changed(
     )
     .await?;
     enqueue_realtime(
-        transaction,
+        outbox,
         contest_id,
         "CONTEST_TEAMS_CHANGED",
         "TEAM",
@@ -225,6 +228,7 @@ async fn roster_changed(
 }
 
 pub(super) async fn enqueue_for_team_contests(
+    outbox: Option<&crate::features::realtime::RealtimeOutbox>,
     transaction: &mut Transaction<'_, Postgres>,
     team_id: i64,
     event_type: &'static str,
@@ -237,8 +241,7 @@ pub(super) async fn enqueue_for_team_contests(
             .await
             .map_err(|error| AppError::internal("list team contests for realtime event", error))?;
     for contest_id in contest_ids {
-        enqueue_realtime(transaction, contest_id, event_type, "STAFF", None, payload.clone())
-            .await?;
+        enqueue_realtime(outbox, contest_id, event_type, "STAFF", None, payload.clone()).await?;
     }
     Ok(())
 }

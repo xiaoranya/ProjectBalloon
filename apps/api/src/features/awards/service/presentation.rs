@@ -193,9 +193,18 @@ impl AwardService {
         .await
         .map_err(|error| AppError::internal("save award presentation state", error))?;
         audit(&mut tx, actor.id, "AWARD_PRESENTATION_UPDATED", contest, ip).await?;
-        sqlx::query("INSERT INTO realtime_outbox(event_id,contest_id,event_type,scope,payload_json) VALUES($1,$2,'AWARDS_UPDATED','PUBLIC',$3)")
-            .bind(uuid::Uuid::new_v4()).bind(contest).bind(serde_json::json!({"categoryId":category_id,"status":request.status}))
-            .execute(&mut *tx).await.map_err(|error| AppError::internal("publish award presentation update", error))?;
+        crate::features::realtime::outbox::enqueue_optional(
+            self.outbox.as_ref(),
+            contest,
+            "AWARDS_UPDATED",
+            "PUBLIC",
+            None,
+            serde_json::json!({"categoryId":category_id,"status":request.status}),
+        )
+        .await
+        .map_err(|error| {
+            AppError::internal_message("publish award presentation update", format!("{error:?}"))
+        })?;
         tx.commit()
             .await
             .map_err(|error| AppError::internal("commit award presentation update", error))?;

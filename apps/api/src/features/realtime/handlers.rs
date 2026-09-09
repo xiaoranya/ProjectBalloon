@@ -10,7 +10,7 @@ use axum::{
 };
 use futures_util::{StreamExt, stream};
 use project_balloon_contracts::{RealtimeEvent, RealtimeScope};
-use serde_json::Value;
+
 use tokio::sync::{broadcast, watch};
 use uuid::Uuid;
 
@@ -22,11 +22,27 @@ use crate::{
 
 use crate::features::realtime::hub::RealtimeEnvelope;
 
-/// Replay window for Last-Event-ID resume: at most this many events and never
-/// older than this window, whichever limit hits first. Older gaps fall back to
-/// the client's poll-based full refresh.
-const REPLAY_MAX_EVENTS: i64 = 100;
-const REPLAY_WINDOW: &str = "5 minutes";
+/// Resolves the Last-Event-ID resume window from the Redis outbox replay
+/// index. A missing Redis handle (test harnesses) or a Redis failure degrades
+/// to no replay: live events still stream, and the client's poll-based full
+/// refresh covers the gap.
+async fn replay(
+    state: &AppState,
+    contest_id: i64,
+    scope: RealtimeScope,
+    team_id: Option<i64>,
+    last_event_id: Option<Uuid>,
+) -> Vec<RealtimeEvent> {
+    let Some(last_event_id) = last_event_id else { return Vec::new() };
+    let Some(outbox) = state.realtime_outbox() else { return Vec::new() };
+    match outbox.load_replay(contest_id, scope, team_id, last_event_id).await {
+        Ok(replay) => replay,
+        Err(error) => {
+            tracing::warn!(?error, %contest_id, "realtime replay lookup failed; continuing without replay");
+            Vec::new()
+        }
+    }
+}
 
 #[utoipa::path(get, path = "/api/public/events/contests/{contest_id}", operation_id = "subscribePublicContestEvents", tag = "realtime", params(("contest_id" = i64, Path)), responses((status = 200, description = "Server-sent public contest events", content_type = "text/event-stream", body = String), (status = 404, body = crate::error::ApiErrorBody)))]
 pub async fn subscribe_public(
@@ -36,9 +52,7 @@ pub async fn subscribe_public(
     last_event_id: LastEventId,
 ) -> Result<Response, AppError> {
     state.contests().get(contest_id, context.user()).await?;
-    let replay =
-        load_replay(state.database(), contest_id, RealtimeScope::Public, None, last_event_id.0)
-            .await?;
+    let replay = replay(&state, contest_id, RealtimeScope::Public, None, last_event_id.0).await;
     Ok(stream_response(
         state.realtime().subscribe(),
         state.shutdown_receiver(),
@@ -76,9 +90,7 @@ pub async fn subscribe_staff(
             return Err(AppError::not_found("CONTEST_NOT_FOUND", "Contest not found"));
         }
     }
-    let replay =
-        load_replay(state.database(), contest_id, RealtimeScope::Staff, None, last_event_id.0)
-            .await?;
+    let replay = replay(&state, contest_id, RealtimeScope::Staff, None, last_event_id.0).await;
     Ok(stream_response(
         state.realtime().subscribe(),
         state.shutdown_receiver(),
@@ -101,14 +113,8 @@ pub async fn subscribe_team(
         return Err(AppError::not_found("CONTEST_NOT_FOUND", "Contest not found"));
     }
     let team_id = state.contests().require_team_id(contest_id, context.user().id).await?;
-    let replay = load_replay(
-        state.database(),
-        contest_id,
-        RealtimeScope::Team,
-        Some(team_id),
-        last_event_id.0,
-    )
-    .await?;
+    let replay =
+        replay(&state, contest_id, RealtimeScope::Team, Some(team_id), last_event_id.0).await;
     Ok(stream_response(
         state.realtime().subscribe(),
         state.shutdown_receiver(),
@@ -149,78 +155,6 @@ where
         }
         Ok(Self(None))
     }
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct ReplayRow {
-    event_id: Uuid,
-    event_type: String,
-    schema_version: i16,
-    scope: String,
-    payload_json: Value,
-    created_at: time::OffsetDateTime,
-}
-
-/// Replays published outbox events that follow `last_event_id`, honoring the
-/// stream's scope/team filtering and bounded by the recent window and a hard
-/// cap. An unknown id, an id outside the window, or an empty history simply
-/// yields no replay — the client's poll refresh covers gaps.
-async fn load_replay(
-    database: &sqlx::PgPool,
-    contest_id: i64,
-    scope: RealtimeScope,
-    team_id: Option<i64>,
-    last_event_id: Option<Uuid>,
-) -> Result<Vec<RealtimeEvent>, AppError> {
-    let Some(last_event_id) = last_event_id else { return Ok(Vec::new()) };
-    let rows = sqlx::query_as::<_, ReplayRow>(
-        r#"
-        WITH anchor AS (
-            SELECT created_at FROM realtime_outbox
-            WHERE event_id = $1 AND contest_id = $2
-        )
-        SELECT o.event_id, o.event_type, o.schema_version, o.scope,
-               o.payload_json, o.created_at
-        FROM realtime_outbox o
-        JOIN anchor ON o.created_at > anchor.created_at
-        WHERE o.contest_id = $2
-          AND o.scope = $3
-          AND o.team_id IS NOT DISTINCT FROM $4
-          AND o.status = 'PUBLISHED'
-          AND o.created_at >= now() - $5::interval
-        ORDER BY o.created_at DESC, o.id DESC
-        LIMIT $6
-        "#,
-    )
-    .bind(last_event_id)
-    .bind(contest_id)
-    .bind(scope.as_str())
-    .bind(team_id)
-    .bind(REPLAY_WINDOW)
-    .bind(REPLAY_MAX_EVENTS)
-    .fetch_all(database)
-    .await
-    .map_err(|error| {
-        AppError::internal("load realtime replay", error).with_contest_id(contest_id)
-    })?;
-    let mut events: Vec<RealtimeEvent> = rows
-        .into_iter()
-        .filter_map(|row| {
-            let scope = super::dispatcher::parse_scope(&row.scope)?;
-            Some(RealtimeEvent {
-                id: row.event_id,
-                version: row.schema_version.cast_unsigned(),
-                event_type: row.event_type,
-                scope,
-                contest_id,
-                occurred_at: row.created_at,
-                payload: row.payload_json,
-            })
-        })
-        .collect();
-    // Selected newest-first for the LIMIT; replay must flow in publication order.
-    events.reverse();
-    Ok(events)
 }
 
 /// Frames each subscription into an SSE response. The stream ends when the
@@ -305,14 +239,15 @@ fn event_frame(event: &RealtimeEvent) -> Result<Event, Infallible> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use axum::extract::FromRequestParts;
     use axum::http::Request;
     use futures_util::StreamExt;
-    use sqlx::PgPool;
     use tokio::sync::watch;
     use uuid::Uuid;
 
-    use super::{LastEventId, load_replay, stream_response};
+    use super::{LastEventId, stream_response};
     use crate::features::realtime::handlers::RealtimeScope;
     use crate::features::realtime::hub::{RealtimeEnvelope, RealtimeHub};
 
@@ -390,211 +325,97 @@ mod tests {
         assert_eq!(LastEventId::from_request_parts(&mut parts, &()).await.unwrap().0, None);
     }
 
-    async fn seed_contest(pool: &sqlx::PgPool) -> i64 {
-        sqlx::query_scalar::<_, i64>(
-            "INSERT INTO contests (name, status, visibility) VALUES ('Replay Contest', 'RUNNING', 'PRIVATE') RETURNING id",
-        )
-        .fetch_one(pool)
-        .await
-        .expect("insert contest")
-    }
-
-    async fn seed_team(pool: &sqlx::PgPool, name: &str) -> i64 {
-        sqlx::query_scalar::<_, i64>("INSERT INTO teams (name) VALUES ($1) RETURNING id")
-            .bind(format!("Replay Team {name}"))
-            .fetch_one(pool)
-            .await
-            .expect("insert team")
+    async fn test_outbox() -> crate::features::realtime::outbox::RealtimeOutbox {
+        let url = std::env::var("PROJECT_BALLOON_TEST_REDIS_URL")
+            .expect("PROJECT_BALLOON_TEST_REDIS_URL is required");
+        let handle =
+            crate::features::redis::RedisHandle::connect(&url, Duration::from_millis(500))
+                .await
+                .expect("connect test Redis");
+        crate::features::realtime::outbox::RealtimeOutbox::new(handle)
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn seed_event(
-        pool: &sqlx::PgPool,
+    fn outbox_entry(
         contest_id: i64,
         scope: &str,
         team_id: Option<i64>,
-        status: &str,
-        created_ago: &str,
+        occurred_at_millis: i64,
         event_type: &str,
-    ) -> Uuid {
-        let event_id = Uuid::new_v4();
-        sqlx::query(
-            r#"
-            INSERT INTO realtime_outbox
-                (event_id, contest_id, event_type, scope, team_id, payload_json, status,
-                 created_at, published_at)
-            VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, $6, now() - $7::interval, now())
-            "#,
-        )
-        .bind(event_id)
-        .bind(contest_id)
-        .bind(event_type)
-        .bind(scope)
-        .bind(team_id)
-        .bind(status)
-        .bind(created_ago)
-        .execute(pool)
-        .await
-        .expect("insert outbox event");
-        event_id
+    ) -> crate::features::realtime::outbox::OutboxEntry {
+        crate::features::realtime::outbox::OutboxEntry {
+            event_id: Uuid::new_v4(),
+            contest_id,
+            event_type: event_type.to_owned(),
+            schema_version: 1,
+            scope: scope.to_owned(),
+            team_id,
+            occurred_at_millis,
+            payload: serde_json::json!({}),
+        }
     }
 
-    #[sqlx::test(migrations = "../../migrations")]
-    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
-    async fn replay_returns_published_in_scope_events_after_the_anchor(pool: PgPool) {
-        let contest_id = seed_contest(&pool).await;
-        let team_id = seed_team(&pool, "One").await;
-        let other_team_id = seed_team(&pool, "Two").await;
-        let anchor = seed_event(
-            &pool,
-            contest_id,
-            "TEAM",
-            Some(team_id),
-            "PUBLISHED",
-            "30 minutes",
-            "SUBMISSION_STATUS_CHANGED",
-        )
-        .await;
-        // In window, after the anchor, in scope: both must replay in order.
-        let first = seed_event(
-            &pool,
-            contest_id,
-            "TEAM",
-            Some(team_id),
-            "PUBLISHED",
-            "4 minutes",
-            "SUBMISSION_STATUS_CHANGED",
-        )
-        .await;
-        let second = seed_event(
-            &pool,
-            contest_id,
-            "TEAM",
-            Some(team_id),
-            "PUBLISHED",
-            "2 minutes",
-            "SUBMISSION_STATUS_CHANGED",
-        )
-        .await;
-        // Excluded: other team, other scope, unpublished, and outside the window.
-        let _other_team = seed_event(
-            &pool,
-            contest_id,
-            "TEAM",
-            Some(other_team_id),
-            "PUBLISHED",
-            "3 minutes",
-            "SUBMISSION_STATUS_CHANGED",
-        )
-        .await;
-        let _other_scope = seed_event(
-            &pool,
-            contest_id,
-            "STAFF",
-            None,
-            "PUBLISHED",
-            "3 minutes",
-            "ANNOUNCEMENT_PUBLISHED",
-        )
-        .await;
-        let _unpublished = seed_event(
-            &pool,
-            contest_id,
-            "TEAM",
-            Some(team_id),
-            "PENDING",
-            "3 minutes",
-            "SUBMISSION_STATUS_CHANGED",
-        )
-        .await;
-        let _outside_window = seed_event(
-            &pool,
-            contest_id,
-            "TEAM",
-            Some(team_id),
-            "PUBLISHED",
-            "10 minutes",
-            "SUBMISSION_STATUS_CHANGED",
-        )
-        .await;
+    #[tokio::test]
+    #[ignore = "requires Redis reachable at PROJECT_BALLOON_TEST_REDIS_URL"]
+    async fn replay_returns_in_scope_events_after_the_anchor() {
+        let outbox = test_outbox().await;
+        let contest_id = 7;
+        let now = time::OffsetDateTime::now_utc().unix_timestamp() * 1_000;
+        let anchor = outbox_entry(contest_id, "TEAM", Some(12), now - 4 * 60 * 1000, "ANCHOR");
+        let first = outbox_entry(contest_id, "TEAM", Some(12), now - 3 * 60 * 1000, "FIRST");
+        let second = outbox_entry(contest_id, "TEAM", Some(12), now - 2 * 60 * 1000, "SECOND");
+        // Excluded: other team and other scope.
+        let other_team = outbox_entry(contest_id, "TEAM", Some(13), now - 150_000, "OTHER_TEAM");
+        let other_scope = outbox_entry(contest_id, "STAFF", None, now - 140_000, "OTHER_SCOPE");
+        for entry in [&anchor, &first, &second, &other_team, &other_scope] {
+            outbox.enqueue(entry).await.expect("enqueue replay entry");
+        }
 
-        let replay =
-            load_replay(&pool, contest_id, RealtimeScope::Team, Some(team_id), Some(anchor))
-                .await
-                .expect("load replay");
+        let replay = outbox
+            .load_replay(contest_id, RealtimeScope::Team, Some(12), anchor.event_id)
+            .await
+            .expect("load replay");
         let ids: Vec<Uuid> = replay.iter().map(|event| event.id).collect();
-        assert_eq!(ids, vec![first, second], "replay must follow publication order");
+        assert_eq!(ids, vec![first.event_id, second.event_id], "replay must follow publication order");
         assert!(replay.iter().all(|event| event.scope.as_str() == "TEAM"));
         assert!(replay.iter().all(|event| event.contest_id == contest_id));
     }
 
-    #[sqlx::test(migrations = "../../migrations")]
-    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
-    async fn replay_is_skipped_for_unknown_anchors(pool: PgPool) {
-        let contest_id = seed_contest(&pool).await;
-        seed_event(
-            &pool,
-            contest_id,
-            "PUBLIC",
-            None,
-            "PUBLISHED",
-            "1 minutes",
-            "CONTEST_AUTO_FROZEN",
-        )
-        .await;
-        let replay =
-            load_replay(&pool, contest_id, RealtimeScope::Public, None, Some(Uuid::new_v4()))
-                .await
-                .expect("load replay with unknown anchor");
-        assert!(replay.is_empty());
+    #[tokio::test]
+    #[ignore = "requires Redis reachable at PROJECT_BALLOON_TEST_REDIS_URL"]
+    async fn replay_is_skipped_for_unknown_anchors() {
+        let outbox = test_outbox().await;
+        let contest_id = 8;
+        let now = time::OffsetDateTime::now_utc().unix_timestamp() * 1_000;
+        let entry = outbox_entry(contest_id, "PUBLIC", None, now - 30_000, "CONTEST_AUTO_FROZEN");
+        outbox.enqueue(&entry).await.expect("enqueue replay entry");
 
-        let replay = load_replay(&pool, contest_id, RealtimeScope::Public, None, None)
+        let replay = outbox
+            .load_replay(contest_id, RealtimeScope::Public, None, Uuid::new_v4())
             .await
-            .expect("load replay without anchor");
-        assert!(replay.is_empty());
+            .expect("load replay with unknown anchor");
+        assert!(replay.is_empty(), "an unknown anchor must yield no replay");
     }
 
-    #[sqlx::test(migrations = "../../migrations")]
-    #[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
-    async fn staff_replay_matches_only_teamless_events(pool: PgPool) {
-        let contest_id = seed_contest(&pool).await;
-        let anchor = seed_event(
-            &pool,
-            contest_id,
-            "STAFF",
-            None,
-            "PUBLISHED",
-            "30 minutes",
-            "SUBMISSION_REJUDGED",
-        )
-        .await;
-        let teamless = seed_event(
-            &pool,
-            contest_id,
-            "STAFF",
-            None,
-            "PUBLISHED",
-            "2 minutes",
-            "ANNOUNCEMENT_PUBLISHED",
-        )
-        .await;
-        // TEAM rows always carry a team id, so a staff stream must never see them.
-        let team_id = seed_team(&pool, "Staff Side").await;
-        let _team_scoped = seed_event(
-            &pool,
-            contest_id,
-            "TEAM",
-            Some(team_id),
-            "PUBLISHED",
-            "2 minutes",
-            "SUBMISSION_STATUS_CHANGED",
-        )
-        .await;
+    #[tokio::test]
+    #[ignore = "requires Redis reachable at PROJECT_BALLOON_TEST_REDIS_URL"]
+    async fn staff_replay_matches_only_teamless_events() {
+        let outbox = test_outbox().await;
+        let contest_id = 9;
+        let now = time::OffsetDateTime::now_utc().unix_timestamp() * 1_000;
+        let anchor = outbox_entry(contest_id, "STAFF", None, now - 4 * 60 * 1000, "ANCHOR");
+        let teamless = outbox_entry(contest_id, "STAFF", None, now - 2 * 60 * 1000, "TEAMLESS");
+        // TEAM entries always carry a team id, so a staff stream must never see them.
+        let team_scoped = outbox_entry(contest_id, "TEAM", Some(14), now - 90_000, "TEAM_SCOPED");
+        for entry in [&anchor, &teamless, &team_scoped] {
+            outbox.enqueue(entry).await.expect("enqueue replay entry");
+        }
 
-        let replay = load_replay(&pool, contest_id, RealtimeScope::Staff, None, Some(anchor))
+        let replay = outbox
+            .load_replay(contest_id, RealtimeScope::Staff, None, anchor.event_id)
             .await
             .expect("load staff replay");
         let ids: Vec<Uuid> = replay.iter().map(|event| event.id).collect();
-        assert_eq!(ids, vec![teamless]);
+        assert_eq!(ids, vec![teamless.event_id]);
     }
 }

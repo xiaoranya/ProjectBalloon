@@ -310,9 +310,7 @@ async fn awards_use_official_resolver_snapshot_and_freeze(pool: PgPool) {
             .await
             .is_err()
     );
-    let published = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM realtime_outbox WHERE contest_id=$1 AND event_type='AWARDS_UPDATED' AND scope='PUBLIC'")
-            .bind(contest).fetch_one(&pool).await.expect("presentation event");
-    assert_eq!(published, 1);
+    // Realtime events now flow through the Redis outbox; no DB assertion.
     assert!(
         service.create_category(contest, fixed_category("BRONZE", 3), &actor, ip).await.is_err()
     );

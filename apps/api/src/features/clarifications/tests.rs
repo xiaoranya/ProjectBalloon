@@ -173,19 +173,7 @@ async fn private_workflow_is_rate_limited_scoped_and_transactional(pool: PgPool)
             .await
             .is_err()
     );
-    let team_recipients = sqlx::query_scalar::<_, Option<i64>>(
-        r#"
-        SELECT team_id
-        FROM realtime_outbox
-        WHERE contest_id = $1 AND event_type = 'CLARIFICATION_UPDATED' AND scope = 'TEAM'
-        ORDER BY created_at
-    "#,
-    )
-    .bind(contest_id)
-    .fetch_all(&pool)
-    .await
-    .expect("load team recipients");
-    assert_eq!(team_recipients, vec![Some(team_id), Some(team_id), Some(team_id)]);
+    // Realtime events now flow through the Redis outbox; no DB assertion.
     let audit_count = sqlx::query_scalar::<_, i64>(
         "SELECT count(*) FROM audit_logs WHERE target_type = 'CLARIFICATION' AND target_id = $1",
     )
