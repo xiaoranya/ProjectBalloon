@@ -21,7 +21,10 @@ const profiles = {
     duration: '30m',
     submissionRate: 300,
     printRate: 50,
-    screenUsers: 100,
+    // Real contests run about ten screens. The previous value (100) exceeded the
+    // server-side registration limit of 20 per window, so every extra client was
+    // rejected with 429 and the scenario measured rate limiting instead of load.
+    screenUsers: 10,
   },
 };
 
