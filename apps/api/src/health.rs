@@ -110,12 +110,9 @@ pub(crate) async fn liveness() -> Json<HealthResponse> {
 pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Json<HealthResponse>) {
     let probe = timeout(
         state.readiness_timeout(),
-        sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64)>(
+        sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64, i64, i64)>(
             r#"
             SELECT
-                (SELECT count(*) FROM realtime_outbox
-                 WHERE status IN ('PENDING', 'PUBLISHING')),
-                (SELECT count(*) FROM realtime_outbox WHERE status = 'FAILED'),
                 (SELECT count(*) FROM submission_outbox
                  WHERE status IN ('PENDING', 'PUBLISHING')),
                 (SELECT count(*) FROM submission_outbox WHERE status = 'FAILED'),
@@ -140,8 +137,6 @@ pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Jso
 
     match probe {
         Ok(Ok((
-            pending,
-            failed,
             judge_pending,
             judge_failed,
             online_workers,
@@ -153,6 +148,26 @@ pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Jso
             missing_references,
         ))) => {
             let redis_connected = state.realtime().redis_status();
+            // The realtime outbox is Redis-native now; its counters come from
+            // the consumer group rather than PostgreSQL.
+            let realtime_outbox = match state.realtime_outbox() {
+                Some(outbox) => match timeout(state.readiness_timeout(), outbox.health()).await {
+                    Ok(Ok((pending, failed))) => Some(RealtimeOutboxHealth {
+                        pending,
+                        failed,
+                        redis_connected,
+                    }),
+                    Ok(Err(error)) => {
+                        warn!(?error, "realtime outbox health probe failed");
+                        None
+                    }
+                    Err(_) => {
+                        warn!("realtime outbox health probe timed out");
+                        None
+                    }
+                },
+                None => None,
+            };
             let object_storage = match state.object_storage() {
                 Some(storage) => match timeout(state.readiness_timeout(), storage.check()).await {
                     Ok(Ok(())) => Some(DependencyHealth { status: HealthStatus::Up }),
@@ -230,7 +245,7 @@ pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Jso
                 status_code,
                 Json(response(
                     status,
-                    Some(RealtimeOutboxHealth { pending, failed, redis_connected }),
+                    realtime_outbox,
                     object_storage,
                     Some(ObjectCleanupHealth {
                         pending: cleanup_pending,
@@ -349,6 +364,7 @@ mod tests {
                 b"test-csrf-secret-with-at-least-32-bytes",
                 16,
                 false,
+                None,
             ),
             vec!["127.0.0.1/32".parse().expect("CIDR")],
         )

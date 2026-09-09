@@ -33,6 +33,8 @@ pub struct RabbitJudgeResultConsumer {
     request_timeout: Duration,
     reconnect_delay: Duration,
     prefetch: u16,
+    outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    projection: Option<crate::features::scoreboard::ScoreboardProjection>,
 }
 
 impl RabbitJudgeResultConsumer {
@@ -44,7 +46,33 @@ impl RabbitJudgeResultConsumer {
         reconnect_delay: Duration,
         prefetch: u16,
     ) -> Self {
-        Self { database, uri, request_timeout, reconnect_delay, prefetch }
+        Self {
+            database,
+            uri,
+            request_timeout,
+            reconnect_delay,
+            prefetch,
+            outbox: None,
+            projection: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
+        self.outbox = outbox;
+        self
+    }
+
+    #[must_use]
+    pub fn with_projection_option(
+        mut self,
+        projection: Option<crate::features::scoreboard::ScoreboardProjection>,
+    ) -> Self {
+        self.projection = projection;
+        self
     }
 
     pub async fn run(self, mut shutdown: watch::Receiver<bool>) {
@@ -121,7 +149,9 @@ impl RabbitJudgeResultConsumer {
             ),
         )
         .await?;
-        let processor = JudgeResultProcessor::new(self.database.clone());
+        let processor = JudgeResultProcessor::new(self.database.clone())
+            .with_outbox_option(self.outbox.clone())
+            .with_projection_option(self.projection.clone());
         loop {
             tokio::select! {
                 delivery = consumer.next() => {

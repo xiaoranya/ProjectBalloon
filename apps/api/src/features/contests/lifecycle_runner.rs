@@ -4,9 +4,9 @@ use serde_json::json;
 use sqlx::{PgPool, Postgres, Transaction};
 use tokio::sync::watch;
 use tracing::warn;
-use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::features::realtime::RealtimeOutbox;
 
 // Keep an end timestamp typo recoverable during the normal administrative
 // extension window. Explicit transitions remain the only way to reopen a
@@ -16,12 +16,29 @@ const AUTOMATIC_END_GRACE_SECONDS: i32 = 60;
 pub struct ContestLifecycleRunner {
     database: PgPool,
     poll_interval: Duration,
+    outbox: Option<RealtimeOutbox>,
+    projection: Option<crate::features::scoreboard::ScoreboardProjection>,
 }
 
 impl ContestLifecycleRunner {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database, poll_interval: Duration::from_secs(1) }
+        Self { database, poll_interval: Duration::from_secs(1), outbox: None, projection: None }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(mut self, outbox: Option<RealtimeOutbox>) -> Self {
+        self.outbox = outbox;
+        self
+    }
+
+    #[must_use]
+    pub fn with_projection_option(
+        mut self,
+        projection: Option<crate::features::scoreboard::ScoreboardProjection>,
+    ) -> Self {
+        self.projection = projection;
+        self
     }
 
     #[cfg(test)]
@@ -54,7 +71,8 @@ impl ContestLifecycleRunner {
             .await
             .map_err(|error| AppError::internal("begin automatic contest lifecycle", error))?;
         let mut changed = 0;
-        changed += transition_due(
+        let started = transition_due(
+            &self.outbox,
             &mut transaction,
             "FROZEN_CONFIG",
             "RUNNING",
@@ -63,8 +81,11 @@ impl ContestLifecycleRunner {
             "CONTEST_AUTO_STARTED",
         )
         .await?;
-        changed += record_freezes(&mut transaction).await?;
-        changed += transition_due(
+        changed += started.len();
+        let frozen = record_freezes(&self.outbox, &mut transaction).await?;
+        changed += frozen.len();
+        let mut ended = transition_due(
+            &self.outbox,
             &mut transaction,
             "RUNNING",
             "ENDED",
@@ -73,31 +94,94 @@ impl ContestLifecycleRunner {
             "CONTEST_AUTO_ENDED",
         )
         .await?;
-        changed += transition_due(
-            &mut transaction,
-            "PAUSED",
-            "ENDED",
-            "ENDED",
-            "end_at",
-            "CONTEST_AUTO_ENDED",
-        )
-        .await?;
+        changed += ended.len();
+        ended.extend(
+            transition_due(
+                &self.outbox,
+                &mut transaction,
+                "PAUSED",
+                "ENDED",
+                "ENDED",
+                "end_at",
+                "CONTEST_AUTO_ENDED",
+            )
+            .await?,
+        );
         transaction
             .commit()
             .await
             .map_err(|error| AppError::internal("commit automatic contest lifecycle", error))?;
-        Ok(changed)
+        self.maintain_scoreboard_projection(&started, &frozen, &ended).await;
+        Ok(changed as u64)
+    }
+
+    /// Contest lifecycle side effects for the Redis scoreboard projection:
+    /// warm it on start, snapshot the frozen board at freeze, and backfill the
+    /// durable DB projection once the contest ends (running contests no longer
+    /// write `contest_scoreboard_cells` per judgement).
+    async fn maintain_scoreboard_projection(
+        &self,
+        started: &[i64],
+        frozen: &[i64],
+        ended: &[i64],
+    ) {
+        let Some(projection) = &self.projection else { return };
+        for contest_id in started {
+            if let Err(error) = projection.rebuild_contest(&self.database, *contest_id).await {
+                warn!(?error, %contest_id, "scoreboard projection warm-up failed");
+            }
+        }
+        for contest_id in frozen {
+            if let Err(error) = projection.freeze_snapshot(*contest_id).await {
+                warn!(?error, %contest_id, "scoreboard freeze snapshot failed");
+            }
+        }
+        for contest_id in ended {
+            if let Err(error) = backfill_cells(&self.database, *contest_id).await {
+                warn!(?error, %contest_id, "scoreboard DB backfill after contest end failed");
+            }
+        }
     }
 }
 
+/// Recomputes the durable `contest_scoreboard_cells/rows` for a finished
+/// contest from the authoritative submission history (one bounded rescan per
+/// cell, once per contest).
+async fn backfill_cells(
+    database: &PgPool,
+    contest_id: i64,
+) -> Result<(), AppError> {
+    let mut transaction = database
+        .begin()
+        .await
+        .map_err(|error| AppError::internal("begin scoreboard backfill", error))?;
+    let pairs = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT DISTINCT team_id, problem_id FROM submissions WHERE contest_id = $1",
+    )
+    .bind(contest_id)
+    .fetch_all(&mut *transaction)
+    .await
+    .map_err(|error| AppError::internal("load scoreboard backfill cells", error))?;
+    for (team_id, problem_id) in pairs {
+        crate::features::scoreboard::rebuild_cell(&mut transaction, contest_id, team_id, problem_id)
+            .await
+            .map_err(|error| AppError::internal("backfill scoreboard cell", error))?;
+    }
+    transaction
+        .commit()
+        .await
+        .map_err(|error| AppError::internal("commit scoreboard backfill", error))
+}
+
 async fn transition_due(
+    outbox: &Option<RealtimeOutbox>,
     transaction: &mut Transaction<'_, Postgres>,
     from: &'static str,
     to: &'static str,
     milestone: &'static str,
     timestamp_column: &'static str,
     audit_action: &'static str,
-) -> Result<u64, AppError> {
+) -> Result<Vec<i64>, AppError> {
     let due_condition = if timestamp_column == "end_at" {
         format!("{timestamp_column} <= now() - interval '{AUTOMATIC_END_GRACE_SECONDS} seconds'")
     } else {
@@ -116,17 +200,20 @@ async fn transition_due(
         insert_milestone(transaction, *contest_id, milestone, *scheduled_at, from, to).await?;
         automatic_audit(transaction, *contest_id, audit_action, &format!("{from}->{to}")).await?;
         lifecycle_event(
-            transaction,
+            outbox,
             *contest_id,
             audit_action,
             json!({"from":from,"to":to,"scheduledAt":scheduled_at}),
         )
         .await?;
     }
-    Ok(due.len() as u64)
+    Ok(due.into_iter().map(|(contest_id, _)| contest_id).collect())
 }
 
-async fn record_freezes(transaction: &mut Transaction<'_, Postgres>) -> Result<u64, AppError> {
+async fn record_freezes(
+    outbox: &Option<RealtimeOutbox>,
+    transaction: &mut Transaction<'_, Postgres>,
+) -> Result<Vec<i64>, AppError> {
     let due = sqlx::query_as::<_, (i64, time::OffsetDateTime, String)>(
         r#"
         SELECT c.id,c.freeze_at,c.status
@@ -157,14 +244,14 @@ async fn record_freezes(transaction: &mut Transaction<'_, Postgres>) -> Result<u
         )
         .await?;
         lifecycle_event(
-            transaction,
+            outbox,
             *contest_id,
             "CONTEST_AUTO_FROZEN",
             json!({"status":status,"scheduledAt":scheduled_at}),
         )
         .await?;
     }
-    Ok(due.len() as u64)
+    Ok(due.into_iter().map(|(contest_id, _, _)| contest_id).collect())
 }
 
 async fn insert_milestone(
@@ -186,12 +273,20 @@ async fn automatic_audit(
     sqlx::query("INSERT INTO audit_logs(actor_user_id,action,target_type,target_id,request_ip,result) VALUES(NULL,$1,'CONTEST',$2,'system',$3)").bind(action).bind(contest_id.to_string()).bind(result).execute(&mut **transaction).await.map(|_|()).map_err(|error|AppError::internal("audit automatic contest lifecycle",error))
 }
 async fn lifecycle_event(
-    transaction: &mut Transaction<'_, Postgres>,
+    outbox: &Option<RealtimeOutbox>,
     contest_id: i64,
     event_type: &str,
     payload: serde_json::Value,
 ) -> Result<(), AppError> {
-    sqlx::query("INSERT INTO realtime_outbox(event_id,contest_id,event_type,scope,payload_json) VALUES($1,$2,$3,'PUBLIC',$4)").bind(Uuid::new_v4()).bind(contest_id).bind(event_type).bind(payload).execute(&mut **transaction).await.map(|_|()).map_err(|error|AppError::internal("publish automatic contest lifecycle",error))
+    crate::features::realtime::outbox::enqueue_optional(
+        outbox.as_ref(),
+        contest_id,
+        event_type,
+        "PUBLIC",
+        None,
+        payload,
+    )
+    .await
 }
 
 #[cfg(test)]

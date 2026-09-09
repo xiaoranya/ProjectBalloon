@@ -11,7 +11,9 @@ use axum::routing::get;
 
 #[derive(Debug, FromRow)]
 struct MetricsSnapshot {
+    #[sqlx(skip)]
     realtime_pending: i64,
+    #[sqlx(skip)]
     realtime_failed: i64,
     judge_pending: i64,
     judge_failed: i64,
@@ -46,7 +48,7 @@ pub(crate) async fn prometheus(
     if let Some(expected) = state.metrics_token() {
         authorize_metrics_request(&headers, expected)?;
     }
-    let snapshot = collect_snapshot(state.database())
+    let snapshot = collect_snapshot(state.database(), state.realtime_outbox())
         .await
         .map_err(|error| AppError::internal("collect Prometheus metrics", error))?;
     let body = render(&snapshot);
@@ -84,12 +86,19 @@ fn authorize_metrics_request(
     }
 }
 
-async fn collect_snapshot(database: &PgPool) -> Result<MetricsSnapshot, sqlx::Error> {
-    sqlx::query_as::<_, MetricsSnapshot>(
+async fn collect_snapshot(
+    database: &PgPool,
+    outbox: Option<&crate::features::realtime::RealtimeOutbox>,
+) -> Result<MetricsSnapshot, sqlx::Error> {
+    // The realtime outbox is Redis-native; its gauges come from the consumer
+    // group and dead-letter counter, defaulting to zero when unavailable.
+    let (realtime_pending, realtime_failed) = match outbox {
+        Some(outbox) => outbox.health().await.unwrap_or((0, 0)),
+        None => (0, 0),
+    };
+    let mut snapshot: MetricsSnapshot = sqlx::query_as::<_, MetricsSnapshot>(
         r#"
         SELECT
-            (SELECT count(*) FROM realtime_outbox WHERE status IN ('PENDING', 'PUBLISHING')) AS realtime_pending,
-            (SELECT count(*) FROM realtime_outbox WHERE status = 'FAILED') AS realtime_failed,
             (SELECT count(*) FROM submission_outbox WHERE status IN ('PENDING', 'PUBLISHING')) AS judge_pending,
             (SELECT count(*) FROM submission_outbox WHERE status = 'FAILED') AS judge_failed,
             (SELECT count(*) FROM object_storage_cleanup_tasks WHERE status IN ('PENDING', 'PROCESSING')) AS cleanup_pending,
@@ -108,7 +117,10 @@ async fn collect_snapshot(database: &PgPool) -> Result<MetricsSnapshot, sqlx::Er
         "#,
     )
     .fetch_one(database)
-    .await
+    .await?;
+    snapshot.realtime_pending = realtime_pending;
+    snapshot.realtime_failed = realtime_failed;
+    Ok(snapshot)
 }
 
 fn render(value: &MetricsSnapshot) -> String {
@@ -287,7 +299,7 @@ mod tests {
         .await
         .expect("insert stale worker");
 
-        let stale = collect_snapshot(&pool).await.expect("snapshot with only stale worker");
+        let stale = collect_snapshot(&pool, None).await.expect("snapshot with only stale worker");
         assert_eq!(stale.worker_capacity, 0, "stale heartbeats must not contribute capacity");
         assert_eq!(stale.worker_active, 0);
 
@@ -305,7 +317,7 @@ mod tests {
         .await
         .expect("insert fresh worker");
 
-        let fresh = collect_snapshot(&pool).await.expect("snapshot with a fresh worker");
+        let fresh = collect_snapshot(&pool, None).await.expect("snapshot with a fresh worker");
         assert_eq!(fresh.worker_capacity, 3, "COALESCE must expose fresh capacity");
         assert_eq!(fresh.worker_active, 1);
     }

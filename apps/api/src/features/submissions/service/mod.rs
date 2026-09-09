@@ -63,12 +63,29 @@ struct RejudgeContext {
 
 pub struct SubmissionService {
     pub(super) database: PgPool,
+    pub(super) outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    pub(super) projection: Option<crate::features::scoreboard::ScoreboardProjection>,
 }
 
 impl SubmissionService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, outbox: None, projection: None }
+    }
+
+    #[must_use]
+    pub fn with_projection_option(
+        mut self,
+        projection: Option<crate::features::scoreboard::ScoreboardProjection>,
+    ) -> Self {
+        self.projection = projection;
+        self
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(mut self, outbox: Option<crate::features::realtime::RealtimeOutbox>) -> Self {
+        self.outbox = outbox;
+        self
     }
 
     pub async fn submit(
@@ -262,25 +279,21 @@ impl SubmissionService {
                 .with_judgement_id(judgement_id)
                 .with_user_id(actor.id)
         })?;
-        sqlx::query(
-            r#"
-            INSERT INTO realtime_outbox
-                (event_id, contest_id, event_type, scope, team_id, payload_json)
-            VALUES ($1, $2, 'SUBMISSION_STATUS_CHANGED', 'TEAM', $3, $4)
-            "#,
+        crate::features::realtime::outbox::enqueue_optional(
+            self.outbox.as_ref(),
+            contest_id,
+            "SUBMISSION_STATUS_CHANGED",
+            "TEAM",
+            Some(context.team_id),
+            json!({
+                "submissionId": submission_id,
+                "judgementId": judgement_id,
+                "status": "PENDING"
+            }),
         )
-        .bind(Uuid::new_v4())
-        .bind(contest_id)
-        .bind(context.team_id)
-        .bind(json!({
-            "submissionId": submission_id,
-            "judgementId": judgement_id,
-            "status": "PENDING"
-        }))
-        .execute(&mut *transaction)
         .await
         .map_err(|error| {
-            AppError::internal("enqueue submission realtime event", error)
+            error
                 .with_contest_id(contest_id)
                 .with_submission_id(submission_id)
                 .with_judgement_id(judgement_id)
