@@ -647,7 +647,18 @@ mod tests {
             "PAIRING_CODE_INVALID"
         );
 
-        let auth = AuthService::new(pool.clone(), Duration::from_secs(3600), false);
+        // Workstation sessions now live in Redis; run against the integration
+        // Redis when available and skip otherwise.
+        let Ok(redis_url) = std::env::var("PROJECT_BALLOON_TEST_REDIS_URL") else {
+            eprintln!("skipping: PROJECT_BALLOON_TEST_REDIS_URL is not set");
+            return;
+        };
+        let redis =
+            crate::features::redis::RedisHandle::connect(&redis_url, Duration::from_millis(500))
+                .await
+                .expect("connect integration Redis");
+        let auth = AuthService::new(pool.clone(), Duration::from_secs(3600), false)
+            .with_redis_option(Some(redis));
         let grant =
             service.login_grant(DeploymentMode::Competition, ip, &code).await.expect("grant");
         let (session, _) = auth.create_workstation_session(grant).await.expect("session");

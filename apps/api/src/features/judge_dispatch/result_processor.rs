@@ -58,7 +58,7 @@ struct ResultContext {
     start_at: Option<OffsetDateTime>,
     scoring_icpc: bool,
     aggregation_best: bool,
-    max_score_milli: i64,
+    max_score_milli: i32,
 }
 
 impl JudgeResultProcessor {
@@ -339,7 +339,7 @@ impl JudgeResultProcessor {
             scoring_icpc: context.scoring_icpc,
             aggregation_best: context.aggregation_best,
             score_milli,
-            max_score_milli: context.max_score_milli,
+            max_score_milli: i64::from(context.max_score_milli),
         };
         if let Err(error) = projection.apply_judgement(&event).await {
             tracing::warn!(
