@@ -30,9 +30,8 @@ impl AppConfig {
         }
         let redis_operation_timeout_milliseconds = parse_positive(
             "PROJECT_BALLOON_REDIS_OPERATION_TIMEOUT_MILLISECONDS",
-            lookup("PROJECT_BALLOON_REDIS_OPERATION_TIMEOUT_MILLISECONDS").unwrap_or_else(|| {
-                DEFAULT_REDIS_OPERATION_TIMEOUT_MILLISECONDS.to_string()
-            }),
+            lookup("PROJECT_BALLOON_REDIS_OPERATION_TIMEOUT_MILLISECONDS")
+                .unwrap_or_else(|| DEFAULT_REDIS_OPERATION_TIMEOUT_MILLISECONDS.to_string()),
         )?;
 
         let realtime_redis = parse_realtime_redis(&mut lookup)?;

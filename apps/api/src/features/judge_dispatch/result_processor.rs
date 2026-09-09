@@ -68,7 +68,10 @@ impl JudgeResultProcessor {
     }
 
     #[must_use]
-    pub fn with_outbox_option(mut self, outbox: Option<crate::features::realtime::RealtimeOutbox>) -> Self {
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
         self.outbox = outbox;
         self
     }
@@ -189,8 +192,7 @@ impl JudgeResultProcessor {
         if !result.runs.is_empty() {
             // One round trip for every test case instead of one per run.
             let test_indexes: Vec<i32> = result.runs.iter().map(|run| run.test_index).collect();
-            let verdicts: Vec<&str> =
-                result.runs.iter().map(|run| run.verdict.as_str()).collect();
+            let verdicts: Vec<&str> = result.runs.iter().map(|run| run.verdict.as_str()).collect();
             let time_ms: Vec<i32> = result.runs.iter().map(|run| run.time_ms).collect();
             let memory_kb: Vec<i32> = result.runs.iter().map(|run| run.memory_kb).collect();
             let exit_codes: Vec<Option<i32>> =
@@ -296,7 +298,9 @@ impl JudgeResultProcessor {
                 }),
             )
             .await
-            .map_err(|error| ApplyResultError::Conflict(format!("enqueue status event failed: {error:?}")))?;
+            .map_err(|error| {
+                ApplyResultError::Conflict(format!("enqueue status event failed: {error:?}"))
+            })?;
         } else {
             apply_practice_progress(
                 &mut transaction,
@@ -338,8 +342,13 @@ impl JudgeResultProcessor {
             max_score_milli: context.max_score_milli,
         };
         if let Err(error) = projection.apply_judgement(&event).await {
-            tracing::warn!(?error, contest_id, team_id, problem = context.problem_id,
-                "scoreboard projection apply failed; marking cell dirty");
+            tracing::warn!(
+                ?error,
+                contest_id,
+                team_id,
+                problem = context.problem_id,
+                "scoreboard projection apply failed; marking cell dirty"
+            );
             projection.mark_dirty(contest_id, team_id, context.problem_id).await;
         }
     }

@@ -109,7 +109,7 @@ redis.call('INCR', KEYS[2])
 return 1
 "#;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 struct CellState {
     #[serde(default)]
     attempts: i64,
@@ -123,19 +123,6 @@ struct CellState {
     penalty: i64,
     #[serde(default)]
     score_milli: i64,
-}
-
-impl Default for CellState {
-    fn default() -> Self {
-        Self {
-            attempts: 0,
-            wa: 0,
-            solved: false,
-            solved_at: 0,
-            penalty: 0,
-            score_milli: 0,
-        }
-    }
 }
 
 /// Everything the incremental apply needs to know about one completed
@@ -271,7 +258,9 @@ impl ScoreboardProjection {
             let Some((team_id, problem_id)) = parse_field(&field) else { continue };
             match serde_json::from_str::<CellState>(&payload) {
                 Ok(state) => cells.push(to_cell_row(team_id, problem_id, &state)),
-                Err(error) => warn!(%error, %field, %contest_id, "ignoring malformed scoreboard cell"),
+                Err(error) => {
+                    warn!(%error, %field, %contest_id, "ignoring malformed scoreboard cell")
+                }
             }
         }
         let dirty: Vec<String> =
@@ -333,13 +322,7 @@ impl ScoreboardProjection {
                 score_milli,
             })
             .collect();
-        let state = project_cell(
-            unix_ms(start_at),
-            meta.1,
-            meta.2,
-            max_score_milli,
-            &replay,
-        );
+        let state = project_cell(unix_ms(start_at), meta.1, meta.2, max_score_milli, &replay);
         self.replace_cell(contest_id, team_id, problem_id, &state).await
     }
 
@@ -361,10 +344,7 @@ impl ScoreboardProjection {
         .await?;
         let Some(start_at) = meta.0 else { return Ok(()) };
         let start_ms = unix_ms(start_at);
-        let rows = sqlx::query_as::<
-            _,
-            (i64, i64, i64, OffsetDateTime, String, i64, i64),
-        >(
+        let rows = sqlx::query_as::<_, (i64, i64, i64, OffsetDateTime, String, i64, i64)>(
             r#"
             SELECT s.team_id, s.problem_id, s.id, s.submitted_at, j.verdict,
                    coalesce(j.score_milli, 0), coalesce(cp.max_score_milli, 0)
@@ -400,17 +380,17 @@ impl ScoreboardProjection {
                 .hset(
                     cells_key(contest_id),
                     cell_field(*team_id, *problem_id),
-                    serde_json::to_string(&state)
-                        .map_err(|error| sqlx::Error::Protocol(format!("encode cell: {error:?}")))?,
+                    serde_json::to_string(&state).map_err(|error| {
+                        sqlx::Error::Protocol(format!("encode cell: {error:?}"))
+                    })?,
                 )
                 .ignore();
         }
         pipeline.incr(version_key(contest_id), 1).ignore();
         pipeline.del(dirty_key(contest_id)).ignore();
-        self.redis
-            .query_pipeline::<()>(pipeline)
-            .await
-            .map_err(|error| sqlx::Error::Protocol(format!("rebuild contest projection: {error:?}")))
+        self.redis.query_pipeline::<()>(pipeline).await.map_err(|error| {
+            sqlx::Error::Protocol(format!("rebuild contest projection: {error:?}"))
+        })
     }
 
     /// Copies the live cells hash into the frozen snapshot when the contest
@@ -485,8 +465,7 @@ fn project_cell(
                 if !cell.solved {
                     cell.solved = true;
                     cell.solved_at = t;
-                    cell.penalty =
-                        (t - start_at_ms).div_euclid(60_000) + 20 * cell.wa;
+                    cell.penalty = (t - start_at_ms).div_euclid(60_000) + 20 * cell.wa;
                 }
             } else if PENALIZED.contains(&row.verdict.as_str())
                 && (!cell.solved || t < cell.solved_at)
@@ -523,7 +502,9 @@ fn to_cell_row(team_id: i64, problem_id: i64, state: &CellState) -> CellRow {
         wrong_attempts: i32::try_from(state.wa).unwrap_or(i32::MAX),
         solved: state.solved,
         solved_at: (state.solved_at > 0)
-            .then(|| OffsetDateTime::from_unix_timestamp_nanos(state.solved_at as i128 * 1_000_000).ok())
+            .then(|| {
+                OffsetDateTime::from_unix_timestamp_nanos(state.solved_at as i128 * 1_000_000).ok()
+            })
             .flatten(),
         penalty_minutes: state.penalty,
         score_milli: i32::try_from(state.score_milli).unwrap_or(i32::MAX),

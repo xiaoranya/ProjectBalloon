@@ -26,7 +26,10 @@ impl ResolverService {
     }
 
     #[must_use]
-    pub fn with_outbox_option(mut self, outbox: Option<crate::features::realtime::RealtimeOutbox>) -> Self {
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
         self.outbox = outbox;
         self
     }
@@ -340,13 +343,12 @@ impl ResolverService {
         )
         .await?;
         audit(&mut tx, actor.id, &format!("RESOLVER_{action}"), id, ip).await?;
-        let run_contest_id = sqlx::query_scalar::<_, i64>(
-            "SELECT contest_id FROM resolver_runs WHERE id = $1",
-        )
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|error| AppError::internal("load resolver run contest", error))?;
+        let run_contest_id =
+            sqlx::query_scalar::<_, i64>("SELECT contest_id FROM resolver_runs WHERE id = $1")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|error| AppError::internal("load resolver run contest", error))?;
         crate::features::realtime::outbox::enqueue_optional(
             self.outbox.as_ref(),
             run_contest_id,
@@ -406,8 +408,16 @@ impl ResolverService {
         insert_event(&mut tx, id, sequence, "AUTO_PLAY", actor.id,
             json!({"enabled": request.enabled, "intervalMilliseconds": request.interval_milliseconds, "stepIndex": step})).await?;
         audit(&mut tx, actor.id, "RESOLVER_AUTO_PLAY", id, ip).await?;
-        enqueue_state_event(self.outbox.as_ref(), &mut tx, id, official, "AUTO_PLAY", step, &status)
-            .await?;
+        enqueue_state_event(
+            self.outbox.as_ref(),
+            &mut tx,
+            id,
+            official,
+            "AUTO_PLAY",
+            step,
+            &status,
+        )
+        .await?;
         tx.commit()
             .await
             .map_err(|error| AppError::internal("commit Resolver auto-play", error))?;
@@ -502,13 +512,12 @@ async fn enqueue_state_event(
     step: i32,
     status: &str,
 ) -> Result<(), AppError> {
-    let contest_id = sqlx::query_scalar::<_, i64>(
-        "SELECT contest_id FROM resolver_runs WHERE id = $1",
-    )
-    .bind(run_id)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(|error| AppError::internal("load resolver run contest", error))?;
+    let contest_id =
+        sqlx::query_scalar::<_, i64>("SELECT contest_id FROM resolver_runs WHERE id = $1")
+            .bind(run_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|error| AppError::internal("load resolver run contest", error))?;
     crate::features::realtime::outbox::enqueue_optional(
         outbox,
         contest_id,
@@ -518,7 +527,9 @@ async fn enqueue_state_event(
         json!({"resolverRunId": run_id, "action": action, "stepIndex": step, "status": status}),
     )
     .await
-    .map_err(|error| AppError::internal_message("enqueue Resolver state event", format!("{error:?}")))
+    .map_err(|error| {
+        AppError::internal_message("enqueue Resolver state event", format!("{error:?}"))
+    })
 }
 
 async fn audit(

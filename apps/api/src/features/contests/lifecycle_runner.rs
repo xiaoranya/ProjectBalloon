@@ -119,12 +119,7 @@ impl ContestLifecycleRunner {
     /// warm it on start, snapshot the frozen board at freeze, and backfill the
     /// durable DB projection once the contest ends (running contests no longer
     /// write `contest_scoreboard_cells` per judgement).
-    async fn maintain_scoreboard_projection(
-        &self,
-        started: &[i64],
-        frozen: &[i64],
-        ended: &[i64],
-    ) {
+    async fn maintain_scoreboard_projection(&self, started: &[i64], frozen: &[i64], ended: &[i64]) {
         let Some(projection) = &self.projection else { return };
         for contest_id in started {
             if let Err(error) = projection.rebuild_contest(&self.database, *contest_id).await {
@@ -147,10 +142,7 @@ impl ContestLifecycleRunner {
 /// Recomputes the durable `contest_scoreboard_cells/rows` for a finished
 /// contest from the authoritative submission history (one bounded rescan per
 /// cell, once per contest).
-async fn backfill_cells(
-    database: &PgPool,
-    contest_id: i64,
-) -> Result<(), AppError> {
+async fn backfill_cells(database: &PgPool, contest_id: i64) -> Result<(), AppError> {
     let mut transaction = database
         .begin()
         .await
@@ -163,9 +155,14 @@ async fn backfill_cells(
     .await
     .map_err(|error| AppError::internal("load scoreboard backfill cells", error))?;
     for (team_id, problem_id) in pairs {
-        crate::features::scoreboard::rebuild_cell(&mut transaction, contest_id, team_id, problem_id)
-            .await
-            .map_err(|error| AppError::internal("backfill scoreboard cell", error))?;
+        crate::features::scoreboard::rebuild_cell(
+            &mut transaction,
+            contest_id,
+            team_id,
+            problem_id,
+        )
+        .await
+        .map_err(|error| AppError::internal("backfill scoreboard cell", error))?;
     }
     transaction
         .commit()

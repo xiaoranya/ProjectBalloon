@@ -130,13 +130,7 @@ impl RealtimeOutbox {
             .map_err(|error| AppError::internal("encode realtime outbox entry", error))?;
         let window_floor = now_millis() - REPLAY_WINDOW_MILLIS;
         let mut pipeline = redis::pipe();
-        pipeline
-            .cmd("XADD")
-            .arg(OUTBOX_STREAM_KEY)
-            .arg("*")
-            .arg("entry")
-            .arg(&payload)
-            .ignore();
+        pipeline.cmd("XADD").arg(OUTBOX_STREAM_KEY).arg("*").arg("entry").arg(&payload).ignore();
         pipeline
             .cmd("ZADD")
             .arg(replay_key(entry.contest_id))
@@ -148,7 +142,7 @@ impl RealtimeOutbox {
             .arg(anchor_key(entry.event_id))
             .arg(format!("{}\u{1f}{}", entry.contest_id, entry.replay_score()))
             .arg("EX")
-            .arg((REPLAY_WINDOW_MILLIS / 1000) as i64)
+            .arg(REPLAY_WINDOW_MILLIS / 1000)
             .ignore();
         pipeline
             .cmd("ZREMRANGEBYSCORE")
@@ -165,7 +159,7 @@ impl RealtimeOutbox {
         pipeline
             .cmd("EXPIRE")
             .arg(replay_key(entry.contest_id))
-            .arg((REPLAY_WINDOW_MILLIS / 1000 * 3) as i64)
+            .arg(REPLAY_WINDOW_MILLIS / 1000 * 3)
             .ignore();
         self.redis.query_pipeline::<()>(pipeline).await
     }
@@ -254,11 +248,7 @@ impl RealtimeOutbox {
         }
         let ids: Vec<&str> = pending.iter().map(|(id, _, _, _)| id.as_str()).collect();
         let mut claim = cmd("XCLAIM");
-        claim
-            .arg(OUTBOX_STREAM_KEY)
-            .arg(CONSUMER_GROUP)
-            .arg(consumer)
-            .arg(min_idle);
+        claim.arg(OUTBOX_STREAM_KEY).arg(CONSUMER_GROUP).arg(consumer).arg(min_idle);
         for id in &ids {
             claim.arg(id);
         }
@@ -284,9 +274,7 @@ impl RealtimeOutbox {
     /// Acknowledges a successfully delivered (or dead-lettered) entry.
     pub(crate) async fn ack(&self, stream_id: &str) -> Result<(), AppError> {
         self.redis
-            .query::<()>(
-                cmd("XACK").arg(OUTBOX_STREAM_KEY).arg(CONSUMER_GROUP).arg(stream_id),
-            )
+            .query::<()>(cmd("XACK").arg(OUTBOX_STREAM_KEY).arg(CONSUMER_GROUP).arg(stream_id))
             .await
     }
 
@@ -298,10 +286,8 @@ impl RealtimeOutbox {
     /// Health snapshot: entries awaiting confirmed delivery (pending in the
     /// consumer group) and dead-lettered entries so far.
     pub async fn health(&self) -> Result<(i64, i64), AppError> {
-        let pending: Vec<redis::Value> = self
-            .redis
-            .query(cmd("XPENDING").arg(OUTBOX_STREAM_KEY).arg(CONSUMER_GROUP))
-            .await?;
+        let pending: Vec<redis::Value> =
+            self.redis.query(cmd("XPENDING").arg(OUTBOX_STREAM_KEY).arg(CONSUMER_GROUP)).await?;
         let pending_count = pending
             .first()
             .and_then(|value| redis::FromRedisValue::from_redis_value(value.clone()).ok())
@@ -365,7 +351,9 @@ impl RealtimeOutbox {
     /// Parses a raw `XREAD`/`XCLAIM` reply: `[stream, [[id, [f, v, ...]], ...]]`
     /// into `(stream_id, field_map)` pairs. Null replies (no data) yield an
     /// empty vector.
-    fn parse_xread(reply: redis::Value) -> Vec<(String, std::collections::HashMap<String, String>)> {
+    fn parse_xread(
+        reply: redis::Value,
+    ) -> Vec<(String, std::collections::HashMap<String, String>)> {
         use redis::Value::{Array, BulkString, Nil};
         let mut parsed = Vec::new();
         let streams = match reply {

@@ -328,10 +328,9 @@ mod tests {
     async fn test_outbox() -> crate::features::realtime::outbox::RealtimeOutbox {
         let url = std::env::var("PROJECT_BALLOON_TEST_REDIS_URL")
             .expect("PROJECT_BALLOON_TEST_REDIS_URL is required");
-        let handle =
-            crate::features::redis::RedisHandle::connect(&url, Duration::from_millis(500))
-                .await
-                .expect("connect test Redis");
+        let handle = crate::features::redis::RedisHandle::connect(&url, Duration::from_millis(500))
+            .await
+            .expect("connect test Redis");
         crate::features::realtime::outbox::RealtimeOutbox::new(handle)
     }
 
@@ -376,7 +375,11 @@ mod tests {
             .await
             .expect("load replay");
         let ids: Vec<Uuid> = replay.iter().map(|event| event.id).collect();
-        assert_eq!(ids, vec![first.event_id, second.event_id], "replay must follow publication order");
+        assert_eq!(
+            ids,
+            vec![first.event_id, second.event_id],
+            "replay must follow publication order"
+        );
         assert!(replay.iter().all(|event| event.scope.as_str() == "TEAM"));
         assert!(replay.iter().all(|event| event.contest_id == contest_id));
     }

@@ -408,24 +408,27 @@ async fn spawn_background_runners(
     };
     let redis_subscriber_task =
         redis_subscriber.map(|subscriber| tokio::spawn(subscriber.run(shutdown_rx.clone())));
-    let dispatcher_task = config.realtime_dispatcher_enabled.then(|| {
-        state.realtime_outbox().cloned().map(|outbox| {
-            tokio::spawn(
-                OutboxDispatcher::new(
-                    outbox,
-                    publisher,
-                    DispatcherConfig {
-                        poll_interval: config.realtime_poll_interval,
-                        lease: config.realtime_lease,
-                        retry_base: config.realtime_retry_base,
-                        batch_size: config.realtime_batch_size,
-                        max_attempts: config.realtime_max_attempts,
-                    },
+    let dispatcher_task = config
+        .realtime_dispatcher_enabled
+        .then(|| {
+            state.realtime_outbox().cloned().map(|outbox| {
+                tokio::spawn(
+                    OutboxDispatcher::new(
+                        outbox,
+                        publisher,
+                        DispatcherConfig {
+                            poll_interval: config.realtime_poll_interval,
+                            lease: config.realtime_lease,
+                            retry_base: config.realtime_retry_base,
+                            batch_size: config.realtime_batch_size,
+                            max_attempts: config.realtime_max_attempts,
+                        },
+                    )
+                    .run(shutdown_rx.clone()),
                 )
-                .run(shutdown_rx.clone()),
-            )
+            })
         })
-    }).flatten();
+        .flatten();
     let judge_dispatcher_task = judge_publisher.as_ref().map(|publisher| {
         tokio::spawn(
             SubmissionOutboxDispatcher::new(

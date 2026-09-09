@@ -67,8 +67,7 @@ impl AuthService {
         let session_token = random_token()?;
         let session_token_hash = digest(&session_token);
         let access_fingerprint = access_fingerprint(&user);
-        let ttl_seconds = u64::try_from(self.session_ttl.as_secs())
-            .map_err(|error| AppError::internal("session TTL is too large", error))?;
+        let ttl_seconds = self.session_ttl.as_secs();
 
         // PostgreSQL remains authoritative for the user record and the audit
         // trail; the session itself lives only in Redis, so the transaction
@@ -176,11 +175,11 @@ impl AuthService {
         // Refresh last_seen at most once per five minutes, preserving the
         // remaining session TTL (sessions keep their fixed expiry).
         let now_millis = timestamp_millis(OffsetDateTime::now_utc());
-        if now_millis - last_seen_millis > 5 * 60 * 1000 {
-            if let Some(mut refreshed) = store::load_session(redis, &token_hash).await? {
-                refreshed.last_seen_millis = now_millis;
-                store::touch_session(redis, &token_hash, &refreshed).await?;
-            }
+        if now_millis - last_seen_millis > 5 * 60 * 1000
+            && let Some(mut refreshed) = store::load_session(redis, &token_hash).await?
+        {
+            refreshed.last_seen_millis = now_millis;
+            store::touch_session(redis, &token_hash, &refreshed).await?;
         }
 
         Ok(AuthenticatedSession {
@@ -215,8 +214,7 @@ impl AuthService {
             workstation_binding_id: Some(grant.binding_id),
             bound_ip: Some(grant.bound_ip.clone()),
         };
-        store::create_workstation_session(self.redis()?, &token_hash, &record, ttl_seconds)
-            .await?;
+        store::create_workstation_session(self.redis()?, &token_hash, &record, ttl_seconds).await?;
         Ok((LoginOutcome { user, session_token }, grant.competition))
     }
     pub async fn logout(&self, token_hash: &str) -> Result<(), AppError> {

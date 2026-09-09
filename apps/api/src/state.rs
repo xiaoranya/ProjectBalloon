@@ -72,6 +72,7 @@ pub struct AppState {
 
 impl AppState {
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         database: PgPool,
         readiness_timeout: Duration,
@@ -146,11 +147,14 @@ impl AppState {
             AuthService::new(database.clone(), session_ttl, secure_cookies)
                 .with_redis_option(redis),
         );
-        let awards = Arc::new(AwardService::new(database.clone()).with_outbox_option(outbox.clone()));
-        let balloons = Arc::new(BalloonService::new(database.clone()).with_outbox_option(outbox.clone()));
+        let awards =
+            Arc::new(AwardService::new(database.clone()).with_outbox_option(outbox.clone()));
+        let balloons =
+            Arc::new(BalloonService::new(database.clone()).with_outbox_option(outbox.clone()));
         let csrf = Arc::new(CsrfSigner::new(csrf_secret));
-        let clarifications =
-            Arc::new(ClarificationService::new(database.clone()).with_outbox_option(outbox.clone()));
+        let clarifications = Arc::new(
+            ClarificationService::new(database.clone()).with_outbox_option(outbox.clone()),
+        );
         let competition = Arc::new(CompetitionService::new(database.clone()));
         let announcements =
             Arc::new(AnnouncementService::new(database.clone()).with_outbox_option(outbox.clone()));
@@ -162,11 +166,13 @@ impl AppState {
         let contests =
             Arc::new(ContestService::new(database.clone()).with_outbox_option(outbox.clone()));
         let problems = Arc::new(ProblemService::new(database.clone()));
-        let printing = Arc::new(PrintingService::new(database.clone()).with_outbox_option(outbox.clone()));
+        let printing =
+            Arc::new(PrintingService::new(database.clone()).with_outbox_option(outbox.clone()));
         let presentation =
             Arc::new(PresentationService::new(database.clone()).with_outbox_option(outbox.clone()));
         let realtime = RealtimeHub::new(realtime_channel_capacity, realtime_redis_enabled);
-        let resolver = Arc::new(ResolverService::new(database.clone()).with_outbox_option(outbox.clone()));
+        let resolver =
+            Arc::new(ResolverService::new(database.clone()).with_outbox_option(outbox.clone()));
         let scoreboard = Arc::new(
             ScoreboardService::new(database.clone())
                 .with_projection_option(scoreboard_projection.clone()),

@@ -23,7 +23,10 @@ impl BalloonService {
     }
 
     #[must_use]
-    pub fn with_outbox_option(mut self, outbox: Option<crate::features::realtime::RealtimeOutbox>) -> Self {
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
         self.outbox = outbox;
         self
     }

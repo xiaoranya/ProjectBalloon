@@ -139,12 +139,7 @@ pub(super) async fn enqueue_realtime(
     payload: Value,
 ) -> Result<(), AppError> {
     crate::features::realtime::outbox::enqueue_optional(
-        outbox,
-        contest_id,
-        event_type,
-        scope,
-        team_id,
-        payload,
+        outbox, contest_id, event_type, scope, team_id, payload,
     )
     .await
 }

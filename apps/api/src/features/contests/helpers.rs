@@ -156,12 +156,7 @@ pub(super) async fn insert_realtime_outbox(
 ) -> Result<(), AppError> {
     let payload = serde_json::from_str(payload_json).unwrap_or(serde_json::Value::Null);
     crate::features::realtime::outbox::enqueue_optional(
-        outbox,
-        contest_id,
-        event_type,
-        scope,
-        None,
-        payload,
+        outbox, contest_id, event_type, scope, None, payload,
     )
     .await
 }

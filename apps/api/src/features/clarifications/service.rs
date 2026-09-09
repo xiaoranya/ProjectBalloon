@@ -32,7 +32,10 @@ impl ClarificationService {
     }
 
     #[must_use]
-    pub fn with_outbox_option(mut self, outbox: Option<crate::features::realtime::RealtimeOutbox>) -> Self {
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
         self.outbox = outbox;
         self
     }
@@ -435,7 +438,9 @@ async fn realtime(
             json!({"clarificationId": id, "action": action}),
         )
         .await
-        .map_err(|error| AppError::internal_message("enqueue clarification event", format!("{error:?}")))?;
+        .map_err(|error| {
+            AppError::internal_message("enqueue clarification event", format!("{error:?}"))
+        })?;
     }
     Ok(())
 }

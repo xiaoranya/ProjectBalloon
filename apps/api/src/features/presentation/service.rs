@@ -35,7 +35,10 @@ impl PresentationService {
     }
 
     #[must_use]
-    pub fn with_outbox_option(mut self, outbox: Option<crate::features::realtime::RealtimeOutbox>) -> Self {
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
         self.outbox = outbox;
         self
     }
@@ -183,7 +186,9 @@ impl PresentationService {
             serde_json::json!({"mode":mode}),
         )
         .await
-        .map_err(|error| AppError::internal_message("publish presentation config", format!("{error:?}")))?;
+        .map_err(|error| {
+            AppError::internal_message("publish presentation config", format!("{error:?}"))
+        })?;
         tx.commit()
             .await
             .map_err(|error| AppError::internal("commit presentation config", error))?;

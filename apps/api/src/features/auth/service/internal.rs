@@ -7,7 +7,6 @@ use crate::error::AppError;
 use crate::features::auth::model::UserRow;
 use crate::features::auth::service::{AuthService, USER_COLUMNS};
 
-
 /// Sliding-window rate limiting lives exclusively in Redis: one sorted set per
 /// (action, IP) whose members are unique attempt markers scored by attempt
 /// time. The window is the same five-minute sliding window the previous
@@ -118,12 +117,16 @@ impl AuthService {
         let now = now_millis();
         let member = format!("{now}:{}", Uuid::new_v4());
         let allowed: i32 = redis
-            .query(redis::cmd("EVAL").arg(RATE_LIMIT_SCRIPT).arg(1)
-                .arg(rate_limit_key(action, request_ip))
-                .arg(now)
-                .arg(limit)
-                .arg(&member)
-                .arg(RATE_LIMIT_WINDOW_MILLIS))
+            .query(
+                redis::cmd("EVAL")
+                    .arg(RATE_LIMIT_SCRIPT)
+                    .arg(1)
+                    .arg(rate_limit_key(action, request_ip))
+                    .arg(now)
+                    .arg(limit)
+                    .arg(&member)
+                    .arg(RATE_LIMIT_WINDOW_MILLIS),
+            )
             .await?;
         Ok(allowed == 1)
     }
@@ -164,12 +167,7 @@ impl AuthService {
         let now = now_millis();
         let member = format!("{now}:{}", Uuid::new_v4());
         let mut pipeline = redis::pipe();
-        pipeline
-            .cmd("ZADD")
-            .arg(rate_limit_key(action, request_ip))
-            .arg(now)
-            .arg(&member)
-            .ignore();
+        pipeline.cmd("ZADD").arg(rate_limit_key(action, request_ip)).arg(now).arg(&member).ignore();
         pipeline
             .cmd("PEXPIRE")
             .arg(rate_limit_key(action, request_ip))

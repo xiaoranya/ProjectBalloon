@@ -39,7 +39,10 @@ impl ContestService {
     }
 
     #[must_use]
-    pub fn with_outbox_option(mut self, outbox: Option<crate::features::realtime::RealtimeOutbox>) -> Self {
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
         self.outbox = outbox;
         self
     }
@@ -592,8 +595,14 @@ impl ContestService {
             &payload,
         )
         .await?;
-        insert_realtime_outbox(self.outbox.as_ref(), contest_id, "CONTEST_EXTENDED", "STAFF", &payload)
-            .await?;
+        insert_realtime_outbox(
+            self.outbox.as_ref(),
+            contest_id,
+            "CONTEST_EXTENDED",
+            "STAFF",
+            &payload,
+        )
+        .await?;
         transaction
             .commit()
             .await

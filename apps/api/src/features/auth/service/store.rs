@@ -79,7 +79,8 @@ pub(super) async fn create_workstation_session(
     ttl_seconds: u64,
 ) -> Result<(), AppError> {
     let ttl_seconds = ttl_seconds.max(MIN_SESSION_TTL_SECONDS);
-    if let Some(previous) = lookup_workstation_session(redis, record.workstation_binding_id).await? {
+    if let Some(previous) = lookup_workstation_session(redis, record.workstation_binding_id).await?
+    {
         delete_session(redis, &previous).await?;
     }
     let payload = serde_json::to_string(record)
@@ -105,9 +106,7 @@ pub(super) async fn load_session(
     redis: &RedisHandle,
     token_hash: &str,
 ) -> Result<Option<SessionRecord>, AppError> {
-    let payload: Option<String> = redis
-        .query(cmd("GET").arg(session_key(token_hash)))
-        .await?;
+    let payload: Option<String> = redis.query(cmd("GET").arg(session_key(token_hash))).await?;
     let Some(payload) = payload else { return Ok(None) };
     serde_json::from_str(&payload)
         .map(Some)
@@ -123,9 +122,7 @@ pub(super) async fn touch_session(
 ) -> Result<(), AppError> {
     let payload = serde_json::to_string(record)
         .map_err(|error| AppError::internal("encode session record", error))?;
-    redis
-        .query::<()>(cmd("SET").arg(session_key(token_hash)).arg(payload).arg("KEEPTTL"))
-        .await
+    redis.query::<()>(cmd("SET").arg(session_key(token_hash)).arg(payload).arg("KEEPTTL")).await
 }
 
 /// Deletes a session and both of its index entries. Returns silently when the
@@ -158,10 +155,10 @@ pub(super) async fn revoke_user_sessions(
         if member == keep_token_hash {
             continue;
         }
-        if let Some(record) = load_session(redis, &member).await? {
-            if let Some(binding_id) = record.workstation_binding_id {
-                pipeline.del(workstation_index_key(binding_id));
-            }
+        if let Some(record) = load_session(redis, &member).await?
+            && let Some(binding_id) = record.workstation_binding_id
+        {
+            pipeline.del(workstation_index_key(binding_id));
         }
         pipeline.del(session_key(&member)).ignore();
         pipeline.srem(&index_key, &member).ignore();
@@ -174,9 +171,7 @@ async fn lookup_workstation_session(
     binding_id: Option<i64>,
 ) -> Result<Option<String>, AppError> {
     let Some(binding_id) = binding_id else { return Ok(None) };
-    redis
-        .query(cmd("GET").arg(workstation_index_key(binding_id)))
-        .await
+    redis.query(cmd("GET").arg(workstation_index_key(binding_id))).await
 }
 
 /// Best-effort: removes a workstation index key whose session was already
@@ -186,9 +181,7 @@ pub(super) async fn clear_workstation_index(
     redis: &RedisHandle,
     binding_id: i64,
 ) -> Result<(), AppError> {
-    redis
-        .query::<()>(cmd("DEL").arg(workstation_index_key(binding_id)))
-        .await
+    redis.query::<()>(cmd("DEL").arg(workstation_index_key(binding_id))).await
 }
 
 /// Clamps a grant expiry to the configured session TTL and converts it to a

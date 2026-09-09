@@ -5,7 +5,9 @@ use tokio::{sync::watch, time::MissedTickBehavior};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::features::realtime::{fanout::RealtimePublisher, hub::RealtimeEnvelope, outbox::RealtimeOutbox};
+use crate::features::realtime::{
+    fanout::RealtimePublisher, hub::RealtimeEnvelope, outbox::RealtimeOutbox,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct DispatcherConfig {
@@ -22,6 +24,7 @@ pub struct DispatcherConfig {
 /// - at-least-once: entries are acknowledged only after confirmed fan-out;
 /// - a failed publish stays pending and is reclaimed after the lease window;
 /// - entries exceeding the attempt budget are dead-lettered and counted.
+///
 /// `retry_base` is retained for configuration compatibility; Redis reclaims
 /// retries on the lease interval instead of per-row backoff schedules.
 #[derive(Clone)]
@@ -34,13 +37,12 @@ pub struct OutboxDispatcher {
 
 impl OutboxDispatcher {
     #[must_use]
-    pub fn new(outbox: RealtimeOutbox, publisher: RealtimePublisher, config: DispatcherConfig) -> Self {
-        Self {
-            outbox,
-            publisher,
-            config,
-            instance_id: Uuid::new_v4().to_string(),
-        }
+    pub fn new(
+        outbox: RealtimeOutbox,
+        publisher: RealtimePublisher,
+        config: DispatcherConfig,
+    ) -> Self {
+        Self { outbox, publisher, config, instance_id: Uuid::new_v4().to_string() }
     }
 
     pub async fn run(self, mut shutdown: watch::Receiver<bool>) {
@@ -72,10 +74,8 @@ impl OutboxDispatcher {
     /// the number of confirmed deliveries.
     pub async fn dispatch_batch(&self) -> Result<usize, crate::error::AppError> {
         let mut published = 0;
-        let fresh = self
-            .outbox
-            .read_new(&self.instance_id, self.config.batch_size.max(1) as usize)
-            .await?;
+        let fresh =
+            self.outbox.read_new(&self.instance_id, self.config.batch_size.max(1) as usize).await?;
         for (stream_id, entry) in fresh {
             if self.deliver(&stream_id, entry).await? {
                 published += 1;
@@ -83,7 +83,11 @@ impl OutboxDispatcher {
         }
         let reclaimed = self
             .outbox
-            .reclaim_expired(&self.instance_id, self.config.lease, self.config.batch_size.max(1) as usize)
+            .reclaim_expired(
+                &self.instance_id,
+                self.config.lease,
+                self.config.batch_size.max(1) as usize,
+            )
             .await?;
         for (stream_id, entry, delivery_count) in reclaimed {
             if delivery_count > i64::from(self.config.max_attempts) {

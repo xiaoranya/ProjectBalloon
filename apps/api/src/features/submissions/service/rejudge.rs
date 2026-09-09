@@ -367,16 +367,19 @@ impl SubmissionService {
                 .with_judgement_id(judgement_id)
                 .with_user_id(actor.id)
         })?;
-        if let Some(projection) = &self.projection {
-            if let Err(error) = projection
+        if let Some(projection) = &self.projection
+            && let Err(error) = projection
                 .recompute_cell(&self.database, contest_id, context.team_id, context.problem_id)
                 .await
-            {
-                tracing::warn!(?error, contest_id, team_id = context.team_id,
-                    problem = context.problem_id,
-                    "scoreboard replay after rejudge failed; marking cell dirty");
-                projection.mark_dirty(contest_id, context.team_id, context.problem_id).await;
-            }
+        {
+            tracing::warn!(
+                ?error,
+                contest_id,
+                team_id = context.team_id,
+                problem = context.problem_id,
+                "scoreboard replay after rejudge failed; marking cell dirty"
+            );
+            projection.mark_dirty(contest_id, context.team_id, context.problem_id).await;
         }
         Ok(RejudgeResponse {
             submission_id,

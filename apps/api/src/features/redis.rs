@@ -36,9 +36,9 @@ impl RedisHandle {
     pub(crate) async fn query<T: FromRedisValue>(&self, cmd: &mut Cmd) -> Result<T, AppError> {
         let mut connection = self.connection.clone();
         match timeout(self.operation_timeout, cmd.query_async(&mut connection)).await {
-            Ok(result) => result.map_err(|error| {
-                AppError::internal_message("redis command failed", error)
-            }),
+            Ok(result) => {
+                result.map_err(|error| AppError::internal_message("redis command failed", error))
+            }
             Err(_) => Err(AppError::internal_message(
                 "redis command timed out",
                 format!("exceeded {:?}", self.operation_timeout),
@@ -79,5 +79,4 @@ impl RedisHandle {
             warn!(?error, context, "Redis operation failed");
         }
     }
-
 }

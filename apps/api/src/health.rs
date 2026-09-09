@@ -152,11 +152,9 @@ pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Jso
             // the consumer group rather than PostgreSQL.
             let realtime_outbox = match state.realtime_outbox() {
                 Some(outbox) => match timeout(state.readiness_timeout(), outbox.health()).await {
-                    Ok(Ok((pending, failed))) => Some(RealtimeOutboxHealth {
-                        pending,
-                        failed,
-                        redis_connected,
-                    }),
+                    Ok(Ok((pending, failed))) => {
+                        Some(RealtimeOutboxHealth { pending, failed, redis_connected })
+                    }
                     Ok(Err(error)) => {
                         warn!(?error, "realtime outbox health probe failed");
                         None
