@@ -283,6 +283,7 @@ mod tests {
             b"testing-csrf-secret-material-0123456789",
             16,
             false,
+            None,
         )
     }
 

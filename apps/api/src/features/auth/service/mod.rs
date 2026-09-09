@@ -2,13 +2,16 @@ use std::time::Duration;
 
 use sqlx::PgPool;
 
+use crate::error::AppError;
 use crate::features::auth::model::AuthUser;
 use crate::features::competition::model::CompetitionSessionResponse;
+use crate::features::redis::RedisHandle;
 
 mod account;
 mod crypto;
 mod internal;
 mod sessions;
+mod store;
 
 #[cfg(test)]
 mod tests;
@@ -19,7 +22,7 @@ const PASSWORD_CHANGE_ATTEMPT_LIMIT: i64 = 10;
 const PROFILE_UPDATE_ATTEMPT_LIMIT: i64 = 30;
 const SESSION_TOKEN_BYTES: usize = 32;
 
-const USER_COLUMNS: &str = r#"
+pub(crate) const USER_COLUMNS: &str = r#"
     u.id,
     u.username,
     u.password_hash,
@@ -49,6 +52,7 @@ pub struct AuthenticatedSession {
 
 pub struct AuthService {
     database: PgPool,
+    redis: Option<RedisHandle>,
     session_ttl: Duration,
     secure_cookies: bool,
 }
@@ -56,7 +60,24 @@ pub struct AuthService {
 impl AuthService {
     #[must_use]
     pub const fn new(database: PgPool, session_ttl: Duration, secure_cookies: bool) -> Self {
-        Self { database, session_ttl, secure_cookies }
+        Self { database, redis: None, session_ttl, secure_cookies }
+    }
+
+    /// Wires the shared Redis handle. Sessions and login rate limiting live
+    /// exclusively in Redis; without a handle authentication is unavailable.
+    #[must_use]
+    pub fn with_redis_option(mut self, redis: Option<RedisHandle>) -> Self {
+        self.redis = redis;
+        self
+    }
+
+    pub(crate) fn redis(&self) -> Result<&RedisHandle, AppError> {
+        self.redis.as_ref().ok_or_else(|| {
+            AppError::internal_message(
+                "redis session store unavailable",
+                "the API process was started without a Redis connection",
+            )
+        })
     }
 
     #[must_use]

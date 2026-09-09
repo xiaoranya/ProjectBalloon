@@ -18,14 +18,22 @@ impl AppConfig {
         let realtime = parse_realtime(&mut lookup)?;
         let scoreboard_cache = parse_scoreboard_cache(&mut lookup)?;
 
+        // Redis is required unconditionally: login sessions, login rate
+        // limiting, and the realtime event outbox live exclusively there.
         let redis_url = lookup("REDIS_URL").unwrap_or_default();
-        if (realtime.redis_enabled || scoreboard_cache.enabled) && redis_url.trim().is_empty() {
+        if redis_url.trim().is_empty() {
             return Err(ConfigError::Invalid {
                 name: "REDIS_URL",
                 value: redis_url,
-                reason: "must not be empty when Redis realtime fanout is enabled",
+                reason: "must not be empty; Redis stores login sessions, rate limits, and the realtime outbox",
             });
         }
+        let redis_operation_timeout_milliseconds = parse_positive(
+            "PROJECT_BALLOON_REDIS_OPERATION_TIMEOUT_MILLISECONDS",
+            lookup("PROJECT_BALLOON_REDIS_OPERATION_TIMEOUT_MILLISECONDS").unwrap_or_else(|| {
+                DEFAULT_REDIS_OPERATION_TIMEOUT_MILLISECONDS.to_string()
+            }),
+        )?;
 
         let realtime_redis = parse_realtime_redis(&mut lookup)?;
         let object_storage = parse_object_storage(&mut lookup)?;
@@ -58,6 +66,7 @@ impl AppConfig {
             realtime_max_attempts: realtime.max_attempts,
             realtime_redis_enabled: realtime.redis_enabled,
             redis_url,
+            redis_operation_timeout: Duration::from_millis(redis_operation_timeout_milliseconds),
             realtime_redis_channel: realtime_redis.channel,
             realtime_redis_reconnect_delay: realtime_redis.reconnect_delay,
             scoreboard_cache_enabled: scoreboard_cache.enabled,

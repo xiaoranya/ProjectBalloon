@@ -34,7 +34,7 @@ impl AuthService {
             .bind(&username).bind(password_hash).bind(&display_name).execute(&self.database).await;
         match inserted {
             Ok(_) => {
-                self.record_auth_action("auth.register", &request_ip_text, "success").await?;
+                self.record_auth_action("auth.register", "", &request_ip_text, "success").await?;
                 self.login(LoginRequest { username, password: request.password }, request_ip).await
             }
             Err(sqlx::Error::Database(error)) if error.constraint().is_some() => {
@@ -115,12 +115,6 @@ impl AuthService {
                 "CURRENT_PASSWORD_INVALID",
             ));
         }
-        sqlx::query("DELETE FROM auth_sessions WHERE user_id = $1 AND token_hash <> $2")
-            .bind(session.user.id)
-            .bind(&session.token_hash)
-            .execute(&mut *transaction)
-            .await
-            .map_err(|error| AppError::internal("revoke other password sessions", error))?;
         record_audit(
             &mut transaction,
             Some(session.user.id),
@@ -134,6 +128,11 @@ impl AuthService {
             .commit()
             .await
             .map_err(|error| AppError::internal("commit password transaction", error))?;
+
+        // Sessions live only in Redis now, so revoking the user's other
+        // sessions happens after the commit against the Redis session store.
+        super::store::revoke_user_sessions(self.redis()?, session.user.id, &session.token_hash)
+            .await?;
 
         let mut user = session.user.clone();
         user.password_reset_required = false;

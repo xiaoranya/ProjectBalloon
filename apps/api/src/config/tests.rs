@@ -2,13 +2,16 @@ use std::{collections::HashMap, time::Duration};
 
 use crate::config::{AppConfig, ConfigError, DeploymentMode};
 
-/// Wraps a value map so the development CSRF secret is explicitly allowed;
-/// every validation test below targets a different concern, not the CSRF
-/// default-secret rejection.
+/// Wraps a value map so the development CSRF secret is explicitly allowed and
+/// a usable REDIS_URL is provided (Redis is required: sessions, rate limiting,
+/// and the realtime outbox live there); every validation test below targets a
+/// different concern.
 fn dev_lookup<'a>(values: &'a HashMap<&'a str, String>) -> impl FnMut(&str) -> Option<String> + 'a {
     move |name| {
         if name == "PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET" {
             Some("true".to_owned())
+        } else if name == "REDIS_URL" && !values.contains_key(name) {
+            Some("redis://127.0.0.1:6379".to_owned())
         } else {
             values.get(name).cloned()
         }
@@ -31,6 +34,7 @@ fn local_defaults_are_valid() {
     assert_eq!(config.realtime_batch_size, 100);
     assert!(!config.realtime_redis_enabled);
     assert_eq!(config.realtime_redis_channel, "xcpc:realtime:events");
+    assert_eq!(config.redis_operation_timeout.as_millis(), 200);
     assert!(!config.scoreboard_cache_enabled);
     assert_eq!(config.scoreboard_cache_ttl.as_secs(), 30);
     assert_eq!(config.scoreboard_cache_timeout.as_millis(), 200);
