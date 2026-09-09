@@ -568,6 +568,15 @@ impl BubblewrapSandbox {
 
     /// The isolation skeleton every action shares.
     fn base_args(&self) -> Vec<std::ffi::OsString> {
+        // The worker runs as a dedicated non-root user inside a systemd-delegated
+        // cgroup namespace (see `project-balloon-judge-worker.service`, which
+        // sets `Delegate=yes`). Because the worker is non-root, bwrap
+        // establishes a uid_map (invoking uid -> ns 0) for `--unshare-all`, so
+        // the action gets full user/pid/net/ipc/uts/mount/cgroup isolation while
+        // running as the mapped unprivileged user. Running as root is not
+        // supported: bwrap then creates the user namespace without a uid_map,
+        // and the setup process cannot open/bind the 0700 `work` directory
+        // ("Can't find source path .../work: Permission denied").
         let mut args: Vec<std::ffi::OsString> = vec![
             "--unshare-all".into(),
             "--die-with-parent".into(),

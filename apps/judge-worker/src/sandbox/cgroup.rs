@@ -108,9 +108,9 @@ impl CgroupManager {
                 controllers_path.display()
             )
         })?;
-        let enabled = parse_controller_list(&controllers);
+        let available = parse_controller_list(&controllers);
         for required in REQUIRED_CONTROLLERS {
-            if !enabled.contains(required) {
+            if !available.contains(required) {
                 return Err(format!(
                     "controller {required} is unavailable at {} (cgroup.controllers: {controllers:?})",
                     self.base.display()
@@ -118,14 +118,32 @@ impl CgroupManager {
             }
         }
 
+        // `cgroup.controllers` only lists what the parent made *available*; the
+        // `memory.max`/`pids.max`/`cpu.max` interfaces appear in children once
+        // the controllers are *enabled* here. So compare against
+        // `cgroup.subtree_control`, not `cgroup.controllers`: systemd hands a
+        // `Delegate=yes` group to the service user with an empty
+        // `subtree_control`, and trusting `cgroup.controllers` alone would skip
+        // the enable step and then fail with a bare EACCES on interface files
+        // that do not exist yet.
+        let subtree_path = self.base.join("cgroup.subtree_control");
+        let enabled = tokio::fs::read_to_string(&subtree_path)
+            .await
+            .map(|contents| parse_controller_list(&contents))
+            .map_err(|error| {
+                format!(
+                    "cannot read {} (is the base group delegated to the worker uid?): {error}",
+                    subtree_path.display()
+                )
+            })?;
+
         if let Some(payload) = subtree_control_payload(&enabled) {
-            let subtree = self.base.join("cgroup.subtree_control");
-            write_cgroup_file(&subtree, &payload).await.map_err(|error| {
+            write_cgroup_file(&subtree_path, &payload).await.map_err(|error| {
                 format!(
                     "cannot enable controllers ({payload}) on {}: {error}. The base group \
                          must have no other processes in it (cgroup v2 no-internal-process \
                          rule); point JUDGE_CGROUP_BASE at an empty delegated group.",
-                    subtree.display()
+                    subtree_path.display()
                 )
             })?;
         }
