@@ -13,6 +13,7 @@ pub mod presentation;
 pub mod printing;
 pub mod problems;
 pub mod realtime;
+pub mod redis;
 pub mod resolver;
 pub mod scoreboard;
 pub mod scoring;

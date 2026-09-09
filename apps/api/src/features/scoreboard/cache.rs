@@ -75,7 +75,14 @@ impl ScoreboardCache {
             }
         };
         let mut connection = self.connection.clone();
-        let ttl_seconds = self.ttl.as_secs().max(1);
+        // Immutable phases (the frozen board only counts submissions before
+        // freeze_at) can be cached far longer than live boards — freeze is
+        // exactly when public read pressure peaks.
+        let ttl_seconds = if phase == "FROZEN" {
+            self.ttl.as_secs().max(1) * 20
+        } else {
+            self.ttl.as_secs().max(1)
+        };
         match timeout(
             self.operation_timeout,
             connection.set_ex::<_, _, ()>(&key, payload, ttl_seconds),

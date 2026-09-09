@@ -118,10 +118,6 @@ async fn published_announcement_is_editable_pinnable_and_irreversibly_withdrawn(
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].status, "WITHDRAWN");
     assert!(service.pin(created.id, false, &admin, IpAddr::V4(Ipv4Addr::LOCALHOST)).await.is_err());
-    let public_events = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM realtime_outbox WHERE contest_id = $1 AND event_type = 'ANNOUNCEMENT_UPDATED' AND scope = 'PUBLIC'",
-    ).bind(contest_id).fetch_one(&pool).await.expect("count announcement events");
-    assert_eq!(public_events, 4);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

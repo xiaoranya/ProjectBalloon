@@ -101,11 +101,13 @@ async fn balloon_workbench_enforces_claim_ownership_and_recovery(pool: PgPool) {
     let stats = service.stats(contest_id, &first).await.expect("balloon stats");
     assert_eq!((stats.total, stats.pending, stats.delivered), (2, 1, 1));
     assert_eq!(service.list(contest_id, None, &first).await.expect("list balloons").len(), 2);
-    let (audits, events) = sqlx::query_as::<_, (i64, i64)>(
-        "SELECT (SELECT count(*) FROM audit_logs WHERE target_type = 'BALLOON_TASK'), (SELECT count(*) FROM realtime_outbox WHERE event_type = 'BALLOON_TASK_UPDATED')",
+    // Realtime events now flow through the Redis outbox, so only the audit
+    // trail remains observable in PostgreSQL.
+    let audits = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM audit_logs WHERE target_type = 'BALLOON_TASK'",
     )
     .fetch_one(&pool)
     .await
     .expect("count balloon side effects");
-    assert_eq!((audits, events), (5, 5));
+    assert_eq!(audits, 5);
 }

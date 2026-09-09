@@ -4,16 +4,24 @@ use serde_json::json;
 use sqlx::PgPool;
 use tokio::sync::watch;
 use tracing::{info, warn};
-use uuid::Uuid;
+
+use crate::features::realtime::RealtimeOutbox;
 
 pub struct ResolverAutoRunner {
     database: PgPool,
+    outbox: Option<RealtimeOutbox>,
 }
 
 impl ResolverAutoRunner {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, outbox: None }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(mut self, outbox: Option<RealtimeOutbox>) -> Self {
+        self.outbox = outbox;
+        self
     }
 
     pub async fn run(self, mut shutdown: watch::Receiver<bool>) {
@@ -86,10 +94,16 @@ impl ResolverAutoRunner {
         sqlx::query("INSERT INTO resolver_events (run_id, event_type, payload, sequence, actor_user_id) VALUES ($1, 'AUTO_NEXT', $2, $3, nullif($4, 0))")
             .bind(run_id).bind(json!({"stepIndex": step}).to_string()).bind(sequence).bind(actor)
             .execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO realtime_outbox (event_id, contest_id, event_type, scope, payload_json) VALUES ($1, $2, 'RESOLVER_STATE_CHANGED', $3, $4)")
-            .bind(Uuid::new_v4()).bind(contest_id).bind(if official { "PUBLIC" } else { "STAFF" })
-            .bind(json!({"resolverRunId": run_id, "action": "AUTO_NEXT", "stepIndex": step, "status": "RUNNING"}))
-            .execute(&mut *tx).await?;
+        crate::features::realtime::outbox::enqueue_optional(
+            self.outbox.as_ref(),
+            contest_id,
+            "RESOLVER_STATE_CHANGED",
+            if official { "PUBLIC" } else { "STAFF" },
+            None,
+            json!({"resolverRunId": run_id, "action": "AUTO_NEXT", "stepIndex": step, "status": "RUNNING"}),
+        )
+        .await
+        .map_err(|error| sqlx::Error::Protocol(format!("enqueue resolver auto event: {error:?}")))?;
         tx.commit().await?;
         Ok(true)
     }

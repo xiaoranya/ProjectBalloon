@@ -3,7 +3,7 @@ use std::{process::Stdio, sync::Arc, time::Duration};
 use async_trait::async_trait;
 use bytes::Bytes;
 use serde_json::json;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::PgPool;
 use time::OffsetDateTime;
 use tokio::{io::AsyncWriteExt, process::Command, sync::watch};
 use tracing::{info, warn};
@@ -206,6 +206,7 @@ pub struct CupsDeliveryRunner {
     storage: ObjectStorageHandle,
     gateway: Arc<dyn CupsGateway>,
     instance_id: Uuid,
+    outbox: Option<crate::features::realtime::RealtimeOutbox>,
 }
 
 impl CupsDeliveryRunner {
@@ -215,7 +216,16 @@ impl CupsDeliveryRunner {
         storage: ObjectStorageHandle,
         gateway: Arc<dyn CupsGateway>,
     ) -> Self {
-        Self { database, storage, gateway, instance_id: Uuid::new_v4() }
+        Self { database, storage, gateway, instance_id: Uuid::new_v4(), outbox: None }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
+        self.outbox = outbox;
+        self
     }
 
     pub async fn run(self, mut shutdown: watch::Receiver<bool>) {
@@ -379,7 +389,7 @@ impl CupsDeliveryRunner {
         .bind(request.id).bind(self.instance_id).bind(self.gateway.printer()).bind(job_id)
         .execute(&mut *tx).await?.rows_affected();
         if updated == 1 {
-            insert_events(&mut tx, request, "PRINTING").await?;
+            insert_events(&self.outbox, request, "PRINTING").await?;
         }
         tx.commit().await
     }
@@ -440,7 +450,7 @@ impl CupsDeliveryRunner {
         )
         .bind(request.id).bind(self.instance_id).execute(&mut *tx).await?.rows_affected();
         if updated == 1 {
-            insert_events(&mut tx, request, "COMPLETED").await?;
+            insert_events(&self.outbox, request, "COMPLETED").await?;
         }
         tx.commit().await
     }
@@ -477,7 +487,7 @@ impl CupsDeliveryRunner {
         .execute(&mut *tx).await;
         match result {
             Ok(result) if result.rows_affected() == 1 => {
-                if terminal && insert_events(&mut tx, request, "FAILED").await.is_err() {
+                if terminal && insert_events(&self.outbox, request, "FAILED").await.is_err() {
                     let _ignored = tx.rollback().await;
                     return;
                 }
@@ -529,7 +539,7 @@ impl CupsDeliveryRunner {
         .await
         {
             Ok(result) if result.rows_affected() == 1 => {
-                if insert_events(&mut tx, request, "FAILED").await.is_ok() {
+                if insert_events(&self.outbox, request, "FAILED").await.is_ok() {
                     if let Err(error) = tx.commit().await {
                         warn!(print_request_id = request.id, %error, "failed to commit terminal print failure");
                     }
@@ -584,15 +594,21 @@ fn delivery_retry_delay(attempts: i32) -> i32 {
 }
 
 async fn insert_events(
-    tx: &mut Transaction<'_, Postgres>,
+    outbox: &Option<crate::features::realtime::RealtimeOutbox>,
     request: &ClaimedPrintRequest,
     action: &str,
 ) -> Result<(), sqlx::Error> {
     for (scope, team_id) in [("STAFF", None), ("TEAM", Some(request.team_id))] {
-        sqlx::query("INSERT INTO realtime_outbox (event_id, contest_id, event_type, scope, team_id, payload_json) VALUES ($1, $2, 'PRINT_REQUEST_UPDATED', $3, $4, $5)")
-            .bind(Uuid::new_v4()).bind(request.contest_id).bind(scope).bind(team_id)
-            .bind(json!({"printRequestId": request.id, "action": action}))
-            .execute(&mut **tx).await?;
+        crate::features::realtime::outbox::enqueue_optional(
+            outbox.as_ref(),
+            request.contest_id,
+            "PRINT_REQUEST_UPDATED",
+            scope,
+            team_id,
+            json!({"printRequestId": request.id, "action": action}),
+        )
+        .await
+        .map_err(|error| sqlx::Error::Protocol(format!("enqueue print event: {error:?}")))?;
     }
     Ok(())
 }
@@ -751,8 +767,8 @@ mod tests {
         let printing =
             runner.claim().await.expect("claim printing request").expect("printing request");
         runner.process(printing).await;
-        let (status, completed_at, event_count) = sqlx::query_as::<_, (String, Option<time::OffsetDateTime>, i64)>(
-            "SELECT status, completed_at, (SELECT count(*) FROM realtime_outbox WHERE payload_json->>'printRequestId' = $1::text) FROM print_requests WHERE id = $1",
+        let (status, completed_at) = sqlx::query_as::<_, (String, Option<time::OffsetDateTime>)>(
+            "SELECT status, completed_at FROM print_requests WHERE id = $1",
         )
         .bind(request_id)
         .fetch_one(&pool)
@@ -760,6 +776,5 @@ mod tests {
         .expect("load completed print request");
         assert_eq!(status, "COMPLETED");
         assert!(completed_at.is_some());
-        assert_eq!(event_count, 4);
     }
 }

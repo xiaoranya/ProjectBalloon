@@ -15,21 +15,32 @@ use crate::features::scoreboard::model::{
     ScoreboardSnapshotResponse, SnapshotRow, SubmissionScoreRow, ValidatedScoreboardQuery,
     ValidatedSnapshotSelector,
 };
+use crate::features::scoreboard::redis_state::ProjectionSnapshot;
 
 pub struct ScoreboardService {
     database: PgPool,
     cache: Option<ScoreboardCache>,
+    projection: Option<crate::features::scoreboard::ScoreboardProjection>,
 }
 
 impl ScoreboardService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database, cache: None }
+        Self { database, cache: None, projection: None }
     }
 
     #[must_use]
     pub fn with_cache(mut self, cache: ScoreboardCache) -> Self {
         self.cache = Some(cache);
+        self
+    }
+
+    #[must_use]
+    pub fn with_projection_option(
+        mut self,
+        projection: Option<crate::features::scoreboard::ScoreboardProjection>,
+    ) -> Self {
+        self.projection = projection;
         self
     }
 
@@ -234,9 +245,17 @@ impl ScoreboardService {
         } else {
             "LIVE"
         };
+        // With a Redis projection the monotonic version counter is the cache
+        // key: every applied judgement invalidates the whole-board cache
+        // immediately. Without one the (static) scoreboard revision is used,
+        // and invalidation relies on the TTL alone.
+        let projection = self.projection.as_ref();
+        let cache_revision = match projection {
+            Some(p) if phase != "FROZEN" => p.version(contest_id).await.unwrap_or(0),
+            _ => contest.scoreboard_revision,
+        };
         if let Some(cache) = &self.cache
-            && let Some(board) =
-                cache.get(contest_id, contest.scoreboard_revision, variant, phase, &query).await
+            && let Some(board) = cache.get(contest_id, cache_revision, variant, phase, &query).await
         {
             return Ok(board);
         }
@@ -262,19 +281,63 @@ impl ScoreboardService {
         .await
         .map_err(|error| AppError::internal("load scoreboard problems", error))?;
         let cells = if frozen {
-            self.calculate_frozen_cells(
-                contest_id,
-                start_at,
-                contest.freeze_at.ok_or_else(|| {
-                    AppError::internal_message(
-                        "load frozen scoreboard",
-                        "freeze timestamp disappeared",
+            // Frozen boards read the immutable Redis snapshot taken at the
+            // freeze milestone; PostgreSQL is only consulted when no snapshot
+            // exists (e.g. the projection was introduced mid-contest).
+            match projection.map(|p| p.read_cells(contest_id, "FROZEN")) {
+                Some(read) => match read.await {
+                    Ok(Some(snapshot)) => snapshot.cells,
+                    _ => {
+                        self.calculate_frozen_cells(
+                            contest_id,
+                            start_at,
+                            contest.freeze_at.ok_or_else(|| {
+                                AppError::internal_message(
+                                    "load frozen scoreboard",
+                                    "freeze timestamp disappeared",
+                                )
+                            })?,
+                            &contest.scoring_mode,
+                            &contest.score_aggregation,
+                        )
+                        .await?
+                    }
+                },
+                None => {
+                    self.calculate_frozen_cells(
+                        contest_id,
+                        start_at,
+                        contest.freeze_at.ok_or_else(|| {
+                            AppError::internal_message(
+                                "load frozen scoreboard",
+                                "freeze timestamp disappeared",
+                            )
+                        })?,
+                        &contest.scoring_mode,
+                        &contest.score_aggregation,
                     )
-                })?,
-                &contest.scoring_mode,
-                &contest.score_aggregation,
-            )
-            .await?
+                    .await?
+                }
+            }
+        } else if let Some(p) = projection {
+            match p.read_cells(contest_id, "LIVE").await {
+                Ok(Some(snapshot)) if snapshot.version > 0 => {
+                    self.repair_dirty(contest_id, snapshot).await
+                }
+                // Version 0 means the projection was never populated (Redis
+                // flush or a contest started before it existed): serve the DB
+                // cells and re-warm the projection in the background.
+                _ => {
+                    let pool = self.database.clone();
+                    let warmer = p.clone();
+                    tokio::spawn(async move {
+                        if let Err(error) = warmer.rebuild_contest(&pool, contest_id).await {
+                            tracing::warn!(?error, %contest_id, "scoreboard projection warm-up failed");
+                        }
+                    });
+                    self.load_live_cells(contest_id).await?
+                }
+            }
         } else {
             self.load_live_cells(contest_id).await?
         };
@@ -291,9 +354,34 @@ impl ScoreboardService {
         );
         apply_scoreboard_filter(&mut board, &query);
         if let Some(cache) = &self.cache {
-            cache.put(contest.scoreboard_revision, phase, &query, &board).await;
+            cache.put(cache_revision, phase, &query, &board).await;
         }
         Ok(board)
+    }
+
+    /// Replays cells whose incremental apply failed, then re-reads once.
+    async fn repair_dirty(&self, contest_id: i64, snapshot: ProjectionSnapshot) -> Vec<CellRow> {
+        if snapshot.dirty.is_empty() {
+            return snapshot.cells;
+        }
+        if let Some(projection) = &self.projection {
+            for (team_id, problem_id) in &snapshot.dirty {
+                if let Err(error) = projection
+                    .recompute_cell(&self.database, contest_id, *team_id, *problem_id)
+                    .await
+                {
+                    tracing::warn!(?error, %contest_id, %team_id, %problem_id,
+                        "dirty scoreboard cell replay failed");
+                }
+            }
+        }
+        match self.projection.as_ref().map(|p| p.read_cells(contest_id, "LIVE")) {
+            Some(read) => match read.await {
+                Ok(Some(fresh)) => fresh.cells,
+                _ => snapshot.cells,
+            },
+            None => snapshot.cells,
+        }
     }
 
     async fn load_roster(

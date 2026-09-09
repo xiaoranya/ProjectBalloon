@@ -18,12 +18,22 @@ use crate::features::printing::model::{PrintRequestResponse, ValidatedContent};
 
 pub struct PrintingService {
     database: PgPool,
+    outbox: Option<crate::features::realtime::RealtimeOutbox>,
 }
 
 impl PrintingService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, outbox: None }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
+        self.outbox = outbox;
+        self
     }
 
     pub(super) async fn create(
@@ -141,7 +151,7 @@ impl PrintingService {
         .await
         .map_err(|error| AppError::internal("insert print request", error))?;
         audit(&mut tx, actor.id, "PRINTING_REQUESTED", id, ip).await?;
-        event(&mut tx, contest_id, team_id, id, "QUEUED").await?;
+        event(self.outbox.as_ref(), contest_id, team_id, id, "QUEUED").await?;
         tx.commit().await.map_err(|error| AppError::internal("commit print request", error))?;
         load(&self.database, id).await
     }
@@ -261,7 +271,7 @@ impl PrintingService {
             ip,
         )
         .await?;
-        event(&mut tx, contest_id, team_id, id, next).await?;
+        event(self.outbox.as_ref(), contest_id, team_id, id, next).await?;
         tx.commit().await.map_err(|error| AppError::internal("commit print transition", error))?;
         load(&self.database, id).await
     }
@@ -490,16 +500,23 @@ async fn audit(
 }
 
 async fn event(
-    tx: &mut Transaction<'_, Postgres>,
+    outbox: Option<&crate::features::realtime::RealtimeOutbox>,
     contest: i64,
     team: i64,
     id: i64,
     action: &str,
 ) -> Result<(), AppError> {
     for (scope, recipient) in [("STAFF", None), ("TEAM", Some(team))] {
-        sqlx::query("INSERT INTO realtime_outbox (event_id, contest_id, event_type, scope, team_id, payload_json) VALUES ($1, $2, 'PRINT_REQUEST_UPDATED', $3, $4, $5)")
-            .bind(Uuid::new_v4()).bind(contest).bind(scope).bind(recipient).bind(json!({"printRequestId": id, "action": action}))
-            .execute(&mut **tx).await.map_err(|error| AppError::internal("enqueue print event", error))?;
+        crate::features::realtime::outbox::enqueue_optional(
+            outbox,
+            contest,
+            "PRINT_REQUEST_UPDATED",
+            scope,
+            recipient,
+            json!({"printRequestId": id, "action": action}),
+        )
+        .await
+        .map_err(|error| AppError::internal_message("enqueue print event", format!("{error:?}")))?;
     }
     Ok(())
 }

@@ -19,9 +19,10 @@ use crate::features::{
     presentation::PresentationService,
     printing::{CupsGateway, PrintingService},
     problems::ProblemService,
-    realtime::RealtimeHub,
+    realtime::{RealtimeHub, RealtimeOutbox},
+    redis::RedisHandle,
     resolver::ResolverService,
-    scoreboard::{ScoreboardCache, ScoreboardService},
+    scoreboard::{ScoreboardCache, ScoreboardProjection, ScoreboardService},
     staff_accounts::StaffAccountService,
     submissions::{BatchRejudgeService, SubmissionService},
     teams::TeamService,
@@ -52,6 +53,8 @@ pub struct AppState {
     printing: Arc<PrintingService>,
     presentation: Arc<PresentationService>,
     realtime: RealtimeHub,
+    outbox: Option<RealtimeOutbox>,
+    scoreboard_projection: Option<ScoreboardProjection>,
     resolver: Arc<ResolverService>,
     scoreboard: Arc<ScoreboardService>,
     submissions: Arc<SubmissionService>,
@@ -69,6 +72,7 @@ pub struct AppState {
 
 impl AppState {
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         database: PgPool,
         readiness_timeout: Duration,
@@ -77,6 +81,7 @@ impl AppState {
         csrf_secret: &[u8],
         realtime_channel_capacity: usize,
         realtime_redis_enabled: bool,
+        redis: Option<RedisHandle>,
     ) -> Self {
         Self::build(
             database,
@@ -86,6 +91,7 @@ impl AppState {
             csrf_secret,
             realtime_channel_capacity,
             realtime_redis_enabled,
+            redis,
             None,
         )
     }
@@ -101,6 +107,7 @@ impl AppState {
         csrf_secret: &[u8],
         realtime_channel_capacity: usize,
         realtime_redis_enabled: bool,
+        redis: Option<RedisHandle>,
         object_storage: ObjectStorageHandle,
     ) -> Self {
         Self::build(
@@ -111,6 +118,7 @@ impl AppState {
             csrf_secret,
             realtime_channel_capacity,
             realtime_redis_enabled,
+            redis,
             Some(object_storage),
         )
     }
@@ -125,30 +133,58 @@ impl AppState {
         csrf_secret: &[u8],
         realtime_channel_capacity: usize,
         realtime_redis_enabled: bool,
+        redis: Option<RedisHandle>,
         object_storage: Option<ObjectStorageHandle>,
     ) -> Self {
-        let auth = Arc::new(AuthService::new(database.clone(), session_ttl, secure_cookies));
-        let awards = Arc::new(AwardService::new(database.clone()));
-        let balloons = Arc::new(BalloonService::new(database.clone()));
+        // The realtime outbox lives exclusively in Redis; without a handle the
+        // enqueues degrade to logged no-ops (see `realtime::outbox`).
+        let outbox = redis.as_ref().map(|handle| RealtimeOutbox::new(handle.clone()));
+        // The live scoreboard projection is likewise Redis-native; without a
+        // handle the judgement path keeps the PostgreSQL projection.
+        let scoreboard_projection =
+            redis.as_ref().map(|handle| ScoreboardProjection::new(handle.clone()));
+        let auth = Arc::new(
+            AuthService::new(database.clone(), session_ttl, secure_cookies)
+                .with_redis_option(redis.clone()),
+        );
+        let awards =
+            Arc::new(AwardService::new(database.clone()).with_outbox_option(outbox.clone()));
+        let balloons =
+            Arc::new(BalloonService::new(database.clone()).with_outbox_option(outbox.clone()));
         let csrf = Arc::new(CsrfSigner::new(csrf_secret));
-        let clarifications = Arc::new(ClarificationService::new(database.clone()));
-        let competition = Arc::new(CompetitionService::new(database.clone()));
-        let announcements = Arc::new(AnnouncementService::new(database.clone()));
+        let clarifications = Arc::new(
+            ClarificationService::new(database.clone()).with_outbox_option(outbox.clone()),
+        );
+        let competition =
+            Arc::new(CompetitionService::new(database.clone()).with_redis_option(redis.clone()));
+        let announcements =
+            Arc::new(AnnouncementService::new(database.clone()).with_outbox_option(outbox.clone()));
         let staff_accounts = Arc::new(StaffAccountService::new(database.clone()));
         let contest_management_scopes =
             Arc::new(ContestManagementScopeService::new(database.clone()));
         let contest_problems = Arc::new(ContestProblemService::new(database.clone()));
         let audit_logs = Arc::new(AuditLogService::new(database.clone()));
-        let contests = Arc::new(ContestService::new(database.clone()));
+        let contests =
+            Arc::new(ContestService::new(database.clone()).with_outbox_option(outbox.clone()));
         let problems = Arc::new(ProblemService::new(database.clone()));
-        let printing = Arc::new(PrintingService::new(database.clone()));
-        let presentation = Arc::new(PresentationService::new(database.clone()));
+        let printing =
+            Arc::new(PrintingService::new(database.clone()).with_outbox_option(outbox.clone()));
+        let presentation =
+            Arc::new(PresentationService::new(database.clone()).with_outbox_option(outbox.clone()));
         let realtime = RealtimeHub::new(realtime_channel_capacity, realtime_redis_enabled);
-        let resolver = Arc::new(ResolverService::new(database.clone()));
-        let scoreboard = Arc::new(ScoreboardService::new(database.clone()));
-        let submissions = Arc::new(SubmissionService::new(database.clone()));
+        let resolver =
+            Arc::new(ResolverService::new(database.clone()).with_outbox_option(outbox.clone()));
+        let scoreboard = Arc::new(
+            ScoreboardService::new(database.clone())
+                .with_projection_option(scoreboard_projection.clone()),
+        );
+        let submissions = Arc::new(
+            SubmissionService::new(database.clone())
+                .with_outbox_option(outbox.clone())
+                .with_projection_option(scoreboard_projection.clone()),
+        );
         let batch_rejudge = Arc::new(BatchRejudgeService::new(database.clone()));
-        let teams = Arc::new(TeamService::new(database.clone()));
+        let teams = Arc::new(TeamService::new(database.clone()).with_outbox_option(outbox.clone()));
         let (_, shutdown) = watch::channel(false);
         Self {
             database,
@@ -171,6 +207,8 @@ impl AppState {
             printing,
             presentation,
             realtime,
+            outbox,
+            scoreboard_projection,
             resolver,
             scoreboard,
             submissions,
@@ -206,7 +244,9 @@ impl AppState {
     pub fn with_deployment_mode(mut self, mode: DeploymentMode) -> Self {
         self.deployment_mode = mode;
         self.contests = Arc::new(
-            ContestService::new(self.database.clone()).with_competition_mode(mode.is_competition()),
+            ContestService::new(self.database.clone())
+                .with_competition_mode(mode.is_competition())
+                .with_outbox_option(self.outbox.clone()),
         );
         self
     }
@@ -224,8 +264,19 @@ impl AppState {
 
     #[must_use]
     pub fn with_scoreboard_cache(mut self, cache: ScoreboardCache) -> Self {
-        self.scoreboard = Arc::new(ScoreboardService::new(self.database.clone()).with_cache(cache));
+        self.scoreboard = Arc::new(
+            ScoreboardService::new(self.database.clone())
+                .with_cache(cache)
+                .with_projection_option(self.scoreboard_projection.clone()),
+        );
         self
+    }
+
+    /// The Redis live-scoreboard projection handle; shared by the judge result
+    /// consumer, the rejudge path, and the contest lifecycle runner.
+    #[must_use]
+    pub fn scoreboard_projection(&self) -> Option<ScoreboardProjection> {
+        self.scoreboard_projection.clone()
     }
 
     #[must_use]
@@ -327,6 +378,13 @@ impl AppState {
     #[must_use]
     pub const fn realtime(&self) -> &RealtimeHub {
         &self.realtime
+    }
+
+    /// The Redis realtime outbox handle; `None` only in processes started
+    /// without Redis (enqueues then degrade to logged no-ops).
+    #[must_use]
+    pub fn realtime_outbox(&self) -> Option<&RealtimeOutbox> {
+        self.outbox.as_ref()
     }
 
     #[must_use]

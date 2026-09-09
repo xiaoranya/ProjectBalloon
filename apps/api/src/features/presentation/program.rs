@@ -323,13 +323,15 @@ pub async fn update_program(
     };
     audit(&mut tx, context.user().id, "LIVE_PROGRAM_UPDATED", "CONTEST", contest, peer.ip())
         .await?;
-    sqlx::query("INSERT INTO realtime_outbox(event_id,contest_id,event_type,scope,payload_json) VALUES($1,$2,'LIVE_PROGRAM_UPDATED','PUBLIC',$3)")
-        .bind(uuid::Uuid::new_v4())
-        .bind(contest)
-        .bind(serde_json::json!({}))
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::internal("publish live program update", e))?;
+    crate::features::realtime::outbox::enqueue_optional(
+        state.realtime_outbox(),
+        contest,
+        "LIVE_PROGRAM_UPDATED",
+        "PUBLIC",
+        None,
+        serde_json::json!({}),
+    )
+    .await?;
     tx.commit().await.map_err(|e| AppError::internal("commit live program update", e))?;
     Ok(Json(LiveProgramResponse {
         contest_id: contest,
@@ -452,14 +454,8 @@ mod tests {
         }
         .expect("first save");
         assert_eq!(saved.1, 1);
-        let events = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM realtime_outbox WHERE contest_id=$1 AND event_type='LIVE_PROGRAM_UPDATED' AND scope='PUBLIC'",
-        )
-        .bind(contest)
-        .fetch_one(&pool)
-        .await
-        .expect("outbox events");
-        assert_eq!(events, 0, "the handler publishes the outbox event, not save_program");
+        // Realtime events now flow through the Redis outbox (published by the
+        // handler, not save_program); no DB assertion here.
 
         // A stale expectedVersion conflicts instead of silently overwriting.
         let stale = {

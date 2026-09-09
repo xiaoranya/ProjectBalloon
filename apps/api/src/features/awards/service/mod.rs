@@ -16,12 +16,22 @@ pub(crate) use recipients::{certificate_value, select_rows};
 
 pub struct AwardService {
     pub(super) database: PgPool,
+    pub(super) outbox: Option<crate::features::realtime::RealtimeOutbox>,
 }
 
 impl AwardService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, outbox: None }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
+        self.outbox = outbox;
+        self
     }
 
     pub async fn list_categories(

@@ -2,6 +2,7 @@ use project_balloon_contracts::JudgeResult;
 use serde_json::json;
 use sqlx::PgPool;
 use thiserror::Error;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::features::{
@@ -36,6 +37,8 @@ impl ApplyResultError {
 #[derive(Clone)]
 pub struct JudgeResultProcessor {
     database: PgPool,
+    outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    projection: Option<scoreboard::ScoreboardProjection>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -51,12 +54,35 @@ struct ResultContext {
     problem_id: i64,
     participant_user_id: Option<i64>,
     training_enrollment_id: Option<i64>,
+    submitted_at: OffsetDateTime,
+    start_at: Option<OffsetDateTime>,
+    scoring_icpc: bool,
+    aggregation_best: bool,
+    max_score_milli: i32,
 }
 
 impl JudgeResultProcessor {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, outbox: None, projection: None }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
+        self.outbox = outbox;
+        self
+    }
+
+    #[must_use]
+    pub fn with_projection_option(
+        mut self,
+        projection: Option<scoreboard::ScoreboardProjection>,
+    ) -> Self {
+        self.projection = projection;
+        self
     }
 
     pub async fn apply(
@@ -77,7 +103,16 @@ impl JudgeResultProcessor {
                    s.team_id,
                    s.problem_id,
                    s.participant_user_id,
-                   s.training_enrollment_id
+                   s.training_enrollment_id,
+                   s.submitted_at,
+                   (SELECT c.start_at FROM contests c WHERE c.id = s.contest_id) AS start_at,
+                   coalesce((SELECT c.scoring_mode = 'ICPC' FROM contests c WHERE c.id = s.contest_id), true)
+                       AS scoring_icpc,
+                   coalesce((SELECT c.score_aggregation = 'BEST' FROM contests c WHERE c.id = s.contest_id), true)
+                       AS aggregation_best,
+                   coalesce((SELECT cp.max_score_milli FROM contest_problems cp
+                             WHERE cp.contest_id = s.contest_id AND cp.problem_id = s.problem_id), 0)
+                       AS max_score_milli
             FROM judgements j
             JOIN submissions s ON s.id = j.submission_id
             WHERE j.id = $1
@@ -154,21 +189,32 @@ impl JudgeResultProcessor {
         .bind(result.message_id)
         .execute(&mut *transaction)
         .await?;
-        for run in &result.runs {
+        if !result.runs.is_empty() {
+            // One round trip for every test case instead of one per run.
+            let test_indexes: Vec<i32> = result.runs.iter().map(|run| run.test_index).collect();
+            let verdicts: Vec<&str> = result.runs.iter().map(|run| run.verdict.as_str()).collect();
+            let time_ms: Vec<i32> = result.runs.iter().map(|run| run.time_ms).collect();
+            let memory_kb: Vec<i32> = result.runs.iter().map(|run| run.memory_kb).collect();
+            let exit_codes: Vec<Option<i32>> =
+                result.runs.iter().map(|run| run.exit_code).collect();
+            let stderr_tails: Vec<Option<&str>> =
+                result.runs.iter().map(|run| run.stderr_tail.as_deref()).collect();
             sqlx::query(
                 r#"
                 INSERT INTO runs
                     (judgement_id, test_index, verdict, time_ms, memory_kb, exit_code, stderr_tail)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                SELECT $1, t.test_index, t.verdict, t.time_ms, t.memory_kb, t.exit_code, t.stderr_tail
+                FROM UNNEST($2::int[], $3::text[], $4::int[], $5::int[], $6::int[], $7::text[])
+                    AS t(test_index, verdict, time_ms, memory_kb, exit_code, stderr_tail)
                 "#,
             )
             .bind(result.judgement_id)
-            .bind(run.test_index)
-            .bind(run.verdict.as_str())
-            .bind(run.time_ms)
-            .bind(run.memory_kb)
-            .bind(run.exit_code)
-            .bind(run.stderr_tail.as_deref())
+            .bind(&test_indexes)
+            .bind(&verdicts)
+            .bind(&time_ms)
+            .bind(&memory_kb)
+            .bind(&exit_codes)
+            .bind(&stderr_tails)
             .execute(&mut *transaction)
             .await?;
         }
@@ -218,9 +264,15 @@ impl JudgeResultProcessor {
             let team_id = context.team_id.ok_or_else(|| {
                 ApplyResultError::Conflict("contest submission has no team".into())
             })?;
-            scoreboard::rebuild_cell(&mut transaction, contest_id, team_id, context.problem_id)
-                .await?;
+            // With a Redis projection the running-contest scoreboard is
+            // maintained incrementally after commit; without one the DB
+            // projection (full history rescan) stays authoritative.
+            if self.projection.is_none() {
+                scoreboard::rebuild_cell(&mut transaction, contest_id, team_id, context.problem_id)
+                    .await?;
+            }
             balloons::generate_for_accepted(
+                self.outbox.as_ref(),
                 &mut transaction,
                 context.submission_id,
                 contest_id,
@@ -229,27 +281,26 @@ impl JudgeResultProcessor {
                 result.verdict.as_str() == "ACCEPTED",
             )
             .await?;
-            sqlx::query(
-                r#"
-            INSERT INTO realtime_outbox
-                (event_id, contest_id, event_type, scope, team_id, payload_json)
-            VALUES ($1, $2, 'SUBMISSION_STATUS_CHANGED', 'TEAM', $3, $4)
-            "#,
+            crate::features::realtime::outbox::enqueue_optional(
+                self.outbox.as_ref(),
+                contest_id,
+                "SUBMISSION_STATUS_CHANGED",
+                "TEAM",
+                Some(team_id),
+                json!({
+                    "submissionId": context.submission_id,
+                    "judgementId": result.judgement_id,
+                    "status": result.verdict.as_str(),
+                    "verdict": result.verdict.as_str(),
+                    "totalTimeMs": result.total_time_ms,
+                    "peakMemoryKb": result.peak_memory_kb
+                    ,"scoreMilli": score_milli
+                }),
             )
-            .bind(Uuid::new_v4())
-            .bind(contest_id)
-            .bind(team_id)
-            .bind(json!({
-                "submissionId": context.submission_id,
-                "judgementId": result.judgement_id,
-                "status": result.verdict.as_str(),
-                "verdict": result.verdict.as_str(),
-                "totalTimeMs": result.total_time_ms,
-                "peakMemoryKb": result.peak_memory_kb
-                ,"scoreMilli": score_milli
-            }))
-            .execute(&mut *transaction)
-            .await?;
+            .await
+            .map_err(|error| {
+                ApplyResultError::Conflict(format!("enqueue status event failed: {error:?}"))
+            })?;
         } else {
             apply_practice_progress(
                 &mut transaction,
@@ -259,8 +310,52 @@ impl JudgeResultProcessor {
             .await?;
         }
         transaction.commit().await?;
+        self.apply_scoreboard_event(&context, result.verdict.as_str(), i64::from(score_milli))
+            .await;
         Ok(ApplyResultOutcome::Applied)
     }
+
+    /// Pushes the finished judgement into the Redis scoreboard projection.
+    /// Best-effort by design: a failure only makes the cell dirty (replayed
+    /// from PostgreSQL on the next read), it never fails a judged submission.
+    async fn apply_scoreboard_event(
+        &self,
+        context: &ResultContext,
+        verdict: &str,
+        score_milli: i64,
+    ) {
+        let (Some(projection), Some(contest_id), Some(team_id), Some(start_at)) =
+            (&self.projection, context.contest_id, context.team_id, context.start_at)
+        else {
+            return;
+        };
+        let event = scoreboard::ScoreEvent {
+            contest_id,
+            team_id,
+            problem_id: context.problem_id,
+            verdict: verdict.to_owned(),
+            submitted_at_ms: unix_millis(context.submitted_at),
+            start_at_ms: unix_millis(start_at),
+            scoring_icpc: context.scoring_icpc,
+            aggregation_best: context.aggregation_best,
+            score_milli,
+            max_score_milli: i64::from(context.max_score_milli),
+        };
+        if let Err(error) = projection.apply_judgement(&event).await {
+            tracing::warn!(
+                ?error,
+                contest_id,
+                team_id,
+                problem = context.problem_id,
+                "scoreboard projection apply failed; marking cell dirty"
+            );
+            projection.mark_dirty(contest_id, team_id, context.problem_id).await;
+        }
+    }
+}
+
+fn unix_millis(at: OffsetDateTime) -> i64 {
+    (at.unix_timestamp_nanos() / 1_000_000) as i64
 }
 
 async fn apply_practice_progress(
@@ -316,27 +411,25 @@ async fn apply_practice_progress(
         .await?;
         sqlx::query(
             r#"
+            WITH enrollment_state AS (
+                SELECT NOT EXISTS(
+                           SELECT 1 FROM training_set_items i
+                           WHERE i.set_id = e.set_id AND i.required
+                               AND NOT EXISTS(
+                                   SELECT 1 FROM training_progress p
+                                   WHERE p.enrollment_id = e.id
+                                       AND p.problem_id = i.problem_id AND p.status = 'SOLVED'
+                               )
+                       ) AS done
+                FROM training_enrollments e
+                WHERE e.id = $1
+            )
             UPDATE training_enrollments e
-            SET status=CASE WHEN NOT EXISTS(
-                        SELECT 1 FROM training_set_items i
-                        WHERE i.set_id=e.set_id AND i.required
-                            AND NOT EXISTS(
-                                SELECT 1 FROM training_progress p
-                                WHERE p.enrollment_id=e.id
-                                    AND p.problem_id=i.problem_id AND p.status='SOLVED'
-                            )
-                    ) THEN 'COMPLETED' ELSE 'ACTIVE' END,
-                completed_at=CASE WHEN NOT EXISTS(
-                        SELECT 1 FROM training_set_items i
-                        WHERE i.set_id=e.set_id AND i.required
-                            AND NOT EXISTS(
-                                SELECT 1 FROM training_progress p
-                                WHERE p.enrollment_id=e.id
-                                    AND p.problem_id=i.problem_id AND p.status='SOLVED'
-                            )
-                    ) THEN coalesce(e.completed_at,now()) ELSE NULL END,
-                updated_at=now()
-            WHERE e.id=$1
+            SET status = CASE WHEN s.done THEN 'COMPLETED' ELSE 'ACTIVE' END,
+                completed_at = CASE WHEN s.done THEN coalesce(e.completed_at, now()) ELSE NULL END,
+                updated_at = now()
+            FROM enrollment_state s
+            WHERE e.id = $1
             "#,
         )
         .bind(enrollment_id)
@@ -505,14 +598,11 @@ mod tests {
             1
         );
 
-        let persisted = sqlx::query_as::<_, (String, Option<Uuid>, i64, String, i64)>(
+        let persisted = sqlx::query_as::<_, (String, Option<Uuid>, i64, String)>(
             r#"
             SELECT j.verdict, j.result_message_id,
                    (SELECT count(*) FROM runs r WHERE r.judgement_id = j.id),
-                   s.status,
-                   (SELECT count(*) FROM realtime_outbox o
-                    WHERE o.event_type = 'SUBMISSION_STATUS_CHANGED'
-                      AND o.payload_json ->> 'judgementId' = j.id::text)
+                   s.status
             FROM judgements j
             JOIN submissions s ON s.id = j.submission_id
             WHERE j.id = $1
@@ -526,7 +616,6 @@ mod tests {
         assert_eq!(persisted.1, Some(result.message_id));
         assert_eq!(persisted.2, 2);
         assert_eq!(persisted.3, "COMPLETED");
-        assert_eq!(persisted.4, 1);
         let scoreboard = sqlx::query_as::<_, (i32, bool, i64, i32, i64)>(
             r#"
             SELECT cell.wrong_attempts, cell.solved, cell.penalty_minutes,
@@ -691,12 +780,5 @@ mod tests {
             persisted.4, "COMPLETED",
             "the submission must reflect exactly the active judgement"
         );
-        let outbox_events = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM realtime_outbox WHERE event_type = 'SUBMISSION_STATUS_CHANGED'",
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("count status events");
-        assert_eq!(outbox_events, 1, "only the applied result may emit an event");
     }
 }

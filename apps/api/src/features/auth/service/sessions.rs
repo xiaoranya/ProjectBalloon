@@ -12,6 +12,7 @@ use crate::features::auth::service::{
         random_token, rate_limited,
     },
     internal::record_audit,
+    store::{self, SessionRecord, timestamp_millis, workstation_ttl_seconds},
 };
 use crate::features::auth::{model::LoginRequest, password};
 
@@ -66,9 +67,12 @@ impl AuthService {
         let session_token = random_token()?;
         let session_token_hash = digest(&session_token);
         let access_fingerprint = access_fingerprint(&user);
-        let session_ttl_seconds = i64::try_from(self.session_ttl.as_secs())
-            .map_err(|error| AppError::internal("session TTL is too large", error))?;
+        let ttl_seconds = self.session_ttl.as_secs();
 
+        // PostgreSQL remains authoritative for the user record and the audit
+        // trail; the session itself lives only in Redis, so the transaction
+        // no longer carries any `auth_sessions` writes and expiry is enforced
+        // by the Redis TTL instead of an `expires_at` column.
         let mut transaction = self
             .database
             .begin()
@@ -102,23 +106,6 @@ impl AuthService {
             return Err(invalid_credentials());
         }
 
-        sqlx::query("DELETE FROM auth_sessions WHERE expires_at <= now()")
-            .execute(&mut *transaction)
-            .await
-            .map_err(|error| AppError::internal("clean expired sessions", error))?;
-        sqlx::query(
-            r#"
-            INSERT INTO auth_sessions (token_hash, user_id, access_fingerprint, expires_at)
-            VALUES ($1, $2, $3, now() + ($4 * interval '1 second'))
-            "#,
-        )
-        .bind(&session_token_hash)
-        .bind(user.id)
-        .bind(access_fingerprint)
-        .bind(session_ttl_seconds)
-        .execute(&mut *transaction)
-        .await
-        .map_err(|error| AppError::internal("create login session", error))?;
         record_audit(
             &mut transaction,
             Some(user.id),
@@ -133,6 +120,17 @@ impl AuthService {
             .await
             .map_err(|error| AppError::internal("commit login transaction", error))?;
 
+        let now = OffsetDateTime::now_utc();
+        let record = SessionRecord {
+            user_id: user.id,
+            access_fingerprint,
+            created_at_millis: timestamp_millis(now),
+            last_seen_millis: timestamp_millis(now),
+            workstation_binding_id: None,
+            bound_ip: None,
+        };
+        store::create_session(self.redis()?, &session_token_hash, &record, ttl_seconds).await?;
+
         Ok(LoginOutcome { user, session_token })
     }
     pub async fn authenticate(
@@ -143,20 +141,18 @@ impl AuthService {
             return Err(not_authenticated());
         }
         let token_hash = digest(session_token);
-        let session = sqlx::query_as::<_, (i64, String, Option<i64>, Option<String>)>(
-            r#"
-            SELECT user_id, access_fingerprint, workstation_binding_id, bound_ip
-            FROM auth_sessions
-            WHERE token_hash = $1 AND expires_at > now()
-            "#,
-        )
-        .bind(&token_hash)
-        .fetch_optional(&self.database)
-        .await
-        .map_err(|error| AppError::internal("load authentication session", error))?;
-        let Some((user_id, stored_fingerprint, workstation_binding_id, bound_ip)) = session else {
+        let redis = self.redis()?;
+        let Some(session) = store::load_session(redis, &token_hash).await? else {
             return Err(not_authenticated());
         };
+        let SessionRecord {
+            user_id,
+            access_fingerprint: stored_fingerprint,
+            last_seen_millis,
+            workstation_binding_id,
+            bound_ip,
+            ..
+        } = session;
 
         let Some(row) = self.load_user_by_id(user_id).await? else {
             self.delete_session(&token_hash).await?;
@@ -176,17 +172,15 @@ impl AuthService {
             ));
         }
 
-        sqlx::query(
-            r#"
-            UPDATE auth_sessions
-            SET last_seen_at = now()
-            WHERE token_hash = $1 AND last_seen_at < now() - interval '5 minutes'
-            "#,
-        )
-        .bind(&token_hash)
-        .execute(&self.database)
-        .await
-        .map_err(|error| AppError::internal("refresh authentication session", error))?;
+        // Refresh last_seen at most once per five minutes, preserving the
+        // remaining session TTL (sessions keep their fixed expiry).
+        let now_millis = timestamp_millis(OffsetDateTime::now_utc());
+        if now_millis - last_seen_millis > 5 * 60 * 1000
+            && let Some(mut refreshed) = store::load_session(redis, &token_hash).await?
+        {
+            refreshed.last_seen_millis = now_millis;
+            store::touch_session(redis, &token_hash, &refreshed).await?;
+        }
 
         Ok(AuthenticatedSession {
             user,
@@ -210,42 +204,17 @@ impl AuthService {
         let session_token = random_token()?;
         let token_hash = digest(&session_token);
         let access_fingerprint = access_fingerprint(&user);
-        let ttl_seconds = i64::try_from(self.session_ttl.as_secs())
-            .map_err(|error| AppError::internal("session TTL is too large", error))?;
-        let expires_at = std::cmp::min(
-            grant.expires_at,
-            OffsetDateTime::now_utc() + time::Duration::seconds(ttl_seconds),
-        );
-        let mut transaction = self
-            .database
-            .begin()
-            .await
-            .map_err(|error| AppError::internal("begin workstation login", error))?;
-        sqlx::query("DELETE FROM auth_sessions WHERE workstation_binding_id=$1")
-            .bind(grant.binding_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(|error| AppError::internal("replace workstation session", error))?;
-        sqlx::query(
-            r#"
-            INSERT INTO auth_sessions
-                (token_hash,user_id,access_fingerprint,expires_at,workstation_binding_id,bound_ip)
-            VALUES($1,$2,$3,$4,$5,$6)
-            "#,
-        )
-        .bind(&token_hash)
-        .bind(user.id)
-        .bind(access_fingerprint)
-        .bind(expires_at)
-        .bind(grant.binding_id)
-        .bind(grant.bound_ip)
-        .execute(&mut *transaction)
-        .await
-        .map_err(|error| AppError::internal("create workstation session", error))?;
-        transaction
-            .commit()
-            .await
-            .map_err(|error| AppError::internal("commit workstation login", error))?;
+        let ttl_seconds = workstation_ttl_seconds(grant.expires_at, self.session_ttl.as_secs());
+        let now = OffsetDateTime::now_utc();
+        let record = SessionRecord {
+            user_id: user.id,
+            access_fingerprint,
+            created_at_millis: timestamp_millis(now),
+            last_seen_millis: timestamp_millis(now),
+            workstation_binding_id: Some(grant.binding_id),
+            bound_ip: Some(grant.bound_ip.clone()),
+        };
+        store::create_workstation_session(self.redis()?, &token_hash, &record, ttl_seconds).await?;
         Ok((LoginOutcome { user, session_token }, grant.competition))
     }
     pub async fn logout(&self, token_hash: &str) -> Result<(), AppError> {

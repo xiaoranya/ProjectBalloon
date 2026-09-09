@@ -3,6 +3,7 @@ pub(crate) mod handlers;
 pub(crate) mod helpers;
 mod model;
 mod projection;
+mod redis_state;
 mod service;
 /// Routes owned by this feature, assembled by the root router.
 pub fn routes() -> axum::Router<crate::state::AppState> {
@@ -24,6 +25,7 @@ pub use model::{
     ScoreboardCell, ScoreboardProblem, ScoreboardQuery, ScoreboardResponse, ScoreboardRow,
 };
 pub(crate) use projection::rebuild_cell;
+pub use redis_state::{ScoreEvent, ScoreboardProjection};
 pub use service::ScoreboardService;
 
 use axum::routing::{get, post};

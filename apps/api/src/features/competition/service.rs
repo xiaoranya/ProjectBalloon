@@ -20,12 +20,19 @@ const PAIRING_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 #[derive(Clone)]
 pub struct CompetitionService {
     database: PgPool,
+    redis: Option<crate::features::redis::RedisHandle>,
 }
 
 impl CompetitionService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, redis: None }
+    }
+
+    #[must_use]
+    pub fn with_redis_option(mut self, redis: Option<crate::features::redis::RedisHandle>) -> Self {
+        self.redis = redis;
+        self
     }
 
     pub async fn deployment_info(
@@ -388,6 +395,7 @@ impl CompetitionService {
             .commit()
             .await
             .map_err(|error| AppError::internal("commit pairing code rotation", error))?;
+        self.revoke_redis_workstation_sessions(binding_id).await?;
         Ok(WorkstationBindingResponse { pairing_code: Some(code), ..row })
     }
 
@@ -417,7 +425,23 @@ impl CompetitionService {
         transaction
             .commit()
             .await
-            .map_err(|error| AppError::internal("commit workstation revocation", error))
+            .map_err(|error| AppError::internal("commit workstation revocation", error))?;
+        self.revoke_redis_workstation_sessions(binding_id).await
+    }
+
+    /// Sessions live in Redis now; the `auth_sessions` DELETE above only
+    /// covers legacy rows. Failing to delete the Redis session would leave a
+    /// revoked workstation logged in, so the error is propagated.
+    async fn revoke_redis_workstation_sessions(&self, binding_id: i64) -> Result<(), AppError> {
+        match &self.redis {
+            Some(redis) => {
+                crate::features::auth::revoke_workstation_sessions(redis, binding_id).await
+            }
+            None => Err(AppError::internal_message(
+                "revoke workstation sessions",
+                "Redis connection unavailable",
+            )),
+        }
     }
 }
 
@@ -595,7 +619,17 @@ mod tests {
         ).fetch_one(&pool).await.expect("contest");
         sqlx::query("INSERT INTO contest_teams(contest_id,team_id,participation_type) VALUES($1,$2,'OFFICIAL')")
             .bind(contest_id).bind(team_id).execute(&pool).await.expect("roster");
-        let service = CompetitionService::new(pool.clone());
+        // Workstation sessions now live in Redis; run against the integration
+        // Redis when available and skip otherwise.
+        let Ok(redis_url) = std::env::var("PROJECT_BALLOON_TEST_REDIS_URL") else {
+            eprintln!("skipping: PROJECT_BALLOON_TEST_REDIS_URL is not set");
+            return;
+        };
+        let redis =
+            crate::features::redis::RedisHandle::connect(&redis_url, Duration::from_millis(500))
+                .await
+                .expect("connect integration Redis");
+        let service = CompetitionService::new(pool.clone()).with_redis_option(Some(redis.clone()));
         let workstation = service
             .create_workstation(CreateWorkstationRequest {
                 ip_address: "192.0.2.10".into(),
@@ -647,7 +681,10 @@ mod tests {
             "PAIRING_CODE_INVALID"
         );
 
-        let auth = AuthService::new(pool.clone(), Duration::from_secs(3600), false);
+        // Workstation sessions now live in Redis; reuse the connection made
+        // above for the auth service too.
+        let auth = AuthService::new(pool.clone(), Duration::from_secs(3600), false)
+            .with_redis_option(Some(redis));
         let grant =
             service.login_grant(DeploymentMode::Competition, ip, &code).await.expect("grant");
         let (session, _) = auth.create_workstation_session(grant).await.expect("session");

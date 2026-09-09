@@ -3,7 +3,6 @@ use std::net::IpAddr;
 use serde_json::json;
 use sqlx::{PgPool, Postgres, Transaction};
 use time::OffsetDateTime;
-use uuid::Uuid;
 
 use crate::{error::AppError, features::auth::model::AuthUser};
 
@@ -11,12 +10,22 @@ use crate::features::announcements::model::{AnnouncementResponse, CreateRequest,
 
 pub struct AnnouncementService {
     database: PgPool,
+    outbox: Option<crate::features::realtime::RealtimeOutbox>,
 }
 
 impl AnnouncementService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, outbox: None }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
+        self.outbox = outbox;
+        self
     }
 
     pub(crate) async fn create(
@@ -56,10 +65,10 @@ impl AnnouncementService {
         .map_err(|error| AppError::internal("insert announcement", error))?;
         if scheduled {
             audit_tx(&mut tx, actor.id, "ANNOUNCEMENT_SCHEDULED", id, ip).await?;
-            schedule_event_tx(&mut tx, contest_id, id, "SCHEDULED").await?;
+            schedule_event_tx(self.outbox.as_ref(), contest_id, id, "SCHEDULED").await?;
         } else {
             audit_tx(&mut tx, actor.id, "ANNOUNCEMENT_PUBLISHED", id, ip).await?;
-            public_event_tx(&mut tx, contest_id, id, "PUBLISHED").await?;
+            public_event_tx(self.outbox.as_ref(), contest_id, id, "PUBLISHED").await?;
         }
         tx.commit()
             .await
@@ -108,7 +117,7 @@ impl AnnouncementService {
         .await
         .map_err(|error| AppError::internal("reschedule announcement", error))?;
         audit_tx(&mut tx, actor.id, "ANNOUNCEMENT_SCHEDULE_UPDATED", id, ip).await?;
-        schedule_event_tx(&mut tx, contest_id, id, "SCHEDULED").await?;
+        schedule_event_tx(self.outbox.as_ref(), contest_id, id, "SCHEDULED").await?;
         tx.commit()
             .await
             .map_err(|error| AppError::internal("commit announcement reschedule", error))?;
@@ -142,7 +151,7 @@ impl AnnouncementService {
         .await
         .map_err(|error| AppError::internal("cancel scheduled announcement", error))?;
         audit_tx(&mut tx, actor.id, "ANNOUNCEMENT_SCHEDULE_CANCELLED", id, ip).await?;
-        schedule_event_tx(&mut tx, contest_id, id, "CANCELLED").await?;
+        schedule_event_tx(self.outbox.as_ref(), contest_id, id, "CANCELLED").await?;
         tx.commit().await.map_err(|error| {
             AppError::internal("commit scheduled announcement cancellation", error)
         })?;
@@ -204,7 +213,7 @@ impl AnnouncementService {
             .bind(id).bind(request.title).bind(request.body).bind(request.pinned)
             .execute(&mut *tx).await.map_err(|error| AppError::internal("update announcement", error))?;
         audit_tx(&mut tx, actor.id, "ANNOUNCEMENT_UPDATED", id, ip).await?;
-        public_event_tx(&mut tx, contest_id, id, "PUBLISHED").await?;
+        public_event_tx(self.outbox.as_ref(), contest_id, id, "PUBLISHED").await?;
         tx.commit()
             .await
             .map_err(|error| AppError::internal("commit announcement update", error))?;
@@ -236,7 +245,7 @@ impl AnnouncementService {
             .bind(id).bind(pinned).execute(&mut *tx).await
             .map_err(|error| AppError::internal("pin announcement", error))?;
         audit_tx(&mut tx, actor.id, "ANNOUNCEMENT_PINNED", id, ip).await?;
-        public_event_tx(&mut tx, contest_id, id, "PUBLISHED").await?;
+        public_event_tx(self.outbox.as_ref(), contest_id, id, "PUBLISHED").await?;
         tx.commit().await.map_err(|error| AppError::internal("commit announcement pin", error))?;
         load(&self.database, id).await
     }
@@ -265,7 +274,7 @@ impl AnnouncementService {
             .bind(id).bind(actor.id).execute(&mut *tx).await
             .map_err(|error| AppError::internal("withdraw announcement", error))?;
         audit_tx(&mut tx, actor.id, "ANNOUNCEMENT_WITHDRAWN", id, ip).await?;
-        public_event_tx(&mut tx, contest_id, id, "WITHDRAWN").await?;
+        public_event_tx(self.outbox.as_ref(), contest_id, id, "WITHDRAWN").await?;
         tx.commit()
             .await
             .map_err(|error| AppError::internal("commit announcement withdrawal", error))
@@ -467,31 +476,37 @@ pub(crate) async fn audit_tx(
 }
 
 pub(crate) async fn public_event_tx(
-    tx: &mut Transaction<'_, Postgres>,
+    outbox: Option<&crate::features::realtime::RealtimeOutbox>,
     contest_id: i64,
     id: i64,
     status: &str,
 ) -> Result<(), AppError> {
-    sqlx::query("INSERT INTO realtime_outbox (event_id, contest_id, event_type, scope, payload_json) VALUES ($1, $2, 'ANNOUNCEMENT_UPDATED', 'PUBLIC', $3)")
-        .bind(Uuid::new_v4()).bind(contest_id).bind(json!({"announcementId": id, "status": status}))
-        .execute(&mut **tx).await.map(|_| ())
-        .map_err(|error| AppError::internal("enqueue announcement event", error))
+    crate::features::realtime::outbox::enqueue_optional(
+        outbox,
+        contest_id,
+        "ANNOUNCEMENT_UPDATED",
+        "PUBLIC",
+        None,
+        json!({"announcementId": id, "status": status}),
+    )
+    .await
 }
 
 pub(super) async fn schedule_event_tx(
-    tx: &mut Transaction<'_, Postgres>,
+    outbox: Option<&crate::features::realtime::RealtimeOutbox>,
     contest_id: i64,
     id: i64,
     status: &str,
 ) -> Result<(), AppError> {
-    sqlx::query("INSERT INTO realtime_outbox (event_id,contest_id,event_type,scope,payload_json) VALUES ($1,$2,'ANNOUNCEMENT_SCHEDULE_UPDATED','STAFF',$3)")
-        .bind(Uuid::new_v4())
-        .bind(contest_id)
-        .bind(json!({"announcementId": id, "status": status}))
-        .execute(&mut **tx)
-        .await
-        .map(|_| ())
-        .map_err(|error| AppError::internal("enqueue announcement schedule event", error))
+    crate::features::realtime::outbox::enqueue_optional(
+        outbox,
+        contest_id,
+        "ANNOUNCEMENT_SCHEDULE_UPDATED",
+        "STAFF",
+        None,
+        json!({"announcementId": id, "status": status}),
+    )
+    .await
 }
 
 fn not_found() -> AppError {

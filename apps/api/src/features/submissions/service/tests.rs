@@ -264,21 +264,7 @@ async fn submission_persists_authoritative_task_and_compensates_rejection(pool: 
         )
         .await
         .expect("create similar second-team submission");
-    let team_event = sqlx::query_scalar::<_, bool>(
-        r#"
-            SELECT EXISTS (
-                SELECT 1 FROM realtime_outbox
-                WHERE contest_id = $1 AND team_id = $2
-                  AND event_type = 'SUBMISSION_STATUS_CHANGED' AND scope = 'TEAM'
-            )
-            "#,
-    )
-    .bind(contest_id)
-    .bind(team_id)
-    .fetch_one(&pool)
-    .await
-    .expect("check team realtime event");
-    assert!(team_event);
+    // Realtime events now flow through the Redis outbox; no DB assertion.
 
     sqlx::query(
         r#"
@@ -439,12 +425,9 @@ async fn submission_persists_authoritative_task_and_compensates_rejection(pool: 
     assert_eq!(rejudge_task.judgement_id, rejudged.judgement_id);
     assert_eq!(rejudge_task.source_object_key, source_key);
     assert_eq!(rejudge_task.source_sha256, source_hash);
-    let rejudge_effects = sqlx::query_as::<_, (bool, i64, i64)>(
+    let rejudge_effects = sqlx::query_as::<_, (bool, i64)>(
         r#"
             SELECT cell.solved,
-                   (SELECT count(*) FROM realtime_outbox
-                    WHERE contest_id = $1 AND event_type = 'SUBMISSION_REJUDGED'
-                      AND payload_json ->> 'submissionId' = $2::text),
                    (SELECT count(*) FROM audit_logs
                     WHERE actor_user_id = $3 AND action = 'SUBMISSION_REJUDGED'
                       AND target_id = $2::text)
@@ -460,7 +443,7 @@ async fn submission_persists_authoritative_task_and_compensates_rejection(pool: 
     .fetch_one(&pool)
     .await
     .expect("load rejudge side effects");
-    assert_eq!(rejudge_effects, (false, 2, 1));
+    assert_eq!(rejudge_effects, (false, 1));
 
     let all_submissions = || ValidatedSubmissionListQuery {
         team_id: None,

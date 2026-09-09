@@ -4,7 +4,6 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
 use time::OffsetDateTime;
-use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::features::auth::model::AuthUser;
@@ -17,12 +16,22 @@ use crate::features::resolver::plan::{build_states, encode_state, load_source_sn
 
 pub struct ResolverService {
     database: PgPool,
+    outbox: Option<crate::features::realtime::RealtimeOutbox>,
 }
 
 impl ResolverService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, outbox: None }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
+        self.outbox = outbox;
+        self
     }
 
     pub(crate) async fn create(
@@ -334,11 +343,22 @@ impl ResolverService {
         )
         .await?;
         audit(&mut tx, actor.id, &format!("RESOLVER_{action}"), id, ip).await?;
-        sqlx::query("INSERT INTO realtime_outbox (event_id, contest_id, event_type, scope, payload_json) SELECT $1, contest_id, 'RESOLVER_STATE_CHANGED', $2, $3 FROM resolver_runs WHERE id = $4")
-            .bind(Uuid::new_v4()).bind(if official { "PUBLIC" } else { "STAFF" })
-            .bind(json!({"resolverRunId": id, "action": action, "stepIndex": next_step, "status": next_status}))
-            .bind(id).execute(&mut *tx).await
-            .map_err(|error| AppError::internal("enqueue resolver event", error))?;
+        let run_contest_id =
+            sqlx::query_scalar::<_, i64>("SELECT contest_id FROM resolver_runs WHERE id = $1")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|error| AppError::internal("load resolver run contest", error))?;
+        crate::features::realtime::outbox::enqueue_optional(
+            self.outbox.as_ref(),
+            run_contest_id,
+            "RESOLVER_STATE_CHANGED",
+            if official { "PUBLIC" } else { "STAFF" },
+            None,
+            json!({"resolverRunId": id, "action": action, "stepIndex": next_step, "status": next_status}),
+        )
+        .await
+        .map_err(|error| AppError::internal_message("enqueue resolver event", format!("{error:?}")))?;
         tx.commit().await.map_err(|error| AppError::internal("commit resolver command", error))?;
         load_run(&self.database, id).await
     }
@@ -388,7 +408,16 @@ impl ResolverService {
         insert_event(&mut tx, id, sequence, "AUTO_PLAY", actor.id,
             json!({"enabled": request.enabled, "intervalMilliseconds": request.interval_milliseconds, "stepIndex": step})).await?;
         audit(&mut tx, actor.id, "RESOLVER_AUTO_PLAY", id, ip).await?;
-        enqueue_state_event(&mut tx, id, official, "AUTO_PLAY", step, &status).await?;
+        enqueue_state_event(
+            self.outbox.as_ref(),
+            &mut tx,
+            id,
+            official,
+            "AUTO_PLAY",
+            step,
+            &status,
+        )
+        .await?;
         tx.commit()
             .await
             .map_err(|error| AppError::internal("commit Resolver auto-play", error))?;
@@ -475,6 +504,7 @@ async fn next_event_sequence(
 }
 
 async fn enqueue_state_event(
+    outbox: Option<&crate::features::realtime::RealtimeOutbox>,
     tx: &mut Transaction<'_, Postgres>,
     run_id: i64,
     official: bool,
@@ -482,11 +512,24 @@ async fn enqueue_state_event(
     step: i32,
     status: &str,
 ) -> Result<(), AppError> {
-    sqlx::query("INSERT INTO realtime_outbox (event_id, contest_id, event_type, scope, payload_json) SELECT $1, contest_id, 'RESOLVER_STATE_CHANGED', $2, $3 FROM resolver_runs WHERE id = $4")
-        .bind(Uuid::new_v4()).bind(if official { "PUBLIC" } else { "STAFF" })
-        .bind(json!({"resolverRunId": run_id, "action": action, "stepIndex": step, "status": status}))
-        .bind(run_id).execute(&mut **tx).await.map(|_| ())
-        .map_err(|error| AppError::internal("enqueue Resolver state event", error))
+    let contest_id =
+        sqlx::query_scalar::<_, i64>("SELECT contest_id FROM resolver_runs WHERE id = $1")
+            .bind(run_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|error| AppError::internal("load resolver run contest", error))?;
+    crate::features::realtime::outbox::enqueue_optional(
+        outbox,
+        contest_id,
+        "RESOLVER_STATE_CHANGED",
+        if official { "PUBLIC" } else { "STAFF" },
+        None,
+        json!({"resolverRunId": run_id, "action": action, "stepIndex": step, "status": status}),
+    )
+    .await
+    .map_err(|error| {
+        AppError::internal_message("enqueue Resolver state event", format!("{error:?}"))
+    })
 }
 
 async fn audit(

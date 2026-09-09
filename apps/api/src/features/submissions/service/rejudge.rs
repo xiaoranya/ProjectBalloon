@@ -255,7 +255,16 @@ impl SubmissionService {
                 .with_judgement_id(judgement_id)
                 .with_user_id(actor.id)
         })?;
-        scoreboard::rebuild_cell(&mut transaction, contest_id, context.team_id, context.problem_id)
+        // With a Redis projection the running-contest scoreboard cell is
+        // replayed (bounded to this cell) after commit; the DB projection
+        // rescan is only used when Redis is absent.
+        if self.projection.is_none() {
+            scoreboard::rebuild_cell(
+                &mut transaction,
+                contest_id,
+                context.team_id,
+                context.problem_id,
+            )
             .await
             .map_err(|error| {
                 AppError::internal("rollback scoreboard for rejudge", error)
@@ -264,6 +273,7 @@ impl SubmissionService {
                     .with_judgement_id(judgement_id)
                     .with_user_id(actor.id)
             })?;
+        }
         let task = JudgeTask {
             schema_version: JUDGE_TASK_SCHEMA_VERSION,
             judgement_id,
@@ -309,27 +319,22 @@ impl SubmissionService {
                     .with_user_id(actor.id)
             })?;
         for (scope, recipient) in [("TEAM", Some(context.team_id)), ("STAFF", None)] {
-            sqlx::query(
-                r#"
-                    INSERT INTO realtime_outbox
-                        (event_id, contest_id, event_type, scope, team_id, payload_json)
-                    VALUES ($1, $2, 'SUBMISSION_REJUDGED', $3, $4, $5)
-                    "#,
+            crate::features::realtime::outbox::enqueue_optional(
+                self.outbox.as_ref(),
+                contest_id,
+                "SUBMISSION_REJUDGED",
+                scope,
+                recipient,
+                json!({
+                    "submissionId": submission_id,
+                    "previousJudgementId": context.active_judgement_id,
+                    "judgementId": judgement_id,
+                    "status": SubmissionStatus::Pending.as_str()
+                }),
             )
-            .bind(Uuid::new_v4())
-            .bind(contest_id)
-            .bind(scope)
-            .bind(recipient)
-            .bind(json!({
-                "submissionId": submission_id,
-                "previousJudgementId": context.active_judgement_id,
-                "judgementId": judgement_id,
-                "status": SubmissionStatus::Pending.as_str()
-            }))
-            .execute(&mut *transaction)
             .await
             .map_err(|error| {
-                AppError::internal("enqueue rejudge realtime event", error)
+                error
                     .with_contest_id(contest_id)
                     .with_submission_id(submission_id)
                     .with_judgement_id(judgement_id)
@@ -362,6 +367,20 @@ impl SubmissionService {
                 .with_judgement_id(judgement_id)
                 .with_user_id(actor.id)
         })?;
+        if let Some(projection) = &self.projection
+            && let Err(error) = projection
+                .recompute_cell(&self.database, contest_id, context.team_id, context.problem_id)
+                .await
+        {
+            tracing::warn!(
+                ?error,
+                contest_id,
+                team_id = context.team_id,
+                problem = context.problem_id,
+                "scoreboard replay after rejudge failed; marking cell dirty"
+            );
+            projection.mark_dirty(contest_id, context.team_id, context.problem_id).await;
+        }
         Ok(RejudgeResponse {
             submission_id,
             previous_judgement_id: context.active_judgement_id,

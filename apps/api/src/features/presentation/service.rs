@@ -25,12 +25,22 @@ const SCREEN_VIEWS: &[&str] = &[
 
 pub struct PresentationService {
     database: PgPool,
+    outbox: Option<crate::features::realtime::RealtimeOutbox>,
 }
 
 impl PresentationService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, outbox: None }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
+        self.outbox = outbox;
+        self
     }
 
     pub(super) async fn config(
@@ -167,8 +177,18 @@ impl PresentationService {
         .await
         .map_err(|error| AppError::internal("save presentation config", error))?;
         audit(&mut tx, actor.id, "PRESENTATION_CONFIG_UPDATED", "CONTEST", contest, ip).await?;
-        sqlx::query("INSERT INTO realtime_outbox(event_id,contest_id,event_type,scope,payload_json) VALUES($1,$2,'PRESENTATION_UPDATED','PUBLIC',$3)")
-            .bind(uuid::Uuid::new_v4()).bind(contest).bind(serde_json::json!({"mode":mode})).execute(&mut *tx).await.map_err(|error| AppError::internal("publish presentation config", error))?;
+        crate::features::realtime::outbox::enqueue_optional(
+            self.outbox.as_ref(),
+            contest,
+            "PRESENTATION_UPDATED",
+            "PUBLIC",
+            None,
+            serde_json::json!({"mode":mode}),
+        )
+        .await
+        .map_err(|error| {
+            AppError::internal_message("publish presentation config", format!("{error:?}"))
+        })?;
         tx.commit()
             .await
             .map_err(|error| AppError::internal("commit presentation config", error))?;

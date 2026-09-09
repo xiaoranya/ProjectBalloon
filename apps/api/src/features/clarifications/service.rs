@@ -2,7 +2,6 @@ use std::net::IpAddr;
 
 use serde_json::json;
 use sqlx::{PgPool, Postgres, Transaction};
-use uuid::Uuid;
 
 use crate::{
     error::AppError,
@@ -23,12 +22,22 @@ const RATE_LIMIT_MINUTES: i64 = 5;
 
 pub struct ClarificationService {
     database: PgPool,
+    outbox: Option<crate::features::realtime::RealtimeOutbox>,
 }
 
 impl ClarificationService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, outbox: None }
+    }
+
+    #[must_use]
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
+        self.outbox = outbox;
+        self
     }
 
     pub(super) async fn ask(
@@ -111,7 +120,7 @@ impl ClarificationService {
             .fetch_one(&mut *tx).await
             .map_err(|error| AppError::internal("insert clarification", error))?;
         audit(&mut tx, actor.id, "CLARIFICATION_ASKED", id, request_ip).await?;
-        realtime(&mut tx, contest_id, team_id, id, "ASKED").await?;
+        realtime(self.outbox.as_ref(), contest_id, team_id, id, "ASKED").await?;
         tx.commit().await.map_err(|error| AppError::internal("commit clarification ask", error))?;
         load(&self.database, id).await
     }
@@ -180,7 +189,7 @@ impl ClarificationService {
             .bind(id).bind(command.reply).bind(command.visibility).bind(actor.id)
             .execute(&mut *tx).await.map_err(|error| AppError::internal("reply to clarification", error))?;
         audit(&mut tx, actor.id, "CLARIFICATION_REPLIED", id, request_ip).await?;
-        realtime(&mut tx, contest_id, team_id, id, "REPLIED").await?;
+        realtime(self.outbox.as_ref(), contest_id, team_id, id, "REPLIED").await?;
         tx.commit()
             .await
             .map_err(|error| AppError::internal("commit clarification reply", error))?;
@@ -210,7 +219,7 @@ impl ClarificationService {
             .bind(id).bind(actor.id).execute(&mut *tx).await
             .map_err(|error| AppError::internal("close clarification", error))?;
         audit(&mut tx, actor.id, "CLARIFICATION_CLOSED", id, request_ip).await?;
-        realtime(&mut tx, contest_id, team_id, id, "CLOSED").await?;
+        realtime(self.outbox.as_ref(), contest_id, team_id, id, "CLOSED").await?;
         tx.commit()
             .await
             .map_err(|error| AppError::internal("commit clarification close", error))?;
@@ -294,8 +303,8 @@ impl ClarificationService {
             request_ip,
         )
         .await?;
-        realtime(&mut tx, contest_id, team_id, id, "CONVERTED").await?;
-        public_event_tx(&mut tx, contest_id, announcement_id, "PUBLISHED").await?;
+        realtime(self.outbox.as_ref(), contest_id, team_id, id, "CONVERTED").await?;
+        public_event_tx(self.outbox.as_ref(), contest_id, announcement_id, "PUBLISHED").await?;
         tx.commit()
             .await
             .map_err(|error| AppError::internal("commit clarification conversion", error))?;
@@ -413,18 +422,25 @@ async fn audit(
 }
 
 async fn realtime(
-    tx: &mut Transaction<'_, Postgres>,
+    outbox: Option<&crate::features::realtime::RealtimeOutbox>,
     contest_id: i64,
     team_id: i64,
     id: i64,
     action: &str,
 ) -> Result<(), AppError> {
     for (scope, recipient) in [("STAFF", None), ("TEAM", Some(team_id))] {
-        sqlx::query("INSERT INTO realtime_outbox (event_id, contest_id, event_type, scope, team_id, payload_json) VALUES ($1, $2, 'CLARIFICATION_UPDATED', $3, $4, $5)")
-            .bind(Uuid::new_v4()).bind(contest_id).bind(scope).bind(recipient)
-            .bind(json!({"clarificationId": id, "action": action}))
-            .execute(&mut **tx).await
-            .map_err(|error| AppError::internal("enqueue clarification event", error))?;
+        crate::features::realtime::outbox::enqueue_optional(
+            outbox,
+            contest_id,
+            "CLARIFICATION_UPDATED",
+            scope,
+            recipient,
+            json!({"clarificationId": id, "action": action}),
+        )
+        .await
+        .map_err(|error| {
+            AppError::internal_message("enqueue clarification event", format!("{error:?}"))
+        })?;
     }
     Ok(())
 }

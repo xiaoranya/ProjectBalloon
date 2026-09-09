@@ -12,6 +12,7 @@ use project_balloon_api::{
     },
     features::printing::{CommandLineCupsGateway, CupsDeliveryRunner, CupsGateway},
     features::realtime::{DispatcherConfig, OutboxDispatcher, RealtimePublisher},
+    features::redis::RedisHandle,
     features::resolver::ResolverAutoRunner,
     features::scoreboard::ScoreboardCache,
     features::submissions::{BatchRejudgeRunner, ExportTaskRunner, ExportTaskRunnerConfig},
@@ -35,6 +36,7 @@ async fn main() -> Result<()> {
     init_tracing();
     let config = load_config()?;
     let database = connect_database(&config).await?;
+    let redis = connect_redis(&config).await?;
     let object_storage = init_object_storage(&config).await?;
     let cups_gateway = init_cups_gateway(&config);
     let judge_publisher = init_judge_publisher(&config);
@@ -46,6 +48,7 @@ async fn main() -> Result<()> {
     let state = build_app_state(
         &database,
         &config,
+        redis.clone(),
         object_storage.clone(),
         cups_gateway.clone(),
         judge_publisher.clone(),
@@ -169,9 +172,26 @@ fn init_judge_publisher(config: &AppConfig) -> Option<Arc<RabbitJudgeTaskPublish
     })
 }
 
+/// Redis is required: login sessions, login rate limiting, and the realtime
+/// event outbox live exclusively there.
+const REDIS_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+async fn connect_redis(config: &AppConfig) -> Result<RedisHandle> {
+    let handle = tokio::time::timeout(
+        REDIS_CONNECT_TIMEOUT,
+        RedisHandle::connect(&config.redis_url, config.redis_operation_timeout),
+    )
+    .await
+    .context("timed out connecting to Redis")?
+    .context("failed to connect to Redis")?;
+    info!("Redis connection established");
+    Ok(handle)
+}
+
 async fn build_app_state(
     database: &PgPool,
     config: &AppConfig,
+    redis: RedisHandle,
     object_storage: Option<ObjectStorageHandle>,
     cups_gateway: Option<Arc<dyn CupsGateway>>,
     judge_publisher: Option<Arc<RabbitJudgeTaskPublisher>>,
@@ -186,6 +206,7 @@ async fn build_app_state(
             &config.csrf_secret,
             config.realtime_channel_capacity,
             config.realtime_redis_enabled,
+            Some(redis.clone()),
             object_storage,
         ),
         None => AppState::new(
@@ -196,6 +217,7 @@ async fn build_app_state(
             &config.csrf_secret,
             config.realtime_channel_capacity,
             config.realtime_redis_enabled,
+            Some(redis.clone()),
         ),
     };
     state = state.with_deployment_mode(config.deployment_mode);
@@ -370,6 +392,7 @@ async fn spawn_background_runners(
     shutdown: watch::Sender<bool>,
 ) -> Result<BackgroundRunners> {
     let shutdown_rx = shutdown.subscribe();
+    let scoreboard_projection = state.scoreboard_projection();
     let (publisher, redis_subscriber) = if config.realtime_redis_enabled {
         let (publisher, subscriber) = RealtimePublisher::connect_redis(
             &config.redis_url,
@@ -385,22 +408,27 @@ async fn spawn_background_runners(
     };
     let redis_subscriber_task =
         redis_subscriber.map(|subscriber| tokio::spawn(subscriber.run(shutdown_rx.clone())));
-    let dispatcher_task = config.realtime_dispatcher_enabled.then(|| {
-        tokio::spawn(
-            OutboxDispatcher::new(
-                database.clone(),
-                publisher,
-                DispatcherConfig {
-                    poll_interval: config.realtime_poll_interval,
-                    lease: config.realtime_lease,
-                    retry_base: config.realtime_retry_base,
-                    batch_size: config.realtime_batch_size,
-                    max_attempts: config.realtime_max_attempts,
-                },
-            )
-            .run(shutdown_rx.clone()),
-        )
-    });
+    let dispatcher_task = config
+        .realtime_dispatcher_enabled
+        .then(|| {
+            state.realtime_outbox().cloned().map(|outbox| {
+                tokio::spawn(
+                    OutboxDispatcher::new(
+                        outbox,
+                        publisher,
+                        DispatcherConfig {
+                            poll_interval: config.realtime_poll_interval,
+                            lease: config.realtime_lease,
+                            retry_base: config.realtime_retry_base,
+                            batch_size: config.realtime_batch_size,
+                            max_attempts: config.realtime_max_attempts,
+                        },
+                    )
+                    .run(shutdown_rx.clone()),
+                )
+            })
+        })
+        .flatten();
     let judge_dispatcher_task = judge_publisher.as_ref().map(|publisher| {
         tokio::spawn(
             SubmissionOutboxDispatcher::new(
@@ -448,12 +476,22 @@ async fn spawn_background_runners(
             .run(shutdown_rx.clone()),
         )
     });
-    let resolver_auto_task =
-        tokio::spawn(ResolverAutoRunner::new(database.clone()).run(shutdown_rx.clone()));
-    let contest_lifecycle_task =
-        tokio::spawn(ContestLifecycleRunner::new(database.clone()).run(shutdown_rx.clone()));
-    let announcement_schedule_task =
-        tokio::spawn(AnnouncementScheduleRunner::new(database.clone()).run(shutdown_rx.clone()));
+    let resolver_auto_task = tokio::spawn(
+        ResolverAutoRunner::new(database.clone())
+            .with_outbox_option(state.realtime_outbox().cloned())
+            .run(shutdown_rx.clone()),
+    );
+    let contest_lifecycle_task = tokio::spawn(
+        ContestLifecycleRunner::new(database.clone())
+            .with_outbox_option(state.realtime_outbox().cloned())
+            .with_projection_option(scoreboard_projection.clone())
+            .run(shutdown_rx.clone()),
+    );
+    let announcement_schedule_task = tokio::spawn(
+        AnnouncementScheduleRunner::new(database.clone())
+            .with_outbox_option(state.realtime_outbox().cloned())
+            .run(shutdown_rx.clone()),
+    );
     let judge_result_consumer_task = config.rabbitmq_enabled.then(|| {
         tokio::spawn(
             RabbitJudgeResultConsumer::new(
@@ -463,6 +501,8 @@ async fn spawn_background_runners(
                 config.judge_result_reconnect_delay,
                 config.judge_result_prefetch,
             )
+            .with_outbox_option(state.realtime_outbox().cloned())
+            .with_projection_option(scoreboard_projection.clone())
             .run(shutdown_rx.clone()),
         )
     });
@@ -492,7 +532,9 @@ async fn spawn_background_runners(
     });
     let cups_delivery_task = match (cups_gateway, delivery_storage) {
         (Some(gateway), Some(storage)) => Some(tokio::spawn(
-            CupsDeliveryRunner::new(database.clone(), storage, gateway).run(shutdown_rx.clone()),
+            CupsDeliveryRunner::new(database.clone(), storage, gateway)
+                .with_outbox_option(state.realtime_outbox().cloned())
+                .run(shutdown_rx.clone()),
         )),
         (Some(_), None) => {
             warn!("CUPS delivery enabled without object storage; delivery runner is disabled");
