@@ -3,17 +3,51 @@ Description=ProjectBalloon Judge Worker
 Wants=network-online.target
 After=network-online.target
 
+# cgroup v2: the bwrap sandbox needs a delegated, *empty* group it can enable
+# cpu/memory/pids on. Two kernel rules fix the layout:
+#   1. no-internal-process — controllers cannot be enabled on a group that holds
+#      a process, so this unit's own cgroup is unusable as the base;
+#   2. migration — attaching a process requires write access to the *common
+#      ancestor* of source and destination, so any group directly under
+#      /sys/fs/cgroup is unusable too (the root cgroup stays root-owned).
+# A dedicated slice satisfies both: it holds no processes itself (the worker
+# lives in a child group) and it is the common ancestor of every migration.
+# Point JUDGE_CGROUP_BASE at that slice.
+
 [Service]
 Type=simple
+Slice=project-balloon-judge.slice
 User=@WORKER_USER@
 Group=@APP_GROUP@
 SupplementaryGroups=@CONTAINER_GROUP@
 WorkingDirectory=@PREFIX@
 EnvironmentFile=@ENV_DIR@/project-balloon.env
+# systemd creates the slice's cgroup lazily — an empty slice has no directory
+# yet, and ExecStartPre runs before the worker process exists — so create it
+# here (the `+` prefix runs these as root; systemd reuses the directory for the
+# unit's own group).
+#
+# The chown must be recursive and the controllers must be enabled as root:
+# cgroupfs creates `cgroup.subtree_control` and `cgroup.procs` owned by root
+# with mode 0644, so a non-root worker can neither enable cpu/memory/pids nor
+# attach a process to a group. Chowning the directory alone is not enough.
+# Enabling works here because the slice holds no processes of its own.
+ExecStartPre=+/usr/bin/mkdir -p @JUDGE_CGROUP_BASE@
+ExecStartPre=+/bin/chown -R @WORKER_USER@:@APP_GROUP@ @JUDGE_CGROUP_BASE@
+ExecStartPre=+/bin/sh -c 'echo "+cpu +memory +pids" > @JUDGE_CGROUP_BASE@/cgroup.subtree_control'
 ExecStartPre=/usr/bin/test -x @PREFIX@/bin/project-balloon-judge-worker
 ExecStart=@PREFIX@/bin/project-balloon-judge-worker
 Restart=on-failure
 RestartSec=5s
+# Keep the cgroup tree writable for the (non-root) worker so it can create
+# per-action sandbox cgroups and migrate bwrap children into them without
+# CAP_SYS_ADMIN. This does *not* make the unit's own cgroup a valid
+# JUDGE_CGROUP_BASE — see the empty-group requirement at the top of the file.
+Delegate=yes
+# ProtectSystem=strict implies ProtectControlGroups=yes, which would make the
+# delegated cgroup read-only; override so the worker can manage its subtree.
+ProtectControlGroups=no
+ProtectKernelTunables=no
 TimeoutStopSec=30s
 UMask=0077
 NoNewPrivileges=true

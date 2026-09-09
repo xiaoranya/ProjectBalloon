@@ -1,0 +1,17 @@
+[Unit]
+Description=ProjectBalloon Judge Sandbox cgroup delegation
+Before=slices.target
+
+# Delegated cgroup v2 subtree for the judge worker's per-action sandbox groups.
+# This slice intentionally runs no processes of its own: the worker lives in a
+# child group, which keeps the slice empty (so the worker can enable
+# cpu/memory/pids on it despite the no-internal-process rule) and makes the
+# slice the common ancestor of every sandbox process migration (so the worker
+# never needs write access to the root-owned root cgroup).
+#
+# JUDGE_CGROUP_BASE in the env file must point at this slice's cgroup, i.e.
+# /sys/fs/cgroup/project.slice/project-balloon.slice/project-balloon-judge.slice
+# (systemd expands a dashed slice name into nested slices).
+
+[Slice]
+Delegate=yes

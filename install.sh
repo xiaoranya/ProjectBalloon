@@ -244,11 +244,17 @@ fi
 
 unset JUDGE_CACHE_DIR XCPC_SANDBOX_SOCKET XCPC_SANDBOX_RUNTIME \
   PROJECT_BALLOON_CUPS_ENABLED PROJECT_BALLOON_CUPS_PRINTER \
-  PROJECT_BALLOON_API_BIND JUDGE_HEALTH_PORT
+  PROJECT_BALLOON_API_BIND JUDGE_HEALTH_PORT JUDGE_CGROUP_BASE
 pb_load_env_file "$ENV_FILE" JUDGE_CACHE_DIR XCPC_SANDBOX_SOCKET XCPC_SANDBOX_RUNTIME \
   PROJECT_BALLOON_CUPS_ENABLED PROJECT_BALLOON_CUPS_PRINTER \
-  PROJECT_BALLOON_API_BIND JUDGE_HEALTH_PORT
+  PROJECT_BALLOON_API_BIND JUDGE_HEALTH_PORT JUDGE_CGROUP_BASE
 JUDGE_CACHE_DIR="${JUDGE_CACHE_DIR:-/var/cache/project-balloon/judge}"
+# Cgroup of the delegated judge slice. systemd expands a dashed slice name into
+# nested slices, so project-balloon-judge.slice lives at
+# /sys/fs/cgroup/project.slice/project-balloon.slice/project-balloon-judge.slice
+# — *not* at /sys/fs/cgroup/project-balloon-judge.slice. Keep in sync with
+# Slice= in project-balloon-judge-worker.service and with JUDGE_CGROUP_BASE.
+JUDGE_CGROUP_BASE="${JUDGE_CGROUP_BASE:-/sys/fs/cgroup/project.slice/project-balloon.slice/project-balloon-judge.slice}"
 XCPC_SANDBOX_SOCKET="${XCPC_SANDBOX_SOCKET:-/var/run/docker.sock}"
 PROJECT_BALLOON_CUPS_ENABLED="${PROJECT_BALLOON_CUPS_ENABLED:-false}"
 # Startup liveness targets, derived from the rendered configuration.
@@ -319,6 +325,7 @@ render_unit() {
     -e "s|@API_SUPPLEMENTARY_GROUPS@|$api_groups|g" \
     -e "s|@CONTAINER_GROUP@|$container_group|g" \
     -e "s|@JUDGE_CACHE_DIR@|$JUDGE_CACHE_DIR|g" \
+    -e "s|@JUDGE_CGROUP_BASE@|$JUDGE_CGROUP_BASE|g" \
     -e "s|@BACKUP_DIR@|$BACKUP_DIR|g" \
     "$PACKAGE_ROOT/systemd/$name" > "$SYSTEMD_DIR/$name"
   chmod 0644 "$SYSTEMD_DIR/$name"
@@ -332,6 +339,9 @@ if [ "$INSTALL_API" -eq 1 ]; then
   render_unit project-balloon-api.service "$API_SUPPLEMENTARY_GROUPS" "${CONTAINER_GROUP:-$APP_GROUP}"
 fi
 if [ "$INSTALL_WORKER" -eq 1 ]; then
+  # Must precede the worker unit: the service references this slice, and its
+  # cgroup is what JUDGE_CGROUP_BASE points at.
+  render_unit project-balloon-judge.slice "$API_SUPPLEMENTARY_GROUPS" "$CONTAINER_GROUP"
   render_unit project-balloon-judge-worker.service "$API_SUPPLEMENTARY_GROUPS" "$CONTAINER_GROUP"
 fi
 if [ "$INSTALL_API" -eq 1 ]; then
