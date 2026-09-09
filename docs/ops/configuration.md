@@ -109,6 +109,7 @@ an independently generated CSRF secret.
 | `PROJECT_BALLOON_REALTIME_MAX_ATTEMPTS` | `8` | Delivery attempts before operator intervention |
 | `PROJECT_BALLOON_REALTIME_REDIS_ENABLED` | `false` | Publish/subscribe SSE fanout through Redis; enable on every API replica in multi-instance deployments |
 | `REDIS_URL` | unset | Redis connection URL with ACL credentials |
+| `PROJECT_BALLOON_REDIS_POOL_SIZE` | `8` | Number of multiplexed Redis connections behind the shared handle; scale up when the judgement path contends with scoreboard reads |
 | `PROJECT_BALLOON_REALTIME_REDIS_CHANNEL` | `xcpc:realtime:events` | Version-1 realtime Pub/Sub channel |
 | `PROJECT_BALLOON_REALTIME_REDIS_RECONNECT_MILLISECONDS` | `1000` | Subscriber reconnect delay (exponential, capped at 30 s) |
 

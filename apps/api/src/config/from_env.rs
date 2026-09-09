@@ -33,6 +33,11 @@ impl AppConfig {
             lookup("PROJECT_BALLOON_REDIS_OPERATION_TIMEOUT_MILLISECONDS")
                 .unwrap_or_else(|| DEFAULT_REDIS_OPERATION_TIMEOUT_MILLISECONDS.to_string()),
         )?;
+        let redis_pool_size = parse_positive(
+            "PROJECT_BALLOON_REDIS_POOL_SIZE",
+            lookup("PROJECT_BALLOON_REDIS_POOL_SIZE")
+                .unwrap_or_else(|| DEFAULT_REDIS_POOL_SIZE.to_string()),
+        )?;
 
         let realtime_redis = parse_realtime_redis(&mut lookup)?;
         let object_storage = parse_object_storage(&mut lookup)?;
@@ -66,6 +71,7 @@ impl AppConfig {
             realtime_redis_enabled: realtime.redis_enabled,
             redis_url,
             redis_operation_timeout: Duration::from_millis(redis_operation_timeout_milliseconds),
+            redis_pool_size,
             realtime_redis_channel: realtime_redis.channel,
             realtime_redis_reconnect_delay: realtime_redis.reconnect_delay,
             scoreboard_cache_enabled: scoreboard_cache.enabled,

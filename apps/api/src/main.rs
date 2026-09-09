@@ -179,12 +179,16 @@ const REDIS_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 async fn connect_redis(config: &AppConfig) -> Result<RedisHandle> {
     let handle = tokio::time::timeout(
         REDIS_CONNECT_TIMEOUT,
-        RedisHandle::connect(&config.redis_url, config.redis_operation_timeout),
+        RedisHandle::connect_with_pool_size(
+            &config.redis_url,
+            config.redis_operation_timeout,
+            config.redis_pool_size,
+        ),
     )
     .await
     .context("timed out connecting to Redis")?
     .context("failed to connect to Redis")?;
-    info!("Redis connection established");
+    info!(pool_size = handle.pool_size(), "Redis connections established");
     Ok(handle)
 }
 
