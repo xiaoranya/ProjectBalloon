@@ -47,6 +47,23 @@ fn workstation_index_key(binding_id: i64) -> String {
     format!("{WORKSTATION_INDEX_PREFIX}{binding_id}")
 }
 
+/// Revokes every session issued for a workstation binding (used when the
+/// binding is rotated or revoked). Best-effort on the user index: a stale
+/// token hash there is harmless because the session key itself is deleted.
+pub(crate) async fn revoke_workstation_sessions(
+    redis: &crate::features::redis::RedisHandle,
+    binding_id: i64,
+) -> Result<(), crate::error::AppError> {
+    let key = workstation_index_key(binding_id);
+    let Some(token_hash): Option<String> = redis.query(cmd("GET").arg(&key)).await? else {
+        return Ok(());
+    };
+    let mut pipeline = redis::pipe();
+    pipeline.del(session_key(&token_hash)).ignore();
+    pipeline.del(&key).ignore();
+    redis.query_pipeline::<()>(pipeline).await
+}
+
 /// Creates a normal (browser) session: the record and its user index entry
 /// share the session TTL, so an expired session disappears together with its
 /// index membership.

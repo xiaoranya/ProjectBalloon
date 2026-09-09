@@ -13,6 +13,8 @@ mod internal;
 mod sessions;
 mod store;
 
+pub(crate) use store::revoke_workstation_sessions;
+
 #[cfg(test)]
 mod tests;
 

@@ -145,7 +145,7 @@ impl AppState {
             redis.as_ref().map(|handle| ScoreboardProjection::new(handle.clone()));
         let auth = Arc::new(
             AuthService::new(database.clone(), session_ttl, secure_cookies)
-                .with_redis_option(redis),
+                .with_redis_option(redis.clone()),
         );
         let awards =
             Arc::new(AwardService::new(database.clone()).with_outbox_option(outbox.clone()));
@@ -155,7 +155,8 @@ impl AppState {
         let clarifications = Arc::new(
             ClarificationService::new(database.clone()).with_outbox_option(outbox.clone()),
         );
-        let competition = Arc::new(CompetitionService::new(database.clone()));
+        let competition =
+            Arc::new(CompetitionService::new(database.clone()).with_redis_option(redis.clone()));
         let announcements =
             Arc::new(AnnouncementService::new(database.clone()).with_outbox_option(outbox.clone()));
         let staff_accounts = Arc::new(StaffAccountService::new(database.clone()));
