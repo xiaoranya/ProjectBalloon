@@ -85,7 +85,7 @@ impl AuthService {
             .arg(now - RATE_LIMIT_WINDOW_MILLIS)
             .ignore();
         pipeline.cmd("ZCARD").arg(&key);
-        let count: i64 = redis.query_pipeline(pipeline).await?;
+        let (count,): (i64,) = redis.query_pipeline(pipeline).await?;
         Ok(count)
     }
     /// Records a failed login atomically against the Redis sliding window and
@@ -146,7 +146,7 @@ impl AuthService {
             .arg(now - RATE_LIMIT_WINDOW_MILLIS)
             .ignore();
         pipeline.cmd("ZCARD").arg(&key);
-        let count: i64 = redis.query_pipeline(pipeline).await?;
+        let (count,): (i64,) = redis.query_pipeline(pipeline).await?;
         Ok(count)
     }
     pub(super) async fn record_auth_action_failure(
