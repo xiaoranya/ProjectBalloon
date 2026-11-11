@@ -21,6 +21,15 @@ pub(super) enum OutputArchiveError {
     Io(#[from] std::io::Error),
 }
 
+/// zip 9 refuses to hand out bytes past an entry's declared uncompressed size.
+/// Contestant/testdata archives are untrusted, so a header that lies about its
+/// size is treated as an over-budget archive rather than a worker-side I/O
+/// failure.
+fn exceeds_declared_size(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::InvalidData
+        && error.to_string().contains("declared uncompressed size")
+}
+
 pub(super) async fn extract_cases(
     archive: std::path::PathBuf,
     destination: std::path::PathBuf,
@@ -79,9 +88,14 @@ pub(super) fn extract_output_cases_blocking(
         // remaining budget so the actual output is bounded no matter what the
         // headers claim.
         let mut limited = (&mut entry).take(remaining.saturating_add(1));
-        limited.read_to_end(&mut content).map_err(|error| {
-            OutputArchiveError::Invalid(format!("unreadable output entry: {error}"))
-        })?;
+        if let Err(error) = limited.read_to_end(&mut content) {
+            if exceeds_declared_size(&error) {
+                return Err(OutputArchiveError::Invalid(
+                    "entry exceeds its declared uncompressed size".to_owned(),
+                ));
+            }
+            return Err(OutputArchiveError::Invalid(format!("unreadable output entry: {error}")));
+        }
         let extracted = u64::try_from(content.len()).unwrap_or(u64::MAX);
         if extracted > remaining {
             return Err(OutputArchiveError::BudgetBreached);
@@ -159,12 +173,17 @@ pub(super) fn extract_cases_blocking(
         // memory. The classification stays InvalidTestdata: testdata is
         // problem-admin owned, not contestant input.
         let mut limited = (&mut entry).take(remaining.saturating_add(1));
-        limited.read_to_end(&mut content).map_err(|error| {
-            SandboxError::Io(std::io::Error::other(format!(
+        if let Err(error) = limited.read_to_end(&mut content) {
+            if exceeds_declared_size(&error) {
+                return Err(SandboxError::InvalidTestdata(
+                    "test-data archive expands beyond the limit".to_owned(),
+                ));
+            }
+            return Err(SandboxError::Io(std::io::Error::other(format!(
                 "inflate test-data entry {}: {error}",
                 enclosed.display()
-            )))
-        })?;
+            ))));
+        }
         let extracted = u64::try_from(content.len()).unwrap_or(u64::MAX);
         if extracted > remaining {
             return Err(SandboxError::InvalidTestdata(
