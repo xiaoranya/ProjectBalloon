@@ -1,5 +1,16 @@
 [advisories]
 version = 2
+# utoipa-swagger-ui 9.x carries zip 3 as a build-dependency only: its build
+# script unpacks the trusted, vendored Swagger UI distribution. None of these
+# advisories are reachable at runtime, and the application itself pins zip 9.
+# Remove these ignores when utoipa/utoipa-swagger-ui move to zip 9 (see the
+# utoipa 6 upgrade).
+ignore = [
+    { id = "RUSTSEC-2026-0367", reason = "zip 3 is only used by utoipa-swagger-ui's build script on a trusted vendored archive" },
+    { id = "RUSTSEC-2026-0368", reason = "zip 3 is only used by utoipa-swagger-ui's build script on a trusted vendored archive" },
+    { id = "RUSTSEC-2026-0369", reason = "zip 3 is only used by utoipa-swagger-ui's build script on a trusted vendored archive" },
+    { id = "RUSTSEC-2026-0429", reason = "zip 3 is only used by utoipa-swagger-ui's build script on a trusted vendored archive" },
+]
 
 [bans]
 multiple-versions = "warn"
