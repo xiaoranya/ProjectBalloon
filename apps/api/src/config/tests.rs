@@ -35,6 +35,7 @@ fn local_defaults_are_valid() {
     assert!(!config.realtime_redis_enabled);
     assert_eq!(config.realtime_redis_channel, "xcpc:realtime:events");
     assert_eq!(config.redis_operation_timeout.as_millis(), 200);
+    assert_eq!(config.redis_pool_size, 8);
     assert!(!config.scoreboard_cache_enabled);
     assert_eq!(config.scoreboard_cache_ttl.as_secs(), 30);
     assert_eq!(config.scoreboard_cache_timeout.as_millis(), 200);
@@ -163,6 +164,16 @@ fn enabled_cups_requires_a_printer_and_positive_timeout() {
 fn realtime_sizes_must_be_positive() {
     let values = HashMap::from([("PROJECT_BALLOON_REALTIME_CHANNEL_CAPACITY", "0".to_owned())]);
     assert!(AppConfig::from_lookup(dev_lookup(&values)).is_err());
+}
+
+#[test]
+fn redis_pool_size_must_be_positive() {
+    let zero = HashMap::from([("PROJECT_BALLOON_REDIS_POOL_SIZE", "0".to_owned())]);
+    assert!(AppConfig::from_lookup(dev_lookup(&zero)).is_err());
+
+    let custom = HashMap::from([("PROJECT_BALLOON_REDIS_POOL_SIZE", "16".to_owned())]);
+    let config = AppConfig::from_lookup(dev_lookup(&custom)).expect("valid config");
+    assert_eq!(config.redis_pool_size, 16);
 }
 
 #[test]
