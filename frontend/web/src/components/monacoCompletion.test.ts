@@ -29,8 +29,6 @@ vi.mock('monaco-editor/editor/editor.api', () => ({
   },
 }));
 
-import { registerCompletionProviders } from './monacoCompletion';
-
 type CapturedProvider = {
   language: string;
   triggerCharacters: string[];
@@ -63,11 +61,21 @@ function fakeModel(
 
 const cursorAt = { lineNumber: 3, column: 6 } as monaco.Position;
 
+// Vitest 5 restores mocks before every test, which clears the registration
+// call history while `registerCompletionProviders` keeps its module-level
+// idempotence flag. Re-import a fresh module so each test observes its own
+// registrations.
+async function registerProviders(times = 1): Promise<void> {
+  vi.resetModules();
+  const { registerCompletionProviders } = await import('./monacoCompletion');
+  for (let call = 0; call < times; call += 1) {
+    registerCompletionProviders();
+  }
+}
+
 describe('registerCompletionProviders', () => {
-  it('registers exactly one provider per judge language and is idempotent', () => {
-    registerCompletionProviders();
-    registerCompletionProviders();
-    registerCompletionProviders();
+  it('registers exactly one provider per judge language and is idempotent', async () => {
+    await registerProviders(3);
 
     expect(monacoStubs.register).toHaveBeenCalledTimes(6);
     const languages = providersByLanguage();
@@ -77,8 +85,8 @@ describe('registerCompletionProviders', () => {
     }
   });
 
-  it('c and cpp share the C++ snippet set while java and python differ', () => {
-    registerCompletionProviders();
+  it('c and cpp share the C++ snippet set while java and python differ', async () => {
+    await registerProviders();
     const providers = providersByLanguage();
 
     const cpp = providers
@@ -115,8 +123,8 @@ describe('registerCompletionProviders', () => {
 describe('provideCompletionItems', () => {
   let cpp: CapturedProvider;
 
-  beforeEach(() => {
-    registerCompletionProviders();
+  beforeEach(async () => {
+    await registerProviders();
     cpp = providersByLanguage().get('cpp')!;
   });
 
