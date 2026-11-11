@@ -53,7 +53,8 @@ fn validate_sync_archive<R: Read + Seek>(
     for index in 0..archive.len() {
         let mut entry =
             archive.by_index(index).map_err(|_| invalid("contains an unreadable entry"))?;
-        let name = entry.name().to_owned();
+        let name =
+            entry.name().map_err(|_| invalid("contains an unreadable entry name"))?.into_owned();
         if name.is_empty()
             || name.len() > MAX_PATH_BYTES
             || name.contains('\\')
