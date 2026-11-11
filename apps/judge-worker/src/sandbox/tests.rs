@@ -312,33 +312,33 @@ fn output_only_task() -> JudgeTask {
 }
 
 #[test]
-fn output_extraction_never_trusts_declared_entry_sizes() {
-    // The headers claim 4 bytes; the actual inflate produces 2 KiB. Extraction
-    // must read what is really there, not what the metadata promises.
+fn output_extraction_rejects_entries_that_exceed_declared_sizes() {
+    // The headers claim 4 bytes; the actual content is 2 KiB. zip 9 fails the
+    // read rather than trusting the header, so the archive is rejected instead
+    // of being accepted with an under-reported size.
     let mut archive = stored_zip_bytes(&[("1.out", &[b'A'; 2_048])]);
     patch_declared_sizes(&mut archive, 4);
     let destination = temp_dir("declared-lie");
-    extract_output_cases_blocking(&archive, &destination, MAX_TESTDATA_EXTRACTED_BYTES)
-        .expect("declared size must not bound the actual read");
-    assert_eq!(std::fs::read(destination.join("1.out")).expect("read"), vec![b'A'; 2_048],);
+    let error = extract_output_cases_blocking(&archive, &destination, MAX_TESTDATA_EXTRACTED_BYTES)
+        .expect_err("declared size mismatch must be rejected");
+    assert!(matches!(error, OutputArchiveError::Invalid(_)), "unexpected error: {error:?}");
+    assert!(!destination.join("1.out").exists(), "no partial file may be written");
     std::fs::remove_dir_all(destination).expect("cleanup");
 }
 
 #[test]
 fn output_extraction_budget_caps_actual_bytes_and_is_cumulative() {
-    // Headers claim 4 bytes per entry, the real content is 4 KiB, and the
-    // budget is 1 KiB: the inflate must stop at the budget, not at the lie.
-    let mut lying = stored_zip_bytes(&[("1.out", &[b'B'; 4_096])]);
-    patch_declared_sizes(&mut lying, 4);
+    // The declared size matches the content (4 KiB) and the budget is 1 KiB:
+    // the inflate must stop at the budget, not at the declared size.
+    let oversized = stored_zip_bytes(&[("1.out", &[b'B'; 4_096])]);
     let destination = temp_dir("budget-breach");
     let error =
-        extract_output_cases_blocking(&lying, &destination, 1_024).expect_err("budget breach");
+        extract_output_cases_blocking(&oversized, &destination, 1_024).expect_err("budget breach");
     assert!(matches!(error, OutputArchiveError::BudgetBreached), "unexpected error: {error:?}");
     assert!(!destination.join("1.out").exists(), "no partial file may be written");
 
     // Two entries that each fit a 1 KiB budget must breach it together.
-    let mut cumulative = stored_zip_bytes(&[("1.out", &[b'C'; 600]), ("2.out", &[b'D'; 600])]);
-    patch_declared_sizes(&mut cumulative, 4);
+    let cumulative = stored_zip_bytes(&[("1.out", &[b'C'; 600]), ("2.out", &[b'D'; 600])]);
     let destination = temp_dir("budget-cumulative");
     let error =
         extract_output_cases_blocking(&cumulative, &destination, 1_024).expect_err("breach");
