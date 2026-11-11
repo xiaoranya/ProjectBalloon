@@ -21,6 +21,7 @@ const DEFAULT_REALTIME_REDIS_RECONNECT_MILLISECONDS: u64 = 1_000;
 const DEFAULT_SCOREBOARD_CACHE_TTL_SECONDS: u64 = 30;
 const DEFAULT_SCOREBOARD_CACHE_TIMEOUT_MILLISECONDS: u64 = 200;
 const DEFAULT_REDIS_OPERATION_TIMEOUT_MILLISECONDS: u64 = 200;
+const DEFAULT_REDIS_POOL_SIZE: usize = 8;
 const DEFAULT_OBJECT_STORAGE_ENDPOINT: &str = "http://127.0.0.1:9000";
 const DEFAULT_OBJECT_STORAGE_REGION: &str = "us-east-1";
 const DEFAULT_OBJECT_STORAGE_PROBLEM_BUCKET: &str = "xcpc-problems";
@@ -92,6 +93,8 @@ pub struct AppConfig {
     pub realtime_redis_enabled: bool,
     pub redis_url: String,
     pub redis_operation_timeout: Duration,
+    /// Number of multiplexed Redis connections behind the shared handle.
+    pub redis_pool_size: usize,
     pub realtime_redis_channel: String,
     pub realtime_redis_reconnect_delay: Duration,
     pub scoreboard_cache_enabled: bool,
