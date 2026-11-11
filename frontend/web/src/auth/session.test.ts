@@ -62,13 +62,20 @@ describe('session state', () => {
   });
 
   it('routes unauthorized callbacks through clearSession', async () => {
+    // The client registers its unauthorized handler at module load. Vitest 5
+    // restores mocks before each test, so re-import the module to observe the
+    // fresh registration instead of relying on history from import time.
+    vi.resetModules();
+    const { useSession: freshUseSession } = await import('./session');
+    const fresh = freshUseSession();
+
     expect(mocks.setUnauthorizedHandler).toHaveBeenCalledWith(expect.any(Function));
-    mocks.apiRequest.mockResolvedValue(user);
-    await session.login('alice', 'secret');
     const handler = mocks.setUnauthorizedHandler.mock.calls[0][0] as () => void;
+    mocks.apiRequest.mockResolvedValue(user);
+    await fresh.login('alice', 'secret');
     handler();
-    expect(session.state.user).toBeNull();
-    expect(session.state.initialized).toBe(true);
+    expect(fresh.state.user).toBeNull();
+    expect(fresh.state.initialized).toBe(true);
   });
 });
 
