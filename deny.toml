@@ -10,6 +10,13 @@ ignore = [
     { id = "RUSTSEC-2026-0368", reason = "zip 3 is only used by utoipa-swagger-ui's build script on a trusted vendored archive" },
     { id = "RUSTSEC-2026-0369", reason = "zip 3 is only used by utoipa-swagger-ui's build script on a trusted vendored archive" },
     { id = "RUSTSEC-2026-0429", reason = "zip 3 is only used by utoipa-swagger-ui's build script on a trusted vendored archive" },
+    { id = "RUSTSEC-2026-0545", reason = "zip 3 is only used by utoipa-swagger-ui's build script on a trusted vendored archive" },
+    { id = "RUSTSEC-2026-0548", reason = "zip 3 is only used by utoipa-swagger-ui's build script on a trusted vendored archive" },
+    # object_store 0.14.2 (latest) still pulls in chrono and humantime. chrono
+    # is now unmaintained and humantime wraps it, so no fixed release exists.
+    # Revisit when object_store migrates off chrono.
+    { id = "RUSTSEC-2026-0543", reason = "chrono is only reached transitively through object_store 0.14.2; no fixed release exists" },
+    { id = "RUSTSEC-2026-0542", reason = "humantime is only reached transitively through object_store 0.14.2; no fixed release exists" },
 ]
 
 [bans]
