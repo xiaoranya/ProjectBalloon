@@ -491,7 +491,7 @@ mod tests {
         .fetch_one(&pool)
         .await
         .expect("insert problem");
-        sqlx::query("INSERT INTO contest_teams (contest_id, team_id, participation_type) VALUES ($1, $2, 'STAR')")
+        sqlx::query("INSERT INTO contest_teams (contest_id, team_id, participation_type) VALUES ($1, $2, 'OFFICIAL')")
             .bind(contest_id).bind(team_id).execute(&pool).await.expect("roster result team");
         sqlx::query("INSERT INTO contest_problems (contest_id, problem_id, alias, display_order, color) VALUES ($1, $2, 'A', 1, '#ff0000')")
             .bind(contest_id).bind(problem_id).execute(&pool).await.expect("assign result problem");
