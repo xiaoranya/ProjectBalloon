@@ -86,6 +86,7 @@ impl AppState {
         realtime_channel_capacity: usize,
         realtime_redis_enabled: bool,
         redis: Option<RedisHandle>,
+        login_limits: crate::features::auth::LoginRateLimits,
     ) -> Self {
         Self::build(
             database,
@@ -97,6 +98,7 @@ impl AppState {
             realtime_redis_enabled,
             redis,
             None,
+            login_limits,
         )
     }
 
@@ -113,6 +115,7 @@ impl AppState {
         realtime_redis_enabled: bool,
         redis: Option<RedisHandle>,
         object_storage: ObjectStorageHandle,
+        login_limits: crate::features::auth::LoginRateLimits,
     ) -> Self {
         Self::build(
             database,
@@ -124,6 +127,7 @@ impl AppState {
             realtime_redis_enabled,
             redis,
             Some(object_storage),
+            login_limits,
         )
     }
 
@@ -139,6 +143,7 @@ impl AppState {
         realtime_redis_enabled: bool,
         redis: Option<RedisHandle>,
         object_storage: Option<ObjectStorageHandle>,
+        login_limits: crate::features::auth::LoginRateLimits,
     ) -> Self {
         // The realtime outbox lives exclusively in Redis; without a handle the
         // enqueues degrade to logged no-ops (see `realtime::outbox`).
@@ -149,7 +154,8 @@ impl AppState {
             redis.as_ref().map(|handle| ScoreboardProjection::new(handle.clone()));
         let auth = Arc::new(
             AuthService::new(database.clone(), session_ttl, secure_cookies)
-                .with_redis_option(redis.clone()),
+                .with_redis_option(redis.clone())
+                .with_login_rate_limits(login_limits),
         );
         let awards =
             Arc::new(AwardService::new(database.clone()).with_outbox_option(outbox.clone()));

@@ -295,6 +295,7 @@ mod tests {
             16,
             false,
             None,
+            crate::features::auth::LoginRateLimits::default(),
         )
     }
 

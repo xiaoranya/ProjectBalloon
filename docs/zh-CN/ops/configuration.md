@@ -82,6 +82,8 @@ API 在启动时创建其配置的桶。桶名属于部署配置，绝不通过�
 |---|---|---|
 | `PROJECT_BALLOON_SESSION_TTL_SECONDS` | `43200` | 浏览器会话生命周期 |
 | `PROJECT_BALLOON_SECURE_COOKIES` | `false` | 添加 `Secure` Cookie 属性；生产必须为 `true` |
+| `PROJECT_BALLOON_LOGIN_ATTEMPT_LIMIT_PER_IP` | `100` | 单个来源地址每五分钟窗口内允许的登录失败次数。大型赛场共享一个 NAT 出口时调高；超过 10000 会被拒绝 |
+| `PROJECT_BALLOON_LOGIN_ACCOUNT_ATTEMPT_LIMIT` | `10` | 单个账号每五分钟窗口内允许的登录失败次数，与来源地址无关；真正限制撞库的是这个窗口 |
 | `PROJECT_BALLOON_CSRF_SECRET` | 仅开发值 | CSRF token 的 HMAC secret；除非 `PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET=true`，公开开发值被拒绝，且与安全 Cookie 一起无条件拒绝 |
 | `PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET` | `false` | 仅本地开发的逃生舱 |
 

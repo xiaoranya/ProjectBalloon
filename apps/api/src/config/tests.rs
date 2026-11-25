@@ -28,6 +28,10 @@ fn local_defaults_are_valid() {
     assert_eq!(config.database_max_connections, 20);
     assert!(config.run_migrations);
     assert_eq!(config.session_ttl.as_secs(), 43_200);
+    // A venue-sized per-IP window by default; the per-account window is the
+    // one that bounds guessing.
+    assert_eq!(config.login_attempt_limit_per_ip, 100);
+    assert_eq!(config.login_account_attempt_limit, 10);
     assert!(config.uses_development_csrf_secret);
     assert!(config.allow_development_csrf_secret);
     assert!(config.realtime_dispatcher_enabled);
@@ -176,6 +180,32 @@ fn enabled_cups_requires_a_printer_and_positive_timeout() {
 fn realtime_sizes_must_be_positive() {
     let values = HashMap::from([("PROJECT_BALLOON_REALTIME_CHANNEL_CAPACITY", "0".to_owned())]);
     assert!(AppConfig::from_lookup(dev_lookup(&values)).is_err());
+}
+
+#[test]
+fn login_windows_are_configurable_but_bounded() {
+    let custom = HashMap::from([
+        ("PROJECT_BALLOON_LOGIN_ATTEMPT_LIMIT_PER_IP", "250".to_owned()),
+        ("PROJECT_BALLOON_LOGIN_ACCOUNT_ATTEMPT_LIMIT", "5".to_owned()),
+    ]);
+    let config = AppConfig::from_lookup(dev_lookup(&custom)).expect("valid config");
+    assert_eq!(config.login_attempt_limit_per_ip, 250);
+    assert_eq!(config.login_account_attempt_limit, 5);
+
+    // Zero would disable the window entirely; a huge value is a typo that
+    // turns brute-force protection off, so both are refused.
+    for (name, value) in [
+        ("PROJECT_BALLOON_LOGIN_ATTEMPT_LIMIT_PER_IP", "0"),
+        ("PROJECT_BALLOON_LOGIN_ATTEMPT_LIMIT_PER_IP", "10001"),
+        ("PROJECT_BALLOON_LOGIN_ACCOUNT_ATTEMPT_LIMIT", "0"),
+        ("PROJECT_BALLOON_LOGIN_ACCOUNT_ATTEMPT_LIMIT", "1000000"),
+    ] {
+        let values = HashMap::from([(name, value.to_owned())]);
+        assert!(
+            matches!(AppConfig::from_lookup(dev_lookup(&values)), Err(ConfigError::Invalid { .. })),
+            "{name}={value} must be rejected"
+        );
+    }
 }
 
 #[test]

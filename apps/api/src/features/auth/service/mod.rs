@@ -18,13 +18,29 @@ pub(crate) use store::{revoke_user_sessions, revoke_workstation_sessions};
 #[cfg(test)]
 mod tests;
 
-/// Per-source-IP login failures per five-minute window. Sized for a contest
-/// venue where hundreds of teams share one NAT address: ~10 was low enough
-/// that ordinary typos locked the whole room out. Guessing is bounded by the
-/// per-account window below, which is the one that matters.
-const LOGIN_ATTEMPT_LIMIT: i64 = 100;
-/// Per-account login failures per five-minute window (see `internal`).
-const LOGIN_ACCOUNT_ATTEMPT_LIMIT: i64 = 10;
+/// Compiled-in default for the per-source-IP login window; deployments
+/// override it with `PROJECT_BALLOON_LOGIN_ATTEMPT_LIMIT_PER_IP`. Sized for a
+/// venue where hundreds of teams share one NAT address: the pre-audit value of
+/// ten locked the whole room out on ordinary typos. Guessing is bounded by the
+/// per-account window, which is the one that matters.
+pub(crate) const LOGIN_ATTEMPT_LIMIT: i64 = 100;
+/// Compiled-in default for the per-account login window (see `internal`).
+pub(crate) const LOGIN_ACCOUNT_ATTEMPT_LIMIT: i64 = 10;
+
+/// The two login windows, both enforced in Redis. A shared venue NAT makes the
+/// per-IP window a capacity question rather than a security one, so it is
+/// configured per deployment instead of being hard-coded.
+#[derive(Debug, Clone, Copy)]
+pub struct LoginRateLimits {
+    pub per_ip: i64,
+    pub per_account: i64,
+}
+
+impl Default for LoginRateLimits {
+    fn default() -> Self {
+        Self { per_ip: LOGIN_ATTEMPT_LIMIT, per_account: LOGIN_ACCOUNT_ATTEMPT_LIMIT }
+    }
+}
 const REGISTER_ATTEMPT_LIMIT: i64 = 5;
 const PASSWORD_CHANGE_ATTEMPT_LIMIT: i64 = 10;
 const PROFILE_UPDATE_ATTEMPT_LIMIT: i64 = 30;
@@ -63,12 +79,29 @@ pub struct AuthService {
     redis: Option<RedisHandle>,
     session_ttl: Duration,
     secure_cookies: bool,
+    login_limits: LoginRateLimits,
 }
 
 impl AuthService {
     #[must_use]
     pub const fn new(database: PgPool, session_ttl: Duration, secure_cookies: bool) -> Self {
-        Self { database, redis: None, session_ttl, secure_cookies }
+        Self {
+            database,
+            redis: None,
+            session_ttl,
+            secure_cookies,
+            login_limits: LoginRateLimits {
+                per_ip: LOGIN_ATTEMPT_LIMIT,
+                per_account: LOGIN_ACCOUNT_ATTEMPT_LIMIT,
+            },
+        }
+    }
+
+    /// Overrides the two login windows with the deployment's configuration.
+    #[must_use]
+    pub const fn with_login_rate_limits(mut self, limits: LoginRateLimits) -> Self {
+        self.login_limits = limits;
+        self
     }
 
     /// Wires the shared Redis handle. Sessions and login rate limiting live

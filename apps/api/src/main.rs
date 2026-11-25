@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use project_balloon_api::{
     config::AppConfig,
     features::announcements::AnnouncementScheduleRunner,
+    features::auth::LoginRateLimits,
     features::contests::ContestLifecycleRunner,
     features::judge_dispatch::{
         RabbitDeadLetterConsumer, RabbitJudgeResultConsumer, RabbitJudgeTaskPublisher,
@@ -231,6 +232,10 @@ async fn build_app_state(
     judge_publisher: Option<Arc<RabbitJudgeTaskPublisher>>,
     shutdown: watch::Receiver<bool>,
 ) -> Result<AppState> {
+    let login_limits = LoginRateLimits {
+        per_ip: config.login_attempt_limit_per_ip,
+        per_account: config.login_account_attempt_limit,
+    };
     let mut state = match object_storage {
         Some(object_storage) => AppState::with_object_storage(
             database.clone(),
@@ -242,6 +247,7 @@ async fn build_app_state(
             config.realtime_redis_enabled,
             Some(redis.clone()),
             object_storage,
+            login_limits,
         ),
         None => AppState::new(
             database.clone(),
@@ -252,6 +258,7 @@ async fn build_app_state(
             config.realtime_channel_capacity,
             config.realtime_redis_enabled,
             Some(redis.clone()),
+            login_limits,
         ),
     };
     state = state.with_deployment_mode(config.deployment_mode);

@@ -6,7 +6,7 @@ use crate::error::AppError;
 use crate::features::competition::model::{CompetitionSessionResponse, WorkstationLoginGrant};
 
 use crate::features::auth::service::{
-    AuthService, AuthenticatedSession, LOGIN_ATTEMPT_LIMIT, LoginOutcome,
+    AuthService, AuthenticatedSession, LoginOutcome,
     crypto::{
         access_fingerprint, constant_time_equal, digest, invalid_credentials, not_authenticated,
         random_token, rate_limited,
@@ -38,7 +38,7 @@ impl AuthService {
             password::verify_dummy(password)
                 .await
                 .map_err(|error| AppError::internal("dummy password verification failed", error))?;
-            if !self.record_failed_login(&username, &request_ip, LOGIN_ATTEMPT_LIMIT).await? {
+            if !self.record_failed_login(&username, &request_ip).await? {
                 return Err(rate_limited());
             }
             return Err(invalid_credentials());
@@ -48,7 +48,7 @@ impl AuthService {
             .await
             .map_err(|error| AppError::internal("password verification failed", error))?;
         if !password_matches || !row.enabled {
-            if !self.record_failed_login(&username, &request_ip, LOGIN_ATTEMPT_LIMIT).await? {
+            if !self.record_failed_login(&username, &request_ip).await? {
                 return Err(rate_limited());
             }
             return Err(invalid_credentials());
@@ -114,7 +114,7 @@ impl AuthService {
                     .rollback()
                     .await
                     .map_err(|error| AppError::internal("rollback stale login", error))?;
-                if !self.record_failed_login(&username, &request_ip, LOGIN_ATTEMPT_LIMIT).await? {
+                if !self.record_failed_login(&username, &request_ip).await? {
                     return Err(rate_limited());
                 }
                 return Err(invalid_credentials());

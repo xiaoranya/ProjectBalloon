@@ -43,8 +43,13 @@ Required controls:
 - Hash new passwords with Argon2id. Accept legacy BCrypt hashes only during
   migration and upgrade them after a successful login.
 - Direct, composable account permissions for all staff APIs.
-- Apply login rate limits from shared PostgreSQL audit state so limits cannot be
-  bypassed by switching API instances.
+- Apply login rate limits from shared Redis state so limits cannot be bypassed
+  by switching API instances. Two five-minute sliding windows are enforced
+  together: per source address and per account. The per-address window is a
+  capacity setting (`PROJECT_BALLOON_LOGIN_ATTEMPT_LIMIT_PER_IP`, default 100)
+  because a contest venue usually shares one NAT address; the per-account
+  window (`PROJECT_BALLOON_LOGIN_ACCOUNT_ATTEMPT_LIMIT`, default 10) is what
+  bounds guessing.
 - Submission rate limit.
 - Clarification rate limit.
 - Print request rate limit.

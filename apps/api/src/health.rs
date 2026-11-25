@@ -396,6 +396,7 @@ mod tests {
                 16,
                 false,
                 None,
+                crate::features::auth::LoginRateLimits::default(),
             ),
             vec!["127.0.0.1/32".parse().expect("CIDR")],
         )

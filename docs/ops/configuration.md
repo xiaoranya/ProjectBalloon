@@ -93,6 +93,8 @@ an independently generated CSRF secret.
 |---|---|---|
 | `PROJECT_BALLOON_SESSION_TTL_SECONDS` | `43200` | Browser session lifetime |
 | `PROJECT_BALLOON_SECURE_COOKIES` | `false` | Add the `Secure` cookie attribute; must be `true` in production |
+| `PROJECT_BALLOON_LOGIN_ATTEMPT_LIMIT_PER_IP` | `100` | Failed logins one source address may accumulate per five-minute window. Raise it when a large venue shares one NAT address; values above 10000 are refused |
+| `PROJECT_BALLOON_LOGIN_ACCOUNT_ATTEMPT_LIMIT` | `10` | Failed logins one account may accumulate per five-minute window, regardless of source address; this is the window that bounds guessing |
 | `PROJECT_BALLOON_CSRF_SECRET` | dev-only value | HMAC secret for CSRF tokens; the public dev value is rejected unless `PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET=true`, and is refused outright with secure cookies |
 | `PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET` | `false` | Local-development escape hatch only |
 

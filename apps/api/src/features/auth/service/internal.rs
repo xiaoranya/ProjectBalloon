@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::error::AppError;
 
 use crate::features::auth::model::UserRow;
-use crate::features::auth::service::{AuthService, LOGIN_ATTEMPT_LIMIT, USER_COLUMNS};
+use crate::features::auth::service::{AuthService, USER_COLUMNS};
 
 /// Sliding-window rate limiting lives exclusively in Redis: one sorted set per
 /// (action, key) whose members are unique attempt markers scored by attempt
@@ -19,13 +19,6 @@ const RATE_LIMIT_WINDOW_MILLIS: i64 = 5 * 60 * 1000;
 /// lock a whole room out on ten typos and a distributed attacker cannot guess
 /// one account for free.
 const LOGIN_USERNAME_ACTION: &str = "auth.login.username";
-
-/// Per-account login failures allowed per window. This is the window that
-/// bounds guessing: it follows the account, not the source address, so a
-/// distributed attacker cannot spray freely and a shared venue NAT cannot
-/// spend it for everyone.
-const LOGIN_USERNAME_ATTEMPT_LIMIT: i64 =
-    crate::features::auth::service::LOGIN_ACCOUNT_ATTEMPT_LIMIT;
 
 /// Atomically trims the window, checks the limit, and records the attempt.
 /// Returns 1 when the attempt is within the limit (and was recorded), 0 when
@@ -96,11 +89,11 @@ impl AuthService {
         request_ip: &str,
         username: &str,
     ) -> Result<bool, AppError> {
-        if self.failed_login_count(request_ip).await? >= LOGIN_ATTEMPT_LIMIT {
+        if self.failed_login_count(request_ip).await? >= self.login_limits.per_ip {
             return Ok(true);
         }
         Ok(self.recent_auth_action_count(LOGIN_USERNAME_ACTION, username).await?
-            >= LOGIN_USERNAME_ATTEMPT_LIMIT)
+            >= self.login_limits.per_account)
     }
     /// Records a failed login atomically against the Redis sliding window and
     /// mirrors the attempt into `audit_logs` (kept for the audit trail; it no
@@ -110,15 +103,16 @@ impl AuthService {
         &self,
         username: &str,
         request_ip: &str,
-        limit: i64,
     ) -> Result<bool, AppError> {
         let username = username.to_ascii_lowercase();
-        let ip_allowed = self.record_rate_limit_attempt("auth.login", request_ip, limit).await?;
+        let ip_allowed = self
+            .record_rate_limit_attempt("auth.login", request_ip, self.login_limits.per_ip)
+            .await?;
         let account_allowed = self
             .record_rate_limit_attempt(
                 LOGIN_USERNAME_ACTION,
                 &username,
-                LOGIN_USERNAME_ATTEMPT_LIMIT,
+                self.login_limits.per_account,
             )
             .await?;
         if ip_allowed {
