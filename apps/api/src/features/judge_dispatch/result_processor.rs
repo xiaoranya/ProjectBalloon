@@ -281,7 +281,11 @@ impl JudgeResultProcessor {
                 result.verdict.as_str() == "ACCEPTED",
             )
             .await?;
-            crate::features::realtime::outbox::enqueue_optional(
+            // Refresh hint only: the judgement is already persisted in this
+            // transaction. Classifying the failure as permanent dead-lettered
+            // the result and rewrote an ACCEPTED submission as SYSTEM_ERROR
+            // after a single Redis blip.
+            if let Err(error) = crate::features::realtime::outbox::enqueue_optional(
                 self.outbox.as_ref(),
                 contest_id,
                 "SUBMISSION_STATUS_CHANGED",
@@ -293,14 +297,19 @@ impl JudgeResultProcessor {
                     "status": result.verdict.as_str(),
                     "verdict": result.verdict.as_str(),
                     "totalTimeMs": result.total_time_ms,
-                    "peakMemoryKb": result.peak_memory_kb
-                    ,"scoreMilli": score_milli
+                    "peakMemoryKb": result.peak_memory_kb,
+                    "scoreMilli": score_milli
                 }),
             )
             .await
-            .map_err(|error| {
-                ApplyResultError::Conflict(format!("enqueue status event failed: {error:?}"))
-            })?;
+            {
+                tracing::warn!(
+                    ?error,
+                    contest_id,
+                    submission_id = context.submission_id,
+                    "failed to enqueue the submission status event; continuing"
+                );
+            }
         } else {
             apply_practice_progress(
                 &mut transaction,

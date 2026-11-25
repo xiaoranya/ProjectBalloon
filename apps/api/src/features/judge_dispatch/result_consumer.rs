@@ -5,8 +5,8 @@ use lapin::{
     BasicProperties, Channel, Connection, ConnectionProperties,
     message::Delivery,
     options::{
-        BasicAckOptions, BasicConsumeOptions, BasicPublishOptions, BasicQosOptions,
-        BasicRejectOptions, ConfirmSelectOptions,
+        BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicPublishOptions,
+        BasicQosOptions, BasicRejectOptions, ConfirmSelectOptions,
     },
     types::{AMQPValue, FieldTable, ShortString},
 };
@@ -236,7 +236,26 @@ async fn process_delivery(
                 );
                 return reject_permanently(delivery).await;
             }
-            defer_result_for_retry(channel, delivery, retry_count + 1, request_timeout).await?;
+            // The original message may only be acknowledged once the retry
+            // copy is confirmed: a nacked or returned publish followed by an
+            // ack loses the result outright and leaves the submission stuck in
+            // JUDGING until the stuck reaper picks it up.
+            if let Err(error) =
+                defer_result_for_retry(channel, delivery, retry_count + 1, request_timeout).await
+            {
+                warn!(
+                    message_id = %result.message_id,
+                    submission_id = result.submission_id,
+                    judgement_id = %result.judgement_id,
+                    retry_count = retry_count + 1,
+                    %error,
+                    "failed to republish the Judge result for retry; requeueing the original"
+                );
+                delivery
+                    .nack(BasicNackOptions { requeue: true, ..BasicNackOptions::default() })
+                    .await?;
+                return Ok(());
+            }
             delivery.ack(BasicAckOptions::default()).await?;
             warn!(
                 message_id = %result.message_id,
@@ -274,16 +293,23 @@ async fn defer_result_for_retry(
         channel.basic_publish(
             topology::RESULTS_RETRY_EXCHANGE.into(),
             topology::RESULTS_RETRY_ROUTING_KEY.into(),
-            BasicPublishOptions::default(),
+            // `mandatory` makes an unroutable copy visible as a returned
+            // message instead of a silently dropped one.
+            BasicPublishOptions { mandatory: true, ..BasicPublishOptions::default() },
             delivery.data.as_slice(),
             properties,
         ),
     )
     .await
     .map_err(|_| JudgeDispatchError::Timeout("result retry republish"))??;
-    timeout(request_timeout, confirm)
+    let confirmation = timeout(request_timeout, confirm)
         .await
         .map_err(|_| JudgeDispatchError::Timeout("result retry publisher confirm"))??;
+    // Awaiting the confirm is not enough: the broker answers a flow-controlled
+    // publish with a nack, and `Result<Confirmation>` does not surface it.
+    if !confirmation.is_ack() || confirmation.take_message().is_some() {
+        return Err(JudgeDispatchError::Rejected("Judge result retry"));
+    }
     Ok(())
 }
 
