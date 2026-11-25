@@ -170,6 +170,12 @@ Rust API 在 `/api/teams` 与 `/api/contests/{contestId}/teams` 下提供队伍 
 
 第一个 Rust 题库切片在 `/api/problems` 暴露仅超级管理员的 CRUD。它校验小写 kebab-case slug、有界正资源限制、语言标签与封闭的判题语言集（`c`、`cpp`、`java`、`go`、`rust` 与 `python`）。更新请求要求 `expectedVersion`，并发修改返回 `PROBLEM_VERSION_STALE`。
 
+Interactor 只能通过 `POST /api/problems/{problemId}/interactor` 上传 ELF 配置：处理器校验 `\x7fELF`
+魔术字节，并由字节本身推导对象键与摘要。`create`/`update` 对请求体中非空的 `interactorObjectKey`
+或 `interactorSha256` 直接拒绝而不是静默忽略；题目不能直接以 `INTERACTIVE` 创建（返回
+`INTERACTOR_NOT_CONFIGURED`，与更新路径同一错误码）；题目响应返回 `interactorConfigured`
+布尔值而不返回存储键。
+
 题目删除是软删除，存在任何比赛分配时以 `PROBLEM_ASSIGNED_TO_CONTEST` 拒绝。PostgreSQL 强制正限制与仅活动 slug 唯一性。创建、更新与删除在同一事务中写入 `PROBLEM_CREATED`、`PROBLEM_UPDATED` 与 `PROBLEM_DELETED` 审计事件。
 
 队伍面向投影通过比赛题目读取提供；限定管理员可以通过其专用端点管理持久化描述、附件与不可变测试数据版本。

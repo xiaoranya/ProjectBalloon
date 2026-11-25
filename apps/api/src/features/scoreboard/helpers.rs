@@ -172,7 +172,9 @@ pub(super) fn assemble(
     for problem in &mut problems {
         let first_blood = rows
             .iter()
-            .filter(|row| row.participation_type != "PRACTICE")
+            // Official teams only: STAR teams are ranked separately and never
+            // take the first-blood honour.
+            .filter(|row| row.participation_type == "OFFICIAL")
             .filter_map(|row| {
                 row.problems
                     .iter()

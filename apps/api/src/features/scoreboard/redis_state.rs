@@ -54,42 +54,66 @@ local cell
 if raw then
     cell = cjson.decode(raw)
 else
-    cell = {attempts = 0, wa = 0, solved = false, solved_at = 0, penalty = 0, score_milli = 0}
+    cell = {attempts = 0, wa = 0, solved = false, solved_at = 0, penalty = 0,
+            score_milli = 0, last_at = 0}
 end
+-- Cells written before `last_at` existed decode without the field.
+local last_at = cell.last_at or 0
 cell.attempts = cell.attempts + 1
 local verdict = ARGV[2]
 local t = tonumber(ARGV[3])
+local start_at = tonumber(ARGV[4])
 if ARGV[5] == 'ICPC' then
     if verdict == 'ACCEPTED' then
         if not cell.solved then
             cell.solved = true
             cell.solved_at = t
-            cell.penalty = math.floor((t - tonumber(ARGV[4])) / 60000) + 20 * cell.wa
+            cell.penalty = math.floor((t - start_at) / 60000) + 20 * cell.wa
+        elseif t < cell.solved_at then
+            -- Judgements finish out of submission order, so an earlier
+            -- accepted submission can arrive after a later one. `wa` may then
+            -- contain rejections submitted after `t`, and the penalty cannot
+            -- be derived incrementally: flag the cell so the read path
+            -- replays it from PostgreSQL instead of showing a wrong penalty.
+            redis.call('SADD', KEYS[3], ARGV[1])
         end
     elseif verdict == 'WRONG_ANSWER' or verdict == 'TIME_LIMIT_EXCEEDED' or
            verdict == 'MEMORY_LIMIT_EXCEEDED' or verdict == 'RUNTIME_ERROR' or
            verdict == 'OUTPUT_LIMIT_EXCEEDED' then
         if (not cell.solved) or t < cell.solved_at then
             cell.wa = cell.wa + 1
+            if cell.solved then
+                -- A rejection submitted before the accepted one: it adds the
+                -- 20 minute penalty even though it finished later.
+                cell.penalty = math.floor((cell.solved_at - start_at) / 60000) + 20 * cell.wa
+            end
         end
     end
 else
     local score = tonumber(ARGV[7])
+    -- Only the newest submission may revoke a solve or overwrite a LAST score.
+    local newest = t >= last_at
     if ARGV[6] == 'BEST' then
         if score > cell.score_milli then
             cell.score_milli = score
         end
-    else
+    elseif newest then
         cell.score_milli = score
     end
     if cell.score_milli >= tonumber(ARGV[8]) then
         if not cell.solved then
             cell.solved = true
             cell.solved_at = t
+        elseif t < cell.solved_at then
+            -- Earliest full-score submission wins regardless of finish order.
+            cell.solved_at = t
         end
-    else
+    elseif newest then
         cell.solved = false
         cell.solved_at = 0
+    end
+    if newest then
+        cell.last_at = t
     end
     cell.penalty = 0
 end
@@ -123,6 +147,10 @@ struct CellState {
     penalty: i64,
     #[serde(default)]
     score_milli: i64,
+    /// Submission time of the newest applied judgement (POINTS modes only);
+    /// keeps `LAST` aggregation and solve revocation order-independent.
+    #[serde(default)]
+    last_at: i64,
 }
 
 /// Everything the incremental apply needs to know about one completed
@@ -193,9 +221,10 @@ impl ScoreboardProjection {
             .query::<i64>(
                 cmd("EVAL")
                     .arg(APPLY_SCRIPT)
-                    .arg(2)
+                    .arg(3)
                     .arg(cells_key(event.contest_id))
                     .arg(version_key(event.contest_id))
+                    .arg(dirty_key(event.contest_id))
                     .arg(&field)
                     .arg(&event.verdict)
                     .arg(event.submitted_at_ms)
@@ -334,7 +363,7 @@ impl ScoreboardProjection {
         .await?;
         let Some(start_at) = meta.0 else { return Ok(()) };
         let start_ms = unix_ms(start_at);
-        let rows = load_contest_replay_rows(database, contest_id).await?;
+        let rows = load_contest_replay_rows(database, contest_id, None).await?;
         let mut grouped: HashMap<(i64, i64), (i64, Vec<ReplayRow>)> = HashMap::new();
         for (team_id, problem_id, submission_id, submitted_at, verdict, score_milli, max_score) in
             rows
@@ -368,18 +397,72 @@ impl ScoreboardProjection {
         })
     }
 
-    /// Copies the live cells hash into the frozen snapshot when the contest
-    /// freezes. Idempotent: existing copies are never overwritten.
-    pub async fn freeze_snapshot(&self, contest_id: i64) -> Result<(), AppError> {
+    /// Materialises the frozen snapshot as a replay of the contest **as of
+    /// `freeze_at`**.
+    ///
+    /// Copying the live cells hash (the previous behaviour) made the snapshot
+    /// depend on when the milestone happened to be noticed: a restart around
+    /// the freeze, or a projection enabled afterwards, would capture
+    /// post-freeze judgements and leak them on the public board for the rest of
+    /// the contest. Replaying only submissions before the cutoff makes the
+    /// snapshot a function of the milestone, not of the timing.
+    ///
+    /// Idempotent: `RENAMENX` publishes the first snapshot only, so a second
+    /// call (or a concurrent one) leaves the established snapshot intact.
+    pub async fn freeze_snapshot(
+        &self,
+        database: &PgPool,
+        contest_id: i64,
+    ) -> Result<(), AppError> {
         let exists: i64 = self.redis.query(cmd("EXISTS").arg(frozen_key(contest_id))).await?;
-        if exists == 0 {
-            let copied: i64 = self
-                .redis
-                .query(cmd("COPY").arg(cells_key(contest_id)).arg(frozen_key(contest_id)))
-                .await?;
-            if copied == 0 {
-                warn!(%contest_id, "no live cells to freeze; public board falls back to PostgreSQL");
-            }
+        if exists != 0 {
+            return Ok(());
+        }
+        let meta =
+            sqlx::query_as::<_, (Option<OffsetDateTime>, Option<OffsetDateTime>, bool, bool)>(
+                r#"
+            SELECT c.start_at, c.freeze_at, c.scoring_mode = 'ICPC',
+                   c.score_aggregation = 'BEST'
+            FROM contests c WHERE c.id = $1
+            "#,
+            )
+            .bind(contest_id)
+            .fetch_one(database)
+            .await
+            .map_err(|error| AppError::internal("load contest for the frozen snapshot", error))?;
+        let (Some(start_at), Some(freeze_at)) = (meta.0, meta.1) else { return Ok(()) };
+        let start_ms = unix_ms(start_at);
+        let rows = load_contest_replay_rows(database, contest_id, Some(freeze_at))
+            .await
+            .map_err(|error| AppError::internal("replay the frozen snapshot", error))?;
+        let mut grouped: HashMap<(i64, i64), (i64, Vec<ReplayRow>)> = HashMap::new();
+        for (team_id, problem_id, submission_id, submitted_at, verdict, score_milli, max_score) in
+            rows
+        {
+            let entry = grouped.entry((team_id, problem_id)).or_insert((max_score, Vec::new()));
+            entry.1.push(ReplayRow {
+                submission_id,
+                submitted_at_ms: unix_ms(submitted_at),
+                verdict,
+                score_milli,
+            });
+        }
+        // Build into a staging key and publish it with an atomic RENAMENX so a
+        // reader never observes a half-written snapshot.
+        let staging = format!("{FROZEN_KEY_TEMPLATE}:building:{contest_id}");
+        let mut pipeline = redis::pipe();
+        pipeline.del(&staging).ignore();
+        for ((team_id, problem_id), (max_score, replay)) in &grouped {
+            let state = project_cell(start_ms, meta.2, meta.3, *max_score, replay);
+            let payload = serde_json::to_string(&state)
+                .map_err(|error| AppError::internal("encode frozen cell", error))?;
+            pipeline.hset(&staging, cell_field(*team_id, *problem_id), payload).ignore();
+        }
+        pipeline.cmd("RENAMENX").arg(&staging).arg(frozen_key(contest_id)).ignore();
+        pipeline.del(&staging).ignore();
+        self.redis.query_pipeline::<()>(pipeline).await?;
+        if grouped.is_empty() {
+            warn!(%contest_id, "no submissions before the freeze; the frozen board is empty");
         }
         Ok(())
     }
@@ -446,9 +529,12 @@ pub(super) async fn load_cell_replay_rows(
 /// Loads every completed judgement of a contest for a full projection replay.
 /// Both score columns are `integer` in PostgreSQL, so they are cast to
 /// `bigint` for the `i64` decode (see [`load_cell_replay_rows`]).
+/// `until` restricts the replay to submissions strictly before that instant,
+/// which is how the frozen snapshot is built.
 pub(super) async fn load_contest_replay_rows(
     database: &PgPool,
     contest_id: i64,
+    until: Option<OffsetDateTime>,
 ) -> Result<Vec<(i64, i64, i64, OffsetDateTime, String, i64, i64)>, sqlx::Error> {
     sqlx::query_as::<_, (i64, i64, i64, OffsetDateTime, String, i64, i64)>(
         r#"
@@ -460,10 +546,12 @@ pub(super) async fn load_contest_replay_rows(
         JOIN contest_problems cp ON cp.contest_id = s.contest_id
             AND cp.problem_id = s.problem_id
         WHERE s.contest_id = $1
+          AND ($2::timestamptz IS NULL OR s.submitted_at < $2)
         ORDER BY s.submitted_at, s.id
         "#,
     )
     .bind(contest_id)
+    .bind(until)
     .fetch_all(database)
     .await
 }
@@ -503,21 +591,30 @@ fn project_cell(
                 cell.wa += 1;
             }
         } else {
+            // Mirrors the POINTS branch of `APPLY_SCRIPT`: only the newest
+            // submission may revoke a solve or overwrite a LAST score, so an
+            // out-of-order judgement cannot rewrite the board.
+            let newest = t >= cell.last_at;
             if aggregation_best {
                 if row.score_milli > cell.score_milli {
                     cell.score_milli = row.score_milli;
                 }
-            } else {
+            } else if newest {
                 cell.score_milli = row.score_milli;
             }
             if cell.score_milli >= max_score_milli {
                 if !cell.solved {
                     cell.solved = true;
                     cell.solved_at = t;
+                } else if t < cell.solved_at {
+                    cell.solved_at = t;
                 }
-            } else {
+            } else if newest {
                 cell.solved = false;
                 cell.solved_at = 0;
+            }
+            if newest {
+                cell.last_at = t;
             }
             cell.penalty = 0;
         }

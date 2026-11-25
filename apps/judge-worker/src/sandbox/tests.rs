@@ -9,7 +9,7 @@ use crate::sandbox::MAX_TESTDATA_EXTRACTED_BYTES;
 use crate::sandbox::archive::{
     OutputArchiveError, extract_cases_blocking, extract_output_cases_blocking,
 };
-use crate::sandbox::compare::standard_output_matches;
+use crate::sandbox::compare::{files_match, standard_output_matches};
 use crate::sandbox::fs::{read_regular_output_no_follow, truncate_log};
 use crate::sandbox::language::LanguageConfig;
 use crate::sandbox::metrics::{GnuTimeMetrics, extract_gnu_time_metrics, nonzero_milliseconds};
@@ -39,6 +39,37 @@ fn temp_dir(label: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("pb-{label}-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&dir).expect("temp dir");
     dir
+}
+
+/// The streaming comparator must reach the same verdicts as the in-memory
+/// one, including the CR/LF corner cases the previous implementation pinned.
+#[test]
+fn streamed_file_comparison_matches_the_in_memory_rules() {
+    let dir = std::env::temp_dir().join(format!("pb-compare-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).expect("create compare dir");
+    let cases: [(&[u8], &[u8], bool); 4] = [
+        (b"one  \r\ntwo\r\n", b"one\ntwo\n\n", true),
+        (b"a\r\rb\n", b"a\n\nb\n", true),
+        (b"value\0", b"value", false),
+        (b"1\n2\n", b"1\n3\n", false),
+    ];
+    for (index, (expected, actual, matches)) in cases.into_iter().enumerate() {
+        let expected_path = dir.join(format!("{index}.expected"));
+        let actual_path = dir.join(format!("{index}.actual"));
+        std::fs::write(&expected_path, expected).expect("write expected");
+        std::fs::write(&actual_path, actual).expect("write actual");
+        assert_eq!(
+            files_match(&expected_path, &actual_path).expect("compare files"),
+            matches,
+            "case {index}"
+        );
+        assert_eq!(
+            standard_output_matches(expected, actual),
+            matches,
+            "the in-memory path must agree on case {index}"
+        );
+    }
+    std::fs::remove_dir_all(&dir).expect("remove compare dir");
 }
 
 #[test]

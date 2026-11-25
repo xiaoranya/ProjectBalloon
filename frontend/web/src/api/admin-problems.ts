@@ -25,8 +25,6 @@ export interface ProblemPayload {
   languages: JudgeLanguage[];
   defaultLangCode: string;
   judgeMode?: 'STANDARD' | 'INTERACTIVE' | 'OUTPUT_ONLY';
-  interactorObjectKey?: string | null;
-  interactorSha256?: string | null;
 }
 
 export interface UpdateProblemPayload extends Partial<ProblemPayload> {

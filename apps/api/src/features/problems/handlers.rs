@@ -737,8 +737,12 @@ async fn stage_testdata_field(
         use std::os::unix::fs::OpenOptionsExt as _;
         open_options.mode(0o600);
     }
+    // The guard owns the file from the moment it exists, so an oversized
+    // upload, a read error or a cancelled request (the future is dropped at
+    // any await) removes the staging file instead of leaving 256 MiB behind.
+    let guard = StagedUploadFile(path);
     let file = open_options
-        .open(&path)
+        .open(guard.path())
         .map_err(|error| AppError::internal("create test-data staging file", error))?;
     let mut writer = tokio::fs::File::from(file);
     let mut hasher = sha2::Sha256::new();
@@ -760,5 +764,5 @@ async fn stage_testdata_field(
         return Err(AppError::validation("file", "must contain between 1 byte and 256 MiB"));
     }
     writer.flush().await.map_err(|error| AppError::internal("stage test-data upload", error))?;
-    Ok((StagedUploadFile(path), total, hex::encode(hasher.finalize())))
+    Ok((guard, total, hex::encode(hasher.finalize())))
 }

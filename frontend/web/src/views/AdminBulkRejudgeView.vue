@@ -94,6 +94,7 @@ import { ApiError, getErrorMessage } from '../api/client';
 import type { ContestResponse, ContestProblem, ContestTeamResponse } from '../api/types';
 import { submissionStatusLabel } from '../utils/format';
 import { useI18n } from '../i18n';
+import { randomId } from '../utils/browser';
 
 const route = useRoute();
 const router = useRouter();
@@ -170,7 +171,7 @@ const canCreate = computed(() =>
 const polling = computed(() => tasks.value.some((task) => isActiveTask(task.status)));
 
 function regenerateIdempotencyKey() {
-  idempotencyKey.value = `batch-rejudge-${contestId.value}-${crypto.randomUUID()}`;
+  idempotencyKey.value = `batch-rejudge-${contestId.value}-${randomId()}`;
 }
 
 async function loadContext() {

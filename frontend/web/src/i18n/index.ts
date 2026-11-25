@@ -815,6 +815,10 @@ const english: Record<string, string> = {
     'All OBS pages using this token will become invalid immediately.',
   '撤销 Token': 'Revoke Token',
   已复制: 'Copied',
+  '复制失败，请手动选择文本复制':
+    'Copy failed. Select the text and copy it manually (the clipboard API needs HTTPS).',
+  '复制失败，请改用“下载 CSV”或手动选择文本复制':
+    'Copy failed. Use "Download CSV" or select the text and copy it manually.',
   自定义模板已保存: 'Custom template saved',
   填入示例: 'Fill example',
   '赛事管理员只能导入到已授权比赛。下拉框已请求可管理比赛；后端权限校验始终是最终边界。':
@@ -971,7 +975,11 @@ const english: Record<string, string> = {
   判题模式: 'Judge mode',
   标准输入输出: 'Standard input/output',
   交互题: 'Interactive',
-  'Interactor 对象键': 'Interactor object key',
+  Interactor: 'Interactor',
+  已上传: 'Uploaded',
+  未上传: 'Not uploaded',
+  'Interactor 只能通过上传 ELF 配置，服务端会校验并计算摘要。':
+    'The interactor can only be configured by uploading an ELF; the server validates it and computes the digest.',
   '参赛者需上传包含 1.out、2.out 等根目录输出文件的 ZIP。':
     'Contestants must upload a ZIP containing root-level output files such as 1.out and 2.out.',
   '上传 Interactor ELF': 'Upload Interactor ELF',

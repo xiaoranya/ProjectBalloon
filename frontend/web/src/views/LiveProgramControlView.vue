@@ -122,6 +122,7 @@ import type { ContestResponse } from '../api/types';
 import { ApiError, getErrorMessage } from '../api/client';
 import { presentationApi, type LiveProgramState, type LiveScene } from '../api/presentation';
 import { useI18n } from '../i18n';
+import { copyText } from '../utils/browser';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -277,7 +278,10 @@ function goTokenManager() {
 }
 
 async function copy(value: string) {
-  await navigator.clipboard.writeText(value);
+  if (!(await copyText(value))) {
+    ElMessage.error(t('复制失败，请手动选择文本复制'));
+    return;
+  }
   ElMessage.success(t('已复制'));
 }
 

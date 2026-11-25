@@ -151,7 +151,9 @@ impl SubmissionService {
                 request_ip,
             )
             .await;
-        if persisted.is_err()
+        // Only a rolled-back transaction proves the object is unreferenced. A
+        // failed COMMIT may still have persisted the row.
+        if matches!(persisted, Err(PersistFailure::RolledBack(_)))
             && let Err(cleanup_error) =
                 storage.backend().delete(storage.source_bucket(), &source_object_key).await
         {
@@ -164,7 +166,36 @@ impl SubmissionService {
             )
             .await;
         }
-        persisted
+        persisted.map_err(PersistFailure::into_app_error)
+    }
+}
+
+/// Why a submission insert failed, split by whether the uploaded source object
+/// is safe to delete.
+///
+/// `COMMIT` returning an error does not mean the row was not written: the
+/// server may have committed and the connection dropped before the reply.
+/// Deleting the object then removes the source of a live submission, so that
+/// case is kept separate and left to the orphan sweep (which waits out a grace
+/// period and re-checks references).
+pub(crate) enum PersistFailure {
+    /// The transaction never reached `COMMIT`; nothing references the object.
+    RolledBack(AppError),
+    /// `COMMIT` was issued and its outcome is unknown; the row may exist.
+    Uncertain(AppError),
+}
+
+impl From<AppError> for PersistFailure {
+    fn from(error: AppError) -> Self {
+        Self::RolledBack(error)
+    }
+}
+
+impl PersistFailure {
+    pub(crate) fn into_app_error(self) -> AppError {
+        match self {
+            Self::RolledBack(error) | Self::Uncertain(error) => error,
+        }
     }
 }
 
@@ -184,7 +215,7 @@ impl SubmissionService {
         source_token_count: i32,
         actor: &AuthUser,
         request_ip: IpAddr,
-    ) -> Result<SubmitResponse, AppError> {
+    ) -> Result<SubmitResponse, PersistFailure> {
         let mut transaction = self.database.begin().await.map_err(|error| {
             AppError::internal("begin submission transaction", error)
                 .with_contest_id(contest_id)
@@ -320,12 +351,14 @@ impl SubmissionService {
                 .with_submission_id(submission_id)
                 .with_user_id(actor.id)
         })?;
-        transaction.commit().await.map_err(|error| {
-            AppError::internal("commit submission", error)
-                .with_contest_id(contest_id)
-                .with_submission_id(submission_id)
-                .with_user_id(actor.id)
-        })?;
+        if let Err(error) = transaction.commit().await {
+            return Err(PersistFailure::Uncertain(
+                AppError::internal("commit submission", error)
+                    .with_contest_id(contest_id)
+                    .with_submission_id(submission_id)
+                    .with_user_id(actor.id),
+            ));
+        }
         Ok(SubmitResponse { submission_id, judgement_id, status: "PENDING", submitted_at })
     }
 }

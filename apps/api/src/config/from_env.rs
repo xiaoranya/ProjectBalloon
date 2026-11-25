@@ -45,6 +45,17 @@ impl AppConfig {
         let rabbitmq = parse_rabbitmq(&mut lookup)?;
         let judge_dispatch = parse_judge_dispatch(&mut lookup)?;
         validate_object_storage_fields(&object_storage)?;
+        // Competition deployments without a broker accept submissions and
+        // queue them forever: the dispatcher, reaper and result consumer are
+        // never spawned, so `submission_outbox` only grows. Refuse the
+        // configuration instead of reporting healthy with zero judging.
+        if deployment.deployment_mode.is_competition() && !rabbitmq.enabled {
+            return Err(ConfigError::Invalid {
+                name: "PROJECT_BALLOON_RABBITMQ_ENABLED",
+                value: "false".to_owned(),
+                reason: "must be true when PROJECT_BALLOON_DEPLOYMENT_MODE is competition",
+            });
+        }
 
         Ok(Self {
             deployment_mode: deployment.deployment_mode,
@@ -58,6 +69,8 @@ impl AppConfig {
             run_migrations: database.run_migrations,
             session_ttl: session.session_ttl,
             secure_cookies: session.secure_cookies,
+            login_attempt_limit_per_ip: session.login_attempt_limit_per_ip,
+            login_account_attempt_limit: session.login_account_attempt_limit,
             csrf_secret: session.csrf_secret,
             uses_development_csrf_secret: session.uses_development_csrf_secret,
             allow_development_csrf_secret: session.allow_development_csrf_secret,
@@ -238,6 +251,8 @@ fn parse_database(
 struct SessionSettings {
     session_ttl: Duration,
     secure_cookies: bool,
+    login_attempt_limit_per_ip: i64,
+    login_account_attempt_limit: i64,
     csrf_secret: Vec<u8>,
     uses_development_csrf_secret: bool,
     allow_development_csrf_secret: bool,
@@ -262,6 +277,25 @@ fn parse_session(
     let secure_cookies = parse_bool(
         "PROJECT_BALLOON_SECURE_COOKIES",
         lookup("PROJECT_BALLOON_SECURE_COOKIES").unwrap_or_else(|| "false".to_owned()),
+    )?;
+    // Both windows are tunable because the right size depends on the venue's
+    // network: a whole contest room usually shares one NAT address, so a
+    // per-IP value sized for a single client locks everybody out.
+    let login_attempt_limit_per_ip = check_login_limit(
+        "PROJECT_BALLOON_LOGIN_ATTEMPT_LIMIT_PER_IP",
+        parse_positive(
+            "PROJECT_BALLOON_LOGIN_ATTEMPT_LIMIT_PER_IP",
+            lookup("PROJECT_BALLOON_LOGIN_ATTEMPT_LIMIT_PER_IP")
+                .unwrap_or_else(|| DEFAULT_LOGIN_ATTEMPT_LIMIT_PER_IP.to_string()),
+        )?,
+    )?;
+    let login_account_attempt_limit = check_login_limit(
+        "PROJECT_BALLOON_LOGIN_ACCOUNT_ATTEMPT_LIMIT",
+        parse_positive(
+            "PROJECT_BALLOON_LOGIN_ACCOUNT_ATTEMPT_LIMIT",
+            lookup("PROJECT_BALLOON_LOGIN_ACCOUNT_ATTEMPT_LIMIT")
+                .unwrap_or_else(|| DEFAULT_LOGIN_ACCOUNT_ATTEMPT_LIMIT.to_string()),
+        )?,
     )?;
     let csrf_secret =
         lookup("PROJECT_BALLOON_CSRF_SECRET").unwrap_or_else(|| DEFAULT_CSRF_SECRET.to_owned());
@@ -298,6 +332,8 @@ fn parse_session(
     Ok(SessionSettings {
         session_ttl: Duration::from_secs(session_ttl_seconds),
         secure_cookies,
+        login_attempt_limit_per_ip,
+        login_account_attempt_limit,
         csrf_secret: csrf_secret.into_bytes(),
         uses_development_csrf_secret,
         allow_development_csrf_secret,
@@ -743,6 +779,20 @@ where
         return Err(ConfigError::Invalid { name, value, reason: "must be greater than zero" });
     }
     Ok(parsed)
+}
+
+/// Rejects a login window so large that it disables brute-force protection
+/// instead of tuning it. A typo in the environment would otherwise silently
+/// turn the limiter off.
+fn check_login_limit(name: &'static str, value: i64) -> Result<i64, ConfigError> {
+    if value > MAX_LOGIN_ATTEMPT_LIMIT {
+        return Err(ConfigError::Invalid {
+            name,
+            value: value.to_string(),
+            reason: "must not exceed 10000; a larger window disables brute-force protection",
+        });
+    }
+    Ok(value)
 }
 
 #[cfg(test)]

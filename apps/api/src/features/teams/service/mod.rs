@@ -45,12 +45,15 @@ const TEAM_COLUMNS: &str = r#"
 pub struct TeamService {
     pub(super) database: PgPool,
     pub(super) outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    /// Sessions live in Redis only; disabling or deleting a team account has
+    /// to revoke them there. `None` only in unit tests that do not wire Redis.
+    pub(super) redis: Option<crate::features::redis::RedisHandle>,
 }
 
 impl TeamService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database, outbox: None }
+        Self { database, outbox: None, redis: None }
     }
 
     #[must_use]
@@ -60,6 +63,40 @@ impl TeamService {
     ) -> Self {
         self.outbox = outbox;
         self
+    }
+
+    #[must_use]
+    pub fn with_redis_option(mut self, redis: Option<crate::features::redis::RedisHandle>) -> Self {
+        self.redis = redis;
+        self
+    }
+
+    /// Logs every live session of a team account out.
+    ///
+    /// The `auth_sessions` delete is legacy-table hygiene: authentication
+    /// reads Redis only, so the Redis revocation is the one that ends the
+    /// session. Redis runs before the commit so a failure aborts the change
+    /// rather than reporting success with a still-usable session.
+    pub(super) async fn revoke_sessions(
+        &self,
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        user_id: i64,
+    ) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM auth_sessions WHERE user_id = $1")
+            .bind(user_id)
+            .execute(&mut **transaction)
+            .await
+            .map_err(|error| AppError::internal("revoke team sessions", error))?;
+        match &self.redis {
+            Some(redis) => crate::features::auth::revoke_user_sessions(redis, user_id, "").await,
+            None => {
+                tracing::warn!(
+                    user_id,
+                    "team service has no Redis handle; live sessions were not revoked"
+                );
+                Ok(())
+            }
+        }
     }
 
     pub async fn create(
@@ -376,11 +413,7 @@ impl TeamService {
                 .execute(&mut *transaction)
                 .await
                 .map_err(|error| AppError::internal("disable deleted team account", error))?;
-            sqlx::query("DELETE FROM auth_sessions WHERE user_id = $1")
-                .bind(user_id)
-                .execute(&mut *transaction)
-                .await
-                .map_err(|error| AppError::internal("revoke deleted team sessions", error))?;
+            self.revoke_sessions(&mut transaction, user_id).await?;
         }
         record_audit(
             &mut transaction,

@@ -46,8 +46,7 @@ impl OutboxDispatcher {
     }
 
     pub async fn run(self, mut shutdown: watch::Receiver<bool>) {
-        if let Err(error) = self.outbox.ensure_consumer_group().await {
-            error!(?error, "failed to create realtime outbox consumer group");
+        if !self.ensure_group(&mut shutdown).await {
             return;
         }
         let mut ticker = tokio::time::interval(self.config.poll_interval);
@@ -70,6 +69,36 @@ impl OutboxDispatcher {
         info!("realtime outbox dispatcher stopped");
     }
 
+    /// Creates the consumer group, retrying with backoff until it succeeds or
+    /// the process shuts down. Bailing out on the first failure used to leave
+    /// every already-enqueued event undelivered for the rest of the process's
+    /// life: the task returned `()`, and nothing supervises a dispatcher that
+    /// already finished.
+    async fn ensure_group(&self, shutdown: &mut watch::Receiver<bool>) -> bool {
+        let mut delay = self.config.retry_base.max(Duration::from_millis(200));
+        loop {
+            match self.outbox.ensure_consumer_group().await {
+                Ok(()) => return true,
+                Err(error) => {
+                    error!(
+                        ?error,
+                        retry_in = ?delay,
+                        "failed to create the realtime outbox consumer group; retrying"
+                    );
+                }
+            }
+            tokio::select! {
+                _ = tokio::time::sleep(delay) => {}
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() {
+                        return false;
+                    }
+                }
+            }
+            delay = (delay * 2).min(Duration::from_secs(30));
+        }
+    }
+
     /// Delivers newly enqueued entries and reclaims expired leases. Returns
     /// the number of confirmed deliveries.
     pub async fn dispatch_batch(&self) -> Result<usize, crate::error::AppError> {
@@ -90,7 +119,10 @@ impl OutboxDispatcher {
             )
             .await?;
         for (stream_id, entry, delivery_count) in reclaimed {
-            if delivery_count > i64::from(self.config.max_attempts) {
+            // `delivery_count` already includes the delivery this entry is
+            // about to get, so `>=` keeps the budget exact; `>` delivered one
+            // extra time past the configured maximum.
+            if delivery_count >= i64::from(self.config.max_attempts) {
                 warn!(
                     %stream_id,
                     event_id = %entry.event_id,

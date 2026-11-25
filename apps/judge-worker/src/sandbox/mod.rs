@@ -117,6 +117,67 @@ const MAX_TESTDATA_EXTRACTED_BYTES: u64 = 512 * 1024 * 1024;
 /// and the orphan sweeper.
 pub(crate) const JUDGE_CONTAINER_PREFIX: &str = "pb-judge-";
 
+/// Appends `chunk` to `logs`, keeping only the **trailing**
+/// [`MAX_EXEC_LOG_BYTES`] bytes.
+///
+/// GNU time writes its `__PROJECT_BALLON_GNU_TIME__` report as the last line of
+/// stderr. Keeping the head (the previous behaviour) let a contestant print
+/// 64 KiB first and bury the report, which the runner then treated as a
+/// missing-metrics worker error — eight retries and a SystemError for what is
+/// otherwise an accepted run.
+pub(super) fn push_log_tail(logs: &mut String, chunk: &str) {
+    logs.push_str(chunk);
+    if logs.len() > MAX_EXEC_LOG_BYTES {
+        let excess = logs.len() - MAX_EXEC_LOG_BYTES;
+        let mut cut = excess;
+        while cut < logs.len() && !logs.is_char_boundary(cut) {
+            cut += 1;
+        }
+        logs.drain(..cut);
+    }
+}
+
+/// Total size a `/work` directory may reach for one judgement. `/work` is a
+/// writable host bind with no filesystem quota, so a single submission could
+/// otherwise fill the worker's disk; the per-file limit is enforced separately
+/// (`ulimit -f` / `--rlimit fsize`).
+pub(crate) const MAX_WORK_DIR_BYTES: u64 = 1024 * 1024 * 1024;
+
+/// Per-file ceiling during compilation. Object files and JARs are legitimate
+/// but a compiler must not be able to write an arbitrarily large artifact.
+pub(crate) const COMPILE_FILE_SIZE_LIMIT_BYTES: u64 = 512 * 1024 * 1024;
+
+/// True when the regular files under `dir` add up to more than `limit`.
+///
+/// Stops counting as soon as the limit is crossed so a directory with millions
+/// of entries cannot stall the check. The walk depth is bounded (a contestant
+/// can nest arbitrarily deep) and symlinks are not followed.
+pub(super) async fn work_dir_exceeds(dir: &std::path::Path, limit: u64) -> bool {
+    let mut total = 0_u64;
+    let mut stack = vec![(dir.to_path_buf(), 4_u8)];
+    while let Some((directory, depth)) = stack.pop() {
+        let Ok(mut entries) = tokio::fs::read_dir(&directory).await else { continue };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let Ok(file_type) = entry.file_type().await else { continue };
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                if depth > 0 {
+                    stack.push((entry.path(), depth - 1));
+                }
+                continue;
+            }
+            let Ok(metadata) = entry.metadata().await else { continue };
+            total = total.saturating_add(metadata.len());
+            if total > limit {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Wall-clock allowance the sandbox grants the compile exec inside the
 /// container.
 pub(crate) const COMPILE_WALL_LIMIT: Duration = Duration::from_secs(30);

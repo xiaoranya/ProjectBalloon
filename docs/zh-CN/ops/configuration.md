@@ -63,7 +63,7 @@ API 在启动时创建其配置的桶。桶名属于部署配置，绝不通过�
 
 | 变量 | 默认值 | 用途 |
 |---|---|---|
-| `PROJECT_BALLOON_RABBITMQ_ENABLED` | `false` | 启用通过 RabbitMQ 的持久 Judge 任务分发 |
+| `PROJECT_BALLOON_RABBITMQ_ENABLED` | `false` | 启用通过 RabbitMQ 的持久 Judge 任务分发。`PROJECT_BALLOON_DEPLOYMENT_MODE=competition` 时必须为 `true`：没有 broker 时提交会永久排队，而 API 仍报告健康 |
 | `PROJECT_BALLOON_RABBITMQ_URL` | 未设置 | 带凭据的 AMQP/AMQPS URL |
 | `PROJECT_BALLOON_RABBITMQ_REQUEST_TIMEOUT_MILLISECONDS` | `5000` | broker 操作超时 |
 | `PROJECT_BALLOON_JUDGE_DISPATCH_POLL_MILLISECONDS` | `500` | 提交分发器的 Outbox 轮询间隔 |
@@ -82,6 +82,8 @@ API 在启动时创建其配置的桶。桶名属于部署配置，绝不通过�
 |---|---|---|
 | `PROJECT_BALLOON_SESSION_TTL_SECONDS` | `43200` | 浏览器会话生命周期 |
 | `PROJECT_BALLOON_SECURE_COOKIES` | `false` | 添加 `Secure` Cookie 属性；生产必须为 `true` |
+| `PROJECT_BALLOON_LOGIN_ATTEMPT_LIMIT_PER_IP` | `100` | 单个来源地址每五分钟窗口内允许的登录失败次数。大型赛场共享一个 NAT 出口时调高；超过 10000 会被拒绝 |
+| `PROJECT_BALLOON_LOGIN_ACCOUNT_ATTEMPT_LIMIT` | `10` | 单个账号每五分钟窗口内允许的登录失败次数，与来源地址无关；真正限制撞库的是这个窗口 |
 | `PROJECT_BALLOON_CSRF_SECRET` | 仅开发值 | CSRF token 的 HMAC secret；除非 `PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET=true`，公开开发值被拒绝，且与安全 Cookie 一起无条件拒绝 |
 | `PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET` | `false` | 仅本地开发的逃生舱 |
 

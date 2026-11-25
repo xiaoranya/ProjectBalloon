@@ -8,11 +8,17 @@ use crate::features::auth::model::UserRow;
 use crate::features::auth::service::{AuthService, USER_COLUMNS};
 
 /// Sliding-window rate limiting lives exclusively in Redis: one sorted set per
-/// (action, IP) whose members are unique attempt markers scored by attempt
+/// (action, key) whose members are unique attempt markers scored by attempt
 /// time. The window is the same five-minute sliding window the previous
 /// `audit_logs`-backed counters enforced.
 const RATE_LIMIT_KEY_PREFIX: &str = "xcpc:ratelimit:v1:";
 const RATE_LIMIT_WINDOW_MILLIS: i64 = 5 * 60 * 1000;
+
+/// Action name of the per-account window. Login attempts are counted twice:
+/// once per source IP and once per username, so a shared venue NAT cannot
+/// lock a whole room out on ten typos and a distributed attacker cannot guess
+/// one account for free.
+const LOGIN_USERNAME_ACTION: &str = "auth.login.username";
 
 /// Atomically trims the window, checks the limit, and records the attempt.
 /// Returns 1 when the attempt is within the limit (and was recorded), 0 when
@@ -74,36 +80,45 @@ impl AuthService {
             .map_err(|error| AppError::internal("load user by ID", error))
     }
     pub(super) async fn failed_login_count(&self, request_ip: &str) -> Result<i64, AppError> {
-        let redis = self.redis()?;
-        let key = rate_limit_key("auth.login", request_ip);
-        let now = now_millis();
-        let mut pipeline = redis::pipe();
-        pipeline
-            .cmd("ZREMRANGEBYSCORE")
-            .arg(&key)
-            .arg("-inf")
-            .arg(now - RATE_LIMIT_WINDOW_MILLIS)
-            .ignore();
-        pipeline.cmd("ZCARD").arg(&key);
-        let (count,): (i64,) = redis.query_pipeline(pipeline).await?;
-        Ok(count)
+        self.recent_auth_action_count("auth.login", request_ip).await
+    }
+    /// True when either the per-IP or the per-account window is exhausted;
+    /// the caller rejects the attempt without touching the password hash.
+    pub(super) async fn login_attempts_exhausted(
+        &self,
+        request_ip: &str,
+        username: &str,
+    ) -> Result<bool, AppError> {
+        if self.failed_login_count(request_ip).await? >= self.login_limits.per_ip {
+            return Ok(true);
+        }
+        Ok(self.recent_auth_action_count(LOGIN_USERNAME_ACTION, username).await?
+            >= self.login_limits.per_account)
     }
     /// Records a failed login atomically against the Redis sliding window and
     /// mirrors the attempt into `audit_logs` (kept for the audit trail; it no
-    /// longer participates in counting). Returns `false` once the limit is
-    /// exhausted.
+    /// longer participates in counting). Returns `false` once either the
+    /// per-IP or the per-account limit is exhausted.
     pub(super) async fn record_failed_login(
         &self,
         username: &str,
         request_ip: &str,
-        limit: i64,
     ) -> Result<bool, AppError> {
-        let allowed = self.record_rate_limit_attempt("auth.login", request_ip, limit).await?;
-        if allowed {
-            self.record_auth_action("auth.login", &username.to_lowercase(), request_ip, "failed")
-                .await?;
+        let username = username.to_ascii_lowercase();
+        let ip_allowed = self
+            .record_rate_limit_attempt("auth.login", request_ip, self.login_limits.per_ip)
+            .await?;
+        let account_allowed = self
+            .record_rate_limit_attempt(
+                LOGIN_USERNAME_ACTION,
+                &username,
+                self.login_limits.per_account,
+            )
+            .await?;
+        if ip_allowed {
+            self.record_auth_action("auth.login", &username, request_ip, "failed").await?;
         }
-        Ok(allowed)
+        Ok(ip_allowed && account_allowed)
     }
     /// Runs the atomic check-and-record script for `action`; the caller decides
     /// whether the attempt also lands in the audit trail.

@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use async_trait::async_trait;
 use sqlx::PgPool;
 use tokio::sync::watch;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::features::judge_dispatch::error::JudgeDispatchError;
@@ -36,6 +36,7 @@ pub struct SubmissionOutboxDispatcher {
     publisher: Arc<dyn JudgeTaskPublisher>,
     config: SubmissionOutboxDispatcherConfig,
     instance_id: Uuid,
+    outbox: Option<crate::features::realtime::RealtimeOutbox>,
 }
 
 impl SubmissionOutboxDispatcher {
@@ -45,7 +46,19 @@ impl SubmissionOutboxDispatcher {
         publisher: Arc<dyn JudgeTaskPublisher>,
         config: SubmissionOutboxDispatcherConfig,
     ) -> Self {
-        Self { database, publisher, config, instance_id: Uuid::new_v4() }
+        Self { database, publisher, config, instance_id: Uuid::new_v4(), outbox: None }
+    }
+
+    /// Realtime events used to be written into the PostgreSQL
+    /// `realtime_outbox` table, which nothing reads any more; they go through
+    /// the Redis outbox now.
+    #[must_use]
+    pub fn with_outbox_option(
+        mut self,
+        outbox: Option<crate::features::realtime::RealtimeOutbox>,
+    ) -> Self {
+        self.outbox = outbox;
+        self
     }
 
     pub async fn run(self, mut shutdown: watch::Receiver<bool>) {
@@ -142,6 +155,7 @@ impl SubmissionOutboxDispatcher {
 
     async fn mark_sent(&self, id: i64) -> Result<(), sqlx::Error> {
         let mut transaction = self.database.begin().await?;
+        let mut events: Vec<(i64, i64, serde_json::Value)> = Vec::new();
         let sent = sqlx::query_as::<_, (i64, Uuid)>(
             r#"
             UPDATE submission_outbox
@@ -168,27 +182,39 @@ impl SubmissionOutboxDispatcher {
             .fetch_optional(&mut *transaction)
             .await?;
             if let Some((Some(contest_id), Some(team_id))) = context {
-                sqlx::query(
-                    r#"
-                    INSERT INTO realtime_outbox
-                        (event_id, contest_id, event_type, scope, team_id, payload_json)
-                    VALUES ($1, $2, 'SUBMISSION_STATUS_CHANGED', 'TEAM', $3, $4)
-                    "#,
-                )
-                .bind(Uuid::new_v4())
-                .bind(contest_id)
-                .bind(team_id)
-                .bind(serde_json::json!({
-                    "submissionId": submission_id,
-                    "judgementId": judgement_id,
-                    "status": "JUDGING"
-                }))
-                .execute(&mut *transaction)
-                .await?;
+                events.push((
+                    contest_id,
+                    team_id,
+                    serde_json::json!({
+                        "submissionId": submission_id,
+                        "judgementId": judgement_id,
+                        "status": "JUDGING"
+                    }),
+                ));
             }
         }
         transaction.commit().await?;
+        self.publish_events(events).await;
         Ok(())
+    }
+
+    /// Enqueues the realtime notifications collected inside the transaction.
+    /// They are refresh hints: after the commit, best-effort, never fatal.
+    async fn publish_events(&self, events: Vec<(i64, i64, serde_json::Value)>) {
+        for (contest_id, team_id, payload) in events {
+            if let Err(error) = crate::features::realtime::outbox::enqueue_optional(
+                self.outbox.as_ref(),
+                contest_id,
+                "SUBMISSION_STATUS_CHANGED",
+                "TEAM",
+                Some(team_id),
+                payload,
+            )
+            .await
+            {
+                warn!(?error, contest_id, "failed to enqueue the submission status event");
+            }
+        }
     }
 
     async fn mark_failed(&self, id: i64, attempts: i32, message: &str) -> Result<(), sqlx::Error> {
@@ -197,6 +223,7 @@ impl SubmissionOutboxDispatcher {
         let safe_message: String = message.chars().take(1_000).collect();
         let terminal = attempts >= self.config.max_attempts;
         let mut transaction = self.database.begin().await?;
+        let mut events: Vec<(i64, i64, serde_json::Value)> = Vec::new();
         let submission_id = sqlx::query_scalar::<_, i64>(
             r#"
             UPDATE submission_outbox
@@ -221,22 +248,20 @@ impl SubmissionOutboxDispatcher {
                 .fetch_optional(&mut *transaction)
                 .await?;
             if let Some((contest_id, team_id)) = context {
-                sqlx::query(
-                        "INSERT INTO realtime_outbox(event_id,contest_id,event_type,scope,team_id,payload_json) VALUES($1,$2,'SUBMISSION_STATUS_CHANGED','TEAM',$3,$4)",
-                    )
-                    .bind(Uuid::new_v4())
-                    .bind(contest_id)
-                    .bind(team_id)
-                    .bind(serde_json::json!({
+                events.push((
+                    contest_id,
+                    team_id,
+                    serde_json::json!({
                         "submissionId": submission_id,
                         "status": "SYSTEM_ERROR",
                         "verdict": "SYSTEM_ERROR"
-                    }))
-                    .execute(&mut *transaction)
-                    .await?;
+                    }),
+                ));
             }
         }
-        transaction.commit().await
+        transaction.commit().await?;
+        self.publish_events(events).await;
+        Ok(())
     }
 }
 

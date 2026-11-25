@@ -1,10 +1,12 @@
 use std::net::IpAddr;
 
 use sqlx::{PgPool, Postgres, Transaction};
+use tracing::warn;
 
 use crate::{
     error::AppError,
     features::auth::{hash_password, model::UserType},
+    features::redis::RedisHandle,
     pagination::PageResponse,
 };
 
@@ -34,12 +36,21 @@ const STAFF_ACCESS_LOCK_ID: i64 = 0x0050_4253_5441_4646;
 
 pub struct StaffAccountService {
     database: PgPool,
+    /// Sessions live in Redis only; revoking an account's sessions requires
+    /// the shared handle. `None` happens in unit tests that do not wire Redis.
+    redis: Option<RedisHandle>,
 }
 
 impl StaffAccountService {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database }
+        Self { database, redis: None }
+    }
+
+    #[must_use]
+    pub fn with_redis_option(mut self, redis: Option<RedisHandle>) -> Self {
+        self.redis = redis;
+        self
     }
 
     pub async fn list(
@@ -214,7 +225,7 @@ impl StaffAccountService {
         .map_err(|error| AppError::internal("update staff account", error))?;
 
         if next_type != current_type || next_enabled != current.enabled || permissions_changed {
-            revoke_sessions(&mut transaction, user_id).await?;
+            self.revoke_sessions(&mut transaction, user_id).await?;
         }
         record_audit(&mut transaction, actor_user_id, "STAFF_ACCOUNT_UPDATED", user_id, request_ip)
             .await?;
@@ -259,7 +270,7 @@ impl StaffAccountService {
         .execute(&mut *transaction)
         .await
         .map_err(|error| AppError::internal("reset staff password", error))?;
-        revoke_sessions(&mut transaction, user_id).await?;
+        self.revoke_sessions(&mut transaction, user_id).await?;
         record_audit(&mut transaction, actor_user_id, "STAFF_PASSWORD_RESET", user_id, request_ip)
             .await?;
         let updated = load_staff_account(&mut transaction, user_id).await?;
@@ -268,6 +279,36 @@ impl StaffAccountService {
             .await
             .map_err(|error| AppError::internal("commit staff password reset", error))?;
         updated.response()
+    }
+
+    /// Logs every live session of `user_id` out.
+    ///
+    /// Sessions live in Redis; the `auth_sessions` table is legacy and is no
+    /// longer read by authentication, so deleting rows there logs nobody out.
+    /// The legacy cleanup is kept for the table's own hygiene, the Redis
+    /// revocation is what takes effect. Redis runs before the commit so a
+    /// failure aborts the change instead of reporting success while the old
+    /// session stays usable.
+    async fn revoke_sessions(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        user_id: i64,
+    ) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM auth_sessions WHERE user_id = $1")
+            .bind(user_id)
+            .execute(&mut **transaction)
+            .await
+            .map_err(|error| AppError::internal("revoke staff sessions", error))?;
+        match &self.redis {
+            Some(redis) => crate::features::auth::revoke_user_sessions(redis, user_id, "").await,
+            None => {
+                warn!(
+                    user_id,
+                    "staff account service has no Redis handle; live sessions were not revoked"
+                );
+                Ok(())
+            }
+        }
     }
 }
 
@@ -350,18 +391,6 @@ async fn lock_staff_access_changes(
         .await
         .map(|_| ())
         .map_err(|error| AppError::internal("serialize staff access changes", error))
-}
-
-async fn revoke_sessions(
-    transaction: &mut Transaction<'_, Postgres>,
-    user_id: i64,
-) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM auth_sessions WHERE user_id = $1")
-        .bind(user_id)
-        .execute(&mut **transaction)
-        .await
-        .map(|_| ())
-        .map_err(|error| AppError::internal("revoke staff sessions", error))
 }
 
 async fn record_audit(

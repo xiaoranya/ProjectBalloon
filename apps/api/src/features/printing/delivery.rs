@@ -57,6 +57,13 @@ pub trait CupsGateway: Send + Sync {
     async fn status(&self, job_id: &str) -> Result<CupsJobStatus, SanitizedError>;
     async fn cancel(&self, job_id: &str) -> Result<(), SanitizedError>;
     fn printer(&self) -> &str;
+    /// Upper bound this gateway puts on one CUPS invocation. Delivery leases
+    /// are derived from it: a lease shorter than the command timeout lets a
+    /// second instance re-claim a print that is still being submitted, and the
+    /// job is printed twice.
+    fn command_timeout(&self) -> Duration {
+        Duration::from_secs(10)
+    }
 }
 
 #[derive(Clone)]
@@ -91,18 +98,25 @@ impl CommandLineCupsGateway {
                 SanitizedError::sanitize(error)
             }
         })?;
-        if let Some(input) = input {
-            let mut stdin = child
-                .stdin
-                .take()
-                .ok_or_else(|| SanitizedError::sanitize("missing command stdin"))?;
-            stdin.write_all(&input).await.map_err(SanitizedError::sanitize)?;
-            drop(stdin);
-        }
-        tokio::time::timeout(self.timeout, child.wait_with_output())
+        // Writing the payload and waiting for the exit share one deadline. A
+        // PDF up to 5 MB far exceeds the 64 KiB pipe buffer, so a `lp` that
+        // stops reading would otherwise block `write_all` forever — the
+        // timeout only covered `wait_with_output`, which is never reached.
+        // Dropping the future kills the child (`kill_on_drop`).
+        let run = async move {
+            if let Some(input) = input {
+                let mut stdin = child
+                    .stdin
+                    .take()
+                    .ok_or_else(|| SanitizedError::sanitize("missing command stdin"))?;
+                stdin.write_all(&input).await.map_err(SanitizedError::sanitize)?;
+                drop(stdin);
+            }
+            child.wait_with_output().await.map_err(SanitizedError::sanitize)
+        };
+        tokio::time::timeout(self.timeout, run)
             .await
             .map_err(|_| SanitizedError::sanitize(format!("{program} timed out")))?
-            .map_err(SanitizedError::sanitize)
     }
 
     async fn checked(
@@ -160,6 +174,10 @@ impl CupsGateway for CommandLineCupsGateway {
 
     fn printer(&self) -> &str {
         &self.printer
+    }
+
+    fn command_timeout(&self) -> Duration {
+        self.timeout
     }
 }
 
@@ -280,9 +298,18 @@ impl CupsDeliveryRunner {
             "#,
         )
         .bind(self.instance_id)
-        .bind(DELIVERY_LEASE_SECONDS)
+        .bind(self.lease_seconds())
         .fetch_optional(&self.database)
         .await
+    }
+
+    /// The claim lease must outlive the longest CUPS command this gateway can
+    /// run, plus a margin for writing the row back; otherwise the lease
+    /// expires mid-submit and another instance prints the same PDF again.
+    fn lease_seconds(&self) -> i32 {
+        let margin = 15_u64;
+        let seconds = self.gateway.command_timeout().as_secs().saturating_add(margin);
+        i32::try_from(seconds.max(DELIVERY_LEASE_SECONDS.max(1) as u64)).unwrap_or(i32::MAX)
     }
 
     async fn process(&self, request: ClaimedPrintRequest) {

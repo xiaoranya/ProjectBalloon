@@ -21,7 +21,7 @@ use crate::features::submissions::{
         PracticeSubmissionSummary, SubmitResponse, ValidatedSubmission,
         ValidatedSubmissionListQuery, source_fingerprint, source_similarity_signature,
     },
-    service::{language_multiplier, parse_judge_mode},
+    service::{PersistFailure, language_multiplier, parse_judge_mode},
 };
 
 const PRACTICE_LIMIT_PER_MINUTE: i64 = 20;
@@ -109,7 +109,9 @@ impl SubmissionService {
                 similarity.token_count,
             )
             .await;
-        if persisted.is_err()
+        // Only a rolled-back transaction proves the object is unreferenced; a
+        // failed COMMIT may have persisted the row.
+        if matches!(persisted, Err(PersistFailure::RolledBack(_)))
             && let Err(error) = storage.backend().delete(storage.source_bucket(), &object_key).await
         {
             defer_failed_cleanup(
@@ -121,7 +123,7 @@ impl SubmissionService {
             )
             .await;
         }
-        persisted
+        persisted.map_err(PersistFailure::into_app_error)
     }
 
     // Practice submission fields are kept explicit to preserve validation boundaries.
@@ -139,7 +141,7 @@ impl SubmissionService {
         fingerprint: &str,
         simhash: i64,
         token_count: i32,
-    ) -> Result<SubmitResponse, AppError> {
+    ) -> Result<SubmitResponse, PersistFailure> {
         let mut tx = self.database.begin().await.map_err(|e| {
             AppError::internal("begin practice submission", e).with_user_id(actor.id)
         })?;
@@ -241,11 +243,13 @@ impl SubmissionService {
                 .with_user_id(actor.id)
         })?;
         sqlx::query("INSERT INTO audit_logs(actor_user_id,action,target_type,target_id,request_ip,result) VALUES($1,'PRACTICE_SUBMISSION_CREATED','SUBMISSION',$2,$3,'success')").bind(actor.id).bind(submission_id.to_string()).bind(request_ip.to_string()).execute(&mut *tx).await.map_err(|e|AppError::internal("audit practice submission",e).with_submission_id(submission_id).with_user_id(actor.id))?;
-        tx.commit().await.map_err(|e| {
-            AppError::internal("commit practice submission", e)
-                .with_submission_id(submission_id)
-                .with_user_id(actor.id)
-        })?;
+        if let Err(e) = tx.commit().await {
+            return Err(PersistFailure::Uncertain(
+                AppError::internal("commit practice submission", e)
+                    .with_submission_id(submission_id)
+                    .with_user_id(actor.id),
+            ));
+        }
         Ok(SubmitResponse { submission_id, judgement_id, status: "PENDING", submitted_at })
     }
 

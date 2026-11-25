@@ -18346,13 +18346,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Deprecated and **rejected** when non-empty. The interactor is an ELF\nwhose object key and digest are derived from the uploaded bytes\n(`POST /api/problems/{problemId}/interactor`); accepting them here let\na caller point the judge at a bucket object it never uploaded. The\nfield is still parsed so an old client gets a clear error instead of\nhaving its request silently ignored."
           },
           "interactorSha256": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Deprecated and rejected; see `interactor_object_key`."
           },
           "judgeMode": {
             "type": [
@@ -19100,6 +19102,16 @@
               },
               {
                 "$ref": "#/components/schemas/RealtimeOutboxHealth"
+              }
+            ]
+          },
+          "redis": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DependencyHealth"
               }
             ]
           },
@@ -20248,7 +20260,8 @@
                 "createdAt",
                 "updatedAt",
                 "version",
-                "judgeMode"
+                "judgeMode",
+                "interactorConfigured"
               ],
               "properties": {
                 "createdAt": {
@@ -20269,11 +20282,9 @@
                   "type": "integer",
                   "format": "int64"
                 },
-                "interactorObjectKey": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                "interactorConfigured": {
+                  "type": "boolean",
+                  "description": "Whether an interactor is uploaded. The object key itself never leaves\nthe server: it is an internal storage location and `coding-style.md`\nforbids returning object keys from handlers."
                 },
                 "interactorSha256": {
                   "type": [
@@ -21469,7 +21480,8 @@
           "createdAt",
           "updatedAt",
           "version",
-          "judgeMode"
+          "judgeMode",
+          "interactorConfigured"
         ],
         "properties": {
           "createdAt": {
@@ -21490,11 +21502,9 @@
             "type": "integer",
             "format": "int64"
           },
-          "interactorObjectKey": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "interactorConfigured": {
+            "type": "boolean",
+            "description": "Whether an interactor is uploaded. The object key itself never leaves\nthe server: it is an internal storage location and `coding-style.md`\nforbids returning object keys from handlers."
           },
           "interactorSha256": {
             "type": [
@@ -23793,13 +23803,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Deprecated and rejected when non-empty; see `CreateProblemRequest`."
           },
           "interactorSha256": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Deprecated and rejected; see `interactor_object_key`."
           },
           "judgeMode": {
             "type": [

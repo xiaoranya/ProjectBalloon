@@ -3279,7 +3279,16 @@ export interface components {
         };
         CreateProblemRequest: {
             defaultLangCode?: string | null;
+            /**
+             * @description Deprecated and **rejected** when non-empty. The interactor is an ELF
+             *     whose object key and digest are derived from the uploaded bytes
+             *     (`POST /api/problems/{problemId}/interactor`); accepting them here let
+             *     a caller point the judge at a bucket object it never uploaded. The
+             *     field is still parsed so an old client gets a clear error instead of
+             *     having its request silently ignored.
+             */
             interactorObjectKey?: string | null;
+            /** @description Deprecated and rejected; see `interactor_object_key`. */
             interactorSha256?: string | null;
             judgeMode?: string | null;
             languages?: string[] | null;
@@ -3480,6 +3489,7 @@ export interface components {
             objectCleanup?: null | components["schemas"]["ObjectCleanupHealth"];
             objectStorage?: null | components["schemas"]["DependencyHealth"];
             realtimeOutbox?: null | components["schemas"]["RealtimeOutboxHealth"];
+            redis?: null | components["schemas"]["DependencyHealth"];
             service: string;
             status: components["schemas"]["HealthStatus"];
             /** Format: date-time */
@@ -3818,7 +3828,12 @@ export interface components {
                 defaultLangCode: string;
                 /** Format: int64 */
                 id: number;
-                interactorObjectKey?: string | null;
+                /**
+                 * @description Whether an interactor is uploaded. The object key itself never leaves
+                 *     the server: it is an internal storage location and `coding-style.md`
+                 *     forbids returning object keys from handlers.
+                 */
+                interactorConfigured: boolean;
                 interactorSha256?: string | null;
                 judgeMode: string;
                 languages: string[];
@@ -4175,7 +4190,12 @@ export interface components {
             defaultLangCode: string;
             /** Format: int64 */
             id: number;
-            interactorObjectKey?: string | null;
+            /**
+             * @description Whether an interactor is uploaded. The object key itself never leaves
+             *     the server: it is an internal storage location and `coding-style.md`
+             *     forbids returning object keys from handlers.
+             */
+            interactorConfigured: boolean;
             interactorSha256?: string | null;
             judgeMode: string;
             languages: string[];
@@ -4859,7 +4879,9 @@ export interface components {
             defaultLangCode?: string | null;
             /** Format: int64 */
             expectedVersion: number;
+            /** @description Deprecated and rejected when non-empty; see `CreateProblemRequest`. */
             interactorObjectKey?: string | null;
+            /** @description Deprecated and rejected; see `interactor_object_key`. */
             interactorSha256?: string | null;
             judgeMode?: string | null;
             languages?: string[] | null;

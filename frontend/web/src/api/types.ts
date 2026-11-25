@@ -84,6 +84,8 @@ export interface HealthResponse {
   service: string;
   time: string;
   realtimeOutbox?: RealtimeOutboxHealth;
+  /** Readiness probe of the shared Redis handle (sessions, rate limits, outbox). */
+  redis?: DependencyHealth;
   judgeDispatch?: JudgeDispatchHealth;
   objectStorage?: DependencyHealth;
   objectCleanup?: ObjectCleanupHealth;
@@ -215,7 +217,7 @@ export interface ProblemResponse {
   createdAt: string;
   updatedAt: string;
   judgeMode: 'STANDARD' | 'INTERACTIVE' | 'OUTPUT_ONLY';
-  interactorObjectKey: string | null;
+  interactorConfigured: boolean;
   interactorSha256: string | null;
 }
 

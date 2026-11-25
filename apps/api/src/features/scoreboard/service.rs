@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::net::IpAddr;
+use std::sync::{Arc, Mutex};
 
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -21,12 +23,21 @@ pub struct ScoreboardService {
     database: PgPool,
     cache: Option<ScoreboardCache>,
     projection: Option<crate::features::scoreboard::ScoreboardProjection>,
+    /// Per-contest rebuild gates. A cold projection (Redis flush, evicted hash)
+    /// would otherwise make every concurrent reader replay the whole contest;
+    /// the first one rebuilds, the rest wait and read the result.
+    rebuilds: Arc<Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>>,
 }
 
 impl ScoreboardService {
     #[must_use]
-    pub const fn new(database: PgPool) -> Self {
-        Self { database, cache: None, projection: None }
+    pub fn new(database: PgPool) -> Self {
+        Self {
+            database,
+            cache: None,
+            projection: None,
+            rebuilds: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
     #[must_use]
@@ -433,24 +444,37 @@ impl ScoreboardService {
                 }
             }
         } else if let Some(p) = projection {
-            match p.read_cells(contest_id, "LIVE").await {
-                Ok(Some(snapshot)) if snapshot.version > 0 => {
-                    self.repair_dirty(contest_id, snapshot).await
+            let snapshot = match p.read_cells(contest_id, "LIVE").await {
+                Ok(Some(snapshot)) if projection_is_usable(&snapshot, roster.is_empty()) => {
+                    snapshot
                 }
-                // Version 0 means the projection was never populated (Redis
-                // flush or a contest started before it existed): serve the DB
-                // cells and re-warm the projection in the background.
-                _ => {
-                    let pool = self.database.clone();
-                    let warmer = p.clone();
-                    tokio::spawn(async move {
-                        if let Err(error) = warmer.rebuild_contest(&pool, contest_id).await {
-                            tracing::warn!(?error, %contest_id, "scoreboard projection warm-up failed");
-                        }
-                    });
-                    self.load_live_cells(contest_id).await?
+                Ok(Some(snapshot)) => {
+                    // Version 0 (never populated) or an evicted cells hash
+                    // (version > 0, no cells). `contest_scoreboard_cells` is
+                    // not maintained while a projection is active, so serving
+                    // it would assemble — and cache — an all-zero board that
+                    // never gets rebuilt. A contest that simply has no
+                    // submissions yet is not a miss, though: rebuilding it on
+                    // every read would keep moving the cache key.
+                    if !self.has_submissions(contest_id).await? {
+                        snapshot
+                    } else {
+                        tracing::warn!(
+                            %contest_id,
+                            version = snapshot.version,
+                            cells = snapshot.cells.len(),
+                            "scoreboard projection is incomplete; rebuilding"
+                        );
+                        self.rebuild_projection(contest_id, p).await?
+                    }
                 }
-            }
+                Ok(None) => self.rebuild_projection(contest_id, p).await?,
+                Err(error) => {
+                    tracing::warn!(?error, %contest_id, "scoreboard projection read failed; rebuilding");
+                    self.rebuild_projection(contest_id, p).await?
+                }
+            };
+            self.repair_dirty(contest_id, snapshot).await
         } else {
             self.load_live_cells(contest_id).await?
         };
@@ -470,6 +494,48 @@ impl ScoreboardService {
             cache.put(cache_revision, phase, &query, &board).await;
         }
         Ok(board)
+    }
+
+    async fn has_submissions(&self, contest_id: i64) -> Result<bool, AppError> {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM submissions WHERE contest_id = $1)",
+        )
+        .bind(contest_id)
+        .fetch_one(&self.database)
+        .await
+        .map_err(|error| AppError::internal("check contest submissions", error))
+    }
+
+    /// Rebuilds a cold projection under a per-contest lock, then reads it
+    /// back. Only the first concurrent caller replays; the rest observe the
+    /// finished projection. Failing to rebuild is an error: this path has no
+    /// trustworthy fallback.
+    async fn rebuild_projection(
+        &self,
+        contest_id: i64,
+        projection: &crate::features::scoreboard::ScoreboardProjection,
+    ) -> Result<ProjectionSnapshot, AppError> {
+        let gate = {
+            let mut gates = self.rebuilds.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            gates.entry(contest_id).or_default().clone()
+        };
+        let _held = gate.lock_owned().await;
+        // Another request may have finished the rebuild while we waited.
+        if let Some(snapshot) = projection.read_cells(contest_id, "LIVE").await?
+            && snapshot.version > 0
+        {
+            return Ok(snapshot);
+        }
+        projection
+            .rebuild_contest(&self.database, contest_id)
+            .await
+            .map_err(|error| AppError::internal("rebuild scoreboard projection", error))?;
+        projection.read_cells(contest_id, "LIVE").await?.ok_or_else(|| {
+            AppError::internal_message(
+                "rebuild scoreboard projection",
+                "the projection is still empty after a rebuild",
+            )
+        })
     }
 
     /// Replays cells whose incremental apply failed, then re-reads once.
@@ -578,4 +644,10 @@ impl ScoreboardService {
         .map_err(|error| AppError::internal("calculate frozen scoreboard", error))?;
         Ok(score_submissions(start_at, scoring_mode, score_aggregation, submissions))
     }
+}
+
+/// A projection read is trustworthy when it has been populated at least once
+/// and either carries cells or the contest genuinely has no roster yet.
+fn projection_is_usable(snapshot: &ProjectionSnapshot, roster_empty: bool) -> bool {
+    snapshot.version > 0 && (!snapshot.cells.is_empty() || roster_empty)
 }

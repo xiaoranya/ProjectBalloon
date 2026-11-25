@@ -6,7 +6,7 @@ use crate::error::AppError;
 use crate::features::competition::model::{CompetitionSessionResponse, WorkstationLoginGrant};
 
 use crate::features::auth::service::{
-    AuthService, AuthenticatedSession, LOGIN_ATTEMPT_LIMIT, LoginOutcome,
+    AuthService, AuthenticatedSession, LoginOutcome,
     crypto::{
         access_fingerprint, constant_time_equal, digest, invalid_credentials, not_authenticated,
         random_token, rate_limited,
@@ -24,21 +24,21 @@ impl AuthService {
     ) -> Result<LoginOutcome, AppError> {
         request.validate()?;
         let request_ip = request_ip.to_string();
-        let username = request.username;
+        // Usernames are canonicalised to lowercase everywhere else (bootstrap,
+        // staff creation, self-registration), so the lookup normalises too and
+        // a typed "Admin" still finds `admin`.
+        let username = request.username.trim().to_ascii_lowercase();
         let password = request.password;
 
-        if self.failed_login_count(&request_ip).await? >= LOGIN_ATTEMPT_LIMIT {
-            return Err(AppError::too_many_requests(
-                "RATE_LIMIT_EXCEEDED",
-                "Too many login attempts; try again later",
-            ));
+        if self.login_attempts_exhausted(&request_ip, &username).await? {
+            return Err(rate_limited());
         }
 
         let Some(row) = self.load_user_by_username(&username).await? else {
             password::verify_dummy(password)
                 .await
                 .map_err(|error| AppError::internal("dummy password verification failed", error))?;
-            if !self.record_failed_login(&username, &request_ip, LOGIN_ATTEMPT_LIMIT).await? {
+            if !self.record_failed_login(&username, &request_ip).await? {
                 return Err(rate_limited());
             }
             return Err(invalid_credentials());
@@ -48,7 +48,7 @@ impl AuthService {
             .await
             .map_err(|error| AppError::internal("password verification failed", error))?;
         if !password_matches || !row.enabled {
-            if !self.record_failed_login(&username, &request_ip, LOGIN_ATTEMPT_LIMIT).await? {
+            if !self.record_failed_login(&username, &request_ip).await? {
                 return Err(rate_limited());
             }
             return Err(invalid_credentials());
@@ -56,7 +56,7 @@ impl AuthService {
 
         let upgraded_hash = if password::needs_upgrade(&row.password_hash) {
             Some(
-                password::hash(password)
+                password::hash(password.clone())
                     .await
                     .map_err(|error| AppError::internal("password upgrade failed", error))?,
             )
@@ -96,14 +96,29 @@ impl AuthService {
         .map_err(|error| AppError::internal("update successful login", error))?;
 
         if update.rows_affected() != 1 {
-            transaction
-                .rollback()
-                .await
-                .map_err(|error| AppError::internal("rollback stale login", error))?;
-            if !self.record_failed_login(&username, &request_ip, LOGIN_ATTEMPT_LIMIT).await? {
-                return Err(rate_limited());
+            // The CAS on the old hash fails in two very different cases: the
+            // account was disabled/removed, or a concurrent login already
+            // upgraded the hash (bcrypt -> Argon2). The second is a correct
+            // password arriving twice, and reporting it as invalid would also
+            // count a rate-limit failure against the user.
+            let concurrent_ok = match self.load_user_by_id(user.id).await? {
+                Some(current) if current.enabled => {
+                    password::verify(password.clone(), current.password_hash)
+                        .await
+                        .map_err(|error| AppError::internal("verify concurrent password", error))?
+                }
+                _ => false,
+            };
+            if !concurrent_ok {
+                transaction
+                    .rollback()
+                    .await
+                    .map_err(|error| AppError::internal("rollback stale login", error))?;
+                if !self.record_failed_login(&username, &request_ip).await? {
+                    return Err(rate_limited());
+                }
+                return Err(invalid_credentials());
             }
-            return Err(invalid_credentials());
         }
 
         record_audit(

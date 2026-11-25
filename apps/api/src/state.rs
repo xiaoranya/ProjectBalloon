@@ -60,6 +60,10 @@ pub struct AppState {
     submissions: Arc<SubmissionService>,
     batch_rejudge: Arc<BatchRejudgeService>,
     teams: Arc<TeamService>,
+    /// The shared Redis handle. Readiness probes it directly: sessions, rate
+    /// limiting and the realtime outbox all depend on it, regardless of
+    /// whether the Redis fan-out is enabled.
+    redis: Option<RedisHandle>,
     object_storage: Option<ObjectStorageHandle>,
     judge_publisher: Option<Arc<RabbitJudgeTaskPublisher>>,
     cups_gateway: Option<Arc<dyn CupsGateway>>,
@@ -82,6 +86,7 @@ impl AppState {
         realtime_channel_capacity: usize,
         realtime_redis_enabled: bool,
         redis: Option<RedisHandle>,
+        login_limits: crate::features::auth::LoginRateLimits,
     ) -> Self {
         Self::build(
             database,
@@ -93,6 +98,7 @@ impl AppState {
             realtime_redis_enabled,
             redis,
             None,
+            login_limits,
         )
     }
 
@@ -109,6 +115,7 @@ impl AppState {
         realtime_redis_enabled: bool,
         redis: Option<RedisHandle>,
         object_storage: ObjectStorageHandle,
+        login_limits: crate::features::auth::LoginRateLimits,
     ) -> Self {
         Self::build(
             database,
@@ -120,6 +127,7 @@ impl AppState {
             realtime_redis_enabled,
             redis,
             Some(object_storage),
+            login_limits,
         )
     }
 
@@ -135,6 +143,7 @@ impl AppState {
         realtime_redis_enabled: bool,
         redis: Option<RedisHandle>,
         object_storage: Option<ObjectStorageHandle>,
+        login_limits: crate::features::auth::LoginRateLimits,
     ) -> Self {
         // The realtime outbox lives exclusively in Redis; without a handle the
         // enqueues degrade to logged no-ops (see `realtime::outbox`).
@@ -145,7 +154,8 @@ impl AppState {
             redis.as_ref().map(|handle| ScoreboardProjection::new(handle.clone()));
         let auth = Arc::new(
             AuthService::new(database.clone(), session_ttl, secure_cookies)
-                .with_redis_option(redis.clone()),
+                .with_redis_option(redis.clone())
+                .with_login_rate_limits(login_limits),
         );
         let awards =
             Arc::new(AwardService::new(database.clone()).with_outbox_option(outbox.clone()));
@@ -159,7 +169,8 @@ impl AppState {
             Arc::new(CompetitionService::new(database.clone()).with_redis_option(redis.clone()));
         let announcements =
             Arc::new(AnnouncementService::new(database.clone()).with_outbox_option(outbox.clone()));
-        let staff_accounts = Arc::new(StaffAccountService::new(database.clone()));
+        let staff_accounts =
+            Arc::new(StaffAccountService::new(database.clone()).with_redis_option(redis.clone()));
         let contest_management_scopes =
             Arc::new(ContestManagementScopeService::new(database.clone()));
         let contest_problems = Arc::new(ContestProblemService::new(database.clone()));
@@ -184,7 +195,11 @@ impl AppState {
                 .with_projection_option(scoreboard_projection.clone()),
         );
         let batch_rejudge = Arc::new(BatchRejudgeService::new(database.clone()));
-        let teams = Arc::new(TeamService::new(database.clone()).with_outbox_option(outbox.clone()));
+        let teams = Arc::new(
+            TeamService::new(database.clone())
+                .with_outbox_option(outbox.clone())
+                .with_redis_option(redis.clone()),
+        );
         let (_, shutdown) = watch::channel(false);
         Self {
             database,
@@ -215,6 +230,7 @@ impl AppState {
             batch_rejudge,
             teams,
             object_storage,
+            redis,
             judge_publisher: None,
             cups_gateway: None,
             shutdown,
@@ -410,6 +426,11 @@ impl AppState {
     #[must_use]
     pub fn teams(&self) -> &TeamService {
         &self.teams
+    }
+
+    #[must_use]
+    pub const fn redis(&self) -> Option<&RedisHandle> {
+        self.redis.as_ref()
     }
 
     #[must_use]

@@ -19,7 +19,7 @@ use tokio::time::{Instant, timeout};
 use tracing::warn;
 
 use crate::sandbox::archive::{OutputArchiveError, extract_cases, extract_output_cases};
-use crate::sandbox::compare::standard_output_matches;
+use crate::sandbox::compare::{file_matches_bytes, files_match};
 use crate::sandbox::fs::{
     copy_regular_source_no_follow, create_private_dir, nonempty, read_regular_output_no_follow,
     remove_dir_if_present, remove_file_if_present, set_executable_file_permissions,
@@ -244,10 +244,25 @@ impl DockerSandbox {
                 language.compile_command(),
                 &language.compile_env(),
                 COMPILE_WALL_LIMIT,
+                crate::sandbox::COMPILE_FILE_SIZE_LIMIT_BYTES,
             )
             .await?;
         self.kill_contestant_processes(container_id).await?;
         let compile_log = truncate_log(&compile.logs, 64 * 1024);
+        // `/work` is a writable host bind with no filesystem quota.
+        if crate::sandbox::work_dir_exceeds(work_dir, crate::sandbox::MAX_WORK_DIR_BYTES).await {
+            warn!(
+                judgement_id = %task.judgement_id,
+                "compilation exceeded the work directory budget"
+            );
+            return Ok(SandboxJudgement {
+                verdict: JudgeVerdict::CompileError,
+                total_time_ms: compile.elapsed_ms,
+                peak_memory_kb: 0,
+                compile_log: Some(compile_log),
+                runs: Vec::new(),
+            });
+        }
         if compile.timed_out || compile.exit_code != 0 {
             return Ok(SandboxJudgement {
                 verdict: JudgeVerdict::CompileError,
@@ -305,7 +320,11 @@ impl DockerSandbox {
                 standard_shell("/usr/bin/time", &program, output_blocks)
             };
             let command = vec!["/bin/sh".to_owned(), "-c".to_owned(), shell];
-            let mut run = self.run_exec(container_id, command, &[], wall_limit).await?;
+            // Same per-file ceiling as the shell's own `ulimit -f`.
+            let run_file_limit =
+                u64::try_from(task.output_limit_kb).unwrap_or(0).saturating_mul(1024).max(1024);
+            let mut run =
+                self.run_exec(container_id, command, &[], wall_limit, run_file_limit).await?;
             self.kill_contestant_processes(container_id).await?;
             // Contestant-writable diagnostic files are fetched in a separate
             // exec and appended only AFTER the GNU-time marker has been parsed:
@@ -337,6 +356,25 @@ impl DockerSandbox {
             // Keep the opened descriptor for the later comparison. A path check followed
             // by a separate read is racy: a surviving child can replace the path after the
             // check. O_NOFOLLOW also prevents a host-side symlink escape.
+            // A run may create many files below the per-file cap; the total is
+            // checked before it is allowed to grow further.
+            if crate::sandbox::work_dir_exceeds(work_dir, crate::sandbox::MAX_WORK_DIR_BYTES).await
+            {
+                warn!(
+                    judgement_id = %task.judgement_id,
+                    test_index,
+                    "run exceeded the work directory budget"
+                );
+                runs.push(JudgeRunResult {
+                    test_index: i32::try_from(test_index).unwrap_or(i32::MAX),
+                    verdict: JudgeVerdict::RuntimeError,
+                    time_ms: charged_time_ms,
+                    memory_kb: peak_memory_kb,
+                    exit_code: i32::try_from(run.exit_code).ok(),
+                    stderr_tail: nonempty(truncate_log(&run.logs, 16 * 1024)),
+                });
+                break;
+            }
             let output = tokio::task::spawn_blocking({
                 let actual_path = actual_path.clone();
                 move || read_regular_output_no_follow(&actual_path)
@@ -364,14 +402,16 @@ impl DockerSandbox {
                 JudgeVerdict::Accepted
             } else {
                 let expected_path = data_dir.join(format!("{test_index}.out"));
-                let expected = tokio::fs::read(&expected_path).await.map_err(|error| {
-                    with_path_context(error, "read expected output", &expected_path)
-                })?;
-                if standard_output_matches(&expected, output.as_deref().unwrap_or_default()) {
-                    JudgeVerdict::Accepted
-                } else {
-                    JudgeVerdict::WrongAnswer
-                }
+                // Streamed: the expected file can be hundreds of MiB, and only
+                // the contestant side is already bounded by `output_limit_kb`.
+                let output = output.clone().unwrap_or_default();
+                let matched = tokio::task::spawn_blocking(move || {
+                    file_matches_bytes(&expected_path, &output)
+                })
+                .await
+                .map_err(|error| SandboxError::Api(error.to_string()))?
+                .map_err(|error| SandboxError::Api(format!("compare output: {error}")))?;
+                if matched { JudgeVerdict::Accepted } else { JudgeVerdict::WrongAnswer }
             };
             runs.push(JudgeRunResult {
                 test_index: i32::try_from(test_index).unwrap_or(i32::MAX),
@@ -518,7 +558,13 @@ impl DockerSandbox {
         command: Vec<String>,
         env: &[String],
         wall_limit: Duration,
+        file_size_limit_bytes: u64,
     ) -> Result<ContainerRun, SandboxError> {
+        // Compilation never goes through a shell, so the `/work` file-size
+        // limit had no effect there: a compiler could write an arbitrarily
+        // large artifact. Wrapping the argv keeps argument handling exact
+        // (`exec "$@"`) while applying `ulimit -f` to every phase.
+        let command = limited_command(command, file_size_limit_bytes);
         // Baseline for the CPU-time fallback: docker stats totals are
         // cumulative for the whole container, so the exec's share is the
         // difference between two snapshots taken around the exec.
@@ -560,17 +606,11 @@ impl DockerSandbox {
             let remaining = deadline.saturating_duration_since(Instant::now());
             match timeout(remaining, output.next()).await {
                 Ok(Some(Ok(chunk))) => {
-                    // Docker multiplexes stdout/stderr here.  Retaining an unlimited
-                    // diagnostic stream lets a contestant exhaust worker memory.
-                    if logs.len() < MAX_EXEC_LOG_BYTES {
-                        let chunk = chunk.to_string();
-                        let remaining = MAX_EXEC_LOG_BYTES - logs.len();
-                        let mut end = chunk.len().min(remaining);
-                        while end > 0 && !chunk.is_char_boundary(end) {
-                            end -= 1;
-                        }
-                        logs.push_str(&chunk[..end]);
-                    }
+                    // Docker multiplexes stdout/stderr here. Retaining an
+                    // unlimited diagnostic stream lets a contestant exhaust
+                    // worker memory; retaining only the head loses the GNU-time
+                    // report, which is written last.
+                    crate::sandbox::push_log_tail(&mut logs, &chunk.to_string());
                 }
                 Ok(Some(Err(error))) => break Err(SandboxError::Api(error.to_string())),
                 Ok(None) => break Ok(false),
@@ -661,7 +701,16 @@ impl DockerSandbox {
             "-c".to_owned(),
             "cat /work/program.err /work/interactor.err 2>/dev/null".to_owned(),
         ];
-        match self.run_exec(container_id, command, &[], COMPILE_WALL_LIMIT).await {
+        match self
+            .run_exec(
+                container_id,
+                command,
+                &[],
+                COMPILE_WALL_LIMIT,
+                crate::sandbox::COMPILE_FILE_SIZE_LIMIT_BYTES,
+            )
+            .await
+        {
             Ok(run) => truncate_log(&run.logs, MAX_EXEC_LOG_BYTES),
             Err(error) => {
                 warn!(
@@ -728,6 +777,25 @@ impl DockerSandbox {
     }
 }
 
+/// Wraps `command` so it runs with `ulimit -f` applied, in 512-byte blocks.
+///
+/// `exec "$@"` keeps the original argv exactly (no re-quoting, no shell
+/// metacharacter interpretation of paths or arguments).
+fn limited_command(command: Vec<String>, file_size_limit_bytes: u64) -> Vec<String> {
+    if command.is_empty() {
+        return command;
+    }
+    let blocks = file_size_limit_bytes.div_ceil(512).max(1);
+    let mut limited = vec![
+        "/bin/sh".to_owned(),
+        "-c".to_owned(),
+        format!("ulimit -f {blocks} 2>/dev/null || true; exec \"$@\""),
+        "sh".to_owned(),
+    ];
+    limited.extend(command);
+    limited
+}
+
 /// Output-only judging never touches Docker: it extracts the trusted testdata
 /// archive and the contestant output archive, then compares bytes. The
 /// contestant archive is authenticated contestant input, so its validation
@@ -764,16 +832,21 @@ pub(super) async fn run_output_only(
     let mut runs = Vec::with_capacity(case_count);
     for test_index in 1..=case_count {
         let expected_path = data_dir.join(format!("{test_index}.out"));
-        let expected = tokio::fs::read(&expected_path)
+        let actual_path = output_dir.join(format!("{test_index}.out"));
+        // Both sides stream: reading them whole (up to 512 MiB each) plus the
+        // normalized line vectors could exceed the worker's memory budget.
+        let matched =
+            tokio::task::spawn_blocking(move || match files_match(&expected_path, &actual_path) {
+                Ok(matched) => Ok(matched),
+                // A missing contestant output file is a wrong answer, not an
+                // infrastructure failure.
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+                Err(error) => Err(error),
+            })
             .await
-            .map_err(|error| with_path_context(error, "read expected output", &expected_path))?;
-        let actual = tokio::fs::read(output_dir.join(format!("{test_index}.out"))).await.ok();
-        let verdict =
-            if actual.as_deref().is_some_and(|actual| standard_output_matches(&expected, actual)) {
-                JudgeVerdict::Accepted
-            } else {
-                JudgeVerdict::WrongAnswer
-            };
+            .map_err(|error| SandboxError::Api(error.to_string()))?
+            .map_err(|error| SandboxError::Api(format!("compare output: {error}")))?;
+        let verdict = if matched { JudgeVerdict::Accepted } else { JudgeVerdict::WrongAnswer };
         runs.push(JudgeRunResult {
             test_index: i32::try_from(test_index).unwrap_or(i32::MAX),
             verdict,

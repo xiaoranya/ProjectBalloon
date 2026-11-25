@@ -267,7 +267,14 @@ async fn public_freeze_hides_late_acceptance_while_admin_sees_true_board(pool: P
         .expect("load scoreboard after AC rollback");
     assert_eq!(rolled_back.rows[0].team_id, teams[1]);
     assert_eq!(rolled_back.rows[0].solved_count, 1);
-    assert!(rolled_back.rows[0].problems[0].first_blood);
+    assert!(
+        !rolled_back.rows[0].problems[0].first_blood,
+        "a star team must not inherit first blood when the official solve is rejudged away"
+    );
+    assert_eq!(
+        rolled_back.problems[0].first_blood_team_id, None,
+        "first blood is reserved for official teams"
+    );
     let official = rolled_back
         .rows
         .iter()
@@ -545,7 +552,7 @@ async fn projection_replay_rows_decode_completed_judgements(pool: PgPool) {
     assert_eq!(cell_rows[1].1, "ACCEPTED");
     assert_eq!(cell_rows[1].2, 0, "judgements.score_milli must decode as bigint");
 
-    let contest_rows = load_contest_replay_rows(&pool, contest_id)
+    let contest_rows = load_contest_replay_rows(&pool, contest_id, None)
         .await
         .expect("decode a contest with completed judgements");
     assert_eq!(contest_rows.len(), 2);

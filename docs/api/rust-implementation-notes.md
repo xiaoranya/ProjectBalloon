@@ -316,6 +316,15 @@ resource limits, language tags, and the closed judge language set (`c`,
 `cpp`, `java`, `go`, `rust`, and `python`). Update requests require `expectedVersion` and
 return `PROBLEM_VERSION_STALE` on concurrent modification.
 
+Interactors are configured only by uploading the ELF to
+`POST /api/problems/{problemId}/interactor`: the handler validates the `\x7fELF`
+magic and derives the object key and digest from the bytes. `create`/`update`
+reject a non-empty `interactorObjectKey` or `interactorSha256` in the body
+instead of ignoring it, a problem cannot be created directly in `INTERACTIVE`
+mode (it answers `INTERACTOR_NOT_CONFIGURED`, the same code the update path
+uses), and problem responses report `interactorConfigured` rather than the
+storage key.
+
 Problem deletion is soft deletion and is rejected with
 `PROBLEM_ASSIGNED_TO_CONTEST` while any contest assignment exists. PostgreSQL
 enforces positive limits and active-only slug uniqueness. Creation, update, and

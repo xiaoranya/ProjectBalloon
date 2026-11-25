@@ -12,8 +12,8 @@ pub use handlers::{
     change_password, current_user, login, logout, register, update_profile, workstation_login,
 };
 pub(crate) use password::hash as hash_password;
-pub use service::AuthService;
-pub(crate) use service::revoke_workstation_sessions;
+pub use service::{AuthService, LoginRateLimits};
+pub(crate) use service::{revoke_user_sessions, revoke_workstation_sessions};
 
 pub const SESSION_COOKIE_NAME: &str = "PB_SESSION";
 

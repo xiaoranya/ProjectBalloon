@@ -41,4 +41,10 @@ setUnauthorizedHandler(() => {
 
 router.beforeEach((to) => resolveRouteGuard(to, session));
 
+// A render error used to leave a blank screen with nothing in the console that
+// pointed at the failing component; keep the report and a visible hint instead.
+app.config.errorHandler = (error, _instance, info) => {
+  console.error('unhandled component error', info, error);
+};
+
 app.use(router).mount('#app');

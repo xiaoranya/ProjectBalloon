@@ -132,6 +132,11 @@ pub(super) async fn load_session(
 
 /// Refreshes `last_seen_millis` (throttled by the caller to once per five
 /// minutes) while preserving the remaining TTL via `KEEPTTL`.
+///
+/// `XX` is mandatory: `SET` recreates a missing key, and a key that vanished
+/// between the read and this write means the session was revoked (logout,
+/// password change, admin disable) or expired. Without `XX` the write would
+/// resurrect it as a record with **no** TTL — a session that never expires.
 pub(super) async fn touch_session(
     redis: &RedisHandle,
     token_hash: &str,
@@ -139,7 +144,9 @@ pub(super) async fn touch_session(
 ) -> Result<(), AppError> {
     let payload = serde_json::to_string(record)
         .map_err(|error| AppError::internal("encode session record", error))?;
-    redis.query::<()>(cmd("SET").arg(session_key(token_hash)).arg(payload).arg("KEEPTTL")).await
+    redis
+        .query::<()>(cmd("SET").arg(session_key(token_hash)).arg(payload).arg("XX").arg("KEEPTTL"))
+        .await
 }
 
 /// Deletes a session and both of its index entries. Returns silently when the
@@ -160,7 +167,12 @@ pub(super) async fn delete_session(redis: &RedisHandle, token_hash: &str) -> Res
 /// Revokes every session of `user_id` except `keep_token_hash`, mirroring the
 /// password-change flow. Workstation index entries of revoked sessions are
 /// removed as well.
-pub(super) async fn revoke_user_sessions(
+///
+/// This is the single supported revocation entry point (see
+/// `crate::features::auth::revoke_user_sessions`): the `auth_sessions`
+/// PostgreSQL table is legacy and no longer consulted by authentication, so
+/// deleting rows there logs nobody out.
+pub(crate) async fn revoke_user_sessions(
     redis: &RedisHandle,
     user_id: i64,
     keep_token_hash: &str,

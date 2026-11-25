@@ -87,7 +87,7 @@ const problem: ProblemResponse = {
   createdAt: '2026-07-20T08:00:00Z',
   updatedAt: '2026-07-20T08:00:00Z',
   judgeMode: 'STANDARD',
-  interactorObjectKey: null,
+  interactorConfigured: false,
   interactorSha256: null,
 };
 const statement: ProblemStatementResponse = {
@@ -234,7 +234,7 @@ describe('problem-editor panels', () => {
     conflicted.unmount();
   });
 
-  it('BasicInfoTab switches judge modes and exposes interactor fields', async () => {
+  it('BasicInfoTab switches judge modes and reports the interactor status', async () => {
     const wrapper = mount(BasicInfoTab, { props: { problem, isNew: false } });
     await flushPromises();
     const select = wrapper.findComponent({ name: 'ElSelect' });
@@ -243,7 +243,7 @@ describe('problem-editor panels', () => {
       'INTERACTIVE',
     );
     await flushPromises();
-    expect(wrapper.text()).toContain('Interactor 对象键');
+    expect(wrapper.text()).toContain('未上传');
     (select.vm as unknown as { $emit: (event: string, value: string) => void }).$emit(
       'update:modelValue',
       'OUTPUT_ONLY',

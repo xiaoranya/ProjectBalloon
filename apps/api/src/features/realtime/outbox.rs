@@ -40,6 +40,12 @@ const REPLAY_WINDOW_MILLIS: i64 = 5 * 60 * 1000;
 const REPLAY_MAX_EVENTS: usize = 100;
 /// Hard cap of replay index members per contest; the window trims the rest.
 const REPLAY_INDEX_CAP: isize = 2_000;
+/// Approximate entry cap for the outbox stream. `XACK` only removes entries
+/// from the group's pending list, never from the stream, so without a cap the
+/// stream grows for the lifetime of the deployment. `~` trimming keeps the
+/// trim cheap and amortised; the replay window (five minutes) is the real
+/// retention bound, this is only the backstop.
+const OUTBOX_STREAM_MAX_LEN: i64 = 20_000;
 /// Current realtime event schema version stamped onto every outbox entry.
 const SCHEMA_VERSION: u16 = 1;
 
@@ -130,7 +136,16 @@ impl RealtimeOutbox {
             .map_err(|error| AppError::internal("encode realtime outbox entry", error))?;
         let window_floor = now_millis() - REPLAY_WINDOW_MILLIS;
         let mut pipeline = redis::pipe();
-        pipeline.cmd("XADD").arg(OUTBOX_STREAM_KEY).arg("*").arg("entry").arg(&payload).ignore();
+        pipeline
+            .cmd("XADD")
+            .arg(OUTBOX_STREAM_KEY)
+            .arg("MAXLEN")
+            .arg("~")
+            .arg(OUTBOX_STREAM_MAX_LEN)
+            .arg("*")
+            .arg("entry")
+            .arg(&payload)
+            .ignore();
         pipeline
             .cmd("ZADD")
             .arg(replay_key(entry.contest_id))
@@ -253,7 +268,7 @@ impl RealtimeOutbox {
             claim.arg(id);
         }
         let claim_reply = self.redis.query_value(&mut claim).await?;
-        let entries = Self::parse_xread(claim_reply);
+        let entries = Self::parse_claim(claim_reply);
         let mut reclaimed = Vec::with_capacity(entries.len());
         for (stream_id, fields) in entries {
             let Some(payload) = fields.get("entry") else { continue };
@@ -348,19 +363,19 @@ impl RealtimeOutbox {
         Ok(events)
     }
 
-    /// Parses a raw `XREAD`/`XCLAIM` reply: `[stream, [[id, [f, v, ...]], ...]]`
-    /// into `(stream_id, field_map)` pairs. Null replies (no data) yield an
-    /// empty vector.
+    /// Parses a raw `XREAD`/`XREADGROUP` reply:
+    /// `[[stream, [[id, [f, v, ...]], ...]], ...]` into `(stream_id,
+    /// field_map)` pairs. Null replies (no data) yield an empty vector.
     fn parse_xread(
         reply: redis::Value,
     ) -> Vec<(String, std::collections::HashMap<String, String>)> {
-        use redis::Value::{Array, BulkString, Nil};
-        let mut parsed = Vec::new();
+        use redis::Value::{Array, Nil};
         let streams = match reply {
-            Nil => return parsed,
+            Nil => return Vec::new(),
             Array(streams) => streams,
-            _ => return parsed,
+            _ => return Vec::new(),
         };
+        let mut parsed = Vec::new();
         for stream in streams {
             let entries = match stream {
                 Array(pair) if pair.len() == 2 => match pair.into_iter().nth(1) {
@@ -369,29 +384,49 @@ impl RealtimeOutbox {
                 },
                 _ => continue,
             };
-            for entry in entries {
-                let (id, flat) = match entry {
-                    Array(pair) if pair.len() == 2 => match (pair.first(), pair.get(1)) {
-                        (Some(BulkString(id)), Some(Array(flat))) => {
-                            (String::from_utf8_lossy(id).into_owned(), flat.clone())
-                        }
-                        _ => continue,
-                    },
-                    _ => continue,
-                };
-                let mut fields = std::collections::HashMap::new();
-                for chunk in flat.chunks(2) {
-                    if let [BulkString(key), BulkString(value)] = chunk {
-                        fields.insert(
-                            String::from_utf8_lossy(key).into_owned(),
-                            String::from_utf8_lossy(value).into_owned(),
-                        );
-                    }
-                }
-                parsed.push((id, fields));
-            }
+            parsed.extend(entries.into_iter().filter_map(Self::parse_entry));
         }
         parsed
+    }
+
+    /// Parses a raw `XCLAIM` reply: `[[id, [f, v, ...]], ...]`.
+    ///
+    /// `XCLAIM` returns the claimed entries **without** the `[stream, entries]`
+    /// wrapper `XREADGROUP` uses; parsing it with [`Self::parse_xread`] yields
+    /// nothing at all, which silently disabled retries and dead-lettering.
+    fn parse_claim(
+        reply: redis::Value,
+    ) -> Vec<(String, std::collections::HashMap<String, String>)> {
+        use redis::Value::{Array, Nil};
+        match reply {
+            Nil => Vec::new(),
+            Array(entries) => entries.into_iter().filter_map(Self::parse_entry).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Parses one `[id, [field, value, ...]]` stream entry.
+    fn parse_entry(
+        entry: redis::Value,
+    ) -> Option<(String, std::collections::HashMap<String, String>)> {
+        use redis::Value::{Array, BulkString};
+        let Array(pair) = entry else { return None };
+        if pair.len() != 2 {
+            return None;
+        }
+        let (Some(BulkString(id)), Some(Array(flat))) = (pair.first(), pair.get(1)) else {
+            return None;
+        };
+        let mut fields = std::collections::HashMap::new();
+        for chunk in flat.chunks(2) {
+            if let [BulkString(key), BulkString(value)] = chunk {
+                fields.insert(
+                    String::from_utf8_lossy(key).into_owned(),
+                    String::from_utf8_lossy(value).into_owned(),
+                );
+            }
+        }
+        Some((String::from_utf8_lossy(id).into_owned(), fields))
     }
 }
 
@@ -413,4 +448,49 @@ pub(crate) async fn enqueue_optional(
     let scope = super::dispatcher::parse_scope(scope)
         .ok_or_else(|| AppError::internal_message("invalid realtime scope", scope))?;
     outbox.enqueue(&OutboxEntry::new(contest_id, event_type, scope, team_id, payload)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use redis::Value::{Array, BulkString, Nil};
+
+    use super::RealtimeOutbox;
+
+    fn entry(id: &str, payload: &str) -> redis::Value {
+        Array(vec![
+            BulkString(id.as_bytes().to_vec()),
+            Array(vec![BulkString(b"entry".to_vec()), BulkString(payload.as_bytes().to_vec())]),
+        ])
+    }
+
+    /// `XCLAIM` replies have no `[stream, entries]` wrapper; the previous
+    /// parser expected one and therefore reclaimed nothing at all.
+    #[test]
+    fn claim_replies_are_parsed_without_a_stream_wrapper() {
+        let reply = Array(vec![entry("1-0", "{}"), entry("2-0", "{\"a\":1}")]);
+        let parsed = RealtimeOutbox::parse_claim(reply);
+
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].0, "1-0");
+        assert_eq!(parsed[0].1.get("entry").map(String::as_str), Some("{}"));
+        assert_eq!(parsed[1].0, "2-0");
+    }
+
+    #[test]
+    fn read_replies_keep_the_stream_wrapper() {
+        let reply = Array(vec![Array(vec![
+            BulkString(b"xcpc:realtime:outbox".to_vec()),
+            Array(vec![entry("3-0", "{}")]),
+        ])]);
+        let parsed = RealtimeOutbox::parse_xread(reply);
+
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].0, "3-0");
+    }
+
+    #[test]
+    fn empty_replies_yield_nothing() {
+        assert!(RealtimeOutbox::parse_claim(Nil).is_empty());
+        assert!(RealtimeOutbox::parse_xread(Nil).is_empty());
+    }
 }

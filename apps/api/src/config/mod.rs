@@ -9,6 +9,14 @@ const DEFAULT_DATABASE_MAX_CONNECTIONS: u32 = 20;
 const DEFAULT_DATABASE_ACQUIRE_TIMEOUT_SECONDS: u64 = 5;
 const DEFAULT_READINESS_TIMEOUT_MILLISECONDS: u64 = 1_000;
 const DEFAULT_SESSION_TTL_SECONDS: u64 = 43_200;
+/// Sized for a contest venue where hundreds of teams share one NAT address;
+/// a value around ten (the pre-audit behaviour) locked the whole room out on
+/// ordinary typos.
+const DEFAULT_LOGIN_ATTEMPT_LIMIT_PER_IP: i64 = 100;
+const DEFAULT_LOGIN_ACCOUNT_ATTEMPT_LIMIT: i64 = 10;
+/// Upper bound of either login window. A larger value is a misconfiguration
+/// that removes brute-force protection rather than tuning it.
+const MAX_LOGIN_ATTEMPT_LIMIT: i64 = 10_000;
 const DEFAULT_CSRF_SECRET: &str = "development-only-csrf-secret-change-me";
 const DEFAULT_REALTIME_CHANNEL_CAPACITY: usize = 1_024;
 const DEFAULT_REALTIME_POLL_MILLISECONDS: u64 = 250;
@@ -80,6 +88,14 @@ pub struct AppConfig {
     pub run_migrations: bool,
     pub session_ttl: Duration,
     pub secure_cookies: bool,
+    /// Login failures a single source address may accumulate per five-minute
+    /// window. Configurable because the right value depends on the venue: the
+    /// whole room usually shares one NAT address, so a value sized for one
+    /// client locks out everybody.
+    pub login_attempt_limit_per_ip: i64,
+    /// Login failures a single account may accumulate per five-minute window,
+    /// regardless of source address. This is the window that bounds guessing.
+    pub login_account_attempt_limit: i64,
     pub csrf_secret: Vec<u8>,
     pub uses_development_csrf_secret: bool,
     pub allow_development_csrf_secret: bool,

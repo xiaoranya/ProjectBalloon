@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use project_balloon_api::{
     config::AppConfig,
     features::announcements::AnnouncementScheduleRunner,
+    features::auth::LoginRateLimits,
     features::contests::ContestLifecycleRunner,
     features::judge_dispatch::{
         RabbitDeadLetterConsumer, RabbitJudgeResultConsumer, RabbitJudgeTaskPublisher,
@@ -231,6 +232,10 @@ async fn build_app_state(
     judge_publisher: Option<Arc<RabbitJudgeTaskPublisher>>,
     shutdown: watch::Receiver<bool>,
 ) -> Result<AppState> {
+    let login_limits = LoginRateLimits {
+        per_ip: config.login_attempt_limit_per_ip,
+        per_account: config.login_account_attempt_limit,
+    };
     let mut state = match object_storage {
         Some(object_storage) => AppState::with_object_storage(
             database.clone(),
@@ -242,6 +247,7 @@ async fn build_app_state(
             config.realtime_redis_enabled,
             Some(redis.clone()),
             object_storage,
+            login_limits,
         ),
         None => AppState::new(
             database.clone(),
@@ -252,6 +258,7 @@ async fn build_app_state(
             config.realtime_channel_capacity,
             config.realtime_redis_enabled,
             Some(redis.clone()),
+            login_limits,
         ),
     };
     state = state.with_deployment_mode(config.deployment_mode);
@@ -295,6 +302,51 @@ async fn build_app_state(
         }
     }
     Ok(state)
+}
+
+/// Spawns a background runner under a supervisor that notices an early exit.
+///
+/// Runner handles were only ever awaited during shutdown, so a task that
+/// panicked mid-run left the process reporting healthy while its work (contest
+/// lifecycles, exports, judge dispatch) silently stopped. The supervisor logs
+/// the failure the moment it happens and re-raises the panic so shutdown still
+/// reports it as a failed task, exactly as before.
+fn spawn_supervised<F>(
+    name: &'static str,
+    shutdown: &watch::Sender<bool>,
+    task: F,
+) -> JoinHandle<()>
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    let observed = shutdown.subscribe();
+    let handle = tokio::spawn(task);
+    tokio::spawn(async move {
+        let outcome = handle.await;
+        let stopping = *observed.borrow();
+        match outcome {
+            Ok(()) => {
+                if !stopping {
+                    tracing::error!(
+                        runner = name,
+                        "background runner stopped unexpectedly; its work is no longer running"
+                    );
+                }
+            }
+            Err(error) => {
+                if !stopping {
+                    tracing::error!(
+                        runner = name,
+                        ?error,
+                        "background runner panicked; its work is no longer running"
+                    );
+                }
+                // Keep the shutdown contract: a failed runner must surface as
+                // an error rather than being swallowed by the supervisor.
+                std::panic::resume_unwind(error.into_panic());
+            }
+        }
+    })
 }
 
 /// Every background task spawned by the API plus the channel that stops them.
@@ -446,13 +498,20 @@ async fn spawn_background_runners(
     } else {
         (RealtimePublisher::local(state.realtime().clone()), None)
     };
-    let redis_subscriber_task =
-        redis_subscriber.map(|subscriber| tokio::spawn(subscriber.run(shutdown_rx.clone())));
+    let redis_subscriber_task = redis_subscriber.map(|subscriber| {
+        spawn_supervised(
+            "Redis realtime subscriber",
+            &shutdown,
+            subscriber.run(shutdown_rx.clone()),
+        )
+    });
     let dispatcher_task = config
         .realtime_dispatcher_enabled
         .then(|| {
             state.realtime_outbox().cloned().map(|outbox| {
-                tokio::spawn(
+                spawn_supervised(
+                    "realtime outbox dispatcher",
+                    &shutdown,
                     OutboxDispatcher::new(
                         outbox,
                         publisher,
@@ -470,7 +529,9 @@ async fn spawn_background_runners(
         })
         .flatten();
     let judge_dispatcher_task = judge_publisher.as_ref().map(|publisher| {
-        tokio::spawn(
+        spawn_supervised(
+            "submission outbox dispatcher",
+            &shutdown,
             SubmissionOutboxDispatcher::new(
                 database.clone(),
                 publisher.clone(),
@@ -482,13 +543,16 @@ async fn spawn_background_runners(
                     max_attempts: config.judge_dispatch_max_attempts,
                 },
             )
+            .with_outbox_option(state.realtime_outbox().cloned())
             .run(shutdown_rx.clone()),
         )
     });
     // The reaper only makes sense when judge dispatch runs: without a
     // publisher a requeued row could never be sent again.
     let judge_stuck_reaper_task = judge_publisher.as_ref().map(|_| {
-        tokio::spawn(
+        spawn_supervised(
+            "stuck-judging reaper",
+            &shutdown,
             SubmissionStuckReaper::new(
                 database.clone(),
                 config.judge_stuck_requeue_interval,
@@ -497,12 +561,17 @@ async fn spawn_background_runners(
             .run(shutdown_rx.clone()),
         )
     });
-    let batch_rejudge_task =
-        tokio::spawn(BatchRejudgeRunner::new(database.clone()).run(shutdown_rx.clone()));
+    let batch_rejudge_task = spawn_supervised(
+        "batch rejudge runner",
+        &shutdown,
+        BatchRejudgeRunner::new(database.clone()).run(shutdown_rx.clone()),
+    );
     let cleanup_storage = object_storage.clone();
     let delivery_storage = object_storage.clone();
     let export_task = object_storage.map(|storage| {
-        tokio::spawn(
+        spawn_supervised(
+            "submission export runner",
+            &shutdown,
             ExportTaskRunner::new(
                 database.clone(),
                 storage,
@@ -516,24 +585,32 @@ async fn spawn_background_runners(
             .run(shutdown_rx.clone()),
         )
     });
-    let resolver_auto_task = tokio::spawn(
+    let resolver_auto_task = spawn_supervised(
+        "Resolver auto-play runner",
+        &shutdown,
         ResolverAutoRunner::new(database.clone())
             .with_outbox_option(state.realtime_outbox().cloned())
             .run(shutdown_rx.clone()),
     );
-    let contest_lifecycle_task = tokio::spawn(
+    let contest_lifecycle_task = spawn_supervised(
+        "contest lifecycle runner",
+        &shutdown,
         ContestLifecycleRunner::new(database.clone())
             .with_outbox_option(state.realtime_outbox().cloned())
             .with_projection_option(scoreboard_projection.clone())
             .run(shutdown_rx.clone()),
     );
-    let announcement_schedule_task = tokio::spawn(
+    let announcement_schedule_task = spawn_supervised(
+        "announcement schedule runner",
+        &shutdown,
         AnnouncementScheduleRunner::new(database.clone())
             .with_outbox_option(state.realtime_outbox().cloned())
             .run(shutdown_rx.clone()),
     );
     let judge_result_consumer_task = config.rabbitmq_enabled.then(|| {
-        tokio::spawn(
+        spawn_supervised(
+            "Judge result consumer",
+            &shutdown,
             RabbitJudgeResultConsumer::new(
                 database.clone(),
                 config.rabbitmq_url.clone(),
@@ -547,7 +624,9 @@ async fn spawn_background_runners(
         )
     });
     let worker_heartbeat_consumer_task = config.rabbitmq_enabled.then(|| {
-        tokio::spawn(
+        spawn_supervised(
+            "Worker heartbeat consumer",
+            &shutdown,
             RabbitWorkerHeartbeatConsumer::new(
                 database.clone(),
                 config.rabbitmq_url.clone(),
@@ -559,7 +638,9 @@ async fn spawn_background_runners(
         )
     });
     let judge_dead_letter_consumer_task = config.rabbitmq_enabled.then(|| {
-        tokio::spawn(
+        spawn_supervised(
+            "Judge dead-letter consumer",
+            &shutdown,
             RabbitDeadLetterConsumer::new(
                 database.clone(),
                 config.rabbitmq_url.clone(),
@@ -571,7 +652,9 @@ async fn spawn_background_runners(
         )
     });
     let cups_delivery_task = match (cups_gateway, delivery_storage) {
-        (Some(gateway), Some(storage)) => Some(tokio::spawn(
+        (Some(gateway), Some(storage)) => Some(spawn_supervised(
+            "CUPS delivery runner",
+            &shutdown,
             CupsDeliveryRunner::new(database.clone(), storage, gateway)
                 .with_outbox_option(state.realtime_outbox().cloned())
                 .run(shutdown_rx.clone()),
@@ -583,7 +666,9 @@ async fn spawn_background_runners(
         (None, _) => None,
     };
     let object_cleanup_task = cleanup_storage.map(|storage| {
-        tokio::spawn(
+        spawn_supervised(
+            "object-storage cleanup runner",
+            &shutdown,
             ObjectStorageCleanupRunner::new(
                 database.clone(),
                 storage,

@@ -70,6 +70,14 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 /// typical task memory limit).
 const COMPILE_MEMORY_FLOOR_BYTES: i64 = 1024 * 1024 * 1024;
 
+/// Processes one action may create. Matches the Docker backend's `pids_limit`.
+const SANDBOX_MAX_PROCESSES: u64 = 64;
+
+/// Floor of `RLIMIT_AS` for one action. JVM and Go reserve large
+/// address-space arenas, so the limit has to stay well above the memory
+/// budget; it only stops runaway allocation.
+const SANDBOX_MIN_ADDRESS_SPACE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
 #[derive(Debug, Clone)]
 pub struct BubblewrapSandboxConfig {
     pub cache_dir: PathBuf,
@@ -321,9 +329,21 @@ impl BubblewrapSandbox {
                 None,
                 run_memory_bytes.max(COMPILE_MEMORY_FLOOR_BYTES),
                 COMPILE_WALL_LIMIT,
+                crate::sandbox::COMPILE_FILE_SIZE_LIMIT_BYTES,
             )
             .await?;
         let compile_log = truncate_log(&compile.logs, 64 * 1024);
+        // `/work` is a writable host bind with no filesystem quota.
+        if crate::sandbox::work_dir_exceeds(&work_dir, crate::sandbox::MAX_WORK_DIR_BYTES).await {
+            warn!(judgement_id = %task.judgement_id, "compilation exceeded the work directory budget");
+            return Ok(SandboxJudgement {
+                verdict: JudgeVerdict::CompileError,
+                total_time_ms: compile.elapsed_ms,
+                peak_memory_kb: 0,
+                compile_log: Some(compile_log),
+                runs: Vec::new(),
+            });
+        }
         if compile.timed_out || compile.exit_code != 0 {
             return Ok(SandboxJudgement {
                 verdict: JudgeVerdict::CompileError,
@@ -369,6 +389,7 @@ impl BubblewrapSandbox {
                     interactor_path.as_deref(),
                     run_memory_bytes,
                     wall_limit,
+                    u64::try_from(task.output_limit_kb).unwrap_or(0).saturating_mul(1024).max(1024),
                 )
                 .await?;
             // Contestant-writable diagnostic files are read from the host side
@@ -380,16 +401,48 @@ impl BubblewrapSandbox {
             } else {
                 String::new()
             };
+            // A run may create many files below the per-file cap; the total is
+            // checked before it is allowed to grow further.
+            if crate::sandbox::work_dir_exceeds(&work_dir, crate::sandbox::MAX_WORK_DIR_BYTES).await
+            {
+                warn!(judgement_id = %task.judgement_id, test_index, "run exceeded the work directory budget");
+                runs.push(JudgeRunResult {
+                    test_index: i32::try_from(test_index).unwrap_or(i32::MAX),
+                    verdict: JudgeVerdict::RuntimeError,
+                    time_ms: 0,
+                    memory_kb: 0,
+                    exit_code: i32::try_from(run.exit_code).ok(),
+                    stderr_tail: nonempty(truncate_log(&run.logs, 16 * 1024)),
+                });
+                break;
+            }
             let (sanitized_logs, gnu_time) = extract_gnu_time_metrics(&run.logs);
             run.logs = sanitized_logs;
             if !diagnostics.is_empty() {
                 run.logs.push_str(&diagnostics);
             }
             if gnu_time.is_none() && !run.timed_out && !run.oom_killed && run.exit_code != 137 {
-                return Err(SandboxError::Api(format!(
-                    "GNU time did not produce resource metrics for a completed run (exit_code={}, stderr={:?})",
-                    run.exit_code, run.logs
-                )));
+                // The report is written as the last line of stderr and the log
+                // buffer keeps the tail, so a missing report after a clean exit
+                // means the run itself produced nothing usable. Retrying the
+                // whole judgement (the old `SandboxError::Api` path, eight
+                // times) would just reproduce it and multiply the load, so this
+                // is reported as a run failure.
+                warn!(
+                    judgement_id = %task.judgement_id,
+                    test_index,
+                    exit_code = run.exit_code,
+                    "GNU time produced no metrics for a completed run"
+                );
+                runs.push(JudgeRunResult {
+                    test_index: i32::try_from(test_index).unwrap_or(i32::MAX),
+                    verdict: JudgeVerdict::RuntimeError,
+                    time_ms: 0,
+                    memory_kb: 0,
+                    exit_code: i32::try_from(run.exit_code).ok(),
+                    stderr_tail: nonempty(truncate_log(&run.logs, 16 * 1024)),
+                });
+                break;
             }
             let charged_time_ms = gnu_time.map_or(run.elapsed_ms, |metrics| metrics.cpu_time_ms);
             // This backend has no docker-stats memory stream: the GNU-time
@@ -477,6 +530,7 @@ impl BubblewrapSandbox {
         interactor: Option<&Path>,
         memory_bytes: i64,
         wall_limit: Duration,
+        file_size_bytes: u64,
     ) -> Result<BwrapRun, SandboxError> {
         let guard = match &self.cgroup {
             Some(manager) => Some(
@@ -488,6 +542,30 @@ impl BubblewrapSandbox {
             None => None,
         };
         let mut args = self.base_args();
+        // Hard resource limits for this action. The cgroup is the primary
+        // control, but it is optional (`JUDGE_CGROUP_BASE` may be absent and
+        // `JUDGE_CGROUP_REQUIRED=false` allows a degraded start) and ADR-003
+        // promises rlimits in that mode — which did not exist at all: only the
+        // wall clock bounded a fork bomb, an unbounded allocation or a full
+        // disk. RLIMIT_AS is deliberately generous (JVM/Go reserve large
+        // address-space arenas) and only catches runaway growth.
+        let address_space = u64::try_from(memory_bytes)
+            .unwrap_or(0)
+            .saturating_mul(4)
+            .max(SANDBOX_MIN_ADDRESS_SPACE_BYTES);
+        let cpu_seconds = wall_limit.as_secs().saturating_add(1).max(1);
+        args.push("--rlimit".into());
+        args.push("nproc".into());
+        args.push(SANDBOX_MAX_PROCESSES.to_string().into());
+        args.push("--rlimit".into());
+        args.push("as".into());
+        args.push(address_space.to_string().into());
+        args.push("--rlimit".into());
+        args.push("cpu".into());
+        args.push(cpu_seconds.to_string().into());
+        args.push("--rlimit".into());
+        args.push("fsize".into());
+        args.push(file_size_bytes.max(1).to_string().into());
         for entry in env {
             let Some((name, value)) = entry.split_once('=') else {
                 return Err(SandboxError::Api(format!(

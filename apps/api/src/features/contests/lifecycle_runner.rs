@@ -127,7 +127,7 @@ impl ContestLifecycleRunner {
             }
         }
         for contest_id in frozen {
-            if let Err(error) = projection.freeze_snapshot(*contest_id).await {
+            if let Err(error) = projection.freeze_snapshot(&self.database, *contest_id).await {
                 warn!(?error, %contest_id, "scoreboard freeze snapshot failed");
             }
         }

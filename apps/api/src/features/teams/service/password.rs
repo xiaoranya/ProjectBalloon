@@ -43,11 +43,7 @@ impl TeamService {
         .execute(&mut *transaction)
         .await
         .map_err(|error| AppError::internal("reset team password", error))?;
-        sqlx::query("DELETE FROM auth_sessions WHERE user_id = $1")
-            .bind(user_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(|error| AppError::internal("revoke team sessions", error))?;
+        self.revoke_sessions(&mut transaction, user_id).await?;
         record_audit(
             &mut transaction,
             actor.id,

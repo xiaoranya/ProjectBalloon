@@ -34,7 +34,10 @@ Judge Worker 应以与所选沙箱实现兼容的最低主机权限运行。
 
 - 使用 Argon2id 对新密码进行哈希。仅在迁移期间接受遗留 BCrypt 哈希，并在登录成功后升级它们。
 - 所有工作人员 API 使用直接、可组合的账户权限。
-- 基于共享的 PostgreSQL 审计状态应用登录限流，避免通过切换 API 实例绕过限制。
+- 基于共享 Redis 状态应用登录限流，避免通过切换 API 实例绕过限制。同时执行两个五分钟滑动窗口：
+  按来源地址与按账号。按地址的窗口是容量参数
+  （`PROJECT_BALLOON_LOGIN_ATTEMPT_LIMIT_PER_IP`，默认 100），因为赛场通常共享一个 NAT 出口；
+  真正限制撞库的是按账号的窗口（`PROJECT_BALLOON_LOGIN_ACCOUNT_ATTEMPT_LIMIT`，默认 10）。
 - 提交限流。
 - Clarification 限流。
 - 打印请求限流。
