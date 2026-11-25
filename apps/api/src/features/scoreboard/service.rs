@@ -453,14 +453,20 @@ impl ScoreboardService {
                     // (version > 0, no cells). `contest_scoreboard_cells` is
                     // not maintained while a projection is active, so serving
                     // it would assemble — and cache — an all-zero board that
-                    // never gets rebuilt.
-                    tracing::warn!(
-                        %contest_id,
-                        version = snapshot.version,
-                        cells = snapshot.cells.len(),
-                        "scoreboard projection is incomplete; rebuilding"
-                    );
-                    self.rebuild_projection(contest_id, p).await?
+                    // never gets rebuilt. A contest that simply has no
+                    // submissions yet is not a miss, though: rebuilding it on
+                    // every read would keep moving the cache key.
+                    if !self.has_submissions(contest_id).await? {
+                        snapshot
+                    } else {
+                        tracing::warn!(
+                            %contest_id,
+                            version = snapshot.version,
+                            cells = snapshot.cells.len(),
+                            "scoreboard projection is incomplete; rebuilding"
+                        );
+                        self.rebuild_projection(contest_id, p).await?
+                    }
                 }
                 Ok(None) => self.rebuild_projection(contest_id, p).await?,
                 Err(error) => {
@@ -488,6 +494,16 @@ impl ScoreboardService {
             cache.put(cache_revision, phase, &query, &board).await;
         }
         Ok(board)
+    }
+
+    async fn has_submissions(&self, contest_id: i64) -> Result<bool, AppError> {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM submissions WHERE contest_id = $1)",
+        )
+        .bind(contest_id)
+        .fetch_one(&self.database)
+        .await
+        .map_err(|error| AppError::internal("check contest submissions", error))
     }
 
     /// Rebuilds a cold projection under a per-contest lock, then reads it
