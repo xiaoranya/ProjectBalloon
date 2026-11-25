@@ -815,6 +815,10 @@ const english: Record<string, string> = {
     'All OBS pages using this token will become invalid immediately.',
   '撤销 Token': 'Revoke Token',
   已复制: 'Copied',
+  '复制失败，请手动选择文本复制':
+    'Copy failed. Select the text and copy it manually (the clipboard API needs HTTPS).',
+  '复制失败，请改用“下载 CSV”或手动选择文本复制':
+    'Copy failed. Use "Download CSV" or select the text and copy it manually.',
   自定义模板已保存: 'Custom template saved',
   填入示例: 'Fill example',
   '赛事管理员只能导入到已授权比赛。下拉框已请求可管理比赛；后端权限校验始终是最终边界。':

@@ -253,6 +253,7 @@ import type {
 } from '../api/team-import';
 import { useSession } from '../auth/session';
 import { useI18n } from '../i18n';
+import { copyText, randomId } from '../utils/browser';
 
 interface MemberDraft extends TeamMemberRequest {
   clientId: string;
@@ -320,7 +321,7 @@ onMounted(async () => {
 });
 
 function newId() {
-  return crypto.randomUUID();
+  return randomId();
 }
 function blankMember(): MemberDraft {
   return { clientId: newId(), name: '', email: null, phone: null, roleName: null };
@@ -473,7 +474,7 @@ async function submitImport() {
   importing.value = true;
   errorMessage.value = '';
   credentials.value = [];
-  const importId = crypto.randomUUID();
+  const importId = randomId();
   const prefix = idempotencyKey.value.trim() || `team-import-${importId}`;
   const chunks = Array.from({ length: plannedBatchCount.value }, (_, index) =>
     drafts.value.slice(index * 100, (index + 1) * 100),
@@ -565,7 +566,12 @@ function credentialCsv() {
     .join('\n');
 }
 async function copyCredentials() {
-  await navigator.clipboard.writeText(credentialCsv());
+  if (!(await copyText(credentialCsv()))) {
+    // Keep the credentials on screen: clearing them on a failed copy would
+    // destroy the only copy of the generated passwords.
+    ElMessage.error(t('复制失败，请改用“下载 CSV”或手动选择文本复制'));
+    return;
+  }
   clearCredentials();
   ElMessage.success(t('账号已复制，页面中的密码已清除'));
 }
@@ -585,7 +591,7 @@ function clearCredentials() {
   credentials.value = [];
 }
 function makeBatchKey(prefix: string, batchNumber: number) {
-  const suffix = `-part-${batchNumber}-${crypto.randomUUID()}`;
+  const suffix = `-part-${batchNumber}-${randomId()}`;
   return `${prefix.slice(0, 128 - suffix.length)}${suffix}`;
 }
 function resultStatusLabel(status: BatchResult['status']) {

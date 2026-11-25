@@ -208,11 +208,30 @@ impl PresentationService {
                 "contestId and a name up to 120 characters are required",
             ));
         }
-        require_contest(&self.database, request.contest_id).await?;
-        let enabled = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM presentation_configs WHERE contest_id=$1 AND mode='SCREEN' AND enabled)")
-            .bind(request.contest_id).fetch_one(&self.database).await.map_err(|error| AppError::internal("check screen publication", error))?;
-        if !enabled {
-            return Err(AppError::conflict(
+        // Anonymous registration must not be able to probe which contests
+        // exist: an unknown id, a private contest and an unpublished screen
+        // all answer the same 404, matching `live::require_access`.
+        let visible = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM contests contest
+                JOIN presentation_configs config
+                  ON config.contest_id = contest.id
+                 AND config.mode = 'SCREEN'
+                 AND config.enabled
+                WHERE contest.id = $1
+                  AND contest.deleted_at IS NULL
+                  AND contest.visibility = 'PUBLIC'
+            )
+            "#,
+        )
+        .bind(request.contest_id)
+        .fetch_one(&self.database)
+        .await
+        .map_err(|error| AppError::internal("check screen publication", error))?;
+        if !visible {
+            return Err(AppError::not_found(
                 "SCREEN_PRESENTATION_NOT_PUBLISHED",
                 "Screen presentation is not published",
             ));

@@ -194,7 +194,7 @@ pub(super) async fn require_access(
             ));
         }
     }
-    sqlx::query_as(
+    sqlx::query_as::<_, ConfigResponse>(
         r#"
         SELECT c.contest_id,c.mode,c.enabled,c.title,c.subtitle,c.accent_color,c.row_limit,
                c.show_announcements,c.announcement_interval_seconds,c.template,
@@ -218,6 +218,13 @@ pub(super) async fn require_access(
     .map_err(|e| AppError::internal("load published presentation", e))?
     .ok_or_else(|| {
         AppError::not_found("PRESENTATION_NOT_PUBLISHED", "Presentation is not published")
+    })
+    // Public projections (SCREEN needs no token at all) must not carry the
+    // template's storage key: it names an object in the internal bucket and
+    // handlers are not allowed to expose object keys.
+    .map(|mut config| {
+        config.custom_logo_object_key = None;
+        config
     })
 }
 
@@ -275,11 +282,38 @@ pub async fn metrics(
     Query(query): Query<PublishedQuery>,
     headers: HeaderMap,
 ) -> Result<Json<PresentationMetrics>, AppError> {
-    require_access(state.database(), contest, &query.mode, supplied_token(&headers)).await?;
-    Ok(Json(load_metrics(state.database(), contest).await?))
+    let config =
+        require_access(state.database(), contest, &query.mode, supplied_token(&headers)).await?;
+    // A frozen public board must not be bypassed through the metrics: the
+    // SCREEN projection is anonymous, so it counts only submissions made
+    // before the freeze. The token-gated LIVE feed stays realtime.
+    let cutoff = if config.mode == "SCREEN" {
+        sqlx::query_scalar::<_, Option<OffsetDateTime>>(
+            r#"
+            SELECT CASE
+                     WHEN scoreboard_revealed_at IS NULL
+                          AND freeze_at IS NOT NULL AND freeze_at <= now()
+                     THEN freeze_at
+                     ELSE NULL
+                   END
+            FROM contests WHERE id = $1
+            "#,
+        )
+        .bind(contest)
+        .fetch_one(state.database())
+        .await
+        .map_err(|e| AppError::internal("load presentation freeze cutoff", e))?
+    } else {
+        None
+    };
+    Ok(Json(load_metrics(state.database(), contest, cutoff).await?))
 }
 
-async fn load_metrics(database: &PgPool, contest: i64) -> Result<PresentationMetrics, AppError> {
+async fn load_metrics(
+    database: &PgPool,
+    contest: i64,
+    cutoff: Option<OffsetDateTime>,
+) -> Result<PresentationMetrics, AppError> {
     let balloon = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64)>(
         r#"
         SELECT count(*),
@@ -298,9 +332,9 @@ async fn load_metrics(database: &PgPool, contest: i64) -> Result<PresentationMet
     .await
     .map_err(|e| AppError::internal("load balloon presentation metrics", e))?;
     let colors = sqlx::query_as("SELECT coalesce(color,'未设置') AS name,count(*) AS total FROM balloon_tasks WHERE contest_id=$1 AND upper(status)<>'CANCELLED' GROUP BY color ORDER BY total DESC,name").bind(contest).fetch_all(database).await.map_err(|e| AppError::internal("load balloon colors", e))?;
-    let submission = sqlx::query_as::<_, (i64,i64,i64)>("SELECT count(*),count(*) FILTER(WHERE verdict='ACCEPTED'),count(*) FILTER(WHERE status IN('PENDING','JUDGING')) FROM submissions WHERE contest_id=$1").bind(contest).fetch_one(database).await.map_err(|e| AppError::internal("load submission presentation metrics", e))?;
-    let languages = sqlx::query_as("SELECT language AS name,count(*) AS total FROM submissions WHERE contest_id=$1 GROUP BY language ORDER BY total DESC,name").bind(contest).fetch_all(database).await.map_err(|e| AppError::internal("load submission languages", e))?;
-    let trend = sqlx::query_as("SELECT date_trunc('hour',submitted_at) AS bucket,count(*) AS total,count(*) FILTER(WHERE verdict='ACCEPTED') AS accepted FROM submissions WHERE contest_id=$1 AND submitted_at>=now()-interval '24 hours' GROUP BY bucket ORDER BY bucket").bind(contest).fetch_all(database).await.map_err(|e| AppError::internal("load submission trend", e))?;
+    let submission = sqlx::query_as::<_, (i64,i64,i64)>("SELECT count(*),count(*) FILTER(WHERE verdict='ACCEPTED'),count(*) FILTER(WHERE status IN('PENDING','JUDGING')) FROM submissions WHERE contest_id=$1 AND ($2::timestamptz IS NULL OR submitted_at < $2)").bind(contest).bind(cutoff).fetch_one(database).await.map_err(|e| AppError::internal("load submission presentation metrics", e))?;
+    let languages = sqlx::query_as("SELECT language AS name,count(*) AS total FROM submissions WHERE contest_id=$1 AND ($2::timestamptz IS NULL OR submitted_at < $2) GROUP BY language ORDER BY total DESC,name").bind(contest).bind(cutoff).fetch_all(database).await.map_err(|e| AppError::internal("load submission languages", e))?;
+    let trend = sqlx::query_as("SELECT date_trunc('hour',submitted_at) AS bucket,count(*) AS total,count(*) FILTER(WHERE verdict='ACCEPTED') AS accepted FROM submissions WHERE contest_id=$1 AND submitted_at>=now()-interval '24 hours' AND ($2::timestamptz IS NULL OR submitted_at < $2) GROUP BY bucket ORDER BY bucket").bind(contest).bind(cutoff).fetch_all(database).await.map_err(|e| AppError::internal("load submission trend", e))?;
     Ok(PresentationMetrics {
         balloons: BalloonMetrics {
             total: balloon.0,
@@ -448,7 +482,7 @@ mod tests {
             .expect("last used")
             .is_some()
         );
-        let metrics = load_metrics(&pool, contest).await.expect("empty metrics");
+        let metrics = load_metrics(&pool, contest, None).await.expect("empty metrics");
         assert_eq!(metrics.balloons.total, 0);
         assert_eq!(metrics.submissions.total, 0);
         sqlx::query("UPDATE broadcast_tokens SET revoked_at=now() WHERE id=$1")

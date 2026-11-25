@@ -113,6 +113,15 @@ impl AwardService {
                 (current, status, auto_rotate, interval, updated_at)
             },
         );
+        // The endpoint is public (no broadcast token): exposing the winner
+        // list while the ceremony is still WAITING let anyone enumerate
+        // contest ids and read the results in advance. Recipients become
+        // visible only once the host starts presenting.
+        if status == "WAITING" {
+            for category in &mut categories {
+                category.recipients.clear();
+            }
+        }
         Ok(PresentationResponse {
             contest_id: contest,
             contest_name,
