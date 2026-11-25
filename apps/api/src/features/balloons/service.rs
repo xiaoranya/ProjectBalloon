@@ -384,8 +384,14 @@ pub(crate) async fn generate_for_accepted(
         FROM submissions submission
         JOIN contests contest ON contest.id = submission.contest_id
             AND contest.deleted_at IS NULL
-            AND contest.status IN ('RUNNING', 'PAUSED')
-            AND contest.freeze_at IS NOT NULL AND now() < contest.freeze_at
+            -- ENDED is included so the post-contest judging drain still
+            -- produces the balloons for accepted submissions.
+            AND contest.status IN ('RUNNING', 'PAUSED', 'ENDED')
+            -- Freeze is judged by the submission time, never by when the
+            -- judgement finished: a backlog drained after the freeze must not
+            -- lose the balloons of submissions accepted before it.
+            AND contest.freeze_at IS NOT NULL
+            AND submission.submitted_at < contest.freeze_at
         JOIN contest_teams roster ON roster.contest_id = submission.contest_id
             AND roster.team_id = submission.team_id
             AND roster.participation_type IN ('OFFICIAL', 'STAR')
@@ -416,6 +422,11 @@ pub(crate) async fn generate_for_accepted(
         WHERE task.id = (
             SELECT candidate.id FROM balloon_tasks candidate
             JOIN submissions submission ON submission.id = candidate.submission_id
+            -- First blood is an official-ranking fact: STAR teams get their
+            -- balloon but never take the honour away from an official team.
+            JOIN contest_teams roster ON roster.contest_id = candidate.contest_id
+                AND roster.team_id = candidate.team_id
+                AND roster.participation_type = 'OFFICIAL'
             WHERE candidate.contest_id = $1 AND candidate.problem_id = $2
               AND candidate.status <> 'CANCELLED'
             ORDER BY submission.submitted_at, candidate.team_id, candidate.submission_id

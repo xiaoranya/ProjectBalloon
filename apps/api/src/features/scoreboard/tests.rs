@@ -267,7 +267,14 @@ async fn public_freeze_hides_late_acceptance_while_admin_sees_true_board(pool: P
         .expect("load scoreboard after AC rollback");
     assert_eq!(rolled_back.rows[0].team_id, teams[1]);
     assert_eq!(rolled_back.rows[0].solved_count, 1);
-    assert!(rolled_back.rows[0].problems[0].first_blood);
+    assert!(
+        !rolled_back.rows[0].problems[0].first_blood,
+        "a star team must not inherit first blood when the official solve is rejudged away"
+    );
+    assert_eq!(
+        rolled_back.problems[0].first_blood_team_id, None,
+        "first blood is reserved for official teams"
+    );
     let official = rolled_back
         .rows
         .iter()

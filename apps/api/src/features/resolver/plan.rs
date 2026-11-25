@@ -139,7 +139,8 @@ pub(super) fn recompute_board(board: &mut ScoreboardResponse) {
         let first = board
             .rows
             .iter()
-            .filter(|row| row.participation_type != "PRACTICE")
+            // Official teams only, matching the live board.
+            .filter(|row| row.participation_type == "OFFICIAL")
             .filter_map(|row| {
                 row.problems
                     .iter()
