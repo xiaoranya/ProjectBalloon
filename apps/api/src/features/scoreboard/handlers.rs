@@ -160,6 +160,40 @@ fn csv_response(contest_id: i64, variant: &str, csv: String) -> Result<Response,
 
 #[utoipa::path(
     post,
+    path = "/api/admin/contests/{contest_id}/scoreboard/reveal",
+    operation_id = "revealScoreboard",
+    tag = "scoreboard",
+    params(
+        ("contest_id" = i64, Path),
+        ("groupName" = Option<String>, Query),
+        ("participationType" = Option<String>, Query)
+    ),
+    responses(
+        (status = 200, description = "Public scoreboard revealed; the final board is returned", body = ScoreboardResponse),
+        (status = 400, description = "Invalid scoreboard filters", body = crate::error::ApiErrorBody),
+        (status = 401, description = "Authentication required", body = crate::error::ApiErrorBody),
+        (status = 403, description = "Contest management access, completed password reset, and CSRF protection required", body = crate::error::ApiErrorBody),
+        (status = 404, description = "Contest is outside the actor's management scope", body = crate::error::ApiErrorBody),
+        (status = 409, description = "Contest is archived, not ended, or has not reached its freeze time", body = crate::error::ApiErrorBody)
+    ),
+    security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = []))
+)]
+pub async fn reveal(
+    context: ContestManagerContext,
+    State(state): State<AppState>,
+    Path(contest_id): Path<i64>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    query: Result<Query<ScoreboardQuery>, QueryRejection>,
+) -> Result<Json<ScoreboardResponse>, AppError> {
+    let Query(query) = query
+        .map_err(|_| AppError::validation("query", "must contain valid scoreboard filters"))?;
+    Ok(Json(
+        state.scoreboard().reveal(contest_id, context.user(), peer.ip(), query.validate()?).await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
     path = "/api/admin/contests/{contest_id}/scoreboard/snapshots",
     operation_id = "createScoreboardSnapshot",
     tag = "scoreboard",

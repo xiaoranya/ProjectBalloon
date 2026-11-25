@@ -41,6 +41,23 @@ After freeze:
 
 After contest end, the public board remains frozen and does not automatically reveal hidden submissions.
 
+### Explicit Reveal
+
+Freezing is one-way: neither `end_at` nor a lifecycle transition to `ENDED`
+thaws the public board. Publishing the final ranking is an operator action
+recorded on the contest (`contests.scoreboard_revealed_at`):
+
+- `POST /api/admin/contests/{contest_id}/scoreboard/reveal` returns the revealed
+  public board.
+- Preconditions: the contest is `ENDED`, `freeze_at` has passed, and the actor
+  holds contest management scope for it (CSRF token required).
+- The action is idempotent and writes a single `SCOREBOARD_REVEALED` audit entry.
+- Once revealed, the public phase becomes `FINAL` and the board is served from
+  live cells instead of the freeze snapshot. The reveal cannot be undone.
+
+Administrators can read `scoreboardRevealedAt` from the contest resource to tell
+a revealed board from a still-frozen one.
+
 ## First Version Status
 
 The first implemented version includes:

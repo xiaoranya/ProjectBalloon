@@ -144,6 +144,7 @@ export interface ContestResponse {
   startAt: string | null;
   endAt: string | null;
   freezeAt: string | null;
+  scoreboardRevealedAt: string | null;
   version: number;
   createdAt: string;
   updatedAt: string;

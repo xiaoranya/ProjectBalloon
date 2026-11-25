@@ -8,7 +8,11 @@ use uuid::Uuid;
 
 use crate::features::{
     auth::model::{AuthUser, UserType},
-    scoreboard::{ScoreboardCache, projection::rebuild_cell},
+    scoreboard::{
+        ScoreboardCache,
+        projection::rebuild_cell,
+        redis_state::{load_cell_replay_rows, load_contest_replay_rows},
+    },
 };
 
 use crate::features::scoreboard::helpers::{
@@ -466,6 +470,321 @@ async fn insert_scored_submission(
     .execute(pool)
     .await
     .expect("insert scored judgement");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+#[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+async fn projection_replay_rows_decode_completed_judgements(pool: PgPool) {
+    // Regression guard for P0-04: both score columns are `integer` in
+    // PostgreSQL while the replay code decodes `i64`. A missing `::bigint`
+    // cast made every non-empty cell fail to decode, so the rebuild/rejudge
+    // recovery paths never worked. The old tests only covered empty cells.
+    let start_at = OffsetDateTime::now_utc() - Duration::hours(1);
+    let contest_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO contests (name, status, visibility, start_at, scoring_mode)
+        VALUES ('Replay Decode', 'RUNNING', 'PRIVATE', $1, 'ICPC')
+        RETURNING id
+        "#,
+    )
+    .bind(start_at)
+    .fetch_one(&pool)
+    .await
+    .expect("insert contest");
+    let team_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO teams (name) VALUES ('Replay Decode Team') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("insert team");
+    let problem_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO problems (slug, title) VALUES ('replay-decode', 'Replay Decode') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("insert problem");
+    sqlx::query(
+        "INSERT INTO contest_teams (contest_id, team_id, participation_type) VALUES ($1, $2, 'OFFICIAL')",
+    )
+    .bind(contest_id)
+    .bind(team_id)
+    .execute(&pool)
+    .await
+    .expect("roster team");
+    sqlx::query(
+        "INSERT INTO contest_problems (contest_id, problem_id, alias, display_order) VALUES ($1, $2, 'A', 1)",
+    )
+    .bind(contest_id)
+    .bind(problem_id)
+    .execute(&pool)
+    .await
+    .expect("assign problem");
+    insert_scored_submission(
+        &pool,
+        contest_id,
+        problem_id,
+        team_id,
+        start_at + Duration::minutes(10),
+        "WRONG_ANSWER",
+    )
+    .await;
+    insert_scored_submission(
+        &pool,
+        contest_id,
+        problem_id,
+        team_id,
+        start_at + Duration::minutes(30),
+        "ACCEPTED",
+    )
+    .await;
+
+    let cell_rows = load_cell_replay_rows(&pool, contest_id, team_id, problem_id)
+        .await
+        .expect("decode a cell with completed judgements");
+    assert_eq!(cell_rows.len(), 2);
+    assert_eq!(cell_rows[1].1, "ACCEPTED");
+    assert_eq!(cell_rows[1].2, 0, "judgements.score_milli must decode as bigint");
+
+    let contest_rows = load_contest_replay_rows(&pool, contest_id)
+        .await
+        .expect("decode a contest with completed judgements");
+    assert_eq!(contest_rows.len(), 2);
+    assert_eq!(
+        contest_rows[0].6, 100_000,
+        "contest_problems.max_score_milli must decode through the bigint cast"
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+#[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+async fn public_board_stays_frozen_after_the_contest_ends(pool: PgPool) {
+    // P0-06: freeze is defined by `freeze_at` alone. The public board must not
+    // thaw at `end_at` / ENDED; only an explicit Resolver reveal may unfreeze it.
+    let now = OffsetDateTime::now_utc();
+    let contest_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO contests (name, status, visibility, start_at, freeze_at, end_at)
+        VALUES ('Ended Frozen Board', 'ENDED', 'PRIVATE', $1, $2, $3)
+        RETURNING id
+        "#,
+    )
+    .bind(now - Duration::hours(2))
+    .bind(now - Duration::hours(1))
+    .bind(now - Duration::minutes(30))
+    .fetch_one(&pool)
+    .await
+    .expect("insert ended contest");
+
+    let board = ScoreboardService::new(pool.clone())
+        .public(contest_id, ValidatedScoreboardQuery { group_name: None, participation_type: None })
+        .await
+        .expect("load public board");
+    assert!(board.frozen, "the public board must remain frozen after the contest ends");
+}
+
+/// Inserts a super admin and returns it as an authenticated actor.
+async fn insert_super_admin(pool: &PgPool, username: &str) -> AuthUser {
+    let id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO users (username, password_hash, display_name, user_type)
+        VALUES ($1, 'test-only-hash', 'Reveal Root', 'SUPER_ADMIN')
+        RETURNING id
+        "#,
+    )
+    .bind(username)
+    .fetch_one(pool)
+    .await
+    .expect("insert super admin");
+    AuthUser {
+        id,
+        username: username.to_owned(),
+        display_name: "Reveal Root".to_owned(),
+        user_type: UserType::SuperAdmin,
+        permissions: Vec::new(),
+        password_reset_required: false,
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+#[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+async fn reveal_publishes_the_final_board_and_is_idempotent(pool: PgPool) {
+    // The explicit unfreeze: the board is frozen at `freeze_at`, the contest
+    // ends, and only the audited reveal publishes the hidden acceptances.
+    let now = OffsetDateTime::now_utc();
+    let start_at = now - Duration::hours(3);
+    let freeze_at = now - Duration::hours(2);
+    let contest_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO contests (name, status, visibility, start_at, freeze_at, end_at)
+        VALUES ('Revealed Board', 'ENDED', 'PUBLIC', $1, $2, $3)
+        RETURNING id
+        "#,
+    )
+    .bind(start_at)
+    .bind(freeze_at)
+    .bind(now - Duration::hours(1))
+    .fetch_one(&pool)
+    .await
+    .expect("insert ended contest");
+    let team_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO teams (name) VALUES ('Reveal Team') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("insert team");
+    let problem_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO problems (slug, title) VALUES ('reveal-a', 'Reveal A') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("insert problem");
+    sqlx::query(
+        "INSERT INTO contest_teams (contest_id, team_id, participation_type) VALUES ($1, $2, 'OFFICIAL')",
+    )
+    .bind(contest_id)
+    .bind(team_id)
+    .execute(&pool)
+    .await
+    .expect("roster team");
+    sqlx::query(
+        "INSERT INTO contest_problems (contest_id, problem_id, alias, display_order) VALUES ($1, $2, 'A', 1)",
+    )
+    .bind(contest_id)
+    .bind(problem_id)
+    .execute(&pool)
+    .await
+    .expect("assign problem");
+    insert_scored_submission(
+        &pool,
+        contest_id,
+        problem_id,
+        team_id,
+        start_at + Duration::minutes(30),
+        "ACCEPTED",
+    )
+    .await;
+    insert_scored_submission(
+        &pool,
+        contest_id,
+        problem_id,
+        team_id,
+        freeze_at + Duration::minutes(30),
+        "ACCEPTED",
+    )
+    .await;
+    let mut transaction = pool.begin().await.expect("begin projection transaction");
+    rebuild_cell(&mut transaction, contest_id, team_id, problem_id).await.expect("project cell");
+    transaction.commit().await.expect("commit projection");
+
+    let admin = insert_super_admin(&pool, "reveal-root").await;
+    let service = ScoreboardService::new(pool.clone());
+    let query = || ValidatedScoreboardQuery { group_name: None, participation_type: None };
+
+    let frozen = service.public(contest_id, query()).await.expect("load frozen board");
+    assert!(frozen.frozen);
+    assert_eq!(frozen.rows[0].solved_count, 1, "the post-freeze acceptance must stay hidden");
+
+    let revealed = service
+        .reveal(contest_id, &admin, "127.0.0.1".parse().expect("loopback IP"), query())
+        .await
+        .expect("reveal public board");
+    assert!(!revealed.frozen);
+    assert_eq!(revealed.rows[0].solved_count, 2, "reveal publishes the final ranking");
+
+    let public = service.public(contest_id, query()).await.expect("load revealed board");
+    assert!(!public.frozen, "the reveal is durable for every public reader");
+    assert_eq!(public.rows[0].solved_count, 2);
+
+    let audit_count = || {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM audit_logs WHERE action = 'SCOREBOARD_REVEALED' AND target_id = $1",
+            )
+            .bind(contest_id.to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("count reveal audits")
+        }
+    };
+    assert_eq!(audit_count().await, 1);
+
+    let again = service
+        .reveal(contest_id, &admin, "127.0.0.1".parse().expect("loopback IP"), query())
+        .await
+        .expect("repeat reveal is idempotent");
+    assert!(!again.frozen);
+    assert_eq!(audit_count().await, 1, "a repeated reveal must not duplicate the audit entry");
+    let revealed_by = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT scoreboard_revealed_by_user_id FROM contests WHERE id = $1",
+    )
+    .bind(contest_id)
+    .fetch_one(&pool)
+    .await
+    .expect("load reveal actor");
+    assert_eq!(revealed_by, Some(admin.id));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+#[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+async fn reveal_requires_an_ended_contest(pool: PgPool) {
+    // Publishing the final ranking while the contest is still running would
+    // leak hidden submissions mid-competition, so ENDED is mandatory.
+    let now = OffsetDateTime::now_utc();
+    let contest_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO contests (name, status, visibility, start_at, freeze_at, end_at)
+        VALUES ('Running Board', 'RUNNING', 'PUBLIC', $1, $2, $3)
+        RETURNING id
+        "#,
+    )
+    .bind(now - Duration::hours(2))
+    .bind(now - Duration::hours(1))
+    .bind(now + Duration::hours(1))
+    .fetch_one(&pool)
+    .await
+    .expect("insert running contest");
+    let admin = insert_super_admin(&pool, "reveal-running").await;
+    let error = ScoreboardService::new(pool.clone())
+        .reveal(
+            contest_id,
+            &admin,
+            "127.0.0.1".parse().expect("loopback IP"),
+            ValidatedScoreboardQuery { group_name: None, participation_type: None },
+        )
+        .await
+        .expect_err("a running contest must not reveal");
+    assert_eq!(error.code(), "SCOREBOARD_REVEAL_REQUIRES_ENDED");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+#[ignore = "requires a PostgreSQL server named by DATABASE_URL"]
+async fn reveal_requires_a_freeze_milestone(pool: PgPool) {
+    // Without `freeze_at` nothing was ever hidden, so there is no reveal to do.
+    let now = OffsetDateTime::now_utc();
+    let contest_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO contests (name, status, visibility, start_at, end_at)
+        VALUES ('Unfrozen Board', 'ENDED', 'PUBLIC', $1, $2)
+        RETURNING id
+        "#,
+    )
+    .bind(now - Duration::hours(2))
+    .bind(now - Duration::hours(1))
+    .fetch_one(&pool)
+    .await
+    .expect("insert contest without a freeze time");
+    let admin = insert_super_admin(&pool, "reveal-unfrozen").await;
+    let error = ScoreboardService::new(pool.clone())
+        .reveal(
+            contest_id,
+            &admin,
+            "127.0.0.1".parse().expect("loopback IP"),
+            ValidatedScoreboardQuery { group_name: None, participation_type: None },
+        )
+        .await
+        .expect_err("a contest without a freeze time must not reveal");
+    assert_eq!(error.code(), "SCOREBOARD_NOT_FROZEN");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

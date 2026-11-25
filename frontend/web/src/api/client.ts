@@ -451,6 +451,8 @@ const businessMessages: Record<string, string> = {
   RESOLVER_RUN_NOT_FOUND: 'Resolver 运行不存在或不可访问',
   RESOLVER_SOURCE_SNAPSHOT_NOT_FOUND: '缺少 Resolver 所需的封榜快照或最终榜快照',
   RESOLVER_CONTEST_NOT_FINAL: '正式 Resolver 只能为已结束或已归档比赛创建',
+  SCOREBOARD_REVEAL_REQUIRES_ENDED: '比赛结束后才能解冻公开榜单',
+  SCOREBOARD_NOT_FROZEN: '比赛尚未封榜，没有需要解冻的榜单',
   RESOLVER_OFFICIAL_EXISTS: '该比赛已经存在正式 Resolver 运行',
   RESOLVER_VERSION_STALE: 'Resolver 已被其他操作员更新，请刷新后重试',
   RESOLVER_STATE_CHANGED: '当前状态不能执行该 Resolver 操作，请刷新后重试',

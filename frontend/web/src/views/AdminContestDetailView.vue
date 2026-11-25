@@ -16,6 +16,19 @@
           <ElButton type="primary" plain :icon="Refresh" @click="openBulkRejudge">
             {{ t('批量重判工作台') }}
           </ElButton>
+          <ElButton
+            v-if="canRevealScoreboard"
+            type="warning"
+            plain
+            :icon="Unlock"
+            :loading="revealing"
+            @click="revealScoreboard"
+          >
+            {{ t('解冻公开榜单') }}
+          </ElButton>
+          <ElTag v-else-if="contest?.scoreboardRevealedAt" size="large" type="warning">
+            {{ t('榜单已解冻于 {time}', { time: formatDateTime(contest.scoreboardRevealedAt) }) }}
+          </ElTag>
           <ElTag size="large" :type="contest.status === 'RUNNING' ? 'success' : 'info'">
             {{ contestStatusLabel(contest.status) }}
           </ElTag>
@@ -127,8 +140,8 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import { ElMessage } from 'element-plus';
-import { ArrowLeft, Refresh } from '@element-plus/icons-vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { ArrowLeft, Refresh, Unlock } from '@element-plus/icons-vue';
 import { useRoute, useRouter } from 'vue-router';
 import OverviewTab from '../components/contest-detail/OverviewTab.vue';
 import ProblemsTab from '../components/contest-detail/ProblemsTab.vue';
@@ -145,7 +158,7 @@ import type {
   ProblemResponse,
   TeamResponse,
 } from '../api/types';
-import { contestStatusLabel } from '../utils/format';
+import { contestStatusLabel, formatDateTime } from '../utils/format';
 import { useI18n } from '../i18n';
 
 const route = useRoute();
@@ -173,6 +186,15 @@ const cloneForm = reactive({
 });
 
 const canEditProblemConfiguration = computed(() => contest.value?.status === 'DRAFT');
+// The public board stays frozen after the contest ends; revealing is the
+// explicit, audited unfreeze and is only offered once the contest is over.
+const canRevealScoreboard = computed(
+  () =>
+    contest.value?.status === 'ENDED' &&
+    Boolean(contest.value.freezeAt) &&
+    !contest.value.scoreboardRevealedAt,
+);
+const revealing = ref(false);
 const cloneScheduleComplete = computed(() => {
   const count = [cloneForm.startAt, cloneForm.freezeAt, cloneForm.endAt].filter(Boolean).length;
   return count === 0 || count === 3;
@@ -250,6 +272,29 @@ async function cloneContest() {
 
 function openBulkRejudge() {
   void router.push(`/admin/contests/${contestId.value}/rejudge-tasks`);
+}
+
+async function revealScoreboard() {
+  if (!canRevealScoreboard.value) return;
+  try {
+    await ElMessageBox.confirm(
+      t('解冻后公众将立即看到完整终榜，包括封榜后的提交。该操作会记入审计日志，且不可撤销。'),
+      t('解冻公开榜单'),
+      { type: 'warning', confirmButtonText: t('确认解冻'), cancelButtonText: t('取消') },
+    );
+  } catch {
+    return;
+  }
+  revealing.value = true;
+  try {
+    await adminContestApi.revealScoreboard(contestId.value);
+    ElMessage.success(t('公开榜单已解冻'));
+    await loadContest();
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+  } finally {
+    revealing.value = false;
+  }
 }
 
 function openAnnouncements() {

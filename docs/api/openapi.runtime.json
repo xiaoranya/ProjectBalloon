@@ -2973,6 +2973,110 @@
         ]
       }
     },
+    "/api/admin/contests/{contest_id}/scoreboard/reveal": {
+      "post": {
+        "tags": [
+          "scoreboard"
+        ],
+        "operationId": "revealScoreboard",
+        "parameters": [
+          {
+            "name": "contest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "groupName",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "participationType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public scoreboard revealed; the final board is returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoreboardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid scoreboard filters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Contest management access, completed password reset, and CSRF protection required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Contest is outside the actor's management scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Contest is archived, not ended, or has not reached its freeze time",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf_cookie": [],
+            "csrf_header": [],
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/admin/contests/{contest_id}/scoreboard/snapshots": {
       "post": {
         "tags": [
@@ -18029,6 +18133,14 @@
           "name": {
             "type": "string"
           },
+          "scoreboardRevealedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When an operator explicitly revealed (unfroze) the public scoreboard.\n`None` means the public board stays frozen after `freeze_at`."
+          },
           "startAt": {
             "type": [
               "string",
@@ -19932,6 +20044,14 @@
                 },
                 "name": {
                   "type": "string"
+                },
+                "scoreboardRevealedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "When an operator explicitly revealed (unfroze) the public scoreboard.\n`None` means the public board stays frozen after `freeze_at`."
                 },
                 "startAt": {
                   "type": [

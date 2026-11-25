@@ -468,6 +468,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/contests/{contest_id}/scoreboard/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["revealScoreboard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/contests/{contest_id}/scoreboard/snapshots": {
         parameters: {
             query?: never;
@@ -3201,6 +3217,12 @@ export interface components {
             /** Format: int64 */
             id: number;
             name: string;
+            /**
+             * Format: date-time
+             * @description When an operator explicitly revealed (unfroze) the public scoreboard.
+             *     `None` means the public board stays frozen after `freeze_at`.
+             */
+            scoreboardRevealedAt?: string | null;
             /** Format: date-time */
             startAt?: string | null;
             status: components["schemas"]["ContestStatus"];
@@ -3726,6 +3748,12 @@ export interface components {
                 /** Format: int64 */
                 id: number;
                 name: string;
+                /**
+                 * Format: date-time
+                 * @description When an operator explicitly revealed (unfroze) the public scoreboard.
+                 *     `None` means the public board stays frozen after `freeze_at`.
+                 */
+                scoreboardRevealedAt?: string | null;
                 /** Format: date-time */
                 startAt?: string | null;
                 status: components["schemas"]["ContestStatus"];
@@ -6880,6 +6908,76 @@ export interface operations {
             };
             /** @description Contest is outside the actor's management scope */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+        };
+    };
+    revealScoreboard: {
+        parameters: {
+            query?: {
+                groupName?: string;
+                participationType?: string;
+            };
+            header?: never;
+            path: {
+                contest_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public scoreboard revealed; the final board is returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoreboardResponse"];
+                };
+            };
+            /** @description Invalid scoreboard filters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Contest management access, completed password reset, and CSRF protection required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Contest is outside the actor's management scope */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
+                };
+            };
+            /** @description Contest is archived, not ended, or has not reached its freeze time */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -313,6 +313,10 @@ pub struct ContestResponse {
     pub end_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339::option")]
     pub freeze_at: Option<OffsetDateTime>,
+    /// When an operator explicitly revealed (unfroze) the public scoreboard.
+    /// `None` means the public board stays frozen after `freeze_at`.
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub scoreboard_revealed_at: Option<OffsetDateTime>,
     pub version: i64,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
@@ -378,6 +382,7 @@ pub(super) struct ContestRow {
     pub start_at: Option<OffsetDateTime>,
     pub end_at: Option<OffsetDateTime>,
     pub freeze_at: Option<OffsetDateTime>,
+    pub scoreboard_revealed_at: Option<OffsetDateTime>,
     pub version: i64,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
@@ -394,6 +399,7 @@ impl ContestRow {
             start_at: self.start_at,
             end_at: self.end_at,
             freeze_at: self.freeze_at,
+            scoreboard_revealed_at: self.scoreboard_revealed_at,
             version: self.version,
             created_at: self.created_at,
             updated_at: self.updated_at,

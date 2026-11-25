@@ -123,6 +123,7 @@ const SWAGGER_UI_PATH: &str = "/api/docs";
         scoreboard::handlers::public_csv,
         scoreboard::handlers::admin,
         scoreboard::handlers::admin_csv,
+        scoreboard::handlers::reveal,
         scoreboard::handlers::create_snapshot,
         scoreboard::handlers::latest_snapshot,
         scoring::get_policy,
@@ -377,6 +378,7 @@ mod tests {
         ("/api/admin/contests/{contest_id}/rejudge-tasks/{task_id}/resume", "post"),
         ("/api/admin/contests/{contest_id}/scoreboard", "get"),
         ("/api/admin/contests/{contest_id}/scoreboard.csv", "get"),
+        ("/api/admin/contests/{contest_id}/scoreboard/reveal", "post"),
         ("/api/admin/contests/{contest_id}/scoreboard/snapshots", "post"),
         ("/api/admin/contests/{contest_id}/scoreboard/snapshots/latest", "get"),
         ("/api/contests/{contest_id}/print-requests", "post"),
@@ -493,6 +495,7 @@ mod tests {
         ("/api/admin/contests/{contest_id}/rejudge-tasks/{task_id}/resume", "post"),
         ("/api/admin/contests/{contest_id}/scoreboard", "get"),
         ("/api/admin/contests/{contest_id}/scoreboard.csv", "get"),
+        ("/api/admin/contests/{contest_id}/scoreboard/reveal", "post"),
         ("/api/admin/contests/{contest_id}/scoreboard/snapshots", "post"),
         ("/api/admin/contests/{contest_id}/scoreboard/snapshots/latest", "get"),
         ("/api/contests/{contest_id}/print-requests", "post"),
@@ -575,6 +578,7 @@ mod tests {
         ("/api/contests/{contest_id}/problems/reorder", "put"),
         ("/api/presentation-configs/{contest_id}/live/program", "put"),
         ("/api/contests/{contest_id}/announcements", "post"),
+        ("/api/admin/contests/{contest_id}/scoreboard/reveal", "post"),
     ];
 
     /// Operations that additionally require the `X-XSRF-TOKEN` header but
@@ -593,6 +597,7 @@ mod tests {
         ("/api/clarifications/{id}/reply", "post"),
         ("/api/clarifications/{id}/close", "post"),
         ("/api/clarifications/{id}/convert", "post"),
+        ("/api/admin/contests/{contest_id}/scoreboard/reveal", "post"),
         ("/api/admin/contests/{contest_id}/scoreboard/snapshots", "post"),
         ("/api/admin/resolver-runs/{id}/start", "post"),
         ("/api/public/screens/register", "post"),
@@ -619,7 +624,7 @@ mod tests {
             })
             .sum::<usize>();
         // Update this snapshot count when a documented endpoint is intentionally added or removed.
-        assert_eq!(operation_count, 206);
+        assert_eq!(operation_count, 207);
 
         for (path, method) in EXPECTED_OPERATIONS {
             assert!(

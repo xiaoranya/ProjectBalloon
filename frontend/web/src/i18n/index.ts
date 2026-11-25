@@ -305,6 +305,12 @@ const english: Record<string, string> = {
   比赛名称: 'Contest name',
   可见性: 'Visibility',
   封榜时间: 'Freeze time',
+  解冻公开榜单: 'Reveal public scoreboard',
+  '解冻后公众将立即看到完整终榜，包括封榜后的提交。该操作会记入审计日志，且不可撤销。':
+    'Revealing publishes the complete final ranking, including submissions made after the freeze. The action is audited and cannot be undone.',
+  确认解冻: 'Reveal',
+  公开榜单已解冻: 'Public scoreboard revealed',
+  '榜单已解冻于 {time}': 'Scoreboard revealed at {time}',
   取消: 'Cancel',
   保存修改: 'Save changes',
   请输入比赛名称: 'Enter a contest name',

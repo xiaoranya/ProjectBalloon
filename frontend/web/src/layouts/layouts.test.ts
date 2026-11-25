@@ -52,6 +52,7 @@ const contest = {
   startAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
   freezeAt: null,
   endAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
+  scoreboardRevealedAt: null,
   version: 1,
   createdAt: '',
   updatedAt: '',

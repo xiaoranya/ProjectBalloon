@@ -11,6 +11,7 @@ import type {
   PageResponse,
   ProblemResponse,
   RejudgeResponse,
+  ScoreboardResponse,
   SubmissionDetail,
   SubmissionSummary,
   SimilarityGroupResponse,
@@ -284,6 +285,11 @@ export const adminContestApi = {
     return apiRequest<Blob>(`/api/admin/contests/${contestId}/scoreboard.csv`, {
       responseType: 'blob',
       headers: { Accept: 'text/csv' },
+    });
+  },
+  revealScoreboard(contestId: number) {
+    return apiRequest<ScoreboardResponse>(`/api/admin/contests/${contestId}/scoreboard/reveal`, {
+      method: 'POST',
     });
   },
   exportSubmissions(contestId: number) {
