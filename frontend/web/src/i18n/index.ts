@@ -971,7 +971,11 @@ const english: Record<string, string> = {
   判题模式: 'Judge mode',
   标准输入输出: 'Standard input/output',
   交互题: 'Interactive',
-  'Interactor 对象键': 'Interactor object key',
+  Interactor: 'Interactor',
+  已上传: 'Uploaded',
+  未上传: 'Not uploaded',
+  'Interactor 只能通过上传 ELF 配置，服务端会校验并计算摘要。':
+    'The interactor can only be configured by uploading an ELF; the server validates it and computes the digest.',
   '参赛者需上传包含 1.out、2.out 等根目录输出文件的 ZIP。':
     'Contestants must upload a ZIP containing root-level output files such as 1.out and 2.out.',
   '上传 Interactor ELF': 'Upload Interactor ELF',

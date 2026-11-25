@@ -18342,18 +18342,6 @@
               "null"
             ]
           },
-          "interactorObjectKey": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "interactorSha256": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "judgeMode": {
             "type": [
               "string",
@@ -20248,7 +20236,8 @@
                 "createdAt",
                 "updatedAt",
                 "version",
-                "judgeMode"
+                "judgeMode",
+                "interactorConfigured"
               ],
               "properties": {
                 "createdAt": {
@@ -20269,11 +20258,9 @@
                   "type": "integer",
                   "format": "int64"
                 },
-                "interactorObjectKey": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                "interactorConfigured": {
+                  "type": "boolean",
+                  "description": "Whether an interactor is uploaded. The object key itself never leaves\nthe server: it is an internal storage location and `coding-style.md`\nforbids returning object keys from handlers."
                 },
                 "interactorSha256": {
                   "type": [
@@ -21469,7 +21456,8 @@
           "createdAt",
           "updatedAt",
           "version",
-          "judgeMode"
+          "judgeMode",
+          "interactorConfigured"
         ],
         "properties": {
           "createdAt": {
@@ -21490,11 +21478,9 @@
             "type": "integer",
             "format": "int64"
           },
-          "interactorObjectKey": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "interactorConfigured": {
+            "type": "boolean",
+            "description": "Whether an interactor is uploaded. The object key itself never leaves\nthe server: it is an internal storage location and `coding-style.md`\nforbids returning object keys from handlers."
           },
           "interactorSha256": {
             "type": [
@@ -23788,18 +23774,6 @@
           "expectedVersion": {
             "type": "integer",
             "format": "int64"
-          },
-          "interactorObjectKey": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "interactorSha256": {
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "judgeMode": {
             "type": [

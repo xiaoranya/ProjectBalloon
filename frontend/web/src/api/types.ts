@@ -215,7 +215,7 @@ export interface ProblemResponse {
   createdAt: string;
   updatedAt: string;
   judgeMode: 'STANDARD' | 'INTERACTIVE' | 'OUTPUT_ONLY';
-  interactorObjectKey: string | null;
+  interactorConfigured: boolean;
   interactorSha256: string | null;
 }
 

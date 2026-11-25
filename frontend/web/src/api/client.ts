@@ -498,6 +498,7 @@ const businessMessages: Record<string, string> = {
   PRACTICE_SUBMISSION_NOT_ALLOWED: '该题目未公开或没有可用的测试数据，不能提交',
   PRACTICE_SUBMISSION_RATE_LIMITED: '练习提交过于频繁，请稍后再试',
   PROBLEM_CONFIG_FROZEN: '题目已被冻结中或已开始的比赛使用，不能修改配置',
+  INTERACTOR_NOT_CONFIGURED: '请先上传 Interactor 再切换为交互题',
   SCREEN_GROUP_NAME_TAKEN: '大屏分组名称已存在',
   SCREEN_GROUP_NOT_FOUND: '大屏分组不存在或不可访问',
   SCREEN_GROUP_NOT_PAUSED: '该大屏分组不在暂停状态',

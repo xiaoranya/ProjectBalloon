@@ -75,18 +75,36 @@ impl ProblemService {
         actor: &AuthUser,
     ) -> Result<PageResponse<ProblemResponse>, AppError> {
         query.validate()?;
-        require_problem_catalog_access(&self.database, query.contest_id, actor).await?;
+        let scope = require_problem_catalog_access(&self.database, query.contest_id, actor).await?;
         let offset = query.offset()?;
-        let total_elements =
-            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM problems WHERE deleted_at IS NULL")
-                .fetch_one(&self.database)
-                .await
-                .map_err(|error| AppError::internal("count active problems", error))?;
+        // A contest manager sees the problems assigned to the contest they
+        // manage — not the global catalog, which `docs/api/rust-implementation-notes.md`
+        // reserves for super administrators. The scope predicate is shared by
+        // the count and the page so the two always agree.
+        let total_elements = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT count(*)
+            FROM problems problem
+            WHERE problem.deleted_at IS NULL
+              AND ($1::bigint IS NULL OR EXISTS (
+                    SELECT 1 FROM contest_problems assignment
+                    WHERE assignment.problem_id = problem.id
+                      AND assignment.contest_id = $1))
+            "#,
+        )
+        .bind(scope)
+        .fetch_one(&self.database)
+        .await
+        .map_err(|error| AppError::internal("count active problems", error))?;
         let sql = format!(
             r#"
             SELECT {PROBLEM_COLUMNS}
             FROM problems
             WHERE deleted_at IS NULL
+              AND ($3::bigint IS NULL OR EXISTS (
+                    SELECT 1 FROM contest_problems assignment
+                    WHERE assignment.problem_id = problems.id
+                      AND assignment.contest_id = $3))
             ORDER BY created_at DESC, id DESC
             LIMIT $1 OFFSET $2
             "#
@@ -94,6 +112,7 @@ impl ProblemService {
         let rows = sqlx::query_as::<_, ProblemRow>(sqlx::AssertSqlSafe(sql))
             .bind(i64::from(query.size))
             .bind(offset)
+            .bind(scope)
             .fetch_all(&self.database)
             .await
             .map_err(|error| AppError::internal("list active problems", error))?;
@@ -149,8 +168,11 @@ impl ProblemService {
             .bind(request.languages_json)
             .bind(request.default_lang_code)
             .bind(request.judge_mode)
-            .bind(request.interactor_object_key)
-            .bind(request.interactor_sha256)
+            // A new problem never carries an interactor: it is created as
+            // STANDARD and switched over by the interactor upload, which is the
+            // only path that validates the ELF and derives key plus digest.
+            .bind(None::<String>)
+            .bind(None::<String>)
             .bind(actor_user_id)
             .fetch_one(&mut *transaction)
             .await
@@ -178,6 +200,27 @@ impl ProblemService {
             .await
             .map_err(|error| AppError::internal("begin problem update", error))?;
         lock_attachment_change(&mut transaction, problem_id, actor).await?;
+        if request.judge_mode.as_deref() == Some("INTERACTIVE") {
+            // The DB CHECK requires key and digest for INTERACTIVE; without
+            // this pre-check the UPDATE fails with a raw constraint error (500)
+            // instead of telling the caller what is missing.
+            let configured = sqlx::query_scalar::<_, bool>(
+                r#"
+                SELECT interactor_object_key IS NOT NULL AND interactor_sha256 IS NOT NULL
+                FROM problems WHERE id = $1
+                "#,
+            )
+            .bind(problem_id)
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(|error| AppError::internal("check the configured interactor", error))?;
+            if !configured {
+                return Err(AppError::conflict(
+                    "INTERACTOR_NOT_CONFIGURED",
+                    "Upload the interactor before switching the problem to INTERACTIVE",
+                ));
+            }
+        }
         let sql = format!(
             r#"
             UPDATE problems
@@ -206,8 +249,11 @@ impl ProblemService {
             .bind(request.languages_json)
             .bind(request.default_lang_code)
             .bind(request.judge_mode)
-            .bind(request.interactor_object_key)
-            .bind(request.interactor_sha256)
+            // The interactor columns only ever move through the upload path;
+            // `$9`/`$10` stay NULL, so switching to INTERACTIVE keeps whatever
+            // the upload wrote and switching away clears it.
+            .bind(None::<String>)
+            .bind(None::<String>)
             .bind(problem_id)
             .bind(request.expected_version)
             .fetch_optional(&mut *transaction)
@@ -276,13 +322,15 @@ impl ProblemService {
             .map_err(|error| AppError::internal("commit problem deletion", error))
     }
 }
+/// Returns the contest whose problem set the caller may list, or `None` for a
+/// super administrator (the global catalog).
 async fn require_problem_catalog_access(
     database: &PgPool,
     contest_id: Option<i64>,
     actor: &AuthUser,
-) -> Result<(), AppError> {
+) -> Result<Option<i64>, AppError> {
     if actor.is_super_admin() {
-        return Ok(());
+        return Ok(None);
     }
     let Some(contest_id) = contest_id else {
         return Err(AppError::forbidden(
@@ -306,7 +354,7 @@ async fn require_problem_catalog_access(
     .await
     .map_err(|error| AppError::internal("check scoped problem catalog access", error))?;
     if manageable {
-        Ok(())
+        Ok(Some(contest_id))
     } else {
         Err(AppError::not_found("CONTEST_NOT_FOUND", "Contest was not found"))
     }

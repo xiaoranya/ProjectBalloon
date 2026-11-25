@@ -29,19 +29,19 @@
           <ElFormItem :label="t('判题模式')">
             <ElSelect v-model="form.judgeMode" @change="changeJudgeMode">
               <ElOption :label="t('标准输入输出')" value="STANDARD" />
-              <ElOption :label="t('交互题')" value="INTERACTIVE" />
+              <ElOption :label="t('交互题')" value="INTERACTIVE" :disabled="isNew" />
               <ElOption label="Output-only" value="OUTPUT_ONLY" />
             </ElSelect>
           </ElFormItem>
         </ElCol>
-        <ElCol v-if="form.judgeMode === 'INTERACTIVE'" :xs="24" :sm="8">
-          <ElFormItem :label="t('Interactor 对象键')">
-            <ElInput v-model="form.interactorObjectKey" maxlength="512" />
-          </ElFormItem>
-        </ElCol>
-        <ElCol v-if="form.judgeMode === 'INTERACTIVE'" :xs="24" :sm="8">
-          <ElFormItem label="Interactor SHA-256">
-            <ElInput v-model="form.interactorSha256" maxlength="64" />
+        <ElCol v-if="form.judgeMode === 'INTERACTIVE'" :xs="24" :sm="16">
+          <ElFormItem :label="t('Interactor')">
+            <ElTag :type="problem?.interactorConfigured ? 'success' : 'warning'" size="small">
+              {{ problem?.interactorConfigured ? t('已上传') : t('未上传') }}
+            </ElTag>
+            <span class="interactor-hint">
+              {{ t('Interactor 只能通过上传 ELF 配置，服务端会校验并计算摘要。') }}
+            </span>
           </ElFormItem>
         </ElCol>
       </ElRow>
@@ -145,8 +145,6 @@ interface ProblemForm {
   languages: JudgeLanguage[];
   defaultLangCode: string;
   judgeMode: 'STANDARD' | 'INTERACTIVE' | 'OUTPUT_ONLY';
-  interactorObjectKey: string;
-  interactorSha256: string;
 }
 
 const props = defineProps<{
@@ -172,8 +170,6 @@ const form = reactive<ProblemForm>({
   languages: ['c', 'cpp', 'java', 'python'],
   defaultLangCode: 'en',
   judgeMode: 'STANDARD',
-  interactorObjectKey: '',
-  interactorSha256: '',
 });
 const interactorFile = ref<File | null>(null);
 const interactorInput = ref<HTMLInputElement>();
@@ -233,8 +229,6 @@ function applyProblem(value: ProblemResponse) {
   form.languages = [...value.languages];
   form.defaultLangCode = value.defaultLangCode;
   form.judgeMode = value.judgeMode;
-  form.interactorObjectKey = value.interactorObjectKey ?? '';
-  form.interactorSha256 = value.interactorSha256 ?? '';
 }
 
 function payload() {
@@ -247,8 +241,6 @@ function payload() {
     languages: [...form.languages],
     defaultLangCode: form.defaultLangCode.trim(),
     judgeMode: form.judgeMode,
-    interactorObjectKey: form.judgeMode === 'INTERACTIVE' ? form.interactorObjectKey.trim() : null,
-    interactorSha256: form.judgeMode === 'INTERACTIVE' ? form.interactorSha256.trim() : null,
   };
 }
 
@@ -331,5 +323,10 @@ defineExpose({ save });
   width: 100%;
   flex-wrap: wrap;
   margin-bottom: 24px;
+}
+.interactor-hint {
+  margin-left: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>

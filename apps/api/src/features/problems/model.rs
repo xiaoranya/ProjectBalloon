@@ -52,8 +52,6 @@ pub struct CreateProblemRequest {
     pub default_lang_code: Option<String>,
     #[serde(default)]
     pub judge_mode: Option<String>,
-    pub interactor_object_key: Option<String>,
-    pub interactor_sha256: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -68,8 +66,6 @@ pub struct UpdateProblemRequest {
     pub languages: Option<Vec<String>>,
     pub default_lang_code: Option<String>,
     pub judge_mode: Option<String>,
-    pub interactor_object_key: Option<String>,
-    pub interactor_sha256: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -104,8 +100,6 @@ pub struct ValidatedProblem {
     pub languages_json: String,
     pub default_lang_code: String,
     pub judge_mode: String,
-    pub interactor_object_key: Option<String>,
-    pub interactor_sha256: Option<String>,
 }
 
 pub struct ValidatedProblemUpdate {
@@ -118,8 +112,6 @@ pub struct ValidatedProblemUpdate {
     pub languages_json: Option<String>,
     pub default_lang_code: Option<String>,
     pub judge_mode: Option<String>,
-    pub interactor_object_key: Option<String>,
-    pub interactor_sha256: Option<String>,
 }
 
 impl CreateProblemRequest {
@@ -150,11 +142,17 @@ impl CreateProblemRequest {
         )?;
         let default_lang_code =
             validate_lang_code(self.default_lang_code.unwrap_or_else(|| DEFAULT_LANG_CODE.into()))?;
-        let (judge_mode, interactor_object_key, interactor_sha256) = validate_judge_mode(
-            self.judge_mode.unwrap_or_else(|| "STANDARD".into()),
-            self.interactor_object_key,
-            self.interactor_sha256,
-        )?;
+        let judge_mode = validate_judge_mode(self.judge_mode.unwrap_or_else(|| "STANDARD".into()))?;
+        if judge_mode == "INTERACTIVE" {
+            // The interactor is an uploaded ELF whose object key and digest are
+            // derived server-side from the bytes (`POST /api/problems/{id}/interactor`).
+            // A problem therefore cannot be born interactive: it is created as
+            // STANDARD and switched over by that upload.
+            return Err(AppError::validation(
+                "judgeMode",
+                "create the problem first, then upload its interactor",
+            ));
+        }
         let configured_languages: Vec<String> = serde_json::from_str(&languages_json)
             .map_err(|error| AppError::internal("decode validated languages", error))?;
         validate_languages_for_judge_mode(&configured_languages, &judge_mode)?;
@@ -167,8 +165,6 @@ impl CreateProblemRequest {
             languages_json,
             default_lang_code,
             judge_mode,
-            interactor_object_key,
-            interactor_sha256,
         })
     }
 }
@@ -186,25 +182,10 @@ impl UpdateProblemRequest {
             && self.languages.is_none()
             && self.default_lang_code.is_none()
             && self.judge_mode.is_none()
-            && self.interactor_object_key.is_none()
-            && self.interactor_sha256.is_none()
         {
             return Err(AppError::validation("request", "must include at least one change"));
         }
-        let (judge_mode, interactor_object_key, interactor_sha256) =
-            if let Some(mode) = self.judge_mode {
-                let (mode, key, hash) =
-                    validate_judge_mode(mode, self.interactor_object_key, self.interactor_sha256)?;
-                (Some(mode), key, hash)
-            } else {
-                if self.interactor_object_key.is_some() || self.interactor_sha256.is_some() {
-                    return Err(AppError::validation(
-                        "judgeMode",
-                        "must be supplied when changing the interactor",
-                    ));
-                }
-                (None, None, None)
-            };
+        let judge_mode = self.judge_mode.map(validate_judge_mode).transpose()?;
         Ok(ValidatedProblemUpdate {
             expected_version: self.expected_version,
             slug: self.slug.map(validate_slug).transpose()?,
@@ -224,8 +205,6 @@ impl UpdateProblemRequest {
             languages_json: self.languages.map(validate_languages).transpose()?,
             default_lang_code: self.default_lang_code.map(validate_lang_code).transpose()?,
             judge_mode,
-            interactor_object_key,
-            interactor_sha256,
         })
     }
 }
@@ -250,7 +229,10 @@ pub struct ProblemResponse {
     pub updated_at: OffsetDateTime,
     pub version: i64,
     pub judge_mode: String,
-    pub interactor_object_key: Option<String>,
+    /// Whether an interactor is uploaded. The object key itself never leaves
+    /// the server: it is an internal storage location and `coding-style.md`
+    /// forbids returning object keys from handlers.
+    pub interactor_configured: bool,
     pub interactor_sha256: Option<String>,
 }
 
@@ -429,7 +411,8 @@ impl ProblemRow {
             updated_at: self.updated_at,
             version: self.version,
             judge_mode: self.judge_mode,
-            interactor_object_key: self.interactor_object_key,
+            interactor_configured: self.interactor_object_key.is_some()
+                && self.interactor_sha256.is_some(),
             interactor_sha256: self.interactor_sha256,
         })
     }
@@ -451,11 +434,11 @@ fn validate_slug(value: String) -> Result<String, AppError> {
     }
 }
 
-fn validate_judge_mode(
-    mode: String,
-    interactor_object_key: Option<String>,
-    interactor_sha256: Option<String>,
-) -> Result<(String, Option<String>, Option<String>), AppError> {
+/// Validates the judge mode. The interactor itself is never accepted from a
+/// request body: its object key and digest are derived from the uploaded bytes
+/// (an arbitrary key would let a client point the judge at a bucket object it
+/// never uploaded, bypassing the ELF check).
+fn validate_judge_mode(mode: String) -> Result<String, AppError> {
     let mode = mode.trim().to_ascii_uppercase();
     if !matches!(mode.as_str(), "STANDARD" | "INTERACTIVE" | "OUTPUT_ONLY") {
         return Err(AppError::validation(
@@ -463,33 +446,7 @@ fn validate_judge_mode(
             "must be STANDARD, INTERACTIVE, or OUTPUT_ONLY",
         ));
     }
-    let key = interactor_object_key
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty());
-    let hash = interactor_sha256
-        .map(|value| value.trim().to_ascii_lowercase())
-        .filter(|value| !value.is_empty());
-    if mode == "INTERACTIVE" {
-        if key.as_ref().is_none_or(|value| value.len() > 512 || value.chars().any(char::is_control))
-            || hash.as_ref().is_none_or(|value| {
-                value.len() != 64
-                    || !value
-                        .bytes()
-                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-            })
-        {
-            return Err(AppError::validation(
-                "interactor",
-                "interactive problems require a safe object key and SHA-256",
-            ));
-        }
-    } else if key.is_some() || hash.is_some() {
-        return Err(AppError::validation(
-            "interactor",
-            "only INTERACTIVE problems may configure an interactor",
-        ));
-    }
-    Ok((mode, key, hash))
+    Ok(mode)
 }
 
 fn validate_title(value: String) -> Result<String, AppError> {
@@ -584,8 +541,6 @@ mod tests {
             languages: Some(vec!["python".into(), "cpp".into(), "cpp".into()]),
             default_lang_code: Some("zh-CN".into()),
             judge_mode: None,
-            interactor_object_key: None,
-            interactor_sha256: None,
         }
         .validate()
         .expect("valid problem");
@@ -604,8 +559,6 @@ mod tests {
             languages: Some(vec!["rust".into(), "python".into(), "go".into(), "rust".into()]),
             default_lang_code: None,
             judge_mode: None,
-            interactor_object_key: None,
-            interactor_sha256: None,
         }
         .validate()
         .expect("go and rust are supported judge languages");
@@ -623,8 +576,6 @@ mod tests {
             languages: Some(vec!["kotlin".into()]),
             default_lang_code: None,
             judge_mode: None,
-            interactor_object_key: None,
-            interactor_sha256: None,
         };
         assert!(create.validate().is_err());
         assert!(
@@ -638,8 +589,6 @@ mod tests {
                 languages: None,
                 default_lang_code: None,
                 judge_mode: None,
-                interactor_object_key: None,
-                interactor_sha256: None,
             }
             .validate()
             .is_err()
@@ -657,8 +606,6 @@ mod tests {
             languages: Some(vec!["cpp".into(), "output".into()]),
             default_lang_code: None,
             judge_mode: None,
-            interactor_object_key: None,
-            interactor_sha256: None,
         };
         assert!(mixed.validate().is_err());
 
@@ -671,8 +618,6 @@ mod tests {
             languages: Some(vec!["output".into()]),
             default_lang_code: None,
             judge_mode: Some("OUTPUT_ONLY".into()),
-            interactor_object_key: None,
-            interactor_sha256: None,
         };
         assert!(output_only.validate().is_ok());
     }

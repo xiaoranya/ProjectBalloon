@@ -3279,8 +3279,6 @@ export interface components {
         };
         CreateProblemRequest: {
             defaultLangCode?: string | null;
-            interactorObjectKey?: string | null;
-            interactorSha256?: string | null;
             judgeMode?: string | null;
             languages?: string[] | null;
             /** Format: int32 */
@@ -3818,7 +3816,12 @@ export interface components {
                 defaultLangCode: string;
                 /** Format: int64 */
                 id: number;
-                interactorObjectKey?: string | null;
+                /**
+                 * @description Whether an interactor is uploaded. The object key itself never leaves
+                 *     the server: it is an internal storage location and `coding-style.md`
+                 *     forbids returning object keys from handlers.
+                 */
+                interactorConfigured: boolean;
                 interactorSha256?: string | null;
                 judgeMode: string;
                 languages: string[];
@@ -4175,7 +4178,12 @@ export interface components {
             defaultLangCode: string;
             /** Format: int64 */
             id: number;
-            interactorObjectKey?: string | null;
+            /**
+             * @description Whether an interactor is uploaded. The object key itself never leaves
+             *     the server: it is an internal storage location and `coding-style.md`
+             *     forbids returning object keys from handlers.
+             */
+            interactorConfigured: boolean;
             interactorSha256?: string | null;
             judgeMode: string;
             languages: string[];
@@ -4859,8 +4867,6 @@ export interface components {
             defaultLangCode?: string | null;
             /** Format: int64 */
             expectedVersion: number;
-            interactorObjectKey?: string | null;
-            interactorSha256?: string | null;
             judgeMode?: string | null;
             languages?: string[] | null;
             /** Format: int32 */
