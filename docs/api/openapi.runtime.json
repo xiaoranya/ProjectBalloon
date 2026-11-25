@@ -18342,6 +18342,20 @@
               "null"
             ]
           },
+          "interactorObjectKey": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Deprecated and **rejected** when non-empty. The interactor is an ELF\nwhose object key and digest are derived from the uploaded bytes\n(`POST /api/problems/{problemId}/interactor`); accepting them here let\na caller point the judge at a bucket object it never uploaded. The\nfield is still parsed so an old client gets a clear error instead of\nhaving its request silently ignored."
+          },
+          "interactorSha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Deprecated and rejected; see `interactor_object_key`."
+          },
           "judgeMode": {
             "type": [
               "string",
@@ -23784,6 +23798,20 @@
           "expectedVersion": {
             "type": "integer",
             "format": "int64"
+          },
+          "interactorObjectKey": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Deprecated and rejected when non-empty; see `CreateProblemRequest`."
+          },
+          "interactorSha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Deprecated and rejected; see `interactor_object_key`."
           },
           "judgeMode": {
             "type": [

@@ -52,6 +52,17 @@ pub struct CreateProblemRequest {
     pub default_lang_code: Option<String>,
     #[serde(default)]
     pub judge_mode: Option<String>,
+    /// Deprecated and **rejected** when non-empty. The interactor is an ELF
+    /// whose object key and digest are derived from the uploaded bytes
+    /// (`POST /api/problems/{problemId}/interactor`); accepting them here let
+    /// a caller point the judge at a bucket object it never uploaded. The
+    /// field is still parsed so an old client gets a clear error instead of
+    /// having its request silently ignored.
+    #[serde(default)]
+    pub interactor_object_key: Option<String>,
+    /// Deprecated and rejected; see `interactor_object_key`.
+    #[serde(default)]
+    pub interactor_sha256: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -66,6 +77,12 @@ pub struct UpdateProblemRequest {
     pub languages: Option<Vec<String>>,
     pub default_lang_code: Option<String>,
     pub judge_mode: Option<String>,
+    /// Deprecated and rejected when non-empty; see `CreateProblemRequest`.
+    #[serde(default)]
+    pub interactor_object_key: Option<String>,
+    /// Deprecated and rejected; see `interactor_object_key`.
+    #[serde(default)]
+    pub interactor_sha256: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -142,15 +159,18 @@ impl CreateProblemRequest {
         )?;
         let default_lang_code =
             validate_lang_code(self.default_lang_code.unwrap_or_else(|| DEFAULT_LANG_CODE.into()))?;
+        reject_interactor_fields(self.interactor_object_key, self.interactor_sha256)?;
         let judge_mode = validate_judge_mode(self.judge_mode.unwrap_or_else(|| "STANDARD".into()))?;
         if judge_mode == "INTERACTIVE" {
             // The interactor is an uploaded ELF whose object key and digest are
             // derived server-side from the bytes (`POST /api/problems/{id}/interactor`).
             // A problem therefore cannot be born interactive: it is created as
             // STANDARD and switched over by that upload.
-            return Err(AppError::validation(
-                "judgeMode",
-                "create the problem first, then upload its interactor",
+            // Same code as the update path, so a client has one condition to
+            // handle: "this problem has no interactor yet".
+            return Err(AppError::conflict(
+                "INTERACTOR_NOT_CONFIGURED",
+                "Create the problem as STANDARD, upload its interactor, then switch it to INTERACTIVE",
             ));
         }
         let configured_languages: Vec<String> = serde_json::from_str(&languages_json)
@@ -174,6 +194,9 @@ impl UpdateProblemRequest {
         if self.expected_version < 0 {
             return Err(AppError::validation("expectedVersion", "must not be negative"));
         }
+        // Checked before the "at least one change" guard: a client whose only
+        // change is an object key must learn why the key is refused.
+        reject_interactor_fields(self.interactor_object_key, self.interactor_sha256)?;
         if self.slug.is_none()
             && self.title.is_none()
             && self.time_limit_ms.is_none()
@@ -434,6 +457,27 @@ fn validate_slug(value: String) -> Result<String, AppError> {
     }
 }
 
+/// Refuses a client-supplied interactor location.
+///
+/// Empty strings are treated as "not supplied": the field used to be optional
+/// and clients commonly sent `""` to clear it. Anything else is rejected with
+/// a pointer to the upload endpoint. Silently ignoring the field (the default
+/// serde behaviour for unknown fields) was worse: the request succeeded while
+/// the interactor was never configured.
+fn reject_interactor_fields(
+    object_key: Option<String>,
+    sha256: Option<String>,
+) -> Result<(), AppError> {
+    let supplied = [object_key, sha256].into_iter().flatten().any(|value| !value.trim().is_empty());
+    if supplied {
+        return Err(AppError::validation(
+            "interactor",
+            "the interactor must be uploaded (POST /api/problems/{problemId}/interactor); its object key and digest cannot be supplied by the client",
+        ));
+    }
+    Ok(())
+}
+
 /// Validates the judge mode. The interactor itself is never accepted from a
 /// request body: its object key and digest are derived from the uploaded bytes
 /// (an arbitrary key would let a client point the judge at a bucket object it
@@ -541,6 +585,8 @@ mod tests {
             languages: Some(vec!["python".into(), "cpp".into(), "cpp".into()]),
             default_lang_code: Some("zh-CN".into()),
             judge_mode: None,
+            interactor_object_key: None,
+            interactor_sha256: None,
         }
         .validate()
         .expect("valid problem");
@@ -559,6 +605,8 @@ mod tests {
             languages: Some(vec!["rust".into(), "python".into(), "go".into(), "rust".into()]),
             default_lang_code: None,
             judge_mode: None,
+            interactor_object_key: None,
+            interactor_sha256: None,
         }
         .validate()
         .expect("go and rust are supported judge languages");
@@ -576,6 +624,8 @@ mod tests {
             languages: Some(vec!["kotlin".into()]),
             default_lang_code: None,
             judge_mode: None,
+            interactor_object_key: None,
+            interactor_sha256: None,
         };
         assert!(create.validate().is_err());
         assert!(
@@ -589,6 +639,8 @@ mod tests {
                 languages: None,
                 default_lang_code: None,
                 judge_mode: None,
+                interactor_object_key: None,
+                interactor_sha256: None,
             }
             .validate()
             .is_err()
@@ -606,6 +658,8 @@ mod tests {
             languages: Some(vec!["cpp".into(), "output".into()]),
             default_lang_code: None,
             judge_mode: None,
+            interactor_object_key: None,
+            interactor_sha256: None,
         };
         assert!(mixed.validate().is_err());
 
@@ -618,8 +672,94 @@ mod tests {
             languages: Some(vec!["output".into()]),
             default_lang_code: None,
             judge_mode: Some("OUTPUT_ONLY".into()),
+            interactor_object_key: None,
+            interactor_sha256: None,
         };
         assert!(output_only.validate().is_ok());
+    }
+
+    #[test]
+    fn client_supplied_interactor_location_is_refused() {
+        // The object key and digest are only ever derived from the uploaded
+        // bytes; accepting them here would let a client point the judge at any
+        // bucket object (P1-22). Silently ignoring the field was worse than
+        // refusing it: the request looked successful.
+        for (key, sha) in
+            [(Some("problems/7/interactors/abc".to_owned()), None), (None, Some("a".repeat(64)))]
+        {
+            let error = CreateProblemRequest {
+                slug: "a".into(),
+                title: "A".into(),
+                time_limit_ms: None,
+                memory_limit_mb: None,
+                output_limit_kb: None,
+                languages: None,
+                default_lang_code: None,
+                judge_mode: None,
+                interactor_object_key: key,
+                interactor_sha256: sha,
+            }
+            .validate()
+            .err()
+            .expect("a supplied interactor location must be refused");
+            assert_eq!(error.code(), "VALIDATION_FAILED");
+
+            let error = UpdateProblemRequest {
+                expected_version: 1,
+                slug: None,
+                title: Some("B".into()),
+                time_limit_ms: None,
+                memory_limit_mb: None,
+                output_limit_kb: None,
+                languages: None,
+                default_lang_code: None,
+                judge_mode: None,
+                interactor_object_key: Some("problems/7/interactors/abc".into()),
+                interactor_sha256: None,
+            }
+            .validate()
+            .err()
+            .expect("an update cannot supply an interactor location");
+            assert_eq!(error.code(), "VALIDATION_FAILED");
+        }
+
+        // Empty strings were the historical way of clearing the field and stay
+        // acceptable.
+        let accepted = CreateProblemRequest {
+            slug: "a".into(),
+            title: "A".into(),
+            time_limit_ms: None,
+            memory_limit_mb: None,
+            output_limit_kb: None,
+            languages: None,
+            default_lang_code: None,
+            judge_mode: None,
+            interactor_object_key: Some(String::new()),
+            interactor_sha256: Some("   ".into()),
+        }
+        .validate();
+        assert!(accepted.is_ok());
+    }
+
+    #[test]
+    fn interactive_problems_must_be_created_as_standard_first() {
+        let error = CreateProblemRequest {
+            slug: "interactive".into(),
+            title: "Interactive".into(),
+            time_limit_ms: None,
+            memory_limit_mb: None,
+            output_limit_kb: None,
+            languages: None,
+            default_lang_code: None,
+            judge_mode: Some("INTERACTIVE".into()),
+            interactor_object_key: None,
+            interactor_sha256: None,
+        }
+        .validate()
+        .err()
+        .expect("an interactive problem needs an uploaded interactor");
+        // Same code as the update path, so clients handle one condition.
+        assert_eq!(error.code(), "INTERACTOR_NOT_CONFIGURED");
     }
 
     #[test]
