@@ -638,6 +638,15 @@ async fn reveal_publishes_the_final_board_and_is_idempotent(pool: PgPool) {
     .fetch_one(&pool)
     .await
     .expect("insert problem");
+    // A second problem keeps the assertion honest: a repeated acceptance on the
+    // same problem still counts as one solved problem, so a separate problem is
+    // what makes the post-freeze acceptance visible as a new solve.
+    let late_problem_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO problems (slug, title) VALUES ('reveal-b', 'Reveal B') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("insert late problem");
     sqlx::query(
         "INSERT INTO contest_teams (contest_id, team_id, participation_type) VALUES ($1, $2, 'OFFICIAL')",
     )
@@ -647,13 +656,14 @@ async fn reveal_publishes_the_final_board_and_is_idempotent(pool: PgPool) {
     .await
     .expect("roster team");
     sqlx::query(
-        "INSERT INTO contest_problems (contest_id, problem_id, alias, display_order) VALUES ($1, $2, 'A', 1)",
+        "INSERT INTO contest_problems (contest_id, problem_id, alias, display_order) VALUES ($1, $2, 'A', 1), ($1, $3, 'B', 2)",
     )
     .bind(contest_id)
     .bind(problem_id)
+    .bind(late_problem_id)
     .execute(&pool)
     .await
-    .expect("assign problem");
+    .expect("assign problems");
     insert_scored_submission(
         &pool,
         contest_id,
@@ -666,7 +676,7 @@ async fn reveal_publishes_the_final_board_and_is_idempotent(pool: PgPool) {
     insert_scored_submission(
         &pool,
         contest_id,
-        problem_id,
+        late_problem_id,
         team_id,
         freeze_at + Duration::minutes(30),
         "ACCEPTED",
@@ -674,6 +684,9 @@ async fn reveal_publishes_the_final_board_and_is_idempotent(pool: PgPool) {
     .await;
     let mut transaction = pool.begin().await.expect("begin projection transaction");
     rebuild_cell(&mut transaction, contest_id, team_id, problem_id).await.expect("project cell");
+    rebuild_cell(&mut transaction, contest_id, team_id, late_problem_id)
+        .await
+        .expect("project late cell");
     transaction.commit().await.expect("commit projection");
 
     let admin = insert_super_admin(&pool, "reveal-root").await;
