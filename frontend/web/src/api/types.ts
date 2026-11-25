@@ -84,6 +84,8 @@ export interface HealthResponse {
   service: string;
   time: string;
   realtimeOutbox?: RealtimeOutboxHealth;
+  /** Readiness probe of the shared Redis handle (sessions, rate limits, outbox). */
+  redis?: DependencyHealth;
   judgeDispatch?: JudgeDispatchHealth;
   objectStorage?: DependencyHealth;
   objectCleanup?: ObjectCleanupHealth;
