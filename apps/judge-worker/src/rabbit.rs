@@ -5,7 +5,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use lapin::{
     BasicProperties, Channel, Connection, ConnectionProperties, ExchangeKind,
     message::Delivery,
@@ -328,7 +328,27 @@ impl RabbitJudgeWorker {
                         }
                     };
                     let context = context.clone();
-                    in_flight.spawn(async move { process_delivery(&context, &delivery).await });
+                    // Catch panics inside the task. A panicking delivery used
+                    // to be dropped un-acked, and the broker requeues a dropped
+                    // message without recording an `x-death` entry — the retry
+                    // budget could never advance, so one poison message looped
+                    // forever and held its prefetch slot.
+                    in_flight.spawn(async move {
+                        match std::panic::AssertUnwindSafe(process_delivery(&context, &delivery))
+                            .catch_unwind()
+                            .await
+                        {
+                            Ok(outcome) => outcome,
+                            Err(payload) => {
+                                let reason = panic_message(&payload);
+                                error!(reason = %reason, "Judge task delivery panicked; dead-lettering the message");
+                                if let Err(error) = delivery.nack(retry_nack_options()).await {
+                                    warn!(%error, "failed to dead-letter the panicked Judge task");
+                                }
+                                DeliveryOutcome::Contained
+                            }
+                        }
+                    });
                 }
                 joined = in_flight.join_next(), if !in_flight.is_empty() => {
                     let Some(joined) = joined else { continue };
@@ -796,6 +816,17 @@ async fn nack_for_retry(delivery: &Delivery) -> DeliveryOutcome {
     match delivery.nack(retry_nack_options()).await {
         Ok(_) => DeliveryOutcome::Contained,
         Err(error) => DeliveryOutcome::SessionFailed(RabbitWorkerError::Amqp(error)),
+    }
+}
+
+/// Best-effort readable form of a panic payload.
+fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_owned()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "non-string panic payload".to_owned()
     }
 }
 
