@@ -63,7 +63,7 @@ API 在启动时创建其配置的桶。桶名属于部署配置，绝不通过�
 
 | 变量 | 默认值 | 用途 |
 |---|---|---|
-| `PROJECT_BALLOON_RABBITMQ_ENABLED` | `false` | 启用通过 RabbitMQ 的持久 Judge 任务分发 |
+| `PROJECT_BALLOON_RABBITMQ_ENABLED` | `false` | 启用通过 RabbitMQ 的持久 Judge 任务分发。`PROJECT_BALLOON_DEPLOYMENT_MODE=competition` 时必须为 `true`：没有 broker 时提交会永久排队，而 API 仍报告健康 |
 | `PROJECT_BALLOON_RABBITMQ_URL` | 未设置 | 带凭据的 AMQP/AMQPS URL |
 | `PROJECT_BALLOON_RABBITMQ_REQUEST_TIMEOUT_MILLISECONDS` | `5000` | broker 操作超时 |
 | `PROJECT_BALLOON_JUDGE_DISPATCH_POLL_MILLISECONDS` | `500` | 提交分发器的 Outbox 轮询间隔 |

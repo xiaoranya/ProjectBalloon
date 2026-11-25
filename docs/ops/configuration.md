@@ -73,7 +73,7 @@ configuration and are never returned through public APIs.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PROJECT_BALLOON_RABBITMQ_ENABLED` | `false` | Enable durable judge-task dispatch through RabbitMQ |
+| `PROJECT_BALLOON_RABBITMQ_ENABLED` | `false` | Enable durable judge-task dispatch through RabbitMQ. Required (`true`) when `PROJECT_BALLOON_DEPLOYMENT_MODE=competition`: without a broker submissions queue forever while the API reports healthy |
 | `PROJECT_BALLOON_RABBITMQ_URL` | unset | AMQP/AMQPS URL with credentials |
 | `PROJECT_BALLOON_RABBITMQ_REQUEST_TIMEOUT_MILLISECONDS` | `5000` | Broker operation timeout |
 | `PROJECT_BALLOON_JUDGE_DISPATCH_POLL_MILLISECONDS` | `500` | Outbox polling interval for the submission dispatcher |
