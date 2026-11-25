@@ -545,7 +545,7 @@ async fn projection_replay_rows_decode_completed_judgements(pool: PgPool) {
     assert_eq!(cell_rows[1].1, "ACCEPTED");
     assert_eq!(cell_rows[1].2, 0, "judgements.score_milli must decode as bigint");
 
-    let contest_rows = load_contest_replay_rows(&pool, contest_id)
+    let contest_rows = load_contest_replay_rows(&pool, contest_id, None)
         .await
         .expect("decode a contest with completed judgements");
     assert_eq!(contest_rows.len(), 2);
