@@ -13,12 +13,18 @@ mod internal;
 mod sessions;
 mod store;
 
-pub(crate) use store::revoke_workstation_sessions;
+pub(crate) use store::{revoke_user_sessions, revoke_workstation_sessions};
 
 #[cfg(test)]
 mod tests;
 
-const LOGIN_ATTEMPT_LIMIT: i64 = 10;
+/// Per-source-IP login failures per five-minute window. Sized for a contest
+/// venue where hundreds of teams share one NAT address: ~10 was low enough
+/// that ordinary typos locked the whole room out. Guessing is bounded by the
+/// per-account window below, which is the one that matters.
+const LOGIN_ATTEMPT_LIMIT: i64 = 100;
+/// Per-account login failures per five-minute window (see `internal`).
+const LOGIN_ACCOUNT_ATTEMPT_LIMIT: i64 = 10;
 const REGISTER_ATTEMPT_LIMIT: i64 = 5;
 const PASSWORD_CHANGE_ATTEMPT_LIMIT: i64 = 10;
 const PROFILE_UPDATE_ATTEMPT_LIMIT: i64 = 30;

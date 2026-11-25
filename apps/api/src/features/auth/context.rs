@@ -131,7 +131,18 @@ async fn authenticate(parts: &Parts, state: &AppState) -> Result<AuthenticatedSe
         {
             Ok(competition) => session.competition = Some(competition),
             Err(error) => {
-                state.auth().logout(&session.token_hash).await?;
+                // Only a rejected binding ends the workstation session. Any
+                // other failure (a database blip on `validate_session`) must
+                // leave the session alone: logging the team out mid-contest
+                // forces a re-login with a pairing code that may be gone.
+                if error.code() == "NOT_AUTHENTICATED"
+                    && let Err(logout_error) = state.auth().logout(&session.token_hash).await
+                {
+                    tracing::warn!(
+                        ?logout_error,
+                        "failed to revoke an invalid workstation session"
+                    );
+                }
                 return Err(error);
             }
         }

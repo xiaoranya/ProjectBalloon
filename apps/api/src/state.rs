@@ -159,7 +159,8 @@ impl AppState {
             Arc::new(CompetitionService::new(database.clone()).with_redis_option(redis.clone()));
         let announcements =
             Arc::new(AnnouncementService::new(database.clone()).with_outbox_option(outbox.clone()));
-        let staff_accounts = Arc::new(StaffAccountService::new(database.clone()));
+        let staff_accounts =
+            Arc::new(StaffAccountService::new(database.clone()).with_redis_option(redis.clone()));
         let contest_management_scopes =
             Arc::new(ContestManagementScopeService::new(database.clone()));
         let contest_problems = Arc::new(ContestProblemService::new(database.clone()));
@@ -184,7 +185,11 @@ impl AppState {
                 .with_projection_option(scoreboard_projection.clone()),
         );
         let batch_rejudge = Arc::new(BatchRejudgeService::new(database.clone()));
-        let teams = Arc::new(TeamService::new(database.clone()).with_outbox_option(outbox.clone()));
+        let teams = Arc::new(
+            TeamService::new(database.clone())
+                .with_outbox_option(outbox.clone())
+                .with_redis_option(redis.clone()),
+        );
         let (_, shutdown) = watch::channel(false);
         Self {
             database,

@@ -19,7 +19,11 @@ impl AuthService {
         request_ip: IpAddr,
     ) -> Result<LoginOutcome, AppError> {
         request.validate()?;
-        let username = request.username.trim().to_owned();
+        // Usernames are stored lowercase by every other writer (bootstrap,
+        // staff creation, team import); self-registration used to keep the
+        // typed casing, letting `Admin` and `admin` coexist and muddying
+        // scoreboard/audit identity.
+        let username = request.username.trim().to_ascii_lowercase();
         let display_name = request.display_name.trim().to_owned();
         let request_ip_text = request_ip.to_string();
         if self.recent_auth_action_count("auth.register", &request_ip_text).await?
@@ -129,10 +133,15 @@ impl AuthService {
             .await
             .map_err(|error| AppError::internal("commit password transaction", error))?;
 
-        // Sessions live only in Redis now, so revoking the user's other
-        // sessions happens after the commit against the Redis session store.
-        super::store::revoke_user_sessions(self.redis()?, session.user.id, &session.token_hash)
-            .await?;
+        // The password is already persisted and audited; failing the whole
+        // request because the session store hiccuped would make the client
+        // retry a change that already happened (and hit PASSWORD_UNCHANGED).
+        if let Err(error) =
+            super::store::revoke_user_sessions(self.redis()?, session.user.id, &session.token_hash)
+                .await
+        {
+            tracing::warn!(?error, user_id = session.user.id, "failed to revoke sibling sessions");
+        }
 
         let mut user = session.user.clone();
         user.password_reset_required = false;
@@ -159,7 +168,7 @@ impl AuthService {
         let update = sqlx::query(
             "UPDATE users SET display_name=$1,updated_at=now() WHERE id=$2 AND enabled=true",
         )
-        .bind(display_name)
+        .bind(&display_name)
         .bind(session.user.id)
         .execute(&mut *transaction)
         .await
@@ -180,9 +189,11 @@ impl AuthService {
             .commit()
             .await
             .map_err(|error| AppError::internal("commit profile update", error))?;
-        self.load_user_by_id(session.user.id)
-            .await?
-            .ok_or_else(|| AppError::unauthorized("ACCOUNT_DISABLED", "Account is disabled"))?
-            .auth_user()
+        // The commit already happened; a failed follow-up read would report a
+        // successful update as a 500. The response is fully derivable from the
+        // session plus the validated input.
+        let mut user = session.user.clone();
+        user.display_name = display_name;
+        Ok(user)
     }
 }

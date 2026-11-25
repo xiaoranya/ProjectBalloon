@@ -16,7 +16,7 @@ pub struct BootstrapAdmin {
 pub enum BootstrapError {
     #[error("invalid bootstrap configuration: {0}")]
     Invalid(&'static str),
-    #[error("administrator bootstrap is unavailable because the users table is not empty")]
+    #[error("administrator bootstrap is unavailable because a super administrator already exists")]
     AlreadyInitialized,
     #[error("failed to hash the bootstrap password")]
     Password,
@@ -69,10 +69,16 @@ pub async fn bootstrap_super_admin(
         .execute(&mut *transaction)
         .await?;
 
-    let user_count = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM users")
-        .fetch_one(&mut *transaction)
-        .await?;
-    if user_count != 0 {
+    // "Is the platform already administered?" — not "is the users table
+    // empty?". Self-registration is public (in standard mode), so a single
+    // visitor account would otherwise slam this door shut forever and leave
+    // the deployment without any super administrator.
+    let administered = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM users WHERE user_type = 'SUPER_ADMIN')",
+    )
+    .fetch_one(&mut *transaction)
+    .await?;
+    if administered {
         return Err(BootstrapError::AlreadyInitialized);
     }
 

@@ -42,9 +42,9 @@ pub async fn login(
     let Json(request) = payload
         .map_err(|_| AppError::validation("request", "must be a valid login JSON object"))?;
     let outcome = state.auth().login(request, peer.ip()).await?;
-    if let Some(previous) = jar.get(SESSION_COOKIE_NAME) {
-        state.auth().logout_token(previous.value()).await?;
-    }
+    // Best-effort: the new session already exists, so failing here would
+    // return 500 without a cookie and leave the old session alive too.
+    revoke_previous_session(&state, &jar).await;
     let cookie = session_cookie(
         outcome.session_token,
         state.auth().session_ttl(),
@@ -64,9 +64,7 @@ pub async fn workstation_login(
     let code = request.validate()?;
     let grant = state.competition().login_grant(state.deployment_mode(), peer.ip(), &code).await?;
     let (outcome, competition) = state.auth().create_workstation_session(grant).await?;
-    if let Some(previous) = jar.get(SESSION_COOKIE_NAME) {
-        state.auth().logout_token(previous.value()).await?;
-    }
+    revoke_previous_session(&state, &jar).await;
     let cookie = session_cookie(
         outcome.session_token,
         state.auth().session_ttl(),
@@ -186,6 +184,15 @@ pub async fn update_profile(
         .map_err(|_| AppError::validation("request", "must be a valid profile JSON object"))?;
     let user = state.auth().update_profile(context.session(), request, peer.ip()).await?;
     Ok(Json(user.response()))
+}
+
+/// Revokes the session carried by a previous cookie, if any. Never fails the
+/// request: the replacement session is already issued and stored.
+async fn revoke_previous_session(state: &AppState, jar: &CookieJar) {
+    let Some(previous) = jar.get(SESSION_COOKIE_NAME) else { return };
+    if let Err(error) = state.auth().logout_token(previous.value()).await {
+        tracing::warn!(?error, "failed to revoke the previous session during login");
+    }
 }
 
 fn session_cookie(token: String, ttl: StdDuration, secure: bool) -> Cookie<'static> {
