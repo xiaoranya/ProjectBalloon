@@ -27,6 +27,8 @@ pub(crate) struct HealthResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     judge_dispatch: Option<JudgeDispatchHealth>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    redis: Option<DependencyHealth>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     object_storage: Option<DependencyHealth>,
     #[serde(skip_serializing_if = "Option::is_none")]
     object_cleanup: Option<ObjectCleanupHealth>,
@@ -93,7 +95,7 @@ struct DependencyHealth {
     security(())
 )]
 pub(crate) async fn liveness() -> Json<HealthResponse> {
-    Json(response(HealthStatus::Up, None, None, None, None, None))
+    Json(response(HealthStatus::Up, None, None, None, None, None, None))
 }
 
 #[utoipa::path(
@@ -148,6 +150,26 @@ pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Jso
             missing_references,
         ))) => {
             let redis_connected = state.realtime().redis_status();
+            // `realtime_redis_enabled = false` only disables the fan-out; the
+            // shared Redis handle still backs sessions and rate limiting, so
+            // readiness probes it directly instead of trusting that switch.
+            let redis_up = match state.redis() {
+                Some(redis) => match timeout(state.readiness_timeout(), redis.ping()).await {
+                    Ok(Ok(())) => true,
+                    Ok(Err(error)) => {
+                        warn!(?error, "Redis readiness probe failed");
+                        false
+                    }
+                    Err(_) => {
+                        warn!("Redis readiness probe timed out");
+                        false
+                    }
+                },
+                None => {
+                    warn!("API started without a Redis handle; reporting not ready");
+                    false
+                }
+            };
             // The realtime outbox is Redis-native now; its counters come from
             // the consumer group rather than PostgreSQL.
             let realtime_outbox = match state.realtime_outbox() {
@@ -225,25 +247,34 @@ pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Jso
                 },
                 None => None,
             };
-            let status = if redis_connected == Some(false)
-                || object_storage.as_ref().is_some_and(|health| health.status == HealthStatus::Down)
-                || rabbitmq.as_ref().is_some_and(|health| health.status == HealthStatus::Down)
-                || cups.as_ref().is_some_and(|health| health.status == HealthStatus::Down)
-            {
-                HealthStatus::Down
-            } else {
-                HealthStatus::Up
-            };
+            // Readiness gates only the dependencies every request needs:
+            // PostgreSQL (the query above) and Redis (sessions, rate limiting,
+            // the realtime outbox). Object storage, CUPS and RabbitMQ are
+            // reported but must not pull the API out of the load balancer — a
+            // printer hiccup would otherwise take submissions and scoreboards
+            // down with it.
+            let redis_status = if redis_up { HealthStatus::Up } else { HealthStatus::Down };
+            // A competition that queues judgements while no worker is online
+            // is broken even though every HTTP dependency answers.
+            let judge_stalled = state.deployment_mode().is_competition()
+                && judge_pending > 0
+                && online_workers == 0;
+            let status =
+                if redis_up && !judge_stalled { HealthStatus::Up } else { HealthStatus::Down };
             let status_code = if status == HealthStatus::Up {
                 StatusCode::OK
             } else {
                 StatusCode::SERVICE_UNAVAILABLE
             };
+            if judge_stalled {
+                warn!(judge_pending, "no judge worker is online while judgements are queued");
+            }
             (
                 status_code,
                 Json(response(
                     status,
                     realtime_outbox,
+                    Some(DependencyHealth { status: redis_status }),
                     object_storage,
                     Some(ObjectCleanupHealth {
                         pending: cleanup_pending,
@@ -269,14 +300,14 @@ pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Jso
             warn!(error = %error, "database readiness probe failed");
             (
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(response(HealthStatus::Down, None, None, None, None, None)),
+                Json(response(HealthStatus::Down, None, None, None, None, None, None)),
             )
         }
         Err(_) => {
             warn!("database readiness probe timed out");
             (
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(response(HealthStatus::Down, None, None, None, None, None)),
+                Json(response(HealthStatus::Down, None, None, None, None, None, None)),
             )
         }
     }
@@ -285,6 +316,7 @@ pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Jso
 fn response(
     status: HealthStatus,
     realtime_outbox: Option<RealtimeOutboxHealth>,
+    redis: Option<DependencyHealth>,
     object_storage: Option<DependencyHealth>,
     object_cleanup: Option<ObjectCleanupHealth>,
     judge_dispatch: Option<JudgeDispatchHealth>,
@@ -295,6 +327,7 @@ fn response(
         service: SERVICE_NAME,
         time: OffsetDateTime::now_utc(),
         realtime_outbox,
+        redis,
         object_storage,
         object_cleanup,
         judge_dispatch,

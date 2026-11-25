@@ -19091,6 +19091,16 @@
               }
             ]
           },
+          "redis": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DependencyHealth"
+              }
+            ]
+          },
           "service": {
             "type": "string"
           },

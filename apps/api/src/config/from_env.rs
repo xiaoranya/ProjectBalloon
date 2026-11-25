@@ -45,6 +45,17 @@ impl AppConfig {
         let rabbitmq = parse_rabbitmq(&mut lookup)?;
         let judge_dispatch = parse_judge_dispatch(&mut lookup)?;
         validate_object_storage_fields(&object_storage)?;
+        // Competition deployments without a broker accept submissions and
+        // queue them forever: the dispatcher, reaper and result consumer are
+        // never spawned, so `submission_outbox` only grows. Refuse the
+        // configuration instead of reporting healthy with zero judging.
+        if deployment.deployment_mode.is_competition() && !rabbitmq.enabled {
+            return Err(ConfigError::Invalid {
+                name: "PROJECT_BALLOON_RABBITMQ_ENABLED",
+                value: "false".to_owned(),
+                reason: "must be true when PROJECT_BALLOON_DEPLOYMENT_MODE is competition",
+            });
+        }
 
         Ok(Self {
             deployment_mode: deployment.deployment_mode,

@@ -112,6 +112,11 @@ impl RedisHandle {
         self.query(cmd).await
     }
 
+    /// Health probe: `PING` bounded by the operation timeout.
+    pub(crate) async fn ping(&self) -> Result<(), AppError> {
+        self.query::<String>(&mut redis::cmd("PING")).await.map(|_| ())
+    }
+
     /// Runs a command best-effort: failures and timeouts are logged and
     /// swallowed. Used where Redis is a hint channel (outbox fan-out) and a
     /// blip must never fail the surrounding business operation.

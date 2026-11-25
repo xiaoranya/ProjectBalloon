@@ -60,6 +60,10 @@ pub struct AppState {
     submissions: Arc<SubmissionService>,
     batch_rejudge: Arc<BatchRejudgeService>,
     teams: Arc<TeamService>,
+    /// The shared Redis handle. Readiness probes it directly: sessions, rate
+    /// limiting and the realtime outbox all depend on it, regardless of
+    /// whether the Redis fan-out is enabled.
+    redis: Option<RedisHandle>,
     object_storage: Option<ObjectStorageHandle>,
     judge_publisher: Option<Arc<RabbitJudgeTaskPublisher>>,
     cups_gateway: Option<Arc<dyn CupsGateway>>,
@@ -220,6 +224,7 @@ impl AppState {
             batch_rejudge,
             teams,
             object_storage,
+            redis,
             judge_publisher: None,
             cups_gateway: None,
             shutdown,
@@ -415,6 +420,11 @@ impl AppState {
     #[must_use]
     pub fn teams(&self) -> &TeamService {
         &self.teams
+    }
+
+    #[must_use]
+    pub const fn redis(&self) -> Option<&RedisHandle> {
+        self.redis.as_ref()
     }
 
     #[must_use]

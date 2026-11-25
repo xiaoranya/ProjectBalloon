@@ -3478,6 +3478,7 @@ export interface components {
             objectCleanup?: null | components["schemas"]["ObjectCleanupHealth"];
             objectStorage?: null | components["schemas"]["DependencyHealth"];
             realtimeOutbox?: null | components["schemas"]["RealtimeOutboxHealth"];
+            redis?: null | components["schemas"]["DependencyHealth"];
             service: string;
             status: components["schemas"]["HealthStatus"];
             /** Format: date-time */

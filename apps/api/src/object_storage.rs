@@ -484,9 +484,27 @@ impl ObjectStorage for S3ObjectStorage {
                     .map_err(|error| ObjectStorageError::Request(error.to_string()))
             })
             .await?;
-        let stream = response
-            .into_stream()
-            .map(|chunk| chunk.map_err(|error| ObjectStorageError::Request(error.to_string())));
+        // Only establishing the response was bounded; the body itself had no
+        // deadline, so a half-open connection kept the request task (and its
+        // socket) parked indefinitely. Each chunk now carries its own timeout
+        // and a stalled body terminates the stream instead of hanging it.
+        let chunk_timeout = self.request_timeout;
+        let stream = futures_util::stream::unfold(
+            (response.into_stream(), false),
+            move |(mut inner, finished)| async move {
+                if finished {
+                    return None;
+                }
+                match timeout(chunk_timeout, inner.next()).await {
+                    Ok(Some(Ok(chunk))) => Some((Ok(chunk), (inner, false))),
+                    Ok(Some(Err(error))) => {
+                        Some((Err(ObjectStorageError::Request(error.to_string())), (inner, true)))
+                    }
+                    Ok(None) => None,
+                    Err(_) => Some((Err(ObjectStorageError::Timeout), (inner, true))),
+                }
+            },
+        );
         Ok(Box::pin(stream))
     }
 

@@ -52,7 +52,19 @@ fn local_defaults_are_valid() {
 
 #[test]
 fn deployment_mode_is_closed_and_accepts_competition() {
-    let values = HashMap::from([("PROJECT_BALLOON_DEPLOYMENT_MODE", "competition".to_owned())]);
+    // Competition mode requires a broker: without one submissions would queue
+    // forever while the API reported healthy.
+    let brokerless = HashMap::from([("PROJECT_BALLOON_DEPLOYMENT_MODE", "competition".to_owned())]);
+    assert!(matches!(
+        AppConfig::from_lookup(dev_lookup(&brokerless)),
+        Err(ConfigError::Invalid { name: "PROJECT_BALLOON_RABBITMQ_ENABLED", .. })
+    ));
+
+    let values = HashMap::from([
+        ("PROJECT_BALLOON_DEPLOYMENT_MODE", "competition".to_owned()),
+        ("PROJECT_BALLOON_RABBITMQ_ENABLED", "true".to_owned()),
+        ("PROJECT_BALLOON_RABBITMQ_URL", "amqp://broker:5672".to_owned()),
+    ]);
     let config = AppConfig::from_lookup(dev_lookup(&values)).expect("competition mode");
     assert_eq!(config.deployment_mode, DeploymentMode::Competition);
     assert_eq!(config.deployment_mode.as_str(), "competition");
