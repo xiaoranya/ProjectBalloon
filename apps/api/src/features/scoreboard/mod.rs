@@ -12,6 +12,7 @@ pub fn routes() -> axum::Router<crate::state::AppState> {
         .route("/api/contests/{contest_id}/scoreboard.csv", get(public_csv))
         .route("/api/admin/contests/{contest_id}/scoreboard", get(admin))
         .route("/api/admin/contests/{contest_id}/scoreboard.csv", get(admin_csv))
+        .route("/api/admin/contests/{contest_id}/scoreboard/reveal", post(reveal))
         .route("/api/admin/contests/{contest_id}/scoreboard/snapshots", post(create_snapshot))
         .route("/api/admin/contests/{contest_id}/scoreboard/snapshots/latest", get(latest_snapshot))
 }
@@ -20,7 +21,9 @@ pub fn routes() -> axum::Router<crate::state::AppState> {
 mod tests;
 
 pub use cache::ScoreboardCache;
-pub use handlers::{admin, admin_csv, create_snapshot, latest_snapshot, public, public_csv};
+pub use handlers::{
+    admin, admin_csv, create_snapshot, latest_snapshot, public, public_csv, reveal,
+};
 pub use model::{
     ScoreboardCell, ScoreboardProblem, ScoreboardQuery, ScoreboardResponse, ScoreboardRow,
 };

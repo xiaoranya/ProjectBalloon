@@ -41,6 +41,17 @@ Freeze 之后：
 
 比赛结束后，公共记分板保持冻结，不会自动揭示隐藏的提交。
 
+### 显式解冻
+
+冻结是单向的：达到 `end_at` 或状态转为 `ENDED` 都不会解冻公共记分板。发布最终排名是操作员的显式动作，记录在比赛上（`contests.scoreboard_revealed_at`）：
+
+- `POST /api/admin/contests/{contest_id}/scoreboard/reveal` 返回解冻后的公共记分板。
+- 前置条件：比赛状态为 `ENDED`、已过 `freeze_at`、且操作员拥有该比赛的管理范围（需要 CSRF 令牌）。
+- 该动作幂等，只写入一条 `SCOREBOARD_REVEALED` 审计记录。
+- 解冻后公共记分板的阶段变为 `FINAL`，数据改为读取实时单元格而非封榜快照。解冻不可撤销。
+
+管理员可从比赛资源的 `scoreboardRevealedAt` 字段区分"已解冻"与"仍在封榜"。
+
 ## 第一版状态
 
 第一版实现包含：

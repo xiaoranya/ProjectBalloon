@@ -62,6 +62,113 @@ impl ScoreboardService {
         self.load(contest_id, query, true).await
     }
 
+    /// Explicitly reveals (unfreezes) the public scoreboard.
+    ///
+    /// Freezing is one-way and the board stays frozen after the contest ends,
+    /// so the final ranking is published exactly once, by operator command,
+    /// after the official Resolver ceremony. Idempotent: revealing an already
+    /// revealed board returns the public board without a second audit entry.
+    pub async fn reveal(
+        &self,
+        contest_id: i64,
+        actor: &AuthUser,
+        request_ip: IpAddr,
+        query: ValidatedScoreboardQuery,
+    ) -> Result<ScoreboardResponse, AppError> {
+        self.require_admin_access(contest_id, actor).await?;
+        let mut transaction = self
+            .database
+            .begin()
+            .await
+            .map_err(|error| AppError::internal("begin scoreboard reveal", error))?;
+        // Serialize concurrent reveals so the audit trail records exactly one.
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(contest_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| AppError::internal("lock scoreboard reveal", error))?;
+        let row = sqlx::query_as::<_, (String, Option<OffsetDateTime>, Option<OffsetDateTime>)>(
+            r#"
+                SELECT status, freeze_at, scoreboard_revealed_at
+                FROM contests
+                WHERE id = $1 AND deleted_at IS NULL
+                "#,
+        )
+        .bind(contest_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| AppError::internal("load scoreboard reveal contest", error))?
+        .ok_or_else(contest_not_found)?;
+        let (status, freeze_at, revealed_at) = row;
+        if revealed_at.is_some() {
+            transaction
+                .commit()
+                .await
+                .map_err(|error| AppError::internal("commit scoreboard reveal", error))?;
+            return self.load(contest_id, query, false).await;
+        }
+        if status == "ARCHIVED" {
+            return Err(AppError::conflict(
+                "CONTEST_ARCHIVED_READ_ONLY",
+                "Archived contests are read-only",
+            ));
+        }
+        // `end_at` may already have passed while the lifecycle runner has not
+        // flipped the status yet. Waiting for ENDED keeps the final ranking from
+        // being published while the contest is still running.
+        if status != "ENDED" {
+            return Err(AppError::conflict(
+                "SCOREBOARD_REVEAL_REQUIRES_ENDED",
+                "The public scoreboard can only be revealed after the contest ends",
+            ));
+        }
+        let Some(freeze_at) = freeze_at else {
+            return Err(AppError::conflict(
+                "SCOREBOARD_NOT_FROZEN",
+                "Contest has no freeze time, so there is nothing to reveal",
+            ));
+        };
+        if freeze_at > OffsetDateTime::now_utc() {
+            return Err(AppError::conflict(
+                "SCOREBOARD_NOT_FROZEN",
+                "Contest has not reached its freeze time",
+            ));
+        }
+        sqlx::query(
+            r#"
+            UPDATE contests
+            SET scoreboard_revealed_at = now(), scoreboard_revealed_by_user_id = $2
+            WHERE id = $1 AND scoreboard_revealed_at IS NULL
+            "#,
+        )
+        .bind(contest_id)
+        .bind(actor.id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| AppError::internal("reveal scoreboard", error))?;
+        sqlx::query(
+            r#"
+            INSERT INTO audit_logs
+                (actor_user_id, action, target_type, target_id, request_ip, result)
+            VALUES ($1, 'SCOREBOARD_REVEALED', 'CONTEST', $2, $3, 'success')
+            "#,
+        )
+        .bind(actor.id)
+        .bind(contest_id.to_string())
+        .bind(request_ip.to_string())
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| AppError::internal("record scoreboard reveal audit", error))?;
+        transaction
+            .commit()
+            .await
+            .map_err(|error| AppError::internal("commit scoreboard reveal", error))?;
+        // Cache invalidation is implicit: revealing flips the public phase from
+        // FROZEN to FINAL, and the phase is part of the cache key, so stale
+        // frozen entries are never read again and expire on their own TTL.
+        self.load(contest_id, query, false).await
+    }
+
     pub async fn create_snapshot(
         &self,
         contest_id: i64,
@@ -216,7 +323,7 @@ impl ScoreboardService {
     ) -> Result<ScoreboardResponse, AppError> {
         let contest = sqlx::query_as::<_, ContestBoardRow>(
             r#"
-            SELECT status, start_at, freeze_at, end_at, scoreboard_revision,
+            SELECT start_at, freeze_at, scoreboard_revealed_at, end_at, scoreboard_revision,
                    scoring_mode, score_aggregation
             FROM contests
             WHERE id = $1 AND deleted_at IS NULL
@@ -231,10 +338,16 @@ impl ScoreboardService {
             AppError::conflict("CONTEST_SCHEDULE_REQUIRED", "Contest schedule is not configured")
         })?;
         let generated_at = OffsetDateTime::now_utc();
+        // Freeze is a one-way milestone defined by `freeze_at` alone:
+        // reaching `end_at` (or the contest leaving RUNNING/PAUSED) must NOT
+        // thaw the public board. Revealing is the explicit unfreeze ceremony —
+        // `scoreboard_revealed_at` is only set by `ScoreboardService::reveal`.
+        // An automatic thaw here leaked the full final board before the
+        // official reveal and contradicted
+        // `docs/architecture/scoreboard-resolver.md`.
         let frozen = !admin
-            && matches!(contest.status.as_str(), "RUNNING" | "PAUSED")
-            && contest.freeze_at.is_some_and(|freeze_at| freeze_at <= generated_at)
-            && contest.end_at.is_some_and(|end_at| generated_at < end_at);
+            && contest.scoreboard_revealed_at.is_none()
+            && contest.freeze_at.is_some_and(|freeze_at| freeze_at <= generated_at);
         let variant = if admin { "ADMIN" } else { "PUBLIC" };
         let phase = if admin {
             "ADMIN"

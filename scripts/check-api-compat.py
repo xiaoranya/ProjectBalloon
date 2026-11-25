@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # (legacy, rust, exact, missing-after-renames, rust-only). Every redesigned
 # legacy operation is registered in docs/api/renamed-routes.yaml, so nothing
 # is left unaccounted in `missing`.
-EXPECTED = (150, 221, 111, 0, 110)
+EXPECTED = (150, 222, 111, 0, 111)
 
 
 def normalize(path: str) -> str:

@@ -289,33 +289,23 @@ impl ScoreboardProjection {
         .bind(contest_id)
         .fetch_one(database)
         .await?;
-        let max_score_milli = sqlx::query_scalar::<_, i64>(
-            "SELECT coalesce(max_score_milli, 0) FROM contest_problems WHERE contest_id = $1 AND problem_id = $2",
+        let max_score_milli = sqlx::query_scalar::<_, i32>(
+            "SELECT max_score_milli FROM contest_problems WHERE contest_id = $1 AND problem_id = $2",
         )
         .bind(contest_id)
         .bind(problem_id)
-        .fetch_one(database)
-        .await
-        .unwrap_or(0);
-        let rows = sqlx::query_as::<_, (i64, String, i64, OffsetDateTime, String, Option<i64>)>(
-            r#"
-            SELECT s.id, j.verdict, coalesce(j.score_milli, 0), s.submitted_at, '', 0
-            FROM submissions s
-            JOIN judgements j ON j.submission_id = s.id
-                AND j.active_marker IS TRUE AND j.completed_at IS NOT NULL
-            WHERE s.contest_id = $1 AND s.team_id = $2 AND s.problem_id = $3
-            ORDER BY s.submitted_at, s.id
-            "#,
-        )
-        .bind(contest_id)
-        .bind(team_id)
-        .bind(problem_id)
-        .fetch_all(database)
+        .fetch_optional(database)
         .await?;
+        // A cell for a problem no longer assigned to this contest has nothing
+        // to replay; `max_score_milli` is NOT NULL, so a missing row is the
+        // only "absent" case. Never default it to zero: in POINTS mode that
+        // makes any score look like full marks and flips `solved`.
+        let Some(max_score_milli) = max_score_milli.map(i64::from) else { return Ok(()) };
+        let rows = load_cell_replay_rows(database, contest_id, team_id, problem_id).await?;
         let Some(start_at) = meta.0 else { return Ok(()) };
         let replay: Vec<ReplayRow> = rows
             .into_iter()
-            .map(|(submission_id, verdict, score_milli, submitted_at, _, _)| ReplayRow {
+            .map(|(submission_id, verdict, score_milli, submitted_at)| ReplayRow {
                 submission_id,
                 submitted_at_ms: unix_ms(submitted_at),
                 verdict,
@@ -344,22 +334,7 @@ impl ScoreboardProjection {
         .await?;
         let Some(start_at) = meta.0 else { return Ok(()) };
         let start_ms = unix_ms(start_at);
-        let rows = sqlx::query_as::<_, (i64, i64, i64, OffsetDateTime, String, i64, i64)>(
-            r#"
-            SELECT s.team_id, s.problem_id, s.id, s.submitted_at, j.verdict,
-                   coalesce(j.score_milli, 0), coalesce(cp.max_score_milli, 0)
-            FROM submissions s
-            JOIN judgements j ON j.submission_id = s.id
-                AND j.active_marker IS TRUE AND j.completed_at IS NOT NULL
-            JOIN contest_problems cp ON cp.contest_id = s.contest_id
-                AND cp.problem_id = s.problem_id
-            WHERE s.contest_id = $1
-            ORDER BY s.submitted_at, s.id
-            "#,
-        )
-        .bind(contest_id)
-        .fetch_all(database)
-        .await?;
+        let rows = load_contest_replay_rows(database, contest_id).await?;
         let mut grouped: HashMap<(i64, i64), (i64, Vec<ReplayRow>)> = HashMap::new();
         for (team_id, problem_id, submission_id, submitted_at, verdict, score_milli, max_score) in
             rows
@@ -436,6 +411,61 @@ impl ScoreboardProjection {
             .await
             .map_err(|error| sqlx::Error::Protocol(format!("replace scoreboard cell: {error:?}")))
     }
+}
+
+/// Loads one cell's completed judgement history for replay.
+///
+/// `judgements.score_milli` is `integer` in PostgreSQL, while [`ReplayRow`]
+/// keeps an `i64`; the explicit `::bigint` cast keeps the SQL type and the
+/// Rust decode type aligned. sqlx's PostgreSQL decoder accepts INT8 for
+/// `i64` but not INT4, so a missing cast makes every non-empty cell fail to
+/// decode — breaking both rejudge repair and the post-Redis-loss rebuild.
+pub(super) async fn load_cell_replay_rows(
+    database: &PgPool,
+    contest_id: i64,
+    team_id: i64,
+    problem_id: i64,
+) -> Result<Vec<(i64, String, i64, OffsetDateTime)>, sqlx::Error> {
+    sqlx::query_as::<_, (i64, String, i64, OffsetDateTime)>(
+        r#"
+        SELECT s.id, j.verdict, coalesce(j.score_milli, 0)::bigint, s.submitted_at
+        FROM submissions s
+        JOIN judgements j ON j.submission_id = s.id
+            AND j.active_marker IS TRUE AND j.completed_at IS NOT NULL
+        WHERE s.contest_id = $1 AND s.team_id = $2 AND s.problem_id = $3
+        ORDER BY s.submitted_at, s.id
+        "#,
+    )
+    .bind(contest_id)
+    .bind(team_id)
+    .bind(problem_id)
+    .fetch_all(database)
+    .await
+}
+
+/// Loads every completed judgement of a contest for a full projection replay.
+/// Both score columns are `integer` in PostgreSQL, so they are cast to
+/// `bigint` for the `i64` decode (see [`load_cell_replay_rows`]).
+pub(super) async fn load_contest_replay_rows(
+    database: &PgPool,
+    contest_id: i64,
+) -> Result<Vec<(i64, i64, i64, OffsetDateTime, String, i64, i64)>, sqlx::Error> {
+    sqlx::query_as::<_, (i64, i64, i64, OffsetDateTime, String, i64, i64)>(
+        r#"
+        SELECT s.team_id, s.problem_id, s.id, s.submitted_at, j.verdict,
+               coalesce(j.score_milli, 0)::bigint, coalesce(cp.max_score_milli, 0)::bigint
+        FROM submissions s
+        JOIN judgements j ON j.submission_id = s.id
+            AND j.active_marker IS TRUE AND j.completed_at IS NOT NULL
+        JOIN contest_problems cp ON cp.contest_id = s.contest_id
+            AND cp.problem_id = s.problem_id
+        WHERE s.contest_id = $1
+        ORDER BY s.submitted_at, s.id
+        "#,
+    )
+    .bind(contest_id)
+    .fetch_all(database)
+    .await
 }
 
 struct ReplayRow {

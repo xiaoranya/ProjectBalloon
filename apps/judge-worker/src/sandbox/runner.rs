@@ -21,9 +21,9 @@ use tracing::warn;
 use crate::sandbox::archive::{OutputArchiveError, extract_cases, extract_output_cases};
 use crate::sandbox::compare::standard_output_matches;
 use crate::sandbox::fs::{
-    create_private_dir, nonempty, read_regular_output_no_follow, remove_dir_if_present,
-    remove_file_if_present, set_executable_file_permissions, set_private_file_permissions,
-    truncate_log, with_path_context,
+    copy_regular_source_no_follow, create_private_dir, nonempty, read_regular_output_no_follow,
+    remove_dir_if_present, remove_file_if_present, set_executable_file_permissions,
+    set_private_file_permissions, truncate_log, with_path_context,
 };
 use crate::sandbox::language::LanguageConfig;
 use crate::sandbox::metrics::{
@@ -35,6 +35,13 @@ use crate::sandbox::{
     SandboxJudgement, effective_time_limit, is_container_missing, is_container_name_conflict,
     judgement_container_name, run_wall_limit,
 };
+
+/// Fixed read-only location of the interactor inside every sandbox, mirroring
+/// the GNU-time tool bind. The interactor decides the interactive verdict from
+/// its exit code alone, so it must live on a mount the contestant UID cannot
+/// write: a replaced interactor that exits 0 would accept every later test
+/// case. Both backends bind the worker-owned host file here read-only.
+pub(super) const SANDBOX_INTERACTOR_PATH: &str = "/work/.pb-interactor";
 
 impl DockerSandbox {
     pub fn connect(config: DockerSandboxConfig) -> Result<Self, SandboxError> {
@@ -128,13 +135,21 @@ impl DockerSandbox {
             .await
             .map_err(|error| with_path_context(error, "write submission source", &source_path))?;
         set_private_file_permissions(&source_path).await?;
-        if let Some(interactor) = interactor {
-            let path = work_dir.join("interactor");
-            tokio::fs::write(&path, interactor)
-                .await
-                .map_err(|error| with_path_context(error, "write interactor", &path))?;
-            set_executable_file_permissions(&path).await?;
-        }
+        // The interactor is written to the job directory, outside the
+        // contestant-writable `/work` bind, and is mounted read-only into the
+        // sandbox at [`SANDBOX_INTERACTOR_PATH`]. Writing it under `/work`
+        // would let the contestant replace it between test cases.
+        let interactor_path = match interactor {
+            Some(interactor) => {
+                let path = job_dir.join("interactor");
+                tokio::fs::write(&path, interactor)
+                    .await
+                    .map_err(|error| with_path_context(error, "write interactor", &path))?;
+                set_executable_file_permissions(&path).await?;
+                Some(path)
+            }
+            None => None,
+        };
         let data_dir = job_dir.join("data");
         create_private_dir(&data_dir).await?;
         let case_count = extract_cases(archive.to_owned(), data_dir.clone()).await?;
@@ -152,6 +167,7 @@ impl DockerSandbox {
                 &judgement_container_name(task.judgement_id),
                 image,
                 &work_dir,
+                interactor_path.as_deref(),
                 run_memory_bytes.max(1024 * 1024 * 1024),
             )
             .await?;
@@ -274,16 +290,17 @@ impl DockerSandbox {
         let wall_limit = run_wall_limit(effective_time_limit_ms);
         for test_index in 1..=case_count {
             let input_path = work_dir.join("current.in");
-            tokio::fs::copy(data_dir.join(format!("{test_index}.in")), &input_path)
+            // Never a plain host-side copy: /work is contestant-writable, so a
+            // planted symlink would redirect this write to any host file.
+            copy_regular_source_no_follow(&data_dir.join(format!("{test_index}.in")), &input_path)
                 .await
                 .map_err(|error| with_path_context(error, "copy test-case input", &input_path))?;
-            set_private_file_permissions(&input_path).await?;
             let actual_path = work_dir.join("actual.out");
             remove_file_if_present(&actual_path).await?;
             let output_blocks = output_file_blocks(task.output_limit_kb);
             let program = language.run_command(task.memory_limit_mb);
             let shell = if interactive {
-                interactive_shell("/usr/bin/time", &program, output_blocks)
+                interactive_shell("/usr/bin/time", SANDBOX_INTERACTOR_PATH, &program, output_blocks)
             } else {
                 standard_shell("/usr/bin/time", &program, output_blocks)
             };
@@ -405,15 +422,28 @@ impl DockerSandbox {
         name: &str,
         image: &str,
         work_dir: &Path,
+        interactor: Option<&Path>,
         memory_bytes: i64,
     ) -> Result<String, SandboxError> {
-        let mounts = vec![Mount {
+        let mut mounts = vec![Mount {
             target: Some("/work".to_owned()),
             source: Some(work_dir.to_string_lossy().into_owned()),
             typ: Some(MountType::BIND),
             read_only: Some(false),
             ..Mount::default()
         }];
+        if let Some(interactor) = interactor {
+            // Mounted read-only *inside* the writable /work bind: Docker
+            // applies container mounts in order, so this second mount overlays
+            // the path and the contestant cannot unlink or replace it.
+            mounts.push(Mount {
+                target: Some(SANDBOX_INTERACTOR_PATH.to_owned()),
+                source: Some(interactor.to_string_lossy().into_owned()),
+                typ: Some(MountType::BIND),
+                read_only: Some(true),
+                ..Mount::default()
+            });
+        }
         let host_config = HostConfig {
             mounts: Some(mounts),
             network_mode: Some("none".to_owned()),
@@ -842,12 +872,22 @@ pub(super) fn standard_shell(time_tool: &str, program: &str, output_blocks: i64)
 /// stream AFTER the report, letting a forged last marker reset the charged
 /// CPU time and peak memory. The diagnostic files are read back separately by
 /// [`DockerSandbox::fetch_interactor_diagnostics`].
-pub(super) fn interactive_shell(time_tool: &str, program: &str, output_blocks: i64) -> String {
+///
+/// `interactor_tool` is the *read-only* bind of the worker-owned interactor
+/// inside the sandbox (see [`SANDBOX_INTERACTOR_PATH`]). The interactive
+/// verdict depends on its exit code alone, so it must never live on the
+/// contestant-writable `/work` layer where it could be replaced.
+pub(super) fn interactive_shell(
+    time_tool: &str,
+    interactor_tool: &str,
+    program: &str,
+    output_blocks: i64,
+) -> String {
     format!(
         "export LC_ALL=C; ulimit -f {output_blocks}; rm -f /work/to_program /work/to_interactor \
          /work/actual.out /work/program.status /work/program.err /work/interactor.err; \
          mkfifo /work/to_program /work/to_interactor; exec 3<>/work/to_program; \
-         exec 4<>/work/to_interactor; /work/interactor /work/current.in <&4 >&3 \
+         exec 4<>/work/to_interactor; {interactor_tool} /work/current.in <&4 >&3 \
          2>/work/interactor.err & interactor_pid=$!; {time_tool} --quiet \
          --format '{GNU_TIME_REPORT_FORMAT}' sh -c '{program} <&3 2>/work/program.err; \
          printf \"%s\" \"$?\" >/work/program.status' | tee /work/actual.out >&4 & \
@@ -888,8 +928,8 @@ mod tests {
     use project_balloon_contracts::JudgeVerdict;
 
     use super::{
-        GNU_TIME_REPORT_FORMAT, effective_time_limit, interactive_shell, output_file_blocks,
-        resource_verdict, standard_shell,
+        GNU_TIME_REPORT_FORMAT, SANDBOX_INTERACTOR_PATH, effective_time_limit, interactive_shell,
+        output_file_blocks, resource_verdict, standard_shell,
     };
 
     #[test]
@@ -947,7 +987,8 @@ mod tests {
 
     #[test]
     fn interactive_shell_keeps_the_time_report_off_contestant_writable_paths() {
-        let shell = interactive_shell("/usr/bin/time", "/work/program", 128);
+        let shell =
+            interactive_shell("/usr/bin/time", SANDBOX_INTERACTOR_PATH, "/work/program", 128);
         // The report is parsed as the last marker on the exec stderr stream:
         // it must not be cached in a /work file (same-UID writable), and no
         // contestant-writable file may be concatenated into that stream after
@@ -956,6 +997,10 @@ mod tests {
         assert!(!shell.contains("cat /work/program.err"));
         assert!(!shell.contains("cat /work/interactor.err"));
         assert!(shell.contains(&format!("--format '{GNU_TIME_REPORT_FORMAT}'")));
+        // The interactor is executed from its read-only bind, never from the
+        // contestant-writable /work layer.
+        assert!(shell.contains(&format!("{SANDBOX_INTERACTOR_PATH} /work/current.in")));
+        assert!(!shell.contains("/work/interactor /work/current.in"));
         // Per-case diagnostics still land in their files for the follow-up
         // exec, and stale files from an earlier case are cleared first.
         assert!(shell.contains("2>/work/program.err"));

@@ -71,13 +71,43 @@ async fn main() -> Result<()> {
     .await?;
 
     info!(address = %config.bind_address, "API listening");
-    let server_result = axum::serve(
+
+    // The signal watcher raises the shutdown flag *before* `serve` starts
+    // draining. SSE handlers only end when they observe the flag, and they
+    // keep connections in flight, so a flag sent after `serve().await`
+    // returned would deadlock: `serve` waits for the streams, and the streams
+    // wait for a flag that is only sent once `serve` returns. It also arms a
+    // hard drain deadline so a wedged connection cannot stall shutdown until
+    // the orchestrator sends SIGKILL.
+    let (signal_seen_tx, signal_seen_rx) = watch::channel(false);
+    let shutdown_for_signal = shutdown.clone();
+    let signal_watcher = tokio::spawn(async move {
+        shutdown_signal().await;
+        let _ = shutdown_for_signal.send(true);
+        let _ = signal_seen_tx.send(true);
+    });
+    let mut graceful_rx = signal_seen_rx.clone();
+    let mut hard_deadline_rx = signal_seen_rx;
+    let serve = axum::serve(
         listener,
         router(state, config.trusted_proxy_cidrs.clone())
             .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .with_graceful_shutdown(shutdown_signal())
-    .await;
+    .with_graceful_shutdown(async move {
+        let _ = graceful_rx.wait_for(|seen| *seen).await;
+    });
+    let server_result = tokio::select! {
+        result = serve => result,
+        _ = async move {
+            let _ = hard_deadline_rx.wait_for(|seen| *seen).await;
+            tokio::time::sleep(SERVER_DRAIN_DEADLINE).await;
+            warn!(
+                deadline_seconds = SERVER_DRAIN_DEADLINE.as_secs(),
+                "API server still had in-flight connections after the drain deadline; abandoning them"
+            );
+        } => Ok(()),
+    };
+    signal_watcher.abort();
 
     runners.shutdown(database, server_result).await
 }
@@ -291,6 +321,12 @@ struct BackgroundRunners {
 /// shutdown proceeds (pool close included) instead of hanging until the
 /// orchestrator gives up and SIGKILLs the process.
 const RUNNER_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(30);
+
+/// Bound for draining in-flight HTTP connections after the shutdown flag is
+/// raised. Long-lived SSE streams already end when they observe the flag; this
+/// deadline catches wedged transports and clients so `serve` can never keep
+/// the process alive past the orchestrator's grace period.
+const SERVER_DRAIN_DEADLINE: Duration = Duration::from_secs(10);
 
 impl BackgroundRunners {
     /// Signals every runner, drains them, closes the pool, and applies the

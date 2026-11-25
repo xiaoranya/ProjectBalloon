@@ -137,6 +137,7 @@ describe('balloon-tasks panels', () => {
             startAt: null,
             freezeAt: null,
             endAt: null,
+            scoreboardRevealedAt: null,
             version: 1,
             createdAt: '',
             updatedAt: '',

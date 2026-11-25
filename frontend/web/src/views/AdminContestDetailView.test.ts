@@ -18,11 +18,25 @@ const api = vi.hoisted(() => ({
   getProblemSubtasks: vi.fn(),
   replaceProblemSubtasks: vi.fn(),
   cloneContest: vi.fn(),
+  revealScoreboard: vi.fn(),
   isSuperAdmin: { value: false },
   push: vi.fn(),
 }));
+const elementMocks = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  confirm: vi.fn(),
+}));
 const route = reactive({ params: { contestId: '42' } });
 vi.mock('../api/admin-contests', () => ({ adminContestApi: api }));
+vi.mock('element-plus', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('element-plus')>();
+  return {
+    ...actual,
+    ElMessage: { success: elementMocks.success, error: elementMocks.error, warning: vi.fn() },
+    ElMessageBox: { confirm: elementMocks.confirm },
+  };
+});
 vi.mock('../auth/session', () => ({ useSession: () => ({ isSuperAdmin: api.isSuperAdmin }) }));
 vi.mock('../components/CodeEditor.vue', () => ({
   default: {
@@ -46,6 +60,7 @@ const contest = (id: number, name: string) => ({
   startAt: '2026-07-20T08:00:00Z',
   freezeAt: '2026-07-20T12:00:00Z',
   endAt: '2026-07-20T13:00:00Z',
+  scoreboardRevealedAt: null,
   version: 3,
   createdAt: '2026-07-20T00:00:00Z',
   updatedAt: '2026-07-20T00:00:00Z',
@@ -57,6 +72,11 @@ describe('AdminContestDetailView', () => {
     setLocale('zh-CN');
     route.params.contestId = '42';
     api.isSuperAdmin.value = false;
+    api.getContest.mockReset();
+    api.revealScoreboard.mockReset();
+    elementMocks.success.mockReset();
+    elementMocks.error.mockReset();
+    elementMocks.confirm.mockReset();
     api.getContest.mockResolvedValue(contest(42, 'Rust Regional'));
     api.listTeams.mockResolvedValue({ content: [] });
     api.listContestTeams.mockResolvedValue([]);
@@ -148,6 +168,66 @@ describe('AdminContestDetailView', () => {
     await entry.trigger('click');
 
     expect(api.push).toHaveBeenCalledWith('/admin/contests/42/announcements');
+  });
+
+  it('offers the public scoreboard reveal only after the contest ends', async () => {
+    const runningWrapper = mount(AdminContestDetailView);
+    await flushPromises();
+    expect(runningWrapper.text()).not.toContain('解冻公开榜单');
+
+    api.getContest.mockResolvedValue({ ...contest(42, 'Ended Contest'), status: 'ENDED' });
+    const endedWrapper = mount(AdminContestDetailView);
+    await flushPromises();
+    expect(endedWrapper.text()).toContain('解冻公开榜单');
+  });
+
+  it('reveals the public scoreboard after confirmation and reloads the contest', async () => {
+    api.getContest.mockResolvedValue({ ...contest(42, 'Ended Contest'), status: 'ENDED' });
+    elementMocks.confirm.mockResolvedValue('confirm');
+    api.revealScoreboard.mockResolvedValue({ contestId: 42, frozen: false });
+
+    const wrapper = mount(AdminContestDetailView);
+    await flushPromises();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('解冻公开榜单'))!
+      .trigger('click');
+    await flushPromises();
+
+    expect(elementMocks.confirm).toHaveBeenCalled();
+    expect(api.revealScoreboard).toHaveBeenCalledWith(42);
+    expect(elementMocks.success).toHaveBeenCalledWith('公开榜单已解冻');
+    expect(api.getContest).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the board frozen when the reveal confirmation is dismissed', async () => {
+    api.getContest.mockResolvedValue({ ...contest(42, 'Ended Contest'), status: 'ENDED' });
+    elementMocks.confirm.mockRejectedValue(new Error('dismissed'));
+
+    const wrapper = mount(AdminContestDetailView);
+    await flushPromises();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('解冻公开榜单'))!
+      .trigger('click');
+    await flushPromises();
+
+    expect(api.revealScoreboard).not.toHaveBeenCalled();
+    expect(elementMocks.error).not.toHaveBeenCalled();
+  });
+
+  it('shows the reveal timestamp instead of the button once revealed', async () => {
+    api.getContest.mockResolvedValue({
+      ...contest(42, 'Revealed Contest'),
+      status: 'ENDED',
+      scoreboardRevealedAt: '2026-07-20T13:30:00Z',
+    });
+
+    const wrapper = mount(AdminContestDetailView);
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain('解冻公开榜单');
+    expect(wrapper.text()).toContain('榜单已解冻于');
   });
 
   it('links an assigned problem to the scoped content editor', async () => {

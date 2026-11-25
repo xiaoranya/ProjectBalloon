@@ -187,9 +187,9 @@ pub struct ScoreboardCell {
 
 #[derive(sqlx::FromRow)]
 pub(super) struct ContestBoardRow {
-    pub status: String,
     pub start_at: Option<OffsetDateTime>,
     pub freeze_at: Option<OffsetDateTime>,
+    pub scoreboard_revealed_at: Option<OffsetDateTime>,
     pub end_at: Option<OffsetDateTime>,
     pub scoreboard_revision: i64,
     pub scoring_mode: String,

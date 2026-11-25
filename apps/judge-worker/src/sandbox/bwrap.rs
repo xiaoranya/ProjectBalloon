@@ -34,14 +34,18 @@ use crate::sandbox::{
     cgroup::CgroupManager,
     effective_time_limit,
     fs::{
-        create_private_dir, nonempty, read_regular_output_no_follow, remove_dir_if_present,
+        copy_regular_source_no_follow, create_private_dir, nonempty,
+        read_regular_file_no_follow_bounded, read_regular_output_no_follow, remove_dir_if_present,
         remove_file_if_present, set_executable_file_permissions, set_private_file_permissions,
         truncate_log, with_path_context,
     },
     language::LanguageConfig,
     metrics::extract_gnu_time_metrics,
     run_wall_limit,
-    runner::{interactive_shell, resource_verdict, run_output_only, standard_shell},
+    runner::{
+        SANDBOX_INTERACTOR_PATH, interactive_shell, resource_verdict, run_output_only,
+        standard_shell,
+    },
 };
 
 /// Host directories bound read-only into every sandbox. Merged-usr layouts
@@ -287,13 +291,21 @@ impl BubblewrapSandbox {
             .await
             .map_err(|error| with_path_context(error, "write submission source", &source_path))?;
         set_private_file_permissions(&source_path).await?;
-        if let Some(interactor) = interactor {
-            let path = work_dir.join("interactor");
-            tokio::fs::write(&path, interactor)
-                .await
-                .map_err(|error| with_path_context(error, "write interactor", &path))?;
-            set_executable_file_permissions(&path).await?;
-        }
+        // The interactor is host-owned and lives outside the writable /work
+        // bind; `run_command` binds it read-only at
+        // [`SANDBOX_INTERACTOR_PATH`]. A contestant-writable interactor could
+        // be replaced between test cases and force Accepted.
+        let interactor_path = match interactor {
+            Some(interactor) => {
+                let path = job_dir.join("interactor");
+                tokio::fs::write(&path, interactor)
+                    .await
+                    .map_err(|error| with_path_context(error, "write interactor", &path))?;
+                set_executable_file_permissions(&path).await?;
+                Some(path)
+            }
+            None => None,
+        };
         let data_dir = job_dir.join("data");
         create_private_dir(&data_dir).await?;
         let case_count =
@@ -306,6 +318,7 @@ impl BubblewrapSandbox {
                 &language.compile_command(),
                 &language.compile_env(),
                 &work_dir,
+                None,
                 run_memory_bytes.max(COMPILE_MEMORY_FLOOR_BYTES),
                 COMPILE_WALL_LIMIT,
             )
@@ -328,16 +341,22 @@ impl BubblewrapSandbox {
         let wall_limit = run_wall_limit(effective_time_limit_ms);
         for test_index in 1..=case_count {
             let input_path = work_dir.join("current.in");
-            tokio::fs::copy(data_dir.join(format!("{test_index}.in")), &input_path)
+            // Never a plain host-side copy: /work is contestant-writable, so a
+            // planted symlink would redirect this write to any host file.
+            copy_regular_source_no_follow(&data_dir.join(format!("{test_index}.in")), &input_path)
                 .await
                 .map_err(|error| with_path_context(error, "copy test-case input", &input_path))?;
-            set_private_file_permissions(&input_path).await?;
             let actual_path = work_dir.join("actual.out");
             remove_file_if_present(&actual_path).await?;
             let output_blocks = output_file_blocks(task.output_limit_kb);
             let program = language.run_command(task.memory_limit_mb);
             let shell = if task.judge_mode == JudgeMode::Interactive {
-                interactive_shell(SANDBOX_TIME_TOOL, &program, output_blocks)
+                interactive_shell(
+                    SANDBOX_TIME_TOOL,
+                    SANDBOX_INTERACTOR_PATH,
+                    &program,
+                    output_blocks,
+                )
             } else {
                 standard_shell(SANDBOX_TIME_TOOL, &program, output_blocks)
             };
@@ -347,6 +366,7 @@ impl BubblewrapSandbox {
                     &["/bin/sh".to_owned(), "-c".to_owned(), shell],
                     &[],
                     &work_dir,
+                    interactor_path.as_deref(),
                     run_memory_bytes,
                     wall_limit,
                 )
@@ -447,12 +467,14 @@ impl BubblewrapSandbox {
     /// Runs one sandbox action: `bwrap <isolation> --bind work /work -- <argv>`
     /// under a fresh cgroup, bounded by the wall clock. Returns the exit code,
     /// timeout flag, OOM flag, and the bounded stderr stream.
+    #[allow(clippy::too_many_arguments)]
     async fn run_command(
         &self,
         label: &str,
         argv: &[String],
         env: &[String],
         work_dir: &Path,
+        interactor: Option<&Path>,
         memory_bytes: i64,
         wall_limit: Duration,
     ) -> Result<BwrapRun, SandboxError> {
@@ -487,6 +509,14 @@ impl BubblewrapSandbox {
         args.push("--ro-bind".into());
         args.push(self.gnu_time_path.as_os_str().to_owned());
         args.push(SANDBOX_TIME_TOOL.into());
+        // The interactor is bound read-only over the writable /work layer,
+        // exactly like the measurement tool: the contestant can neither
+        // replace nor remove it.
+        if let Some(interactor) = interactor {
+            args.push("--ro-bind".into());
+            args.push(interactor.as_os_str().to_owned());
+            args.push(SANDBOX_INTERACTOR_PATH.into());
+        }
         args.push("--".into());
         args.extend(argv.iter().map(Into::into));
 
@@ -629,13 +659,31 @@ fn exit_code_of(status: &std::process::ExitStatus) -> i64 {
 /// directory — no follow-up exec needed in this backend. Their content is
 /// contestant-written, so they are only ever appended after the GNU-time
 /// marker has been parsed off the run stream.
+///
+/// The files live on the contestant-writable `/work` bind, so this read must
+/// never follow a symlink in the *host* namespace: a contestant could point
+/// `program.err` at `/proc/self/environ` and leak the worker's credentials
+/// through `stderr_tail`, or at `/dev/zero` and pin the worker. Each read is
+/// therefore `O_NOFOLLOW` + regular-file-only + byte-bounded.
 async fn read_interactive_diagnostics(work_dir: &Path) -> String {
     let mut diagnostics = String::new();
+    let mut remaining = MAX_EXEC_LOG_BYTES;
     for name in ["program.err", "interactor.err"] {
-        // A contestant that never wrote diagnostics is normal.
-        if let Ok(bytes) = tokio::fs::read(work_dir.join(name)).await {
-            diagnostics.push_str(&String::from_utf8_lossy(&bytes));
-            diagnostics.push('\n');
+        if remaining == 0 {
+            break;
+        }
+        match read_regular_file_no_follow_bounded(&work_dir.join(name), remaining).await {
+            // A contestant that never wrote diagnostics is normal.
+            Ok(Some(bytes)) => {
+                let consumed = bytes.len() + 1;
+                diagnostics.push_str(&String::from_utf8_lossy(&bytes));
+                diagnostics.push('\n');
+                remaining = remaining.saturating_sub(consumed);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                warn!(%error, file = name, "failed to read interactive diagnostic file; ignoring it");
+            }
         }
     }
     diagnostics

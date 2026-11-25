@@ -19,6 +19,7 @@ pub(super) const CONTEST_COLUMNS: &str = r#"
     start_at,
     end_at,
     freeze_at,
+    scoreboard_revealed_at,
     version,
     created_at,
     updated_at,
