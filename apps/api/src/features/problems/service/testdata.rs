@@ -38,9 +38,12 @@ impl ProblemService {
                 "#,
         )
         .bind(problem_id)
-        .fetch_one(&self.database)
+        // The preflight above raced a concurrent soft delete: `fetch_one` turned
+        // that into a 500, while every other read path answers 404.
+        .fetch_optional(&self.database)
         .await
-        .map_err(|error| AppError::internal("load current test-data version", error))?;
+        .map_err(|error| AppError::internal("load current test-data version", error))?
+        .ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem was not found"))?;
         let version = maximum_version.checked_add(1).ok_or_else(|| {
             AppError::conflict("TESTDATA_VERSION_EXHAUSTED", "Test-data version is exhausted")
         })?;

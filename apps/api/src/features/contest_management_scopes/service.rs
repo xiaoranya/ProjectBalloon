@@ -6,6 +6,10 @@ use crate::error::AppError;
 
 use crate::features::contest_management_scopes::model::ContestManagementScopeResponse;
 
+/// Must match `staff_accounts::STAFF_ACCESS_LOCK_ID`: both paths serialize on
+/// the same key so a scope rewrite cannot interleave with a permission change.
+const STAFF_ACCESS_LOCK_ID: i64 = 0x0050_4253_5441_4646;
+
 pub struct ContestManagementScopeService {
     database: PgPool,
 }
@@ -58,6 +62,15 @@ impl ContestManagementScopeService {
             .begin()
             .await
             .map_err(|error| AppError::internal("begin contest admin scope update", error))?;
+        // Same advisory lock as the staff-account service: a scope rewrite and a
+        // permission change for the same user must not interleave, or a manager
+        // ends up with scopes that were validated against the permissions it had
+        // a moment ago (a "ghost" assignment that survives the revocation).
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(STAFF_ACCESS_LOCK_ID)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| AppError::internal("serialize staff access changes", error))?;
         let admin = sqlx::query_as::<_, (String, String, bool)>(
             r#"
             SELECT username, display_name, enabled

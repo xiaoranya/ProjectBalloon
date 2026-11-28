@@ -93,14 +93,17 @@ impl ContestProblemService {
             .await
             .map_err(|error| AppError::internal("begin contest problem assignment", error))?;
         lock_configurable_contest(&mut transaction, contest_id, actor).await?;
-        let problem_exists = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS (SELECT 1 FROM problems WHERE id = $1 AND deleted_at IS NULL)",
+        // `FOR KEY SHARE` keeps the row alive until this transaction commits: a
+        // concurrent soft delete blocks here instead of slipping in between the
+        // check and the INSERT.
+        let problem_exists = sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM problems WHERE id = $1 AND deleted_at IS NULL FOR KEY SHARE",
         )
         .bind(assignment.problem_id)
-        .fetch_one(&mut *transaction)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| AppError::internal("check assigned problem", error))?;
-        if !problem_exists {
+        if problem_exists.is_none() {
             return Err(AppError::not_found("PROBLEM_NOT_FOUND", "Problem was not found"));
         }
         let sql = format!(

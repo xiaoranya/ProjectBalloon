@@ -286,6 +286,20 @@ impl ProblemService {
             .begin()
             .await
             .map_err(|error| AppError::internal("begin problem deletion", error))?;
+        // Lock before looking for assignments: without the row lock an
+        // assignment could insert between the check and the UPDATE, leaving a
+        // soft-deleted problem attached to a contest. Assignment takes
+        // `FOR KEY SHARE` on the same row, so the two serialize.
+        let locked = sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM problems WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
+        )
+        .bind(problem_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| AppError::internal("lock problem for deletion", error))?;
+        if locked.is_none() {
+            return Err(problem_not_found());
+        }
         let assigned = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS (SELECT 1 FROM contest_problems WHERE problem_id = $1)",
         )
