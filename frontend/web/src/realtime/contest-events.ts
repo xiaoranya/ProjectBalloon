@@ -20,6 +20,13 @@ export interface ContestRealtimeOptions {
   onConnectionChange?: (connected: boolean) => void;
   poll: () => void | Promise<void>;
   pollIntervalMs?: number;
+  /**
+   * Collapse a burst of matching events into one trailing `onEvent` call. The
+   * newest event wins. Use it for views whose handler refetches the whole scene:
+   * a single publish can emit several events, and a 500 ms resolver autoplay
+   * emits one per step.
+   */
+  coalesceMs?: number;
 }
 
 export interface ContestRealtimeSubscription {
@@ -127,6 +134,25 @@ export function subscribeContestEvents(
       });
   };
 
+  // Burst collapsing for handlers that refetch a whole scene.
+  const coalesceMs = options.coalesceMs ?? 0;
+  let coalesceTimer: number | undefined;
+  let coalescedEvent: RealtimeEvent | undefined;
+  const dispatchEvent = (event: RealtimeEvent) => {
+    if (coalesceMs <= 0) {
+      options.onEvent(event);
+      return;
+    }
+    coalescedEvent = event;
+    if (coalesceTimer !== undefined) return;
+    coalesceTimer = window.setTimeout(() => {
+      coalesceTimer = undefined;
+      const pending = coalescedEvent;
+      coalescedEvent = undefined;
+      if (pending && !stopped) options.onEvent(pending);
+    }, coalesceMs);
+  };
+
   const isDuplicate = (id: string) => {
     if (seenEventIds.has(id)) return true;
     seenEventIds.add(id);
@@ -159,7 +185,7 @@ export function subscribeContestEvents(
       if (event.id) lastEventId = event.id;
       if (options.eventTypes.includes(event.type)) {
         if (event.id && isDuplicate(event.id)) return;
-        options.onEvent(event);
+        dispatchEvent(event);
       }
     } catch {
       handleConnectionLost();
@@ -215,6 +241,11 @@ export function subscribeContestEvents(
       }
       seenEventIds.clear();
       seenEventIdOrder.length = 0;
+      if (coalesceTimer !== undefined) {
+        window.clearTimeout(coalesceTimer);
+        coalesceTimer = undefined;
+        coalescedEvent = undefined;
+      }
       document.removeEventListener('visibilitychange', handleVisibility);
     },
   };

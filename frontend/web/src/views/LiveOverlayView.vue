@@ -54,6 +54,7 @@ const errorMessage = ref('');
 let realtime: ContestRealtimeSubscription | undefined;
 let loadGeneration = 0;
 let timer: number | undefined;
+let stopped = false;
 
 const firstBlood = computed(() =>
   presentation.value?.scoreboard.rows.find((row) => row.problems.some((cell) => cell.firstBlood)),
@@ -96,18 +97,36 @@ async function load() {
   }
 }
 
+// Exactly one poller runs at a time: the interval below refreshes scores while
+// the event stream is healthy, and it steps aside for the subscription's
+// backoff poll once the stream drops. Before this, both ran during an outage.
+function startScoreRefresh() {
+  if (timer || stopped) return;
+  timer = window.setInterval(() => {
+    if (!document.hidden) void load();
+  }, 10_000);
+}
+function stopScoreRefresh() {
+  if (timer) window.clearInterval(timer);
+  timer = undefined;
+}
+
 onMounted(() => {
   if (!contestId || !token) {
     errorMessage.value = t('缺少 contestId 或广播 Token');
     return;
   }
   void load();
-  timer = window.setInterval(() => void load(), 10_000);
+  startScoreRefresh();
   realtime = subscribeContestEvents({
     contestId,
     scope: 'PUBLIC',
     eventTypes: ['ANNOUNCEMENT_UPDATED', 'PRESENTATION_UPDATED'],
     onEvent: () => void load(),
+    onConnectionChange: (connected) => {
+      if (connected) startScoreRefresh();
+      else stopScoreRefresh();
+    },
     poll: load,
     pollIntervalMs: 10_000,
   });
@@ -116,8 +135,9 @@ onMounted(() => {
   document.documentElement.classList.add('live-overlay-page');
 });
 onBeforeUnmount(() => {
+  stopped = true;
   realtime?.stop();
-  if (timer) window.clearInterval(timer);
+  stopScoreRefresh();
   document.documentElement.classList.remove('live-overlay-page');
 });
 </script>

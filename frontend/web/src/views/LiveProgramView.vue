@@ -279,10 +279,29 @@ async function loadAwards() {
   }
 }
 
+// One refresh at a time: a resolver autoplay step every 500 ms would otherwise
+// stack three-request reloads on top of each other. Overlapping calls collapse
+// into a single follow-up once the current one lands.
+let refreshInFlight = false;
+let refreshPending = false;
+
 async function refreshAll(reloadProgram: boolean) {
-  await loadPublished();
-  if (reloadProgram) await loadProgram();
-  await loadSceneData();
+  if (refreshInFlight) {
+    refreshPending = refreshPending || reloadProgram;
+    return;
+  }
+  refreshInFlight = true;
+  try {
+    await loadPublished();
+    if (reloadProgram) await loadProgram();
+    await loadSceneData();
+  } finally {
+    refreshInFlight = false;
+    if (refreshPending) {
+      refreshPending = false;
+      void refreshAll(true);
+    }
+  }
 }
 
 onMounted(() => {
@@ -316,6 +335,7 @@ onMounted(() => {
       await refreshAll(true);
     },
     pollIntervalMs: 10_000,
+    coalesceMs: 250,
   });
 });
 onBeforeUnmount(() => {

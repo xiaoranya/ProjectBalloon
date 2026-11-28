@@ -36,9 +36,9 @@ const contest = ref<ContestResponse | null>(null);
 const errorMessage = ref('');
 let realtime: ContestRealtimeSubscription | undefined;
 let generation = 0;
-const contestTitle = computed(
-  () => contest.value?.name ?? (run.value ? `Contest #${run.value.contestId}` : 'Resolver Display'),
-);
+// Never fall back to the internal contest id on a public screen; a neutral
+// placeholder is enough until the contest name arrives.
+const contestTitle = computed(() => contest.value?.name ?? 'Resolver Display');
 const statusLabel = computed(() =>
   run.value
     ? { RUNNING: 'LIVE', PAUSED: 'PAUSED', COMPLETED: 'COMPLETE', READY: 'READY' }[run.value.status]
