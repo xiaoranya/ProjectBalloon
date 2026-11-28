@@ -474,80 +474,92 @@ async function submitImport() {
   importing.value = true;
   errorMessage.value = '';
   credentials.value = [];
-  const importId = randomId();
-  const prefix = idempotencyKey.value.trim() || `team-import-${importId}`;
-  const chunks = Array.from({ length: plannedBatchCount.value }, (_, index) =>
-    drafts.value.slice(index * 100, (index + 1) * 100),
-  );
-  batchResults.value = chunks.map((chunk, index) => ({
-    number: index + 1,
-    range: `${index * 100 + 1}–${index * 100 + chunk.length}`,
-    idempotencyKey: makeBatchKey(prefix, index + 1),
-    status: 'PENDING',
-    batchId: '',
-    message: t('等待提交'),
-  }));
-  for (let index = 0; index < chunks.length; index++) {
-    const chunk = chunks[index];
-    const resultRow = batchResults.value[index];
-    let response;
-    try {
-      response = await teamImportApi.importTeams({
-        teams: requestRows(chunk),
-        contestId: contestId.value,
-        participationType: contestId.value === null ? null : participationType.value,
-        requirePasswordReset: requirePasswordReset.value,
-        idempotencyKey: resultRow.idempotencyKey,
-      });
-    } catch (error) {
-      resultRow.status = 'FAILED';
-      resultRow.message = getErrorMessage(error);
-      for (let later = index + 1; later < batchResults.value.length; later++) {
-        batchResults.value[later].status = 'SKIPPED';
-        batchResults.value[later].message = t('前序批次失败，未提交');
-      }
-      errorMessage.value = t('第 {batch} 批失败：{message}。输入已保留，可核对幂等键后重试。', {
-        batch: index + 1,
-        message: resultRow.message,
-      });
-      break;
-    }
-    resultRow.status = 'SUCCESS';
-    resultRow.batchId = response.batchId;
-    resultRow.message = t('已创建 {count} 支队伍', { count: response.created.length });
-    const memberErrors: string[] = [];
-    for (const created of response.created) {
-      const inputIndex = index * 100 + created.index;
-      const draft = drafts.value[inputIndex];
-      if (created.username)
-        credentials.value.push({
-          inputIndex,
-          teamName: draft.name,
-          username: created.username,
-          initialPassword: draft.initialPassword,
-          teamId: created.teamId,
-          userId: created.userId,
+  try {
+    const importId = randomId();
+    const prefix = idempotencyKey.value.trim() || `team-import-${importId}`;
+    const chunks = Array.from({ length: plannedBatchCount.value }, (_, index) =>
+      drafts.value.slice(index * 100, (index + 1) * 100),
+    );
+    batchResults.value = chunks.map((chunk, index) => ({
+      number: index + 1,
+      range: `${index * 100 + 1}–${index * 100 + chunk.length}`,
+      idempotencyKey: makeBatchKey(prefix, index + 1),
+      status: 'PENDING',
+      batchId: '',
+      message: t('等待提交'),
+    }));
+    for (let index = 0; index < chunks.length; index++) {
+      const chunk = chunks[index];
+      const resultRow = batchResults.value[index];
+      let response;
+      try {
+        response = await teamImportApi.importTeams({
+          teams: requestRows(chunk),
+          contestId: contestId.value,
+          participationType: contestId.value === null ? null : participationType.value,
+          requirePasswordReset: requirePasswordReset.value,
+          idempotencyKey: resultRow.idempotencyKey,
         });
-      for (const member of draft.members) {
-        try {
-          await teamImportApi.addMember(created.teamId, {
-            name: member.name.trim(),
-            email: member.email ? nullable(member.email) : null,
-            phone: member.phone ? nullable(member.phone) : null,
-            roleName: member.roleName ? nullable(member.roleName) : null,
+      } catch (error) {
+        resultRow.status = 'FAILED';
+        resultRow.message = getErrorMessage(error);
+        for (let later = index + 1; later < batchResults.value.length; later++) {
+          batchResults.value[later].status = 'SKIPPED';
+          batchResults.value[later].message = t('前序批次失败，未提交');
+        }
+        errorMessage.value = t('第 {batch} 批失败：{message}。输入已保留，可核对幂等键后重试。', {
+          batch: index + 1,
+          message: resultRow.message,
+        });
+        break;
+      }
+      resultRow.status = 'SUCCESS';
+      resultRow.batchId = response.batchId;
+      resultRow.message = t('已创建 {count} 支队伍', { count: response.created.length });
+      const memberErrors: string[] = [];
+      for (const created of response.created) {
+        const inputIndex = index * 100 + created.index;
+        const draft = drafts.value[inputIndex];
+        if (!draft) {
+          // The returned index can point past the batch we sent if a draft was
+          // removed mid-import; skip the row instead of throwing on undefined.
+          memberErrors.push(
+            t('第 {index} 项与本地草稿不匹配，已跳过成员添加', { index: inputIndex + 1 }),
+          );
+          continue;
+        }
+        if (created.username)
+          credentials.value.push({
+            inputIndex,
+            teamName: draft.name,
+            username: created.username,
+            initialPassword: draft.initialPassword,
+            teamId: created.teamId,
+            userId: created.userId,
           });
-        } catch (error) {
-          memberErrors.push(`${draft.name}/${member.name}: ${getErrorMessage(error)}`);
+        for (const member of draft.members) {
+          try {
+            await teamImportApi.addMember(created.teamId, {
+              name: member.name.trim(),
+              email: member.email ? nullable(member.email) : null,
+              phone: member.phone ? nullable(member.phone) : null,
+              roleName: member.roleName ? nullable(member.roleName) : null,
+            });
+          } catch (error) {
+            memberErrors.push(`${draft.name}/${member.name}: ${getErrorMessage(error)}`);
+          }
         }
       }
+      if (memberErrors.length)
+        resultRow.message += t('；成员添加失败 {count} 项：{errors}', {
+          count: memberErrors.length,
+          errors: memberErrors.join('；'),
+        });
     }
-    if (memberErrors.length)
-      resultRow.message += t('；成员添加失败 {count} 项：{errors}', {
-        count: memberErrors.length,
-        errors: memberErrors.join('；'),
-      });
+  } finally {
+    // Whatever escapes the batch loop, the panel must not stay in "importing".
+    importing.value = false;
   }
-  importing.value = false;
   if (!errorMessage.value)
     ElMessage.success(t('导入完成，共创建 {count} 个账号', { count: credentials.value.length }));
 }

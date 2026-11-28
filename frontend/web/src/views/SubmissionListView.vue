@@ -94,6 +94,8 @@ const page = ref<PageResponse<SubmissionSummary>>({
 });
 let pollTimer: number | undefined;
 let requestGeneration = 0;
+// An unmounted list must not reschedule itself from a late failure.
+let stopped = false;
 
 async function loadSubmissions(silent = false) {
   const generation = ++requestGeneration;
@@ -117,8 +119,8 @@ async function loadSubmissions(silent = false) {
 
 function schedulePolling(delay = 4_000) {
   if (pollTimer) window.clearTimeout(pollTimer);
-  if (document.hidden || !submissions.value.some((item) => !isFinalSubmissionStatus(item.status)))
-    return;
+  if (stopped || document.hidden) return;
+  if (!submissions.value.some((item) => !isFinalSubmissionStatus(item.status))) return;
   pollTimer = window.setTimeout(() => void loadSubmissions(true), delay);
 }
 
@@ -144,6 +146,8 @@ watch(
 );
 
 onUnmounted(() => {
+  stopped = true;
+  requestGeneration += 1;
   if (pollTimer) window.clearTimeout(pollTimer);
   document.removeEventListener('visibilitychange', handleVisibility);
 });

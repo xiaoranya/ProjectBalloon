@@ -26,6 +26,8 @@ export interface ContestPayload {
   startAt: string | null;
   freezeAt: string | null;
   endAt: string | null;
+  /** Optimistic-concurrency guard; the API rejects the update when it is stale. */
+  expectedVersion?: number;
 }
 export interface ContestCloneResult {
   sourceContestId: number;

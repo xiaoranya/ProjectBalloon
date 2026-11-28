@@ -315,6 +315,8 @@ const english: Record<string, string> = {
   保存修改: 'Save changes',
   请输入比赛名称: 'Enter a contest name',
   '赛程时间必须全部填写，或全部留空。': 'Fill in all schedule times or leave all of them blank.',
+  '比赛已开始，赛程时间不能再修改。':
+    'The contest has started; its schedule can no longer be edited.',
   题库: 'Problem bank',
   虚拟比赛: 'Virtual contests',
   账户: 'Account',
@@ -887,6 +889,8 @@ const english: Record<string, string> = {
   '已创建 {count} 支队伍': 'Created {count} teams',
   '；成员添加失败 {count} 项：{errors}': '; {count} member additions failed: {errors}',
   '导入完成，共创建 {count} 个账号': 'Import completed; {count} accounts created',
+  '第 {index} 项与本地草稿不匹配，已跳过成员添加':
+    'Row {index} no longer matches a local draft; skipped adding its members',
   '账号已复制，页面中的密码已清除': 'Credentials copied and passwords cleared from the page',
   'CSV 已下载，页面中的密码已清除': 'CSV downloaded and passwords cleared from the page',
   未提交: 'Not submitted',

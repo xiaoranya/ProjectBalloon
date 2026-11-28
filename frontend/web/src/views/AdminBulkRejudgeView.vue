@@ -124,6 +124,10 @@ const tasksLoading = ref(false);
 const mutatingTaskId = ref<number | null>(null);
 const errorMessage = ref('');
 let pollTimer: number | undefined;
+// Switching contests must invalidate the previous contest's in-flight poll, and
+// an unmounted view must not reschedule one from a late failure.
+let requestGeneration = 0;
+let stopped = false;
 
 const verdictOptions = computed(() =>
   [
@@ -240,18 +244,24 @@ async function createTask() {
 }
 
 async function loadTasks(silent = true) {
+  const generation = ++requestGeneration;
   if (!silent) tasksLoading.value = true;
   try {
-    tasks.value = await bulkRejudgeApi.list(contestId.value);
+    const loaded = await bulkRejudgeApi.list(contestId.value);
+    if (generation !== requestGeneration || stopped) return;
+    tasks.value = loaded;
     if (detailVisible.value && selectedTask.value) {
-      selectedTask.value = await bulkRejudgeApi.get(contestId.value, selectedTask.value.id);
+      const refreshed = await bulkRejudgeApi.get(contestId.value, selectedTask.value.id);
+      if (generation !== requestGeneration || stopped) return;
+      selectedTask.value = refreshed;
     }
     schedulePolling();
   } catch (error) {
+    if (generation !== requestGeneration || stopped) return;
     if (!silent) errorMessage.value = getErrorMessage(error);
     schedulePolling(8_000);
   } finally {
-    tasksLoading.value = false;
+    if (generation === requestGeneration) tasksLoading.value = false;
   }
 }
 
@@ -313,7 +323,7 @@ function replaceTask(updated: BatchRejudgeTask) {
 
 function schedulePolling(delay = 2_500) {
   if (pollTimer) window.clearTimeout(pollTimer);
-  if (document.hidden || !polling.value) return;
+  if (stopped || document.hidden || !polling.value) return;
   pollTimer = window.setTimeout(() => void loadTasks(true), delay);
 }
 
@@ -339,6 +349,8 @@ watch(
 );
 
 onUnmounted(() => {
+  stopped = true;
+  requestGeneration += 1;
   if (pollTimer) window.clearTimeout(pollTimer);
   document.removeEventListener('visibilitychange', handleVisibility);
 });
