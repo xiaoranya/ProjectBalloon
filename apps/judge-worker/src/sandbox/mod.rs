@@ -201,11 +201,29 @@ pub(crate) fn judgement_id_from_container_name(name: &str) -> Option<Uuid> {
     name.strip_prefix('/').unwrap_or(name).strip_prefix(JUDGE_CONTAINER_PREFIX)?.parse().ok()
 }
 
+/// Ceilings the worker enforces on its own, independent of what the task claims.
+/// The contract only validates `> 0`, so a malformed or hostile task could ask
+/// for a week-long run or a 4 TiB box and the sandbox would try to honour it.
+pub(crate) const MAX_LANGUAGE_MULTIPLIER: f64 = 5.0;
+pub(crate) const MAX_EFFECTIVE_TIME_LIMIT_MS: i32 = 10 * 60 * 1_000;
+pub(crate) const MAX_MEMORY_LIMIT_MB: i32 = 4 * 1024;
+
 /// Applies the language multiplier to the task time limit, clamped to at least
-/// one millisecond.
+/// one millisecond and at most [`MAX_EFFECTIVE_TIME_LIMIT_MS`].
 pub(crate) fn effective_time_limit(task_time_limit_ms: i32, language_multiplier: f64) -> i32 {
-    (f64::from(task_time_limit_ms) * language_multiplier).ceil().clamp(1.0, f64::from(i32::MAX))
-        as i32
+    let multiplier = if language_multiplier.is_finite() && language_multiplier > 0.0 {
+        language_multiplier.min(MAX_LANGUAGE_MULTIPLIER)
+    } else {
+        1.0
+    };
+    let limit = (f64::from(task_time_limit_ms.max(1)) * multiplier).ceil();
+    limit.clamp(1.0, f64::from(MAX_EFFECTIVE_TIME_LIMIT_MS)) as i32
+}
+
+/// Memory the sandbox actually grants: the task value, clamped to
+/// [`MAX_MEMORY_LIMIT_MB`] so one submission cannot reserve the host.
+pub(crate) fn effective_memory_limit(task_memory_limit_mb: i32) -> i32 {
+    task_memory_limit_mb.clamp(1, MAX_MEMORY_LIMIT_MB)
 }
 
 /// Wall clock the runner grants a single run: the effective time limit with

@@ -282,7 +282,8 @@ impl S3ObjectStorage {
 
     /// Upload transfers (`put`, `put_file`) carry multi-GiB export archives and
     /// 256MiB testdata bundles, so they are bounded by the dedicated upload
-    /// timeout instead of the short metadata request budget.
+    /// timeout instead of the short metadata request budget. It covers bulk
+    /// transfers in both directions: uploads, and the body of a download.
     async fn within_upload_timeout<T>(
         &self,
         request: impl Future<Output = Result<T, ObjectStorageError>>,
@@ -299,16 +300,23 @@ impl S3ObjectStorage {
         let store = self.store(bucket)?;
         let path = Self::path(key)?;
         let max_bytes_u64 = u64::try_from(max_bytes).unwrap_or(u64::MAX);
-        self.within_timeout(async {
-            let metadata = store
-                .head(&path)
-                .await
-                .map_err(|error| ObjectStorageError::Request(error.to_string()))?;
-            if metadata.size > max_bytes_u64 {
-                return Err(ObjectStorageError::Request(format!(
-                    "object exceeds the {max_bytes} byte read limit"
-                )));
-            }
+        // The HEAD is metadata and keeps the short budget; the body is a bulk
+        // transfer. Sharing one 5s deadline meant a 20-32 MiB attachment timed
+        // out on every slow link before the first chunk arrived.
+        let metadata = self
+            .within_timeout(async {
+                store
+                    .head(&path)
+                    .await
+                    .map_err(|error| ObjectStorageError::Request(error.to_string()))
+            })
+            .await?;
+        if metadata.size > max_bytes_u64 {
+            return Err(ObjectStorageError::Request(format!(
+                "object exceeds the {max_bytes} byte read limit"
+            )));
+        }
+        self.within_upload_timeout(async {
             let mut stream = store
                 .get(&path)
                 .await
@@ -420,40 +428,60 @@ impl ObjectStorage for S3ObjectStorage {
             .map_err(|error| ObjectStorageError::Request(error.to_string()))?;
         let store = self.store(bucket)?;
         let object_path = Self::path(key)?;
-        self.within_upload_timeout(async {
-            let upload = store
-                .put_multipart_opts(
-                    &object_path,
-                    PutMultipartOptions::from(Self::put_options(content_type).attributes),
-                )
-                .await
-                .map_err(|error| ObjectStorageError::Request(error.to_string()))?;
-            let mut writer = WriteMultipart::new(upload);
-            let mut buffer = vec![0_u8; 5 * 1024 * 1024];
-            loop {
-                let read = match file.read(&mut buffer).await {
-                    Ok(read) => read,
-                    Err(error) => {
-                        let _ = writer.abort().await;
-                        return Err(ObjectStorageError::Request(error.to_string()));
-                    }
-                };
-                if read == 0 {
-                    break;
-                }
-                writer.put(Bytes::copy_from_slice(&buffer[..read]));
-                if let Err(error) = writer.wait_for_capacity(4).await {
+        let upload = self
+            .within_upload_timeout(async {
+                store
+                    .put_multipart_opts(
+                        &object_path,
+                        PutMultipartOptions::from(Self::put_options(content_type).attributes),
+                    )
+                    .await
+                    .map_err(|error| ObjectStorageError::Request(error.to_string()))
+            })
+            .await?;
+        let mut writer = WriteMultipart::new(upload);
+        let mut buffer = vec![0_u8; 5 * 1024 * 1024];
+        // A stall deadline, refreshed after every part, instead of one deadline
+        // for the whole transfer: a single `timeout` around the loop dropped the
+        // writer mid-flight, leaving an IncompleteMultipartUpload on the bucket
+        // that nobody ever aborts (and that S3 bills for). Refreshing keeps a
+        // slow-but-progressing upload alive while every failure path here can
+        // still call `abort`.
+        let mut stall_deadline = tokio::time::Instant::now() + self.upload_timeout;
+        loop {
+            let read = match tokio::time::timeout_at(stall_deadline, file.read(&mut buffer)).await {
+                Ok(Ok(read)) => read,
+                Ok(Err(error)) => {
                     let _ = writer.abort().await;
                     return Err(ObjectStorageError::Request(error.to_string()));
                 }
+                Err(_) => {
+                    let _ = writer.abort().await;
+                    return Err(ObjectStorageError::Timeout);
+                }
+            };
+            if read == 0 {
+                break;
             }
-            writer
-                .finish()
-                .await
-                .map(|_| ())
-                .map_err(|error| ObjectStorageError::Request(error.to_string()))
-        })
-        .await
+            writer.put(Bytes::copy_from_slice(&buffer[..read]));
+            match tokio::time::timeout_at(stall_deadline, writer.wait_for_capacity(4)).await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    let _ = writer.abort().await;
+                    return Err(ObjectStorageError::Request(error.to_string()));
+                }
+                Err(_) => {
+                    let _ = writer.abort().await;
+                    return Err(ObjectStorageError::Timeout);
+                }
+            }
+            stall_deadline = tokio::time::Instant::now() + self.upload_timeout;
+        }
+        writer
+            .finish()
+            .await
+            .map(|_| ())
+            .map_err(|error| ObjectStorageError::Request(error.to_string()))
     }
 
     async fn get(&self, bucket: &str, key: &str) -> Result<Bytes, ObjectStorageError> {

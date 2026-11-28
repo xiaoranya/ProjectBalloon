@@ -45,7 +45,9 @@ impl PageQuery {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
+// A misspelled field used to be dropped silently, so `permissions` looked set
+// while the account was created without any.
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateStaffAccountRequest {
     pub username: String,
     pub display_name: String,
@@ -103,7 +105,7 @@ impl CreateStaffAccountRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateStaffAccountRequest {
     pub display_name: Option<String>,
     pub is_super_admin: Option<bool>,

@@ -150,6 +150,17 @@ async fn connect_database(config: &AppConfig) -> Result<PgPool> {
         PgPoolOptions::new()
             .max_connections(config.database_max_connections)
             .acquire_timeout(config.database_acquire_timeout)
+            // Every connection gets a ceiling on how long one statement may run
+            // and how long it may wait for a lock. Without them a single stuck
+            // query (or a lock held by a wedged transaction) pins a pool slot
+            // forever and the API degrades to `acquire` timeouts everywhere.
+            .after_connect(|connection, _meta| {
+                Box::pin(async move {
+                    sqlx::query("SET statement_timeout = '60s'").execute(&mut *connection).await?;
+                    sqlx::query("SET lock_timeout = '15s'").execute(&mut *connection).await?;
+                    Ok(())
+                })
+            })
             .connect_with(options),
     )
     .await

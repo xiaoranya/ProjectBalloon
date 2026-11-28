@@ -125,9 +125,19 @@ pub(super) async fn load_session(
 ) -> Result<Option<SessionRecord>, AppError> {
     let payload: Option<String> = redis.query(cmd("GET").arg(session_key(token_hash))).await?;
     let Some(payload) = payload else { return Ok(None) };
-    serde_json::from_str(&payload)
-        .map(Some)
-        .map_err(|error| AppError::internal("decode session record", error))
+    match serde_json::from_str::<SessionRecord>(&payload) {
+        Ok(record) => Ok(Some(record)),
+        Err(error) => {
+            // An unreadable record can never become readable again; leaving it
+            // in place turned every request into a 500 until the TTL expired.
+            // Drop it and treat the token as unauthenticated.
+            // The record cannot tell us which indexes point at it, so only the
+            // session key goes; the index entries expire with their own TTL.
+            tracing::warn!(?error, "discarding an undecodable session record");
+            redis.query::<usize>(cmd("DEL").arg(session_key(token_hash))).await?;
+            Ok(None)
+        }
+    }
 }
 
 /// Refreshes `last_seen_millis` (throttled by the caller to once per five

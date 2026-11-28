@@ -18456,7 +18456,8 @@
           "username": {
             "type": "string"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "CreateTeamRequest": {
         "type": "object",
@@ -23924,7 +23925,8 @@
               "type": "string"
             }
           }
-        }
+        },
+        "additionalProperties": false
       },
       "UpdateTeamRequest": {
         "type": "object",

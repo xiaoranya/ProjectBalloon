@@ -12,7 +12,7 @@ use project_balloon_judge_worker::{
     artifacts::{ArtifactManager, S3ArtifactSource, S3ArtifactSourceConfig},
     health::{HealthState, serve_health},
     heartbeat::{WorkerActivity, WorkerHeartbeatPublisher, WorkerHeartbeatPublisherConfig},
-    rabbit::{InFlightTasks, RabbitJudgeWorker, RabbitJudgeWorkerConfig},
+    rabbit::{InFlightTasks, RabbitJudgeWorker, RabbitJudgeWorkerConfig, probe_broker},
     sandbox::{
         DockerSandbox, DockerSandboxConfig, JudgeSandbox, SandboxBackend, SandboxJanitor,
         run_orphan_sweeps,
@@ -93,6 +93,10 @@ async fn main() -> Result<()> {
         .preflight()
         .await
         .map_err(|error| anyhow::anyhow!(error.reason))
+        .context("Judge worker preflight failed")?;
+    probe_broker(&config.amqp_url, config.request_timeout)
+        .await
+        .map_err(anyhow::Error::msg)
         .context("Judge worker preflight failed")?;
 
     info!(

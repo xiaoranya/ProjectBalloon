@@ -8,6 +8,10 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+/// Claims a task at most this many times before leaving it `FAILED`. The row is
+/// still visible to operators; it just stops competing for a worker.
+const MAX_EXPORT_ATTEMPTS: i32 = 5;
+
 use crate::{
     error::AppError, features::auth::model::AuthUser, object_storage::ObjectStorageHandle,
     object_storage_cleanup::defer_failed_cleanup,
@@ -705,6 +709,16 @@ impl SubmissionService {
         worker_id: Uuid,
         lease: Duration,
     ) -> Result<Option<ClaimedExportTask>, sqlx::Error> {
+        // Retire tasks that exhausted their budget: they would otherwise sit in
+        // PROCESSING with an expired lease and look like a stuck worker.
+        sqlx::query(
+            "UPDATE submission_export_tasks
+             SET status = 'FAILED', lease_owner = NULL, lease_until = NULL, updated_at = now()
+             WHERE status = 'PROCESSING' AND lease_until < now() AND attempts >= $1",
+        )
+        .bind(MAX_EXPORT_ATTEMPTS)
+        .execute(&self.database)
+        .await?;
         sqlx::query_as(
             "WITH candidate AS (
                  SELECT id FROM submission_export_tasks
@@ -723,6 +737,9 @@ impl SubmissionService {
         )
         .bind(worker_id)
         .bind(i64::try_from(lease.as_millis()).unwrap_or(i64::MAX))
+        // A permanently failing export used to be reclaimed forever, growing
+        // `attempts` without bound and burning a worker slot on every poll.
+        .bind(MAX_EXPORT_ATTEMPTS)
         .fetch_optional(&self.database)
         .await
     }

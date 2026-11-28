@@ -150,103 +150,16 @@ pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Jso
             missing_references,
         ))) => {
             let redis_connected = state.realtime().redis_status();
-            // `realtime_redis_enabled = false` only disables the fan-out; the
-            // shared Redis handle still backs sessions and rate limiting, so
-            // readiness probes it directly instead of trusting that switch.
-            let redis_up = match state.redis() {
-                Some(redis) => match timeout(state.readiness_timeout(), redis.ping()).await {
-                    Ok(Ok(())) => true,
-                    Ok(Err(error)) => {
-                        warn!(?error, "Redis readiness probe failed");
-                        false
-                    }
-                    Err(_) => {
-                        warn!("Redis readiness probe timed out");
-                        false
-                    }
-                },
-                None => {
-                    warn!("API started without a Redis handle; reporting not ready");
-                    false
-                }
-            };
-            // The realtime outbox is Redis-native now; its counters come from
-            // the consumer group rather than PostgreSQL.
-            let realtime_outbox = match state.realtime_outbox() {
-                Some(outbox) => match timeout(state.readiness_timeout(), outbox.health()).await {
-                    Ok(Ok((pending, failed))) => {
-                        Some(RealtimeOutboxHealth { pending, failed, redis_connected })
-                    }
-                    Ok(Err(error)) => {
-                        warn!(?error, "realtime outbox health probe failed");
-                        None
-                    }
-                    Err(_) => {
-                        warn!("realtime outbox health probe timed out");
-                        None
-                    }
-                },
-                None => None,
-            };
-            let object_storage = match state.object_storage() {
-                Some(storage) => match timeout(state.readiness_timeout(), storage.check()).await {
-                    Ok(Ok(())) => Some(DependencyHealth { status: HealthStatus::Up }),
-                    Ok(Err(error)) => {
-                        warn!(error = %error, "object storage readiness probe failed");
-                        Some(DependencyHealth { status: HealthStatus::Down })
-                    }
-                    Err(_) => {
-                        warn!("object storage readiness probe timed out");
-                        Some(DependencyHealth { status: HealthStatus::Down })
-                    }
-                },
-                None => None,
-            };
-            let rabbitmq = match state.judge_publisher() {
-                Some(publisher) => {
-                    match timeout(state.readiness_timeout(), publisher.probe()).await {
-                        Ok(Ok(probe)) => Some(RabbitMqHealth {
-                            status: HealthStatus::Up,
-                            queued_tasks: probe.queued_tasks,
-                            queued_results: probe.queued_results,
-                            dead_tasks: probe.dead_tasks,
-                        }),
-                        Ok(Err(error)) => {
-                            warn!(%error, "RabbitMQ readiness probe failed");
-                            Some(RabbitMqHealth {
-                                status: HealthStatus::Down,
-                                queued_tasks: 0,
-                                queued_results: 0,
-                                dead_tasks: 0,
-                            })
-                        }
-                        Err(_) => {
-                            warn!("RabbitMQ readiness probe timed out");
-                            Some(RabbitMqHealth {
-                                status: HealthStatus::Down,
-                                queued_tasks: 0,
-                                queued_results: 0,
-                                dead_tasks: 0,
-                            })
-                        }
-                    }
-                }
-                None => None,
-            };
-            let cups = match state.cups_gateway() {
-                Some(gateway) => match timeout(state.readiness_timeout(), gateway.probe()).await {
-                    Ok(Ok(())) => Some(DependencyHealth { status: HealthStatus::Up }),
-                    Ok(Err(error)) => {
-                        warn!(%error, "CUPS readiness probe failed");
-                        Some(DependencyHealth { status: HealthStatus::Down })
-                    }
-                    Err(_) => {
-                        warn!("CUPS readiness probe timed out");
-                        Some(DependencyHealth { status: HealthStatus::Down })
-                    }
-                },
-                None => None,
-            };
+            // The probes run concurrently: one after another, four timeouts add
+            // up and a single slow CUPS or S3 answer can exceed the k8s probe
+            // deadline by itself.
+            let (redis_up, realtime_outbox, object_storage, rabbitmq, cups) = tokio::join!(
+                probe_redis(&state),
+                probe_realtime_outbox(&state, redis_connected),
+                probe_object_storage(&state),
+                probe_rabbitmq(&state),
+                probe_cups(&state),
+            );
             // Readiness gates only the dependencies every request needs:
             // PostgreSQL (the query above) and Redis (sessions, rate limiting,
             // the realtime outbox). Object storage, CUPS and RabbitMQ are
@@ -310,6 +223,113 @@ pub(crate) async fn readiness(State(state): State<AppState>) -> (StatusCode, Jso
                 Json(response(HealthStatus::Down, None, None, None, None, None, None)),
             )
         }
+    }
+}
+
+/// Pings the shared Redis handle. `realtime_redis_enabled = false` only disables
+/// the fan-out; the handle still backs sessions and rate limiting, so readiness
+/// probes it directly instead of trusting that switch.
+async fn probe_redis(state: &AppState) -> bool {
+    match state.redis() {
+        Some(redis) => match timeout(state.readiness_timeout(), redis.ping()).await {
+            Ok(Ok(())) => true,
+            Ok(Err(error)) => {
+                warn!(?error, "Redis readiness probe failed");
+                false
+            }
+            Err(_) => {
+                warn!("Redis readiness probe timed out");
+                false
+            }
+        },
+        None => {
+            warn!("API started without a Redis handle; reporting not ready");
+            false
+        }
+    }
+}
+
+async fn probe_realtime_outbox(
+    state: &AppState,
+    redis_connected: Option<bool>,
+) -> Option<RealtimeOutboxHealth> {
+    match state.realtime_outbox() {
+        Some(outbox) => match timeout(state.readiness_timeout(), outbox.health()).await {
+            Ok(Ok((pending, failed))) => {
+                Some(RealtimeOutboxHealth { pending, failed, redis_connected })
+            }
+            Ok(Err(error)) => {
+                warn!(?error, "realtime outbox health probe failed");
+                None
+            }
+            Err(_) => {
+                warn!("realtime outbox health probe timed out");
+                None
+            }
+        },
+        None => None,
+    }
+}
+
+async fn probe_object_storage(state: &AppState) -> Option<DependencyHealth> {
+    match state.object_storage() {
+        Some(storage) => match timeout(state.readiness_timeout(), storage.check()).await {
+            Ok(Ok(())) => Some(DependencyHealth { status: HealthStatus::Up }),
+            Ok(Err(error)) => {
+                warn!(error = %error, "object storage readiness probe failed");
+                Some(DependencyHealth { status: HealthStatus::Down })
+            }
+            Err(_) => {
+                warn!("object storage readiness probe timed out");
+                Some(DependencyHealth { status: HealthStatus::Down })
+            }
+        },
+        None => None,
+    }
+}
+
+async fn probe_rabbitmq(state: &AppState) -> Option<RabbitMqHealth> {
+    let down = || RabbitMqHealth {
+        status: HealthStatus::Down,
+        queued_tasks: 0,
+        queued_results: 0,
+        dead_tasks: 0,
+    };
+    match state.judge_publisher() {
+        Some(publisher) => match timeout(state.readiness_timeout(), publisher.probe()).await {
+            Ok(Ok(probe)) => Some(RabbitMqHealth {
+                status: HealthStatus::Up,
+                queued_tasks: probe.queued_tasks,
+                queued_results: probe.queued_results,
+                dead_tasks: probe.dead_tasks,
+            }),
+            Ok(Err(error)) => {
+                warn!(%error, "RabbitMQ readiness probe failed");
+                Some(down())
+            }
+            Err(_) => {
+                warn!("RabbitMQ readiness probe timed out");
+                Some(down())
+            }
+        },
+        None => None,
+    }
+}
+
+async fn probe_cups(state: &AppState) -> Option<DependencyHealth> {
+    match state.cups_gateway() {
+        Some(gateway) => match timeout(state.readiness_timeout(), gateway.probe()).await {
+            Ok(Ok(())) => Some(DependencyHealth { status: HealthStatus::Up }),
+            Ok(Err(error)) => {
+                warn!(%error, "CUPS readiness probe failed");
+                Some(DependencyHealth { status: HealthStatus::Down })
+            }
+            Err(_) => {
+                warn!("CUPS readiness probe timed out");
+                Some(DependencyHealth { status: HealthStatus::Down })
+            }
+        },
+        None => None,
     }
 }
 

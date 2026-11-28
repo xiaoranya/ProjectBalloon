@@ -68,6 +68,28 @@ pub(crate) fn retry_budget_exhausted(retry_count: u32) -> bool {
 /// acquisition, archive extraction, container lifecycle, and result
 /// publication.
 pub(crate) const TASK_DEADLINE_MARGIN: Duration = Duration::from_secs(300);
+/// No single judge task may hold a worker slot longer than this.
+pub(crate) const MAX_TASK_DEADLINE: Duration = Duration::from_secs(4 * 60 * 60);
+
+/// Verifies the broker is reachable and accepts our credentials.
+///
+/// ADR-001 requires preflight to fail when RabbitMQ is unavailable. The worker
+/// connects lazily otherwise, so an unreachable broker looked healthy while
+/// every task sat in the queue unnoticed.
+pub async fn probe_broker(uri: &str, request_timeout: Duration) -> Result<(), String> {
+    let connection =
+        timeout(request_timeout, Connection::connect(uri, ConnectionProperties::default()))
+            .await
+            .map_err(|_| "timed out connecting to RabbitMQ".to_owned())?
+            .map_err(|error| format!("cannot connect to RabbitMQ: {error}"))?;
+    let channel = timeout(request_timeout, connection.create_channel())
+        .await
+        .map_err(|_| "timed out opening a RabbitMQ channel".to_owned())?
+        .map_err(|error| format!("cannot open a RabbitMQ channel: {error}"))?;
+    let _closed = channel.close(200, ShortString::from("preflight")).await;
+    let _closed = connection.close(200, ShortString::from("preflight")).await;
+    Ok(())
+}
 
 /// Worst-case wall clock of one Judge task, mirroring the sandbox's own stage
 /// limits: the compile allowance plus, per test case, the same wall limit the
@@ -80,7 +102,11 @@ pub(crate) fn task_deadline(task: &JudgeTask, max_cases: u32) -> Duration {
     }
     let per_case =
         run_wall_limit(effective_time_limit(task.time_limit_ms, task.language_multiplier));
-    COMPILE_WALL_LIMIT + TASK_DEADLINE_MARGIN + per_case.saturating_mul(max_cases)
+    // `max_cases` is a config bound, not a task field: without a ceiling here a
+    // large case count multiplied by the per-run wall limit produced deadlines
+    // measured in days.
+    (COMPILE_WALL_LIMIT + TASK_DEADLINE_MARGIN + per_case.saturating_mul(max_cases))
+        .min(MAX_TASK_DEADLINE)
 }
 
 /// What to do with a delivery whose handler missed its wall-clock deadline.
