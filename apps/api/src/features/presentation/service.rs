@@ -213,6 +213,66 @@ impl PresentationService {
         self.config(contest, mode, actor).await
     }
 
+    /// Updates a template in the shared library.
+    ///
+    /// Only the creator or a super administrator may rewrite one: otherwise any
+    /// operator of any contest can repaint another contest's screen. A template
+    /// without an owner (seed data) is super-administrator only.
+    pub(super) async fn update_template(
+        &self,
+        template_id: i64,
+        request: &crate::features::presentation::model::PresentationTemplateRequest,
+        actor: &AuthUser,
+    ) -> Result<crate::features::presentation::model::PresentationTemplateResponse, AppError> {
+        let row = sqlx::query_as::<_, crate::features::presentation::model::PresentationTemplateResponse>(
+            r#"
+            UPDATE presentation_templates
+            SET name=$2,description=$3,background_color=$4,foreground_color=$5,accent_color=$6,
+                font_family=$7,density=$8,show_clock=$9,show_logo=$10,logo_object_key=$11,
+                updated_at=now()
+            WHERE id=$1 AND (created_by_user_id = $12 OR $13)
+            RETURNING id,name,description,background_color,foreground_color,accent_color,
+                font_family,density,show_clock,show_logo,logo_object_key,created_by_user_id,updated_at
+            "#,
+        )
+        .bind(template_id)
+        .bind(request.name.trim())
+        .bind(request.description.trim())
+        .bind(&request.background_color)
+        .bind(&request.foreground_color)
+        .bind(&request.accent_color)
+        .bind(request.font_family.trim())
+        .bind(&request.density)
+        .bind(request.show_clock)
+        .bind(request.show_logo)
+        .bind(request.logo_object_key.as_deref())
+        .bind(actor.id)
+        .bind(actor.is_super_admin())
+        .fetch_optional(&self.database)
+        .await
+        .map_err(|error| AppError::internal("update presentation template", error))?;
+        let Some(row) = row else {
+            // The UPDATE matched nothing: either the template is gone or this
+            // operator does not own it.
+            let exists = sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM presentation_templates WHERE id=$1)",
+            )
+            .bind(template_id)
+            .fetch_one(&self.database)
+            .await
+            .map_err(|error| AppError::internal("check presentation template", error))?;
+            return Err(if exists {
+                AppError::forbidden(
+                    "PRESENTATION_TEMPLATE_NOT_OWNED",
+                    "Only the template's creator or a super administrator can change it",
+                )
+            } else {
+                AppError::not_found("PRESENTATION_TEMPLATE_NOT_FOUND", "Template not found")
+            });
+        };
+        Ok(row)
+    }
+
     pub(super) async fn register(
         &self,
         mut request: RegisterRequest,

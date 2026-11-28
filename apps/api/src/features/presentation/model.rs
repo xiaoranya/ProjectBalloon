@@ -136,6 +136,10 @@ pub struct PresentationTemplateResponse {
     pub(super) show_clock: bool,
     pub(super) show_logo: bool,
     pub(super) logo_object_key: Option<String>,
+    /// Who created the template. Templates are a shared library, but only the
+    /// creator (or a super administrator) may change one, so the UI needs this
+    /// to know whether to offer an edit action.
+    pub(super) created_by_user_id: Option<i64>,
     #[serde(with = "time::serde::rfc3339")]
     pub(super) updated_at: OffsetDateTime,
 }

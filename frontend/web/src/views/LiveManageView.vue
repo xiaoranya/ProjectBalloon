@@ -177,7 +177,9 @@ import {
 } from '../api/presentation';
 import { useI18n } from '../i18n';
 import { copyText } from '../utils/browser';
+import { useSession } from '../auth/session';
 const { t } = useI18n();
+const session = useSession();
 const contests = ref<ContestResponse[]>([]);
 const contestId = ref<number | null>(null);
 const tokens = ref<BroadcastToken[]>([]);
@@ -213,6 +215,34 @@ const templateForm = reactive({
   showLogo: false,
   logoObjectKey: null as string | null,
 });
+/// Templates are a shared library, but only their creator (or a super
+/// administrator) may change one — mirror the API rule so the form never
+/// targets a template the save would be refused for.
+function canEditTemplate(item: PresentationTemplate) {
+  return (
+    session.isSuperAdmin.value ||
+    (item.createdByUserId !== null && item.createdByUserId === session.state.user?.id)
+  );
+}
+
+/// Copies only the editable fields: the response also carries `updatedAt` and
+/// `createdByUserId`, and the request model rejects unknown fields.
+function applyTemplate(source: PresentationTemplate) {
+  Object.assign(templateForm, {
+    id: source.id,
+    name: source.name,
+    description: source.description,
+    backgroundColor: source.backgroundColor,
+    foregroundColor: source.foregroundColor,
+    accentColor: source.accentColor,
+    fontFamily: source.fontFamily,
+    density: source.density,
+    showClock: source.showClock,
+    showLogo: source.showLogo,
+    logoObjectKey: source.logoObjectKey,
+  });
+}
+
 function defaultExpiry() {
   const date = new Date(Date.now() + 24 * 3600_000);
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
@@ -344,8 +374,10 @@ onMounted(async () => {
       (await contestApi.listContests()).content,
       presentationApi.templates(),
     ]);
-    const first = templates.value[0];
-    if (first) Object.assign(templateForm, { ...first });
+    // Start from a template this operator may actually update; otherwise keep
+    // the blank form so the first save creates their own.
+    const editable = templates.value.find(canEditTemplate);
+    if (editable) applyTemplate(editable);
     contestId.value = contests.value[0]?.id ?? null;
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
