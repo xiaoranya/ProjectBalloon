@@ -242,17 +242,33 @@ async fn save_program(
     request: &LiveProgramRequest,
     actor: i64,
 ) -> Result<Option<(i64, i64, OffsetDateTime)>, AppError> {
+    // A client that believes it is editing version N must not silently create a
+    // fresh program when no row exists (the `ON CONFLICT` insert would do
+    // exactly that, and its conflict clause never runs for a plain insert).
+    // Only version 0 — or no expectation at all — may create the row. The
+    // statement's own `WHERE live_programs.version = $9` still covers the
+    // concurrent case.
+    if request.expected_version != 0 {
+        let exists = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM live_programs WHERE contest_id = $1)",
+        )
+        .bind(contest)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|error| AppError::internal("check live program existence", error))?;
+        if !exists {
+            return Ok(None);
+        }
+    }
     sqlx::query_as::<_, (i64, i64, OffsetDateTime)>(
         r#"
-        -- The insert only happens for a truly new program (or an explicit
-        -- `expectedVersion = 0`): a client that thought it was editing version 5
-        -- used to create a fresh row instead of getting a 409.
+        -- `VALUES`, not `SELECT ... WHERE NOT EXISTS`: ON CONFLICT only fires
+        -- for a row that is actually being inserted, so guarding the insert in
+        -- the statement also disabled every later update.
         INSERT INTO live_programs
             (contest_id, current_scene, resolver_run_id, transition_milliseconds,
              show_clock, ticker_enabled, title_card_text, updated_by_user_id, version)
-        SELECT $1, $2, $3, $4, $5, $6, $7, $8, 1
-        WHERE NOT EXISTS (SELECT 1 FROM live_programs WHERE contest_id = $1)
-          AND ($9 IS NULL OR $9 = 0)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1)
         ON CONFLICT (contest_id) DO UPDATE
             SET current_scene = excluded.current_scene,
                 resolver_run_id = excluded.resolver_run_id,
