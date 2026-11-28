@@ -1,9 +1,12 @@
+use std::{collections::HashSet, net::SocketAddr};
+
 use axum::{
     Json,
-    extract::{Path, State, rejection::JsonRejection},
+    extract::{ConnectInfo, Path, State, rejection::JsonRejection},
 };
 use sqlx::{Postgres, QueryBuilder, Transaction};
-use std::collections::HashSet;
+
+use crate::features::training::audit::record_admin_audit;
 
 use crate::features::training::bank::{
     load_public_training_items, load_public_training_set, load_public_training_sets, team_for_user,
@@ -141,6 +144,7 @@ async fn load_set_summary(state: &AppState, set_id: i64) -> Result<TrainingSet, 
 pub async fn create_set(
     context: SuperAdminContext,
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     payload: Result<Json<SetRequest>, JsonRejection>,
 ) -> Result<(axum::http::StatusCode, Json<TrainingSet>), AppError> {
     let Json(request) =
@@ -149,6 +153,15 @@ pub async fn create_set(
     let mut tx =
         state.database().begin().await.map_err(|e| AppError::internal("begin training set", e))?;
     let id = write_set(&mut tx, None, &request, &visibility, context.user().id).await?;
+    record_admin_audit(
+        &mut *tx,
+        context.user().id,
+        "TRAINING_SET_CREATED",
+        "TRAINING_SET",
+        id,
+        peer.ip(),
+    )
+    .await?;
     tx.commit().await.map_err(|e| AppError::internal("commit training set", e))?;
     Ok((axum::http::StatusCode::CREATED, Json(load_set_summary(&state, id).await?)))
 }
@@ -157,6 +170,7 @@ pub async fn create_set(
 pub async fn update_set(
     context: SuperAdminContext,
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Path(set_id): Path<i64>,
     payload: Result<Json<SetRequest>, JsonRejection>,
 ) -> Result<Json<TrainingSet>, AppError> {
@@ -166,6 +180,15 @@ pub async fn update_set(
     let mut tx =
         state.database().begin().await.map_err(|e| AppError::internal("begin training set", e))?;
     let id = write_set(&mut tx, Some(set_id), &request, &visibility, context.user().id).await?;
+    record_admin_audit(
+        &mut *tx,
+        context.user().id,
+        "TRAINING_SET_UPDATED",
+        "TRAINING_SET",
+        id,
+        peer.ip(),
+    )
+    .await?;
     tx.commit().await.map_err(|e| AppError::internal("commit training set", e))?;
     Ok(Json(load_set_summary(&state, id).await?))
 }

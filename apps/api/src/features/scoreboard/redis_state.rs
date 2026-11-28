@@ -34,6 +34,9 @@ use crate::features::scoreboard::model::CellRow;
 const CELLS_KEY_TEMPLATE: &str = "xcpc:sb:cells:{cid}";
 const VERSION_KEY_TEMPLATE: &str = "xcpc:sb:ver:{cid}";
 const FROZEN_KEY_TEMPLATE: &str = "xcpc:sb:frozen:{cid}";
+/// The roster as it looked at the freeze milestone. Without it a rename, a
+/// group move or a deleted team after freeze rewrote the public frozen board.
+const FROZEN_ROSTER_KEY_TEMPLATE: &str = "xcpc:sb:frozenroster:{cid}";
 const DIRTY_KEY_TEMPLATE: &str = "xcpc:sb:dirty:{cid}";
 /// Set when an incremental update could not be recorded, so the projection can
 /// no longer be trusted and must be rebuilt before it is read.
@@ -204,6 +207,20 @@ fn frozen_key(contest_id: i64) -> String {
     FROZEN_KEY_TEMPLATE.replace("{cid}", &contest_id.to_string())
 }
 
+fn frozen_roster_key(contest_id: i64) -> String {
+    FROZEN_ROSTER_KEY_TEMPLATE.replace("{cid}", &contest_id.to_string())
+}
+
+/// The roster fields the frozen board publishes, captured at freeze time.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct FrozenRosterEntry {
+    team_name: String,
+    school: Option<String>,
+    participation_type: String,
+    group_name: Option<String>,
+    team_star: bool,
+}
+
 fn dirty_key(contest_id: i64) -> String {
     DIRTY_KEY_TEMPLATE.replace("{cid}", &contest_id.to_string())
 }
@@ -363,6 +380,38 @@ impl ScoreboardProjection {
         Ok(Some(ProjectionSnapshot { cells, version, dirty }))
     }
 
+    /// The roster as captured at the freeze milestone, or `None` when the
+    /// snapshot predates roster capture.
+    pub(crate) async fn read_frozen_roster(
+        &self,
+        contest_id: i64,
+    ) -> Result<Option<Vec<crate::features::scoreboard::model::RosterRow>>, AppError> {
+        let key = frozen_roster_key(contest_id);
+        let exists: i64 = self.redis.query(cmd("EXISTS").arg(&key)).await?;
+        if exists == 0 {
+            return Ok(None);
+        }
+        let raw: Vec<(String, String)> = self.redis.query(cmd("HGETALL").arg(&key)).await?;
+        let mut roster = Vec::with_capacity(raw.len());
+        for (field, payload) in raw {
+            let Ok(team_id) = field.parse::<i64>() else { continue };
+            match serde_json::from_str::<FrozenRosterEntry>(&payload) {
+                Ok(entry) => roster.push(crate::features::scoreboard::model::RosterRow {
+                    team_id,
+                    team_name: entry.team_name,
+                    school: entry.school,
+                    participation_type: entry.participation_type,
+                    group_name: entry.group_name,
+                    team_star: entry.team_star,
+                }),
+                Err(error) => {
+                    warn!(%error, %field, %contest_id, "ignoring malformed frozen roster entry")
+                }
+            }
+        }
+        Ok(Some(roster))
+    }
+
     /// Recomputes one cell by replaying its (bounded) submission history from
     /// PostgreSQL — the authoritative path for rejudge and dirty repair.
     pub async fn recompute_cell(
@@ -511,6 +560,23 @@ impl ScoreboardProjection {
             .map_err(|error| AppError::internal("load contest for the frozen snapshot", error))?;
         let (Some(start_at), Some(freeze_at)) = (meta.0, meta.1) else { return Ok(()) };
         let start_ms = unix_ms(start_at);
+        // Snapshot the roster too: the frozen board must show the names, groups
+        // and STAR flags that were public when it froze, not whatever the teams
+        // table says after the contest.
+        let roster =
+            sqlx::query_as::<_, (i64, String, Option<String>, String, Option<String>, bool)>(
+                r#"
+            SELECT roster.team_id, team.name, team.school, roster.participation_type,
+                   roster.group_name, team.star
+            FROM contest_teams roster
+            JOIN teams team ON team.id = roster.team_id
+            WHERE roster.contest_id = $1
+            "#,
+            )
+            .bind(contest_id)
+            .fetch_all(database)
+            .await
+            .map_err(|error| AppError::internal("load roster for the frozen snapshot", error))?;
         let rows = load_contest_replay_rows(database, contest_id, Some(freeze_at))
             .await
             .map_err(|error| AppError::internal("replay the frozen snapshot", error))?;
@@ -539,6 +605,17 @@ impl ScoreboardProjection {
         }
         pipeline.cmd("RENAMENX").arg(&staging).arg(frozen_key(contest_id)).ignore();
         pipeline.del(&staging).ignore();
+        let roster_staging = format!("{FROZEN_ROSTER_KEY_TEMPLATE}:building:{contest_id}");
+        pipeline.del(&roster_staging).ignore();
+        for (team_id, team_name, school, participation_type, group_name, team_star) in roster {
+            let entry =
+                FrozenRosterEntry { team_name, school, participation_type, group_name, team_star };
+            let payload = serde_json::to_string(&entry)
+                .map_err(|error| AppError::internal("encode frozen roster entry", error))?;
+            pipeline.hset(&roster_staging, team_id.to_string(), payload).ignore();
+        }
+        pipeline.cmd("RENAMENX").arg(&roster_staging).arg(frozen_roster_key(contest_id)).ignore();
+        pipeline.del(&roster_staging).ignore();
         self.redis.query_pipeline::<()>(pipeline).await?;
         if grouped.is_empty() {
             warn!(%contest_id, "no submissions before the freeze; the frozen board is empty");

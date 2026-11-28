@@ -234,32 +234,64 @@ impl ContestLifecycleRunner {
 /// Recomputes the durable `contest_scoreboard_cells/rows` for a finished
 /// contest from the authoritative submission history (one bounded rescan per
 /// cell, once per contest).
+/// Cells recomputed per transaction during the post-contest backfill.
+///
+/// Every rebuilt cell fires `trg_scoreboard_cell_revision`, which updates the
+/// same `contests` row. One transaction for the whole contest therefore held
+/// that row lock for the entire rebuild and produced one dead tuple per cell;
+/// committing per batch releases the lock and lets the autovacuum catch up.
+const BACKFILL_CELLS_PER_BATCH: usize = 200;
+
 async fn backfill_cells(database: &PgPool, contest_id: i64) -> Result<(), AppError> {
-    let mut transaction = database
-        .begin()
-        .await
-        .map_err(|error| AppError::internal("begin scoreboard backfill", error))?;
+    // `scoring_mode` cannot change once the contest ended, so read it once for
+    // all cells instead of once per cell.
+    let scoring_mode = {
+        let mut transaction = database
+            .begin()
+            .await
+            .map_err(|error| AppError::internal("begin scoreboard backfill", error))?;
+        let mode =
+            sqlx::query_scalar::<_, String>("SELECT scoring_mode FROM contests WHERE id = $1")
+                .bind(contest_id)
+                .fetch_one(&mut *transaction)
+                .await
+                .map_err(|error| AppError::internal("load contest scoring mode", error))?;
+        transaction
+            .commit()
+            .await
+            .map_err(|error| AppError::internal("commit scoreboard backfill", error))?;
+        mode
+    };
     let pairs = sqlx::query_as::<_, (i64, i64)>(
-        "SELECT DISTINCT team_id, problem_id FROM submissions WHERE contest_id = $1",
+        "SELECT DISTINCT team_id, problem_id FROM submissions WHERE contest_id = $1
+         ORDER BY team_id, problem_id",
     )
     .bind(contest_id)
-    .fetch_all(&mut *transaction)
+    .fetch_all(database)
     .await
     .map_err(|error| AppError::internal("load scoreboard backfill cells", error))?;
-    for (team_id, problem_id) in pairs {
-        crate::features::scoreboard::rebuild_cell(
-            &mut transaction,
-            contest_id,
-            team_id,
-            problem_id,
-        )
-        .await
-        .map_err(|error| AppError::internal("backfill scoreboard cell", error))?;
+    for batch in pairs.chunks(BACKFILL_CELLS_PER_BATCH) {
+        let mut transaction = database
+            .begin()
+            .await
+            .map_err(|error| AppError::internal("begin scoreboard backfill batch", error))?;
+        for (team_id, problem_id) in batch {
+            crate::features::scoreboard::rebuild_cell_with_mode(
+                &mut transaction,
+                contest_id,
+                *team_id,
+                *problem_id,
+                &scoring_mode,
+            )
+            .await
+            .map_err(|error| AppError::internal("backfill scoreboard cell", error))?;
+        }
+        transaction
+            .commit()
+            .await
+            .map_err(|error| AppError::internal("commit scoreboard backfill batch", error))?;
     }
-    transaction
-        .commit()
-        .await
-        .map_err(|error| AppError::internal("commit scoreboard backfill", error))
+    Ok(())
 }
 
 async fn transition_due(

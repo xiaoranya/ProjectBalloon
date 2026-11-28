@@ -1,3 +1,4 @@
+mod admission;
 mod dispatcher;
 mod fanout;
 pub(crate) mod handlers;

@@ -482,6 +482,27 @@ pub(crate) async fn enqueue_optional(
     outbox.enqueue(&OutboxEntry::new(contest_id, event_type, scope, team_id, payload)).await
 }
 
+/// Publishes a refresh hint **after** the business transaction committed.
+///
+/// Enqueuing inside the transaction held its row locks across a Redis round
+/// trip and let a Redis failure roll back a write PostgreSQL had already
+/// accepted (S1). Realtime events are hints, so a lost one only delays a screen
+/// refresh until the next poll; it must never fail the request.
+pub(crate) async fn publish_best_effort(
+    outbox: Option<&RealtimeOutbox>,
+    contest_id: i64,
+    event_type: &'static str,
+    scope: &'static str,
+    team_id: Option<i64>,
+    payload: serde_json::Value,
+) {
+    if let Err(error) =
+        enqueue_optional(outbox, contest_id, event_type, scope, team_id, payload).await
+    {
+        tracing::warn!(?error, %contest_id, event_type, scope, "failed to enqueue a realtime event");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use redis::Value::{Array, BulkString, Nil};

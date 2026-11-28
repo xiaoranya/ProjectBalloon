@@ -313,26 +313,6 @@ impl SubmissionService {
                 .with_judgement_id(judgement_id)
                 .with_user_id(actor.id)
         })?;
-        crate::features::realtime::outbox::enqueue_optional(
-            self.outbox.as_ref(),
-            contest_id,
-            "SUBMISSION_STATUS_CHANGED",
-            "TEAM",
-            Some(context.team_id),
-            json!({
-                "submissionId": submission_id,
-                "judgementId": judgement_id,
-                "status": "PENDING"
-            }),
-        )
-        .await
-        .map_err(|error| {
-            error
-                .with_contest_id(contest_id)
-                .with_submission_id(submission_id)
-                .with_judgement_id(judgement_id)
-                .with_user_id(actor.id)
-        })?;
         sqlx::query(
             r#"
             INSERT INTO audit_logs
@@ -359,6 +339,21 @@ impl SubmissionService {
                     .with_user_id(actor.id),
             ));
         }
+        // After the commit, as a hint only: a Redis blip must not turn an
+        // accepted submission into a 500 (S1).
+        crate::features::realtime::outbox::publish_best_effort(
+            self.outbox.as_ref(),
+            contest_id,
+            "SUBMISSION_STATUS_CHANGED",
+            "TEAM",
+            Some(context.team_id),
+            json!({
+                "submissionId": submission_id,
+                "judgementId": judgement_id,
+                "status": "PENDING"
+            }),
+        )
+        .await;
         Ok(SubmitResponse { submission_id, judgement_id, status: "PENDING", submitted_at })
     }
 }

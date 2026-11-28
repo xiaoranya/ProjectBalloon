@@ -1,10 +1,15 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    net::IpAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use project_balloon_contracts::RealtimeEvent;
 use tokio::sync::broadcast;
+
+use crate::features::realtime::admission::{SseAdmission, SsePermit};
 
 #[derive(Debug, Clone)]
 pub struct RealtimeEnvelope {
@@ -17,13 +22,38 @@ pub struct RealtimeHub {
     sender: broadcast::Sender<RealtimeEnvelope>,
     redis_enabled: bool,
     redis_connected: Arc<AtomicBool>,
+    admission: Arc<SseAdmission>,
 }
 
 impl RealtimeHub {
     #[must_use]
     pub fn new(capacity: usize, redis_enabled: bool) -> Self {
         let (sender, _) = broadcast::channel(capacity);
-        Self { sender, redis_enabled, redis_connected: Arc::new(AtomicBool::new(false)) }
+        Self {
+            sender,
+            redis_enabled,
+            redis_connected: Arc::new(AtomicBool::new(false)),
+            admission: SseAdmission::from_env(),
+        }
+    }
+
+    /// Reserves an SSE slot for `ip`, or `None` when the endpoint is saturated.
+    ///
+    /// The permit must be held for the whole life of the stream: dropping it
+    /// returns the slot.
+    pub(crate) fn admit(&self, ip: IpAddr) -> Option<SsePermit> {
+        self.admission.admit(ip)
+    }
+
+    /// Number of SSE responses currently held open, for the health endpoint.
+    #[must_use]
+    pub fn active_sse_connections(&self) -> usize {
+        self.admission.active()
+    }
+
+    #[must_use]
+    pub fn max_sse_connections(&self) -> usize {
+        self.admission.max_connections()
     }
 
     #[must_use]

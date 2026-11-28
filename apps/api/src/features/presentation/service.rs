@@ -13,6 +13,25 @@ use crate::features::presentation::model::{
 };
 use crate::features::presentation::orchestration::playback_for_instance;
 
+/// Registrations allowed from one client address per contest within the window.
+///
+/// A venue behind a single NAT address legitimately registers hundreds of
+/// screens, so this is deliberately generous: the goal is to stop one host from
+/// creating instances without bound, not to police a normal setup. Deployments
+/// with more screens behind one address raise
+/// `PROJECT_BALLOON_SCREEN_REGISTRATION_LIMIT`.
+const DEFAULT_SCREEN_REGISTRATION_LIMIT: i64 = 512;
+/// Rolling window the registration limit applies to.
+const SCREEN_REGISTRATION_WINDOW_MINUTES: i64 = 10;
+
+fn screen_registration_limit() -> i64 {
+    std::env::var("PROJECT_BALLOON_SCREEN_REGISTRATION_LIMIT")
+        .ok()
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .filter(|limit| *limit > 0)
+        .unwrap_or(DEFAULT_SCREEN_REGISTRATION_LIMIT)
+}
+
 const SCREEN_VIEWS: &[&str] = &[
     "SCOREBOARD",
     "FIRST_BLOOD",
@@ -177,7 +196,12 @@ impl PresentationService {
         .await
         .map_err(|error| AppError::internal("save presentation config", error))?;
         audit(&mut tx, actor.id, "PRESENTATION_CONFIG_UPDATED", "CONTEST", contest, ip).await?;
-        crate::features::realtime::outbox::enqueue_optional(
+        tx.commit()
+            .await
+            .map_err(|error| AppError::internal("commit presentation config", error))?;
+        // Committed first: the configuration is what the screen will load, the
+        // event only tells it to reload (S1).
+        crate::features::realtime::outbox::publish_best_effort(
             self.outbox.as_ref(),
             contest,
             "PRESENTATION_UPDATED",
@@ -185,13 +209,7 @@ impl PresentationService {
             None,
             serde_json::json!({"mode":mode}),
         )
-        .await
-        .map_err(|error| {
-            AppError::internal_message("publish presentation config", format!("{error:?}"))
-        })?;
-        tx.commit()
-            .await
-            .map_err(|error| AppError::internal("commit presentation config", error))?;
+        .await;
         self.config(contest, mode, actor).await
     }
 
@@ -236,14 +254,19 @@ impl PresentationService {
                 "Screen presentation is not published",
             ));
         }
+        // Counted per contest as well as per address: a single host serving two
+        // contests must not have one budget for both, and the counter is the
+        // bound on rows an unauthenticated caller can create.
         let recent = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM screen_instances WHERE last_ip = $1 AND created_at > now() - interval '10 minutes'",
+            "SELECT count(*) FROM screen_instances WHERE contest_id = $1 AND last_ip = $2 AND created_at > now() - make_interval(mins => $3)",
         )
+        .bind(request.contest_id)
         .bind(ip.to_string())
+        .bind(i32::try_from(SCREEN_REGISTRATION_WINDOW_MINUTES).unwrap_or(10))
         .fetch_one(&self.database)
         .await
         .map_err(|error| AppError::internal("check screen registration rate", error))?;
-        if recent >= 20 {
+        if recent >= screen_registration_limit() {
             return Err(AppError::too_many_requests(
                 "SCREEN_REGISTRATION_RATE_LIMITED",
                 "Too many screen registrations; try again later",

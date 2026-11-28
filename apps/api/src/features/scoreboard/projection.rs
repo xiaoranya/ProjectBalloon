@@ -11,6 +11,20 @@ pub(crate) async fn rebuild_cell(
             .bind(contest_id)
             .fetch_one(&mut **transaction)
             .await?;
+    rebuild_cell_with_mode(transaction, contest_id, team_id, problem_id, &scoring_mode).await
+}
+
+/// `rebuild_cell` for callers that already know the scoring mode.
+///
+/// A full backfill used to re-read `contests.scoring_mode` once per cell, i.e.
+/// once per (team, problem) pair of the whole contest.
+pub(crate) async fn rebuild_cell_with_mode(
+    transaction: &mut Transaction<'_, Postgres>,
+    contest_id: i64,
+    team_id: i64,
+    problem_id: i64,
+    scoring_mode: &str,
+) -> Result<(), sqlx::Error> {
     if scoring_mode != "ICPC" {
         return rebuild_points_cell(transaction, contest_id, team_id, problem_id).await;
     }

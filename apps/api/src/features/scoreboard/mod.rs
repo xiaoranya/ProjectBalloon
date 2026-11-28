@@ -27,7 +27,7 @@ pub use handlers::{
 pub use model::{
     ScoreboardCell, ScoreboardProblem, ScoreboardQuery, ScoreboardResponse, ScoreboardRow,
 };
-pub(crate) use projection::rebuild_cell;
+pub(crate) use projection::{rebuild_cell, rebuild_cell_with_mode};
 pub use redis_state::{ScoreEvent, ScoreboardProjection};
 pub use service::ScoreboardService;
 

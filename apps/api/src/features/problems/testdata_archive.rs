@@ -13,6 +13,10 @@ const MAX_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_TOTAL_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_COMPRESSION_RATIO: u64 = 200;
 const MAX_PATH_BYTES: usize = 512;
+/// A 256 MiB archive with 10 000 entries can take a while to walk, but it must
+/// not occupy a blocking-pool thread indefinitely: a decompression bomb could
+/// otherwise pin one thread per upload with no way to reclaim it.
+const VALIDATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
 pub struct ArchiveSummary {
     pub case_count: i32,
@@ -22,13 +26,17 @@ pub struct ArchiveSummary {
 /// a 256 MiB ZIP never has to be buffered in memory to be checked.
 pub async fn validate_file(path: &Path) -> Result<ArchiveSummary, AppError> {
     let path = path.to_owned();
-    tokio::task::spawn_blocking(move || {
-        let file = std::fs::File::open(&path)
-            .map_err(|_| invalid("must be a structurally valid ZIP archive"))?;
-        validate_reader(file)
-    })
+    let joined = tokio::time::timeout(
+        VALIDATION_TIMEOUT,
+        tokio::task::spawn_blocking(move || {
+            let file = std::fs::File::open(&path)
+                .map_err(|_| invalid("must be a structurally valid ZIP archive"))?;
+            validate_reader(file)
+        }),
+    )
     .await
-    .map_err(|error| AppError::internal("join test-data archive validation", error))?
+    .map_err(|_| AppError::validation("file", "took too long to validate"))?;
+    joined.map_err(|error| AppError::internal("join test-data archive validation", error))?
 }
 
 fn validate_reader<R: Read + Seek>(reader: R) -> Result<ArchiveSummary, AppError> {

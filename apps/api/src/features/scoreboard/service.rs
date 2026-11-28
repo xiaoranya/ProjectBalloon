@@ -386,15 +386,69 @@ impl ScoreboardService {
         {
             return Ok(board);
         }
+        // A miss is the expensive path. Serialize rebuilds of this exact board so
+        // a cache expiry — or a Redis outage, where `get` always misses — cannot
+        // send every waiting screen to PostgreSQL at once; the followers wake up
+        // and find the leader's board in the cache.
+        let _flight = match &self.cache {
+            Some(cache) => {
+                Some(cache.flight(contest_id, &cache_revision, variant, phase, &query).await)
+            }
+            None => None,
+        };
+        if let Some(cache) = &self.cache
+            && let Some(board) =
+                cache.get(contest_id, &cache_revision, variant, phase, &query).await
+        {
+            return Ok(board);
+        }
         // Load the complete roster before applying the requested view filter.
         // First-blood is a contest-wide fact and must not be recomputed from a
         // filtered subset of teams.
-        let roster = self
-            .load_roster(
+        let roster = if frozen {
+            // A frozen board publishes the roster as it was at the milestone: a
+            // team renamed, moved between groups or deleted afterwards must not
+            // change what the audience already saw.
+            match projection.map(|p| p.read_frozen_roster(contest_id)) {
+                Some(read) => match read.await {
+                    Ok(Some(roster)) => roster,
+                    Ok(None) => {
+                        self.load_roster(
+                            contest_id,
+                            &ValidatedScoreboardQuery {
+                                group_name: None,
+                                participation_type: None,
+                            },
+                        )
+                        .await?
+                    }
+                    Err(error) => {
+                        tracing::warn!(?error, %contest_id, "frozen roster read failed; using the live roster");
+                        self.load_roster(
+                            contest_id,
+                            &ValidatedScoreboardQuery {
+                                group_name: None,
+                                participation_type: None,
+                            },
+                        )
+                        .await?
+                    }
+                },
+                None => {
+                    self.load_roster(
+                        contest_id,
+                        &ValidatedScoreboardQuery { group_name: None, participation_type: None },
+                    )
+                    .await?
+                }
+            }
+        } else {
+            self.load_roster(
                 contest_id,
                 &ValidatedScoreboardQuery { group_name: None, participation_type: None },
             )
-            .await?;
+            .await?
+        };
         let problems = sqlx::query_as::<_, ScoreboardProblem>(
             r#"
             SELECT problem_id, alias, display_order

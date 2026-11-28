@@ -1,8 +1,12 @@
+use std::net::SocketAddr;
+
 use axum::{
     Json,
-    extract::{Path, Query, State, rejection::JsonRejection},
+    extract::{ConnectInfo, Path, Query, State, rejection::JsonRejection},
 };
 use sqlx::PgPool;
+
+use crate::features::training::audit::record_admin_audit;
 
 use crate::features::training::model::{
     BankProblem, BankProblemRow, BankQuery, ProblemPublication, PublicationRequest, TrainingItem,
@@ -94,8 +98,9 @@ pub async fn get_bank(
 
 #[utoipa::path(put, path = "/api/admin/problems/{problem_id}/publication", operation_id = "updateProblemPublication", tag = "training", params(("problem_id" = i64, Path)), request_body = PublicationRequest, responses((status = 200, body = ProblemPublication), (status = 400, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
 pub async fn update_publication(
-    _context: SuperAdminContext,
+    context: SuperAdminContext,
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Path(problem_id): Path<i64>,
     payload: Result<Json<PublicationRequest>, JsonRejection>,
 ) -> Result<Json<ProblemPublication>, AppError> {
@@ -145,6 +150,15 @@ pub async fn update_publication(
         "#,
     )
         .bind(problem_id).bind(&request.visibility).bind(request.difficulty).bind(tags).execute(&mut *transaction).await.map_err(|e| AppError::internal("update problem publication", e))?;
+    record_admin_audit(
+        &mut *transaction,
+        context.user().id,
+        "PROBLEM_PUBLICATION_UPDATED",
+        "PROBLEM",
+        problem_id,
+        peer.ip(),
+    )
+    .await?;
     transaction
         .commit()
         .await

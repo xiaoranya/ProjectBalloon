@@ -1,7 +1,11 @@
+use std::net::SocketAddr;
+
 use axum::{
     Json,
-    extract::{Path, Query, State, rejection::JsonRejection},
+    extract::{ConnectInfo, Path, Query, State, rejection::JsonRejection},
 };
+
+use crate::features::training::audit::record_admin_audit;
 
 use crate::features::training::model::{
     BankProblem, BankProblemRow, EditorialRequest, EditorialResponse, FavoriteRequest,
@@ -155,6 +159,7 @@ pub async fn get_editorial(
 pub async fn upsert_editorial(
     context: SuperAdminContext,
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Path((problem_id, lang_code)): Path<(i64, String)>,
     payload: Result<Json<EditorialRequest>, JsonRejection>,
 ) -> Result<Json<EditorialResponse>, AppError> {
@@ -200,6 +205,15 @@ pub async fn upsert_editorial(
     .await
     .map_err(|e| AppError::internal("save problem editorial", e))?
     .0;
+    record_admin_audit(
+        state.database(),
+        context.user().id,
+        "PROBLEM_EDITORIAL_UPDATED",
+        "PROBLEM",
+        problem_id,
+        peer.ip(),
+    )
+    .await?;
     Ok(Json(EditorialResponse {
         problem_id,
         lang_code: lang_code.trim().to_owned(),
@@ -256,6 +270,7 @@ pub async fn get_practice_settings(
 pub async fn update_practice_settings(
     context: SuperAdminContext,
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     payload: Result<Json<PracticeSettingsRequest>, JsonRejection>,
 ) -> Result<Json<PracticeSettingsResponse>, AppError> {
     let Json(request) =
@@ -289,5 +304,14 @@ pub async fn update_practice_settings(
     .fetch_one(state.database())
     .await
     .map_err(|e| AppError::internal("update practice settings", e))?;
+    record_admin_audit(
+        state.database(),
+        context.user().id,
+        "PRACTICE_SETTINGS_UPDATED",
+        "PRACTICE_SETTINGS",
+        1,
+        peer.ip(),
+    )
+    .await?;
     Ok(Json(settings))
 }
