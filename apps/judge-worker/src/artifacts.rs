@@ -41,6 +41,21 @@ pub enum ArtifactError {
 pub trait ArtifactSource: Send + Sync {
     async fn check_bucket(&self, bucket: &str) -> Result<(), ArtifactError>;
     async fn get(&self, bucket: &str, key: &str) -> Result<Bytes, ArtifactError>;
+    /// Streams an object straight to `path`. The default buffers it in memory;
+    /// object stores override this so a 300 MiB test-data archive is never held
+    /// in RAM just to be written out again.
+    async fn get_to_path(
+        &self,
+        bucket: &str,
+        key: &str,
+        path: &std::path::Path,
+    ) -> Result<(), ArtifactError> {
+        let content = self.get(bucket, key).await?;
+        tokio::fs::write(path, &content)
+            .await
+            .map_err(|error| with_path_context(error, "write artifact", path))?;
+        Ok(())
+    }
 }
 
 pub struct S3ArtifactSource {
@@ -160,6 +175,55 @@ impl ArtifactSource for S3ArtifactSource {
         }
         Ok(body.freeze())
     }
+
+    async fn get_to_path(
+        &self,
+        bucket: &str,
+        key: &str,
+        target: &std::path::Path,
+    ) -> Result<(), ArtifactError> {
+        use tokio::io::AsyncWriteExt;
+
+        let store = self.store(bucket)?;
+        let path = Path::parse(key).map_err(|error| ArtifactError::Request(error.to_string()))?;
+        let metadata = timeout(self.request_timeout, store.head(&path))
+            .await
+            .map_err(|_| ArtifactError::Timeout)?
+            .map_err(|error| ArtifactError::Request(error.to_string()))?;
+        if !declared_size_is_allowed(Some(metadata.size)) {
+            return Err(ArtifactError::TooLarge(MAX_S3_RESPONSE_BYTES));
+        }
+        let mut response = timeout(self.request_timeout, store.get(&path))
+            .await
+            .map_err(|_| ArtifactError::Timeout)?
+            .map_err(|error| ArtifactError::Request(error.to_string()))?
+            .into_stream();
+        let mut file = tokio::fs::File::create(target)
+            .await
+            .map_err(|error| with_path_context(error, "create artifact file", target))?;
+        let mut written = 0_u64;
+        loop {
+            // Per-chunk timeout: a stalled body fails instead of hanging the
+            // judgement, and the bytes already on disk are the caller's to drop.
+            let chunk = timeout(self.request_timeout, response.next())
+                .await
+                .map_err(|_| ArtifactError::Timeout)?
+                .transpose()
+                .map_err(|error| ArtifactError::Request(error.to_string()))?;
+            let Some(chunk) = chunk else { break };
+            written = written.saturating_add(u64::try_from(chunk.len()).unwrap_or(u64::MAX));
+            if written > MAX_S3_RESPONSE_BYTES {
+                return Err(ArtifactError::TooLarge(MAX_S3_RESPONSE_BYTES));
+            }
+            file.write_all(&chunk)
+                .await
+                .map_err(|error| with_path_context(error, "write artifact file", target))?;
+        }
+        file.flush()
+            .await
+            .map_err(|error| with_path_context(error, "flush artifact file", target))?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -260,13 +324,24 @@ impl ArtifactManager {
             remove_if_present(&path).await?;
         }
 
-        let content = self.source.get(&self.problem_bucket, &task.testdata_object_key).await?;
-        self.validate_size(content.len())?;
-        verify_hash("test data", &content, &task.testdata_sha256)?;
         let temporary = path.with_extension(format!("{}.tmp", Uuid::new_v4()));
-        tokio::fs::write(&temporary, &content)
+        // Stream to the cache file and hash what actually landed: the archive is
+        // up to 300 MiB, and buffering it in memory just to write it out doubled
+        // the worker's peak for no gain.
+        if let Err(error) = self
+            .source
+            .get_to_path(&self.problem_bucket, &task.testdata_object_key, &temporary)
             .await
-            .map_err(|error| with_path_context(error, "write test-data cache entry", &temporary))?;
+        {
+            remove_if_present(&temporary).await?;
+            return Err(error);
+        }
+        if let Err(error) =
+            verify_file_hash(&temporary, &task.testdata_sha256, self.max_artifact_bytes).await
+        {
+            remove_if_present(&temporary).await?;
+            return Err(error);
+        }
         set_private_file_permissions(&temporary).await?;
         tokio::fs::rename(&temporary, &path)
             .await

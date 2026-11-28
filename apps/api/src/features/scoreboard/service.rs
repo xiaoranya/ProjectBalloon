@@ -19,6 +19,9 @@ use crate::features::scoreboard::model::{
 };
 use crate::features::scoreboard::redis_state::ProjectionSnapshot;
 
+/// Upper bound on dirty cells replayed inside a single board read.
+const MAX_DIRTY_CELLS_PER_REQUEST: usize = 200;
+
 pub struct ScoreboardService {
     database: PgPool,
     cache: Option<ScoreboardCache>,
@@ -636,12 +639,27 @@ impl ScoreboardService {
     }
 
     /// Replays cells whose incremental apply failed, then re-reads once.
+    ///
+    /// The replay is bounded per request: a Redis outage can leave thousands of
+    /// cells dirty, and the first request to arrive after it would otherwise pay
+    /// for all of them inline. The remainder stays dirty and is drained by the
+    /// following reads, which keeps the board converging without a request ever
+    /// stalling on the whole backlog.
     async fn repair_dirty(&self, contest_id: i64, snapshot: ProjectionSnapshot) -> Vec<CellRow> {
         if snapshot.dirty.is_empty() {
             return snapshot.cells;
         }
         if let Some(projection) = &self.projection {
-            for (team_id, problem_id) in &snapshot.dirty {
+            let budget = snapshot.dirty.len().min(MAX_DIRTY_CELLS_PER_REQUEST);
+            if snapshot.dirty.len() > budget {
+                tracing::warn!(
+                    %contest_id,
+                    dirty = snapshot.dirty.len(),
+                    repairing = budget,
+                    "scoreboard dirty backlog is large; repairing a bounded slice"
+                );
+            }
+            for (team_id, problem_id) in snapshot.dirty.iter().take(budget) {
                 if let Err(error) = projection
                     .recompute_cell(&self.database, contest_id, *team_id, *problem_id)
                     .await
