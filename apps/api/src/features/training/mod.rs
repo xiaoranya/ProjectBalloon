@@ -1,3 +1,4 @@
+mod audit;
 mod bank;
 mod model;
 mod practice;

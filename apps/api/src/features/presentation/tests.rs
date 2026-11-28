@@ -187,3 +187,76 @@ async fn screen_registration_heartbeat_commands_and_revocation_are_atomic(pool: 
     );
     assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM audit_logs WHERE actor_user_id=$1 AND action IN ('PRESENTATION_CONFIG_UPDATED','SCREEN_COMMAND_SENT','SCREEN_INSTANCE_REVOKED')").bind(user).fetch_one(&pool).await.expect("audit"), 4);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+#[ignore = "requires PostgreSQL"]
+async fn only_the_creator_or_a_super_admin_may_rewrite_a_template(pool: PgPool) {
+    use crate::features::presentation::model::PresentationTemplateRequest;
+
+    let owner = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO users(username,password_hash,display_name,user_type) VALUES('template-owner','hash','Owner','STAFF') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("owner");
+    let other = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO users(username,password_hash,display_name,user_type) VALUES('template-other','hash','Other','STAFF') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("other operator");
+    let template = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO presentation_templates(name,created_by_user_id) VALUES('Night Theme',$1) RETURNING id",
+    )
+    .bind(owner)
+    .fetch_one(&pool)
+    .await
+    .expect("template");
+
+    let staff = |id: i64, name: &str| AuthUser {
+        id,
+        username: name.into(),
+        display_name: name.into(),
+        user_type: UserType::Staff,
+        permissions: vec!["LIVE_MANAGE".into()],
+        password_reset_required: false,
+    };
+    let request = |name: &str| PresentationTemplateRequest {
+        name: name.into(),
+        description: String::new(),
+        background_color: "#07111f".into(),
+        foreground_color: "#ffffff".into(),
+        accent_color: "#22c55e".into(),
+        font_family: "Inter".into(),
+        density: "COMFORTABLE".into(),
+        show_clock: true,
+        show_logo: false,
+        logo_object_key: None,
+    };
+
+    let service = PresentationService::new(pool.clone());
+    let updated = service
+        .update_template(template, &request("Renamed"), &staff(owner, "owner"))
+        .await
+        .expect("the creator may rewrite the template");
+    assert_eq!(updated.name, "Renamed");
+    assert_eq!(updated.created_by_user_id, Some(owner));
+
+    // Another operator must be refused, not silently allowed to repaint a screen
+    // belonging to a contest they do not run.
+    let refused =
+        service.update_template(template, &request("Hijacked"), &staff(other, "other")).await;
+    assert!(matches!(&refused, Err(error) if error.code() == "PRESENTATION_TEMPLATE_NOT_OWNED"));
+
+    // A super administrator may still fix any template.
+    let mut admin = staff(other, "other");
+    admin.user_type = UserType::SuperAdmin;
+    service
+        .update_template(template, &request("Fixed"), &admin)
+        .await
+        .expect("a super administrator may rewrite any template");
+
+    let missing =
+        service.update_template(template + 9_999, &request("Ghost"), &staff(owner, "owner")).await;
+    assert!(matches!(&missing, Err(error) if error.code() == "PRESENTATION_TEMPLATE_NOT_FOUND"));
+}

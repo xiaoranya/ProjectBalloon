@@ -130,6 +130,48 @@ pub(super) async fn require_manage_team(
     if contest_count > 0 && unmanaged_count == 0 { Ok(()) } else { Err(team_not_found()) }
 }
 
+/// Rejects a mutation of a team that only exists in archived contests.
+///
+/// Archiving is meant to freeze the published record: award recipients and
+/// certificates are regenerated from the roster, so renaming a team (or editing
+/// its members) after the fact silently rewrote documents that were already
+/// handed out. `contests` and its own tables enforce this with a trigger; the
+/// team tables are global, so the guard lives here.
+///
+/// A team that is still on a non-archived roster stays editable: that contest
+/// may legitimately need the correction, and its own writes are still allowed.
+pub(super) async fn require_team_not_archived(
+    transaction: &mut Transaction<'_, Postgres>,
+    team_id: i64,
+) -> Result<(), AppError> {
+    let frozen = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM contest_teams roster
+            JOIN contests contest ON contest.id = roster.contest_id
+            WHERE roster.team_id = $1 AND contest.status = 'ARCHIVED'
+        ) AND NOT EXISTS (
+            SELECT 1
+            FROM contest_teams roster
+            JOIN contests contest ON contest.id = roster.contest_id
+            WHERE roster.team_id = $1 AND contest.status <> 'ARCHIVED'
+        )
+        "#,
+    )
+    .bind(team_id)
+    .fetch_one(&mut **transaction)
+    .await
+    .map_err(|error| AppError::internal("check archived contest roster", error))?;
+    if frozen {
+        return Err(AppError::conflict(
+            "TEAM_ARCHIVED_READ_ONLY",
+            "Team only appears on archived contests and can no longer be changed",
+        ));
+    }
+    Ok(())
+}
+
 pub(super) async fn enqueue_realtime(
     outbox: Option<&crate::features::realtime::RealtimeOutbox>,
     contest_id: i64,

@@ -82,20 +82,27 @@
               <ElRadioButton value="PUBLIC">{{ t('公开比赛') }}</ElRadioButton>
             </ElRadioGroup>
           </ElFormItem>
+          <ElAlert
+            v-if="scheduleLocked"
+            :title="t('比赛已开始，赛程时间不能再修改。')"
+            type="info"
+            show-icon
+            :closable="false"
+          />
           <ElRow :gutter="12" class="admin-form-grid">
             <ElCol :xs="24" :sm="8">
               <ElFormItem :label="t('开始时间')"
-                ><ElDatePicker v-model="form.startAt" type="datetime"
+                ><ElDatePicker v-model="form.startAt" type="datetime" :disabled="scheduleLocked"
               /></ElFormItem>
             </ElCol>
             <ElCol :xs="24" :sm="8">
               <ElFormItem :label="t('封榜时间')"
-                ><ElDatePicker v-model="form.freezeAt" type="datetime"
+                ><ElDatePicker v-model="form.freezeAt" type="datetime" :disabled="scheduleLocked"
               /></ElFormItem>
             </ElCol>
             <ElCol :xs="24" :sm="8">
               <ElFormItem :label="t('结束时间')"
-                ><ElDatePicker v-model="form.endAt" type="datetime"
+                ><ElDatePicker v-model="form.endAt" type="datetime" :disabled="scheduleLocked"
               /></ElFormItem>
             </ElCol>
           </ElRow>
@@ -124,6 +131,7 @@ import { useRouter } from 'vue-router';
 import type { FormInstance, FormRules } from 'element-plus';
 import { Plus } from '@element-plus/icons-vue';
 import { adminContestApi } from '../api/admin-contests';
+import type { ContestPayload } from '../api/admin-contests';
 import { getErrorMessage } from '../api/client';
 import type { ContestResponse, ContestVisibility, PageResponse } from '../api/types';
 import { useSession } from '../auth/session';
@@ -155,6 +163,14 @@ const errorMessage = ref('');
 const dialogError = ref('');
 const dialogVisible = ref(false);
 const editing = ref<ContestResponse | null>(null);
+// The API only accepts schedule edits while the contest is DRAFT/FROZEN_CONFIG;
+// mirror that here so the operator sees why the pickers are dead.
+const scheduleLocked = computed(
+  () =>
+    editing.value !== null &&
+    editing.value.status !== 'DRAFT' &&
+    editing.value.status !== 'FROZEN_CONFIG',
+);
 const formRef = ref<FormInstance>();
 const form = reactive<ContestForm>({
   name: '',
@@ -205,22 +221,30 @@ function openContest(row: unknown) {
 async function save() {
   if (!(await formRef.value?.validate().catch(() => false))) return;
   const configured = [form.startAt, form.freezeAt, form.endAt].filter(Boolean).length;
-  if (configured !== 0 && configured !== 3) {
+  if (!scheduleLocked.value && configured !== 0 && configured !== 3) {
     dialogError.value = t('赛程时间必须全部填写，或全部留空。');
     return;
   }
   saving.value = true;
   dialogError.value = '';
-  const payload = {
+  // Once the contest has started the API refuses any payload that carries
+  // schedule fields, even unchanged ones — so leave them out entirely.
+  const payload: Partial<ContestPayload> = {
     name: form.name.trim(),
     visibility: form.visibility,
-    startAt: form.startAt?.toISOString() ?? null,
-    freezeAt: form.freezeAt?.toISOString() ?? null,
-    endAt: form.endAt?.toISOString() ?? null,
   };
+  if (!scheduleLocked.value) {
+    payload.startAt = form.startAt?.toISOString() ?? null;
+    payload.freezeAt = form.freezeAt?.toISOString() ?? null;
+    payload.endAt = form.endAt?.toISOString() ?? null;
+  }
   try {
-    if (editing.value) await adminContestApi.updateContest(editing.value.id, payload);
-    else await adminContestApi.createContest(payload);
+    if (editing.value)
+      await adminContestApi.updateContest(editing.value.id, {
+        ...payload,
+        expectedVersion: editing.value.version,
+      });
+    else await adminContestApi.createContest(payload as ContestPayload);
     dialogVisible.value = false;
     await loadContests();
   } catch (error) {

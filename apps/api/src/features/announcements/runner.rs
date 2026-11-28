@@ -54,6 +54,10 @@ impl AnnouncementScheduleRunner {
             FROM announcements announcement
             JOIN contests contest ON contest.id=announcement.contest_id
             WHERE announcement.status='SCHEDULED' AND announcement.scheduled_at<=now()
+              -- An archived contest is read-only by trigger, so its scheduled
+              -- announcements cannot be published *or* cancelled. Selecting them
+              -- here made the whole batch abort on every tick.
+              AND contest.status <> 'ARCHIVED'
             ORDER BY announcement.scheduled_at,announcement.id
             FOR UPDATE OF announcement,contest SKIP LOCKED LIMIT 100
             "#,
@@ -62,19 +66,54 @@ impl AnnouncementScheduleRunner {
         .await
         .map_err(|error| AppError::internal("load due scheduled announcements", error))?;
         for (id, contest_id, created_by, contest_status) in &due {
-            if matches!(contest_status.as_str(), "RUNNING" | "PAUSED") {
-                sqlx::query("UPDATE announcements SET status='PUBLISHED',published_at=now(),updated_at=now(),version=version+1 WHERE id=$1 AND status='SCHEDULED'")
-                    .bind(id).execute(&mut *tx).await
-                    .map_err(|error| AppError::internal("publish scheduled announcement", error))?;
-                automatic_audit_tx(&mut tx, *created_by, "ANNOUNCEMENT_PUBLISHED", *id).await?;
-                public_event_tx(self.outbox.as_ref(), *contest_id, *id, "PUBLISHED").await?;
-            } else {
-                sqlx::query("UPDATE announcements SET status='CANCELLED',pinned=false,cancelled_at=now(),cancelled_by=$2,updated_at=now(),version=version+1 WHERE id=$1 AND status='SCHEDULED'")
-                    .bind(id).bind(created_by).execute(&mut *tx).await
-                    .map_err(|error| AppError::internal("cancel expired scheduled announcement", error))?;
-                automatic_audit_tx(&mut tx, *created_by, "ANNOUNCEMENT_SCHEDULE_CANCELLED", *id)
-                    .await?;
-                schedule_event_tx(self.outbox.as_ref(), *contest_id, *id, "CANCELLED").await?;
+            // Per-row savepoint: one announcement that the database refuses must
+            // not roll back the others in the batch (they would then never be
+            // published, and the runner would retry the same batch forever).
+            sqlx::query("SAVEPOINT scheduled_announcement_row")
+                .execute(&mut *tx)
+                .await
+                .map_err(|error| AppError::internal("begin announcement savepoint", error))?;
+            let outcome = async {
+                if matches!(contest_status.as_str(), "RUNNING" | "PAUSED") {
+                    sqlx::query("UPDATE announcements SET status='PUBLISHED',published_at=now(),updated_at=now(),version=version+1 WHERE id=$1 AND status='SCHEDULED'")
+                        .bind(id).execute(&mut *tx).await
+                        .map_err(|error| AppError::internal("publish scheduled announcement", error))?;
+                    automatic_audit_tx(&mut tx, *created_by, "ANNOUNCEMENT_PUBLISHED", *id).await?;
+                    public_event_tx(self.outbox.as_ref(), *contest_id, *id, "PUBLISHED").await?;
+                } else {
+                    sqlx::query("UPDATE announcements SET status='CANCELLED',pinned=false,cancelled_at=now(),cancelled_by=$2,updated_at=now(),version=version+1 WHERE id=$1 AND status='SCHEDULED'")
+                        .bind(id).bind(created_by).execute(&mut *tx).await
+                        .map_err(|error| AppError::internal("cancel expired scheduled announcement", error))?;
+                    automatic_audit_tx(&mut tx, *created_by, "ANNOUNCEMENT_SCHEDULE_CANCELLED", *id)
+                        .await?;
+                    schedule_event_tx(self.outbox.as_ref(), *contest_id, *id, "CANCELLED").await?;
+                }
+                Ok::<(), AppError>(())
+            }
+            .await;
+            match outcome {
+                Ok(()) => {
+                    sqlx::query("RELEASE SAVEPOINT scheduled_announcement_row")
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|error| {
+                            AppError::internal("release announcement savepoint", error)
+                        })?;
+                }
+                Err(error) => {
+                    error!(
+                        announcement_id = id,
+                        %contest_id,
+                        ?error,
+                        "skipping a scheduled announcement that cannot be updated"
+                    );
+                    sqlx::query("ROLLBACK TO SAVEPOINT scheduled_announcement_row")
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|error| {
+                            AppError::internal("roll back announcement savepoint", error)
+                        })?;
+                }
             }
         }
         tx.commit().await.map_err(|error| {

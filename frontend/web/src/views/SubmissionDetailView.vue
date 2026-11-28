@@ -170,6 +170,10 @@ const loading = ref(false);
 const errorMessage = ref('');
 let pollTimer: number | undefined;
 let failures = 0;
+// Switching submissions must invalidate whatever the previous one still has in
+// flight, and an unmounted view must never reschedule itself.
+let requestGeneration = 0;
+let stopped = false;
 
 const activeJudgement = computed(
   () => submission.value?.judgements.find((judgement) => judgement.active) ?? null,
@@ -186,20 +190,28 @@ function formatMemory(value: number | null) {
 async function loadSubmission() {
   if (pollTimer) window.clearTimeout(pollTimer);
   pollTimer = undefined;
+  const generation = ++requestGeneration;
   loading.value = true;
   try {
-    submission.value = await contestApi.getSubmission(contestId.value, submissionId.value);
+    const loaded = await contestApi.getSubmission(contestId.value, submissionId.value);
+    if (generation !== requestGeneration || stopped) return;
+    submission.value = loaded;
     errorMessage.value = '';
     failures = 0;
-    if (!isFinalSubmissionStatus(submission.value.status) && !document.hidden) {
-      pollTimer = window.setTimeout(loadSubmission, 2_000);
+    if (!isFinalSubmissionStatus(loaded.status) && !document.hidden) {
+      pollTimer = window.setTimeout(() => void loadSubmission(), 2_000);
     }
   } catch (error) {
+    // A slow failure from the previous submission must not paint this one.
+    if (generation !== requestGeneration || stopped) return;
     errorMessage.value = getErrorMessage(error);
     failures += 1;
-    pollTimer = window.setTimeout(loadSubmission, Math.min(2_000 * 2 ** failures, 15_000));
+    pollTimer = window.setTimeout(
+      () => void loadSubmission(),
+      Math.min(2_000 * 2 ** failures, 15_000),
+    );
   } finally {
-    loading.value = false;
+    if (generation === requestGeneration) loading.value = false;
   }
 }
 
@@ -222,6 +234,8 @@ watch(
 onMounted(() => document.addEventListener('visibilitychange', handleVisibility));
 
 onUnmounted(() => {
+  stopped = true;
+  requestGeneration += 1;
   if (pollTimer) window.clearTimeout(pollTimer);
   document.removeEventListener('visibilitychange', handleVisibility);
 });

@@ -176,6 +176,10 @@ const now = ref(Date.now());
 let serverTimeAnchor = Date.now();
 let performanceAnchor = 0;
 let generation = 0;
+// The version the current draft was built from. A background refresh must not
+// move it, otherwise saving would silently overwrite another editor's change
+// instead of tripping the optimistic-lock conflict.
+let baseVersion: number | null = null;
 let realtime: ContestRealtimeSubscription | undefined;
 let clockTimer: number | undefined;
 
@@ -222,6 +226,7 @@ const statusLabel = computed(() =>
 );
 function apply(value: AwardHostScript) {
   script.value = value;
+  baseVersion = value.version;
   resyncClock(new Date(value.serverTime).getTime());
   form.openingText = value.openingText;
   form.closingText = value.closingText;
@@ -236,8 +241,14 @@ async function load(reset: boolean) {
   try {
     const value = await awardsApi.hostScript(id);
     if (token === generation && id === contestId.value) {
-      script.value = value;
-      if (reset || !dirty.value) apply(value);
+      if (reset || !dirty.value) {
+        apply(value);
+      } else {
+        // Keep the draft and its base version: only the read-only bits (clock,
+        // status) move. Otherwise save() would send the refreshed version and
+        // quietly clobber whoever wrote it.
+        script.value = { ...value, version: baseVersion };
+      }
       errorMessage.value = '';
     }
   } catch (error) {
@@ -275,7 +286,7 @@ async function save() {
       openingText: form.openingText,
       closingText: form.closingText,
       sections: form.sections.map(({ categoryId, cueText }) => ({ categoryId, cueText })),
-      expectedVersion: script.value.version,
+      expectedVersion: baseVersion,
     });
     apply(value);
     ElMessage.success(t('主持人脚本已保存'));

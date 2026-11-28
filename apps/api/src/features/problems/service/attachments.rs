@@ -74,6 +74,23 @@ impl ProblemService {
             ));
         }
         preflight_attachment_change(&self.database, problem_id, actor).await?;
+        // Switching an OUTPUT_ONLY problem to INTERACTIVE while it still lists
+        // the `output` language violates the judge-mode CHECK. Answer 409 before
+        // the upload instead of writing the object and compensating afterwards.
+        let output_only_language = sqlx::query_scalar::<_, bool>(
+            "SELECT languages::jsonb ? 'output' FROM problems WHERE id=$1 AND deleted_at IS NULL",
+        )
+        .bind(problem_id)
+        .fetch_optional(&self.database)
+        .await
+        .map_err(|error| AppError::internal("check problem languages", error))?
+        .unwrap_or(false);
+        if output_only_language {
+            return Err(AppError::conflict(
+                "PROBLEM_OUTPUT_ONLY_LANGUAGE",
+                "An output-only problem must drop the output language before it takes an interactor",
+            ));
+        }
         let sha256 = hex::encode(Sha256::digest(&content));
         let object_key = keys::interactor(problem_id);
         storage

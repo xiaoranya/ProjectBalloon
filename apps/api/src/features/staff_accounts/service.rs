@@ -59,10 +59,23 @@ impl StaffAccountService {
     ) -> Result<PageResponse<StaffAccountResponse>, AppError> {
         query.validate()?;
         let offset = query.offset()?;
+        // `count(*)` and the page used separate snapshots, so a create/delete
+        // landing between them produced a `totalElements` that disagreed with
+        // the rows the caller was holding. One REPEATABLE READ transaction pins
+        // both to the same snapshot.
+        let mut transaction = self
+            .database
+            .begin()
+            .await
+            .map_err(|error| AppError::internal("begin staff account listing", error))?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| AppError::internal("pin the staff listing snapshot", error))?;
         let total_elements = sqlx::query_scalar::<_, i64>(
             "SELECT count(*) FROM users WHERE user_type IN ('STAFF', 'SUPER_ADMIN')",
         )
-        .fetch_one(&self.database)
+        .fetch_one(&mut *transaction)
         .await
         .map_err(|error| AppError::internal("count staff accounts", error))?;
         let sql = format!(
@@ -77,9 +90,13 @@ impl StaffAccountService {
         let rows = sqlx::query_as::<_, StaffAccountRow>(sqlx::AssertSqlSafe(sql))
             .bind(i64::from(query.size))
             .bind(offset)
-            .fetch_all(&self.database)
+            .fetch_all(&mut *transaction)
             .await
             .map_err(|error| AppError::internal("list staff accounts", error))?;
+        transaction
+            .commit()
+            .await
+            .map_err(|error| AppError::internal("commit staff account listing", error))?;
         let content =
             rows.into_iter().map(StaffAccountRow::response).collect::<Result<Vec<_>, _>>()?;
         Ok(PageResponse::new(content, query.page, query.size, total_elements))

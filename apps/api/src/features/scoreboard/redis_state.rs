@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use redis::cmd;
 use sqlx::PgPool;
 use time::OffsetDateTime;
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::error::AppError;
 use crate::features::redis::RedisHandle;
@@ -34,7 +34,15 @@ use crate::features::scoreboard::model::CellRow;
 const CELLS_KEY_TEMPLATE: &str = "xcpc:sb:cells:{cid}";
 const VERSION_KEY_TEMPLATE: &str = "xcpc:sb:ver:{cid}";
 const FROZEN_KEY_TEMPLATE: &str = "xcpc:sb:frozen:{cid}";
+/// The roster as it looked at the freeze milestone. Without it a rename, a
+/// group move or a deleted team after freeze rewrote the public frozen board.
+const FROZEN_ROSTER_KEY_TEMPLATE: &str = "xcpc:sb:frozenroster:{cid}";
 const DIRTY_KEY_TEMPLATE: &str = "xcpc:sb:dirty:{cid}";
+/// Set when an incremental update could not be recorded, so the projection can
+/// no longer be trusted and must be rebuilt before it is read.
+const UNTRUSTED_KEY_TEMPLATE: &str = "xcpc:sb:untrusted:{cid}";
+/// The trust flag only has to survive until the next read rebuilds the board.
+const UNTRUSTED_TTL_SECONDS: i64 = 3_600;
 
 /// Verdicts that increment the ICPC wrong-attempt counter.
 const PENALIZED: [&str; 5] = [
@@ -116,6 +124,11 @@ else
         cell.last_at = t
     end
     cell.penalty = 0
+    -- POINTS boards show every attempt, matching the PostgreSQL rebuild
+    -- (`rebuild_points_cell`) and the submission-based fallback. Without this
+    -- the live OI board reported zero attempts while a rebuilt one reported all
+    -- of them.
+    cell.wa = cell.attempts
 end
 redis.call('HSET', KEYS[1], ARGV[1], cjson.encode(cell))
 redis.call('INCR', KEYS[2])
@@ -194,8 +207,26 @@ fn frozen_key(contest_id: i64) -> String {
     FROZEN_KEY_TEMPLATE.replace("{cid}", &contest_id.to_string())
 }
 
+fn frozen_roster_key(contest_id: i64) -> String {
+    FROZEN_ROSTER_KEY_TEMPLATE.replace("{cid}", &contest_id.to_string())
+}
+
+/// The roster fields the frozen board publishes, captured at freeze time.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct FrozenRosterEntry {
+    team_name: String,
+    school: Option<String>,
+    participation_type: String,
+    group_name: Option<String>,
+    team_star: bool,
+}
+
 fn dirty_key(contest_id: i64) -> String {
     DIRTY_KEY_TEMPLATE.replace("{cid}", &contest_id.to_string())
+}
+
+fn untrusted_key(contest_id: i64) -> String {
+    UNTRUSTED_KEY_TEMPLATE.replace("{cid}", &contest_id.to_string())
 }
 
 fn cell_field(team_id: i64, problem_id: i64) -> String {
@@ -250,6 +281,11 @@ impl ScoreboardProjection {
 
     /// Flags a cell whose incremental update could not be applied; the read
     /// path replays it from PostgreSQL.
+    ///
+    /// A failure here would leave the stale cell in place *without* the dirty
+    /// marker, so the board would keep serving it forever. Instead of swallowing
+    /// the error, flag the whole projection untrusted: the next read rebuilds
+    /// from PostgreSQL rather than trusting a board it can no longer repair.
     pub async fn mark_dirty(&self, contest_id: i64, team_id: i64, problem_id: i64) {
         let mut pipeline = redis::pipe();
         pipeline
@@ -257,7 +293,53 @@ impl ScoreboardProjection {
             .ignore()
             .incr(version_key(contest_id), 1)
             .ignore();
-        let _ = self.redis.query_pipeline::<()>(pipeline).await;
+        if let Err(error) = self.redis.query_pipeline::<()>(pipeline).await {
+            error!(
+                ?error,
+                %contest_id,
+                team_id,
+                problem_id,
+                "failed to flag a scoreboard cell dirty; marking the projection untrusted"
+            );
+            if let Err(error) = self.flag_untrusted(contest_id).await {
+                error!(?error, %contest_id, "failed to flag the scoreboard projection untrusted");
+            }
+        }
+    }
+
+    /// Marks the whole projection for `contest_id` as needing a rebuild.
+    async fn flag_untrusted(&self, contest_id: i64) -> Result<(), AppError> {
+        self.redis
+            .query::<()>(
+                cmd("SET")
+                    .arg(untrusted_key(contest_id))
+                    .arg("1")
+                    .arg("EX")
+                    .arg(UNTRUSTED_TTL_SECONDS),
+            )
+            .await
+    }
+
+    /// Best-effort variant used when a rebuild failed: the caller has already
+    /// logged the rebuild error, so a failure here is only worth a log line.
+    pub(crate) async fn flag_untrusted_after_failed_rebuild(&self, contest_id: i64) {
+        if let Err(error) = self.flag_untrusted(contest_id).await {
+            error!(?error, %contest_id, "failed to flag the scoreboard projection untrusted");
+        }
+    }
+
+    /// True when an earlier incremental update could not be recorded, so the
+    /// projection must be rebuilt before it is read.
+    pub async fn is_untrusted(&self, contest_id: i64) -> bool {
+        match self.redis.query::<Option<String>>(cmd("GET").arg(untrusted_key(contest_id))).await {
+            Ok(flag) => flag.is_some(),
+            Err(error) => {
+                // A Redis read failure means the caller cannot trust *any* of
+                // this projection; the caller already treats that as a rebuild.
+                warn!(?error, %contest_id, "cannot read the scoreboard trust flag");
+                false
+            }
+        }
     }
 
     /// Reads the projection for one phase. `None` means the projection has no
@@ -296,6 +378,38 @@ impl ScoreboardProjection {
             self.redis.query(cmd("SMEMBERS").arg(dirty_key(contest_id))).await?;
         let dirty = dirty.iter().filter_map(|field| parse_field(field)).collect();
         Ok(Some(ProjectionSnapshot { cells, version, dirty }))
+    }
+
+    /// The roster as captured at the freeze milestone, or `None` when the
+    /// snapshot predates roster capture.
+    pub(crate) async fn read_frozen_roster(
+        &self,
+        contest_id: i64,
+    ) -> Result<Option<Vec<crate::features::scoreboard::model::RosterRow>>, AppError> {
+        let key = frozen_roster_key(contest_id);
+        let exists: i64 = self.redis.query(cmd("EXISTS").arg(&key)).await?;
+        if exists == 0 {
+            return Ok(None);
+        }
+        let raw: Vec<(String, String)> = self.redis.query(cmd("HGETALL").arg(&key)).await?;
+        let mut roster = Vec::with_capacity(raw.len());
+        for (field, payload) in raw {
+            let Ok(team_id) = field.parse::<i64>() else { continue };
+            match serde_json::from_str::<FrozenRosterEntry>(&payload) {
+                Ok(entry) => roster.push(crate::features::scoreboard::model::RosterRow {
+                    team_id,
+                    team_name: entry.team_name,
+                    school: entry.school,
+                    participation_type: entry.participation_type,
+                    group_name: entry.group_name,
+                    team_star: entry.team_star,
+                }),
+                Err(error) => {
+                    warn!(%error, %field, %contest_id, "ignoring malformed frozen roster entry")
+                }
+            }
+        }
+        Ok(Some(roster))
     }
 
     /// Recomputes one cell by replaying its (bounded) submission history from
@@ -376,13 +490,18 @@ impl ScoreboardProjection {
                 score_milli,
             });
         }
+        // Build into a staging key and publish it with a single RENAME. The old
+        // `DEL cells → HSET …` pipeline could be interrupted after the DEL,
+        // leaving an empty board that the very same pipeline then blessed with
+        // a fresh version — readers trust a freshly versioned hash.
+        let staging = format!("{CELLS_KEY_TEMPLATE}:building:{contest_id}");
         let mut pipeline = redis::pipe();
-        pipeline.del(cells_key(contest_id)).ignore();
+        pipeline.del(&staging).ignore();
         for ((team_id, problem_id), (max_score, replay)) in &grouped {
             let state = project_cell(start_ms, meta.1, meta.2, *max_score, replay);
             pipeline
                 .hset(
-                    cells_key(contest_id),
+                    &staging,
                     cell_field(*team_id, *problem_id),
                     serde_json::to_string(&state).map_err(|error| {
                         sqlx::Error::Protocol(format!("encode cell: {error:?}"))
@@ -390,8 +509,17 @@ impl ScoreboardProjection {
                 )
                 .ignore();
         }
+        if grouped.is_empty() {
+            // Nothing to publish: an empty contest must not keep a stale hash.
+            pipeline.del(cells_key(contest_id)).ignore();
+        } else {
+            // The TTL only matters if the pipeline dies before the RENAME.
+            pipeline.cmd("EXPIRE").arg(&staging).arg(300).ignore();
+            pipeline.cmd("RENAME").arg(&staging).arg(cells_key(contest_id)).ignore();
+        }
         pipeline.incr(version_key(contest_id), 1).ignore();
         pipeline.del(dirty_key(contest_id)).ignore();
+        pipeline.del(untrusted_key(contest_id)).ignore();
         self.redis.query_pipeline::<()>(pipeline).await.map_err(|error| {
             sqlx::Error::Protocol(format!("rebuild contest projection: {error:?}"))
         })
@@ -432,6 +560,23 @@ impl ScoreboardProjection {
             .map_err(|error| AppError::internal("load contest for the frozen snapshot", error))?;
         let (Some(start_at), Some(freeze_at)) = (meta.0, meta.1) else { return Ok(()) };
         let start_ms = unix_ms(start_at);
+        // Snapshot the roster too: the frozen board must show the names, groups
+        // and STAR flags that were public when it froze, not whatever the teams
+        // table says after the contest.
+        let roster =
+            sqlx::query_as::<_, (i64, String, Option<String>, String, Option<String>, bool)>(
+                r#"
+            SELECT roster.team_id, team.name, team.school, roster.participation_type,
+                   roster.group_name, team.star
+            FROM contest_teams roster
+            JOIN teams team ON team.id = roster.team_id
+            WHERE roster.contest_id = $1
+            "#,
+            )
+            .bind(contest_id)
+            .fetch_all(database)
+            .await
+            .map_err(|error| AppError::internal("load roster for the frozen snapshot", error))?;
         let rows = load_contest_replay_rows(database, contest_id, Some(freeze_at))
             .await
             .map_err(|error| AppError::internal("replay the frozen snapshot", error))?;
@@ -460,6 +605,17 @@ impl ScoreboardProjection {
         }
         pipeline.cmd("RENAMENX").arg(&staging).arg(frozen_key(contest_id)).ignore();
         pipeline.del(&staging).ignore();
+        let roster_staging = format!("{FROZEN_ROSTER_KEY_TEMPLATE}:building:{contest_id}");
+        pipeline.del(&roster_staging).ignore();
+        for (team_id, team_name, school, participation_type, group_name, team_star) in roster {
+            let entry =
+                FrozenRosterEntry { team_name, school, participation_type, group_name, team_star };
+            let payload = serde_json::to_string(&entry)
+                .map_err(|error| AppError::internal("encode frozen roster entry", error))?;
+            pipeline.hset(&roster_staging, team_id.to_string(), payload).ignore();
+        }
+        pipeline.cmd("RENAMENX").arg(&roster_staging).arg(frozen_roster_key(contest_id)).ignore();
+        pipeline.del(&roster_staging).ignore();
         self.redis.query_pipeline::<()>(pipeline).await?;
         if grouped.is_empty() {
             warn!(%contest_id, "no submissions before the freeze; the frozen board is empty");
@@ -617,6 +773,9 @@ fn project_cell(
                 cell.last_at = t;
             }
             cell.penalty = 0;
+            // Mirrors `APPLY_SCRIPT`: POINTS boards expose every attempt, so the
+            // live projection agrees with the PostgreSQL rebuild.
+            cell.wa = cell.attempts;
         }
     }
     cell
@@ -692,5 +851,26 @@ mod tests {
         assert_eq!(last.score_milli, 7_500);
         assert!(last.solved, "LAST aggregation reaches max score");
         assert_eq!(last.penalty, 0);
+    }
+
+    #[test]
+    fn points_replay_reports_every_attempt() {
+        // The PostgreSQL rebuild counts every completed judgement in POINTS
+        // mode, so the replay (and, through `APPLY_SCRIPT`, the incremental
+        // path) must expose the same number instead of zero.
+        let start = 1_000_000;
+        let rows = [
+            row(60_000, "WRONG_ANSWER", 0),
+            row(120_000, "TIME_LIMIT_EXCEEDED", 0),
+            row(180_000, "ACCEPTED", 10_000),
+        ];
+        let cell = project_cell(start, false, true, 10_000, &rows);
+        assert_eq!(cell.attempts, 3);
+        assert_eq!(cell.wa, 3, "a POINTS board shows all attempts");
+        assert_eq!(to_cell_row(1, 1, &cell).wrong_attempts, 3);
+
+        // ICPC keeps counting only penalised rejections before the solve.
+        let icpc = project_cell(start, true, true, 10_000, &rows);
+        assert_eq!(icpc.wa, 2);
     }
 }

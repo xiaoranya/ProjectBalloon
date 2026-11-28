@@ -10697,6 +10697,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Event-stream capacity exhausted; retry shortly",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -13881,6 +13891,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Event-stream capacity exhausted; retry shortly",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
           }
         }
       }
@@ -15073,6 +15093,16 @@
           },
           "404": {
             "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Event-stream capacity exhausted; retry shortly",
             "content": {
               "application/json": {
                 "schema": {
@@ -18456,7 +18486,8 @@
           "username": {
             "type": "string"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "CreateTeamRequest": {
         "type": "object",
@@ -23924,7 +23955,8 @@
               "type": "string"
             }
           }
-        }
+        },
+        "additionalProperties": false
       },
       "UpdateTeamRequest": {
         "type": "object",

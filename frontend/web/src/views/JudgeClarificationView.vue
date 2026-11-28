@@ -262,6 +262,9 @@ const replyForm = reactive<{ reply: string; visibility: ClarificationReplyVisibi
 });
 const conversionForm = reactive({ title: '', body: '' });
 let realtime: ContestRealtimeSubscription | undefined;
+// A reply typed for one contest must never land after the operator switched to
+// another: every load carries the contest it was issued for.
+let requestGeneration = 0;
 
 const canConvert = computed(
   () =>
@@ -279,22 +282,27 @@ function statusType(status: ClarificationStatus): 'warning' | 'success' | 'info'
 }
 
 async function loadClarifications(silent = true) {
-  if (!selectedContestId.value) return;
+  const contestId = selectedContestId.value;
+  if (!contestId) return;
+  const generation = ++requestGeneration;
   if (!silent) loading.value = true;
   try {
-    clarifications.value = await clarificationApi.listAll(
-      selectedContestId.value,
+    const loaded = await clarificationApi.listAll(
+      contestId,
       statusFilter.value === 'ALL' ? undefined : statusFilter.value,
     );
+    if (generation !== requestGeneration || contestId !== selectedContestId.value) return;
+    clarifications.value = loaded;
     errorMessage.value = '';
     if (selected.value) {
       const changed = clarifications.value.find((item) => item.id === selected.value?.id);
       if (changed) selected.value = changed;
     }
   } catch (error) {
+    if (generation !== requestGeneration || contestId !== selectedContestId.value) return;
     if (!silent) errorMessage.value = getErrorMessage(error);
   } finally {
-    if (!silent) loading.value = false;
+    if (generation === requestGeneration) loading.value = false;
   }
 }
 
@@ -319,21 +327,30 @@ function connectRealtime() {
 }
 
 async function changeContest() {
+  requestGeneration += 1;
+  // Drop the previous contest's rows right away; a slow response from it must
+  // not repopulate the list under the new contest.
+  clarifications.value = [];
+  selected.value = null;
+  detailVisible.value = false;
   await router.replace({
     query: selectedContestId.value ? { contestId: String(selectedContestId.value) } : {},
   });
-  selected.value = null;
-  detailVisible.value = false;
   connectRealtime();
   await loadClarifications(false);
 }
 
 async function refreshDetail(id: number) {
+  const contestId = selectedContestId.value;
+  const generation = requestGeneration;
   try {
-    selected.value = await clarificationApi.get(id);
-    replyForm.reply = selected.value.reply ?? '';
-    replyForm.visibility = selected.value.replyVisibility ?? 'PRIVATE';
+    const loaded = await clarificationApi.get(id);
+    if (generation !== requestGeneration || contestId !== selectedContestId.value) return;
+    selected.value = loaded;
+    replyForm.reply = loaded.reply ?? '';
+    replyForm.visibility = loaded.replyVisibility ?? 'PRIVATE';
   } catch (error) {
+    if (generation !== requestGeneration || contestId !== selectedContestId.value) return;
     errorMessage.value = getErrorMessage(error);
   }
 }

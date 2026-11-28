@@ -1,7 +1,11 @@
+use std::net::SocketAddr;
+
 use axum::{
     Json,
-    extract::{Path, Query, State, rejection::JsonRejection},
+    extract::{ConnectInfo, Path, Query, State, rejection::JsonRejection},
 };
+
+use crate::features::training::audit::record_admin_audit;
 
 use crate::features::training::model::{
     BankProblem, BankProblemRow, EditorialRequest, EditorialResponse, FavoriteRequest,
@@ -155,6 +159,7 @@ pub async fn get_editorial(
 pub async fn upsert_editorial(
     context: SuperAdminContext,
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Path((problem_id, lang_code)): Path<(i64, String)>,
     payload: Result<Json<EditorialRequest>, JsonRejection>,
 ) -> Result<Json<EditorialResponse>, AppError> {
@@ -174,6 +179,13 @@ pub async fn upsert_editorial(
             "invalid language, content, or unlock policy",
         ));
     }
+    // The audit row belongs to the same transaction as the edit: a failed audit
+    // must not leave a change that no one can attribute.
+    let mut transaction = state
+        .database()
+        .begin()
+        .await
+        .map_err(|e| AppError::internal("begin problem editorial update", e))?;
     let updated = sqlx::query_as::<_, (time::OffsetDateTime,)>(
         r#"
         INSERT INTO problem_editorials
@@ -196,10 +208,23 @@ pub async fn upsert_editorial(
     .bind(&request.unlock_policy)
     .bind(request.published)
     .bind(context.user().id)
-    .fetch_one(state.database())
+    .fetch_one(&mut *transaction)
     .await
     .map_err(|e| AppError::internal("save problem editorial", e))?
     .0;
+    record_admin_audit(
+        &mut *transaction,
+        context.user().id,
+        "PROBLEM_EDITORIAL_UPDATED",
+        "PROBLEM",
+        problem_id,
+        peer.ip(),
+    )
+    .await?;
+    transaction
+        .commit()
+        .await
+        .map_err(|e| AppError::internal("commit problem editorial update", e))?;
     Ok(Json(EditorialResponse {
         problem_id,
         lang_code: lang_code.trim().to_owned(),
@@ -256,6 +281,7 @@ pub async fn get_practice_settings(
 pub async fn update_practice_settings(
     context: SuperAdminContext,
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     payload: Result<Json<PracticeSettingsRequest>, JsonRejection>,
 ) -> Result<Json<PracticeSettingsResponse>, AppError> {
     let Json(request) =
@@ -269,6 +295,11 @@ pub async fn update_practice_settings(
     if !(1..=3_650).contains(&request.source_retention_days) {
         return Err(AppError::validation("sourceRetentionDays", "must be between 1 and 3650"));
     }
+    let mut transaction = state
+        .database()
+        .begin()
+        .await
+        .map_err(|e| AppError::internal("begin practice settings update", e))?;
     let settings = sqlx::query_as::<_, PracticeSettingsResponse>(
         r#"
         UPDATE practice_platform_settings
@@ -286,8 +317,21 @@ pub async fn update_practice_settings(
     .bind(request.concurrent_judging_limit)
     .bind(request.source_retention_days)
     .bind(context.user().id)
-    .fetch_one(state.database())
+    .fetch_one(&mut *transaction)
     .await
     .map_err(|e| AppError::internal("update practice settings", e))?;
+    record_admin_audit(
+        &mut *transaction,
+        context.user().id,
+        "PRACTICE_SETTINGS_UPDATED",
+        "PRACTICE_SETTINGS",
+        1,
+        peer.ip(),
+    )
+    .await?;
+    transaction
+        .commit()
+        .await
+        .map_err(|e| AppError::internal("commit practice settings update", e))?;
     Ok(Json(settings))
 }

@@ -7,7 +7,9 @@ use crate::features::teams::model::{
     TeamMemberResponse, ValidatedTeamMember, ValidatedTeamMemberPatch,
 };
 use crate::features::teams::service::TeamService;
-use crate::features::teams::service::helpers::{record_audit, require_manage_team};
+use crate::features::teams::service::helpers::{
+    record_audit, require_manage_team, require_team_not_archived,
+};
 
 impl TeamService {
     pub async fn add_member(
@@ -23,6 +25,7 @@ impl TeamService {
             .await
             .map_err(|error| AppError::internal("begin team member creation", error))?;
         require_manage_team(&mut transaction, team_id, actor).await?;
+        require_team_not_archived(&mut transaction, team_id).await?;
         let member = sqlx::query_as(
             r#"
             INSERT INTO team_members (team_id, name, email, phone, role_name)
@@ -99,6 +102,7 @@ impl TeamService {
             .await
             .map_err(|error| AppError::internal("begin team member update", error))?;
         require_manage_team(&mut transaction, team_id, actor).await?;
+        require_team_not_archived(&mut transaction, team_id).await?;
         let member = sqlx::query_as(
             r#"
             UPDATE team_members
@@ -150,6 +154,7 @@ impl TeamService {
             .await
             .map_err(|error| AppError::internal("begin team member deletion", error))?;
         require_manage_team(&mut transaction, team_id, actor).await?;
+        require_team_not_archived(&mut transaction, team_id).await?;
         let result = sqlx::query("DELETE FROM team_members WHERE id = $1 AND team_id = $2")
             .bind(member_id)
             .bind(team_id)

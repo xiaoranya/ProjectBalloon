@@ -14,7 +14,7 @@ use crate::features::teams::model::{
 use contest_roster::enqueue_for_team_contests;
 use helpers::{
     create_team_in_transaction, map_team_write_error, prepare_team, record_audit,
-    require_manage_team, require_positive_team_id, team_not_found,
+    require_manage_team, require_positive_team_id, require_team_not_archived, team_not_found,
 };
 
 mod contest_roster;
@@ -275,6 +275,7 @@ impl TeamService {
             .await
             .map_err(|error| AppError::internal("begin team update", error))?;
         require_manage_team(&mut transaction, team_id, actor).await?;
+        require_team_not_archived(&mut transaction, team_id).await?;
         let current = sqlx::query_as::<
             _,
             (String, Option<String>, Option<String>, Option<String>, bool, i64),
@@ -298,9 +299,11 @@ impl TeamService {
             ));
         }
         let name = request.name.unwrap_or(current.0);
-        let school = request.school.or(current.1);
-        let seat_no = request.seat_no.or(current.2);
-        let group_name = request.group_name.or(current.3);
+        // `None` keeps the stored value; `Some(None)` is an explicit null and
+        // clears the column.
+        let school = request.school.unwrap_or(current.1);
+        let seat_no = request.seat_no.unwrap_or(current.2);
+        let group_name = request.group_name.unwrap_or(current.3);
         let star = request.star.unwrap_or(current.4);
         sqlx::query(
             r#"

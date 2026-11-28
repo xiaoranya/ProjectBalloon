@@ -66,8 +66,10 @@ pub(super) async fn require_readable(
         return if participating { Ok(()) } else { Err(contest_not_found()) };
     }
 
-    if actor.is_super_admin()
-        || actor.has_permission(crate::features::auth::permissions::CLARIFICATION_MANAGE)
+    if actor.is_super_admin() {
+        return Ok(());
+    }
+    if actor.has_permission(crate::features::auth::permissions::CLARIFICATION_MANAGE)
         || actor.has_permission(crate::features::auth::permissions::PRINTING_MANAGE)
         || actor.has_permission(crate::features::auth::permissions::BALLOON_MANAGE)
         || actor.has_permission(crate::features::auth::permissions::RESOLVER_MANAGE)
@@ -75,7 +77,13 @@ pub(super) async fn require_readable(
         || actor.has_permission(crate::features::auth::permissions::SCREEN_MANAGE)
         || actor.has_permission(crate::features::auth::permissions::LIVE_MANAGE)
     {
-        return Ok(());
+        // These roles read problems to run a contest — printing, balloons,
+        // awards. A contest still in configuration is not running yet, and its
+        // problems may be borrowed from elsewhere: keep that limited to the
+        // managers actually assigned to it.
+        if !matches!(status.as_str(), "DRAFT" | "FROZEN_CONFIG") {
+            return Ok(());
+        }
     }
     let assigned = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS (SELECT 1 FROM contest_management_assignments WHERE user_id = $1 AND contest_id = $2)",

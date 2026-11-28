@@ -200,6 +200,29 @@ impl ProblemService {
             .await
             .map_err(|error| AppError::internal("begin problem update", error))?;
         lock_attachment_change(&mut transaction, problem_id, actor).await?;
+        if request.judge_mode.is_some() || request.languages_json.is_some() {
+            // A partial update keeps whichever half it does not mention, so
+            // `judgeMode: OUTPUT_ONLY` alone keeps the old languages and
+            // `languages: ["output"]` alone keeps the old mode. Both combos
+            // violate `problems_mode_language_shape`; validating the effective
+            // pair here answers 400 with the offending field instead of letting
+            // the UPDATE die on the CHECK as a 500.
+            let (stored_languages, stored_mode) = sqlx::query_as::<_, (String, String)>(
+                "SELECT languages, judge_mode FROM problems WHERE id = $1 AND deleted_at IS NULL",
+            )
+            .bind(problem_id)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(|error| AppError::internal("load the problem judge configuration", error))?
+            .ok_or_else(problem_not_found)?;
+            let languages_json = request.languages_json.as_deref().unwrap_or(&stored_languages);
+            let languages: Vec<String> = serde_json::from_str(languages_json)
+                .map_err(|error| AppError::internal("decode stored problem languages", error))?;
+            validate_languages_for_judge_mode(
+                &languages,
+                request.judge_mode.as_deref().unwrap_or(&stored_mode),
+            )?;
+        }
         if request.judge_mode.as_deref() == Some("INTERACTIVE") {
             // The DB CHECK requires key and digest for INTERACTIVE; without
             // this pre-check the UPDATE fails with a raw constraint error (500)
@@ -286,6 +309,20 @@ impl ProblemService {
             .begin()
             .await
             .map_err(|error| AppError::internal("begin problem deletion", error))?;
+        // Lock before looking for assignments: without the row lock an
+        // assignment could insert between the check and the UPDATE, leaving a
+        // soft-deleted problem attached to a contest. Assignment takes
+        // `FOR KEY SHARE` on the same row, so the two serialize.
+        let locked = sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM problems WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
+        )
+        .bind(problem_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| AppError::internal("lock problem for deletion", error))?;
+        if locked.is_none() {
+            return Err(problem_not_found());
+        }
         let assigned = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS (SELECT 1 FROM contest_problems WHERE problem_id = $1)",
         )
@@ -441,6 +478,18 @@ async fn require_problem_manage_pool(
     problem_id: i64,
     actor: &AuthUser,
 ) -> Result<(), AppError> {
+    // A soft-deleted problem must 404 here exactly like `get` does; the scope
+    // check below only looks at contest assignments, which outlive the delete.
+    let active = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM problems WHERE id = $1 AND deleted_at IS NULL)",
+    )
+    .bind(problem_id)
+    .fetch_one(database)
+    .await
+    .map_err(|error| AppError::internal("check problem existence", error))?;
+    if !active {
+        return Err(problem_not_found());
+    }
     if actor.is_super_admin() {
         return Ok(());
     }

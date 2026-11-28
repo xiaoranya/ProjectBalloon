@@ -295,6 +295,7 @@ impl BalloonService {
         contest_id: i64,
         query: DispatchQuery,
         actor: &AuthUser,
+        request_ip: IpAddr,
     ) -> Result<Vec<BalloonTaskResponse>, AppError> {
         require_operator(actor)?;
         let policy = self.dispatch_policy(contest_id, actor).await?;
@@ -336,7 +337,12 @@ impl BalloonService {
             ORDER BY task.priority DESC,task.created_at,task.id
             "#
         );
-        sqlx::query_as::<_, BalloonTaskResponse>(sqlx::AssertSqlSafe(sql))
+        let mut transaction = self
+            .database
+            .begin()
+            .await
+            .map_err(|error| AppError::internal("begin balloon dispatch", error))?;
+        let dispatched = sqlx::query_as::<_, BalloonTaskResponse>(sqlx::AssertSqlSafe(sql))
             .bind(contest_id)
             .bind(zone)
             .bind(policy.cooldown_seconds)
@@ -344,9 +350,27 @@ impl BalloonService {
             .bind(zones)
             .bind(limit)
             .bind(actor.id)
-            .fetch_all(&self.database)
+            .fetch_all(&mut *transaction)
             .await
-            .map_err(|e| AppError::internal("dispatch balloon tasks", e))
+            .map_err(|e| AppError::internal("dispatch balloon tasks", e))?;
+        // A dispatch hands tasks to runners; without an audit row nobody can tell
+        // who released a batch, or when.
+        for task in &dispatched {
+            sqlx::query(
+                "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, request_ip, result) VALUES ($1, 'BALLOON_TASK_DISPATCHED', 'BALLOON_TASK', $2, $3, 'success')",
+            )
+            .bind(actor.id)
+            .bind(task.id)
+            .bind(request_ip.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| AppError::internal("audit balloon dispatch", error))?;
+        }
+        transaction
+            .commit()
+            .await
+            .map_err(|error| AppError::internal("commit balloon dispatch", error))?;
+        Ok(dispatched)
     }
 }
 

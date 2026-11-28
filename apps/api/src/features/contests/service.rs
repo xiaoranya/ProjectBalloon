@@ -10,8 +10,8 @@ use time::OffsetDateTime;
 use crate::{error::AppError, features::auth::model::AuthUser, pagination::PageResponse};
 
 use crate::features::contests::helpers::{
-    CONTEST_COLUMNS, ReadAccess, contest_not_found, format_rfc3339, insert_realtime_outbox,
-    lock_active_contest, map_contest_write_error, map_extension_error, map_transition_error,
+    CONTEST_COLUMNS, ReadAccess, contest_not_found, format_rfc3339, lock_active_contest,
+    map_contest_write_error, map_extension_error, map_transition_error, publish_contest_event,
     record_audit, record_audit_result, require_manage, schedule_values,
 };
 use crate::features::contests::model::{
@@ -340,6 +340,12 @@ impl ContestService {
         require_manage(&mut transaction, contest_id, actor).await?;
         let current = lock_active_contest(&mut transaction, contest_id).await?;
         let status: ContestStatus = current.status.parse()?;
+        if status == ContestStatus::Archived {
+            // Archiving is the "this contest is history" state: its rows feed
+            // awards, certificates, and exports, so renaming or re-publishing it
+            // afterwards rewrites records people already printed.
+            return Err(AppError::conflict("CONTEST_ARCHIVED", "An archived contest is read-only"));
+        }
         if request.changes_schedule() && !status.can_reschedule() {
             return Err(AppError::conflict(
                 "CONTEST_SCHEDULE_LOCKED",
@@ -513,10 +519,26 @@ impl ContestService {
             &result,
         )
         .await?;
+        let payload = serde_json::json!({
+            "from": from.as_str(),
+            "to": to.as_str(),
+            "version": version,
+            "transitionedAt": format_rfc3339(transitioned_at)?,
+        });
         transaction
             .commit()
             .await
             .map_err(|error| AppError::internal("commit contest transition", error))?;
+        // Manual transitions used to be silent while automatic ones emitted an
+        // event, so viewers on the SSE stream kept showing the previous phase
+        // until their next poll.
+        publish_contest_event(
+            self.outbox.as_ref(),
+            contest_id,
+            "CONTEST_LIFECYCLE_CHANGED",
+            payload,
+        )
+        .await;
         Ok(LifecycleTransitionResponse { contest_id, from, to, version, transitioned_at })
     }
 
@@ -585,28 +607,15 @@ impl ContestService {
             "previousEndAt": format_rfc3339(previous_end_at)?,
             "endAt": format_rfc3339(request.new_end_at)?,
             "updatedAt": format_rfc3339(updated_at)?,
-        })
-        .to_string();
-        insert_realtime_outbox(
-            self.outbox.as_ref(),
-            contest_id,
-            "CONTEST_EXTENDED",
-            "PUBLIC",
-            &payload,
-        )
-        .await?;
-        insert_realtime_outbox(
-            self.outbox.as_ref(),
-            contest_id,
-            "CONTEST_EXTENDED",
-            "STAFF",
-            &payload,
-        )
-        .await?;
+        });
+        // Enqueue only after the commit: doing it inside the transaction held
+        // the row lock across a Redis round trip and let a Redis failure roll
+        // back an extension the database already accepted.
         transaction
             .commit()
             .await
             .map_err(|error| AppError::internal("commit contest extension", error))?;
+        publish_contest_event(self.outbox.as_ref(), contest_id, "CONTEST_EXTENDED", payload).await;
         Ok(ContestExtensionResponse {
             contest_id,
             previous_end_at,

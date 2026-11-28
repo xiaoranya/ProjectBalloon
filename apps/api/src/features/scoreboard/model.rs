@@ -197,7 +197,7 @@ pub(super) struct ContestBoardRow {
 }
 
 #[derive(sqlx::FromRow)]
-pub(super) struct RosterRow {
+pub(crate) struct RosterRow {
     pub team_id: i64,
     pub team_name: String,
     pub school: Option<String>,

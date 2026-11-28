@@ -1,7 +1,7 @@
-use std::{convert::Infallible, time::Duration};
+use std::{collections::HashSet, convert::Infallible, net::SocketAddr, time::Duration};
 
 use axum::{
-    extract::{Path, State},
+    extract::{ConnectInfo, Path, State},
     http::{HeaderValue, header},
     response::{
         IntoResponse, Response,
@@ -20,7 +20,21 @@ use crate::{
     state::AppState,
 };
 
+use crate::features::realtime::admission::SsePermit;
 use crate::features::realtime::hub::RealtimeEnvelope;
+
+/// Rejection used when both SSE budgets are exhausted, so a client can tell a
+/// saturation from a broken stream and back off.
+fn admission_rejected(state: &AppState) -> AppError {
+    AppError::service_unavailable(
+        "SSE_CAPACITY_EXHAUSTED",
+        if state.realtime().active_sse_connections() >= state.realtime().max_sse_connections() {
+            "Too many live event streams; retry shortly"
+        } else {
+            "Too many live event streams from this address; retry shortly"
+        },
+    )
+}
 
 /// Resolves the Last-Event-ID resume window from the Redis outbox replay
 /// index. A missing Redis handle (test harnesses) or a Redis failure degrades
@@ -44,29 +58,38 @@ async fn replay(
     }
 }
 
-#[utoipa::path(get, path = "/api/public/events/contests/{contest_id}", operation_id = "subscribePublicContestEvents", tag = "realtime", params(("contest_id" = i64, Path)), responses((status = 200, description = "Server-sent public contest events", content_type = "text/event-stream", body = String), (status = 404, body = crate::error::ApiErrorBody)))]
+#[utoipa::path(get, path = "/api/public/events/contests/{contest_id}", operation_id = "subscribePublicContestEvents", tag = "realtime", params(("contest_id" = i64, Path)), responses((status = 200, description = "Server-sent public contest events", content_type = "text/event-stream", body = String), (status = 404, body = crate::error::ApiErrorBody), (status = 503, description = "Event-stream capacity exhausted; retry shortly", body = crate::error::ApiErrorBody)))]
 pub async fn subscribe_public(
     context: OptionalAuthContext,
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Path(contest_id): Path<i64>,
     last_event_id: LastEventId,
 ) -> Result<Response, AppError> {
     state.contests().get(contest_id, context.user()).await?;
+    // Admitted last: an anonymous caller must not consume a slot for a contest
+    // it cannot even see.
+    let permit = state.realtime().admit(peer.ip()).ok_or_else(|| admission_rejected(&state))?;
+    // Subscribe first: reading the replay before the subscription left a window
+    // in which an event was neither replayed nor broadcast.
+    let receiver = state.realtime().subscribe();
     let replay = replay(&state, contest_id, RealtimeScope::Public, None, last_event_id.0).await;
     Ok(stream_response(
-        state.realtime().subscribe(),
+        receiver,
         state.shutdown_receiver(),
         contest_id,
         RealtimeScope::Public,
         None,
         replay,
+        permit,
     ))
 }
 
-#[utoipa::path(get, path = "/api/events/contests/{contest_id}", operation_id = "subscribeStaffContestEvents", tag = "realtime", params(("contest_id" = i64, Path)), responses((status = 200, description = "Server-sent staff contest events", content_type = "text/event-stream", body = String), (status = 401, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
+#[utoipa::path(get, path = "/api/events/contests/{contest_id}", operation_id = "subscribeStaffContestEvents", tag = "realtime", params(("contest_id" = i64, Path)), responses((status = 200, description = "Server-sent staff contest events", content_type = "text/event-stream", body = String), (status = 401, body = crate::error::ApiErrorBody), (status = 403, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody), (status = 503, description = "Event-stream capacity exhausted; retry shortly", body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
 pub async fn subscribe_staff(
     context: AuthContext,
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Path(contest_id): Path<i64>,
     last_event_id: LastEventId,
 ) -> Result<Response, AppError> {
@@ -90,21 +113,25 @@ pub async fn subscribe_staff(
             return Err(AppError::not_found("CONTEST_NOT_FOUND", "Contest not found"));
         }
     }
+    let permit = state.realtime().admit(peer.ip()).ok_or_else(|| admission_rejected(&state))?;
+    let receiver = state.realtime().subscribe();
     let replay = replay(&state, contest_id, RealtimeScope::Staff, None, last_event_id.0).await;
     Ok(stream_response(
-        state.realtime().subscribe(),
+        receiver,
         state.shutdown_receiver(),
         contest_id,
         RealtimeScope::Staff,
         None,
         replay,
+        permit,
     ))
 }
 
-#[utoipa::path(get, path = "/api/team/events/contests/{contest_id}", operation_id = "subscribeTeamContestEvents", tag = "realtime", params(("contest_id" = i64, Path)), responses((status = 200, description = "Server-sent team contest events", content_type = "text/event-stream", body = String), (status = 401, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
+#[utoipa::path(get, path = "/api/team/events/contests/{contest_id}", operation_id = "subscribeTeamContestEvents", tag = "realtime", params(("contest_id" = i64, Path)), responses((status = 200, description = "Server-sent team contest events", content_type = "text/event-stream", body = String), (status = 401, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody), (status = 503, description = "Event-stream capacity exhausted; retry shortly", body = crate::error::ApiErrorBody)), security(("session_cookie" = [])))]
 pub async fn subscribe_team(
     context: AuthContext,
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Path(contest_id): Path<i64>,
     last_event_id: LastEventId,
 ) -> Result<Response, AppError> {
@@ -113,15 +140,18 @@ pub async fn subscribe_team(
         return Err(AppError::not_found("CONTEST_NOT_FOUND", "Contest not found"));
     }
     let team_id = state.contests().require_team_id(contest_id, context.user().id).await?;
+    let permit = state.realtime().admit(peer.ip()).ok_or_else(|| admission_rejected(&state))?;
+    let receiver = state.realtime().subscribe();
     let replay =
         replay(&state, contest_id, RealtimeScope::Team, Some(team_id), last_event_id.0).await;
     Ok(stream_response(
-        state.realtime().subscribe(),
+        receiver,
         state.shutdown_receiver(),
         contest_id,
         RealtimeScope::Team,
         Some(team_id),
         replay,
+        permit,
     ))
 }
 
@@ -168,22 +198,31 @@ fn stream_response(
     scope: RealtimeScope,
     team_id: Option<i64>,
     replay: Vec<RealtimeEvent>,
+    permit: SsePermit,
 ) -> Response {
+    // Handlers subscribe before they read the replay so no event can slip
+    // between the two steps; the price is that the broadcast may repeat events
+    // the replay already carried. Remember the replayed ids and drop each one
+    // once on the live path — the set is bounded by the replay cap.
+    let replayed: HashSet<Uuid> = replay.iter().map(|event| event.id).collect();
     let replay_frames = stream::iter(replay).map(|event| event_frame(&event));
     let connected =
         stream::once(async move { event_frame(&RealtimeEvent::connected(contest_id, scope)) });
     let messages = stream::unfold(
-        (receiver, shutdown),
-        move |(mut receiver, mut shutdown)| async move {
+        // The admission permit travels inside the stream state so the slot is
+        // released exactly when the stream is dropped.
+        (receiver, shutdown, replayed, permit),
+        move |(mut receiver, mut shutdown, mut replayed, permit)| async move {
             loop {
                 if *shutdown.borrow_and_update() {
                     return None;
                 }
                 tokio::select! {
                     changed = shutdown.changed() => {
-                        // A dropped sender means no shutdown can ever be signaled
-                        // through this clone; fall back to the hub's own close.
-                        if changed.is_ok() && *shutdown.borrow_and_update() {
+                        // A dropped sender cannot ever signal shutdown again;
+                        // waiting on it would spin at 100% CPU, so end the
+                        // stream (the hub's own close is the other exit).
+                        if changed.is_err() || *shutdown.borrow_and_update() {
                             return None;
                         }
                     }
@@ -194,7 +233,13 @@ fn stream_response(
                                     && envelope.event.scope == scope
                                     && envelope.team_id == team_id =>
                             {
-                                return Some((event_frame(&envelope.event), (receiver, shutdown)));
+                                if replayed.remove(&envelope.event.id) {
+                                    continue;
+                                }
+                                return Some((
+                                    event_frame(&envelope.event),
+                                    (receiver, shutdown, replayed, permit),
+                                ));
                             }
                             Ok(_) => {}
                             Err(broadcast::error::RecvError::Lagged(skipped)) => {
@@ -237,9 +282,19 @@ fn event_frame(event: &RealtimeEvent) -> Result<Event, Infallible> {
     Ok(frame)
 }
 
+/// A permit backed by a throwaway admission controller.
+#[cfg(test)]
+fn test_permit() -> SsePermit {
+    crate::features::realtime::admission::SseAdmission::new(1, 1)
+        .admit(std::net::IpAddr::from([127, 0, 0, 1]))
+        .expect("test admission")
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
+
+    use super::test_permit;
 
     use axum::extract::FromRequestParts;
     use axum::http::Request;
@@ -256,8 +311,15 @@ mod tests {
         let hub = RealtimeHub::new(4, false);
         let receiver = hub.subscribe();
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        let response =
-            stream_response(receiver, shutdown_rx, 7, RealtimeScope::Public, None, Vec::new());
+        let response = stream_response(
+            receiver,
+            shutdown_rx,
+            7,
+            RealtimeScope::Public,
+            None,
+            Vec::new(),
+            test_permit(),
+        );
         let mut frames = response.into_body().into_data_stream();
         let connected = frames.next().await.expect("the connected frame must arrive");
         assert!(!connected.expect("connected frame bytes").is_empty());
@@ -267,12 +329,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sse_stream_ends_when_the_shutdown_sender_is_dropped() {
+        let hub = RealtimeHub::new(4, false);
+        let receiver = hub.subscribe();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let response = stream_response(
+            receiver,
+            shutdown_rx,
+            7,
+            RealtimeScope::Public,
+            None,
+            Vec::new(),
+            test_permit(),
+        );
+        let mut frames = response.into_body().into_data_stream();
+        let _connected = frames.next().await.expect("the connected frame must arrive");
+
+        // `AppState::new` drops its own sender; before the `changed().is_err()`
+        // guard this made the stream poll a closed watch forever.
+        drop(shutdown_tx);
+        let next = tokio::time::timeout(Duration::from_secs(1), frames.next())
+            .await
+            .expect("a dropped shutdown sender must end the stream instead of spinning");
+        assert!(next.is_none());
+    }
+
+    #[tokio::test]
     async fn sse_stream_keeps_delivering_until_shutdown_fires() {
         let hub = RealtimeHub::new(4, false);
         let receiver = hub.subscribe();
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        let response =
-            stream_response(receiver, shutdown_rx, 7, RealtimeScope::Staff, None, Vec::new());
+        let response = stream_response(
+            receiver,
+            shutdown_rx,
+            7,
+            RealtimeScope::Staff,
+            None,
+            Vec::new(),
+            test_permit(),
+        );
         let mut frames = response.into_body().into_data_stream();
         let _connected = frames.next().await.expect("the connected frame must arrive");
 

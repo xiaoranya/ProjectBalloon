@@ -200,15 +200,18 @@ async fn official_run_exists(
     .map_err(|e| AppError::internal("check program resolver run", e))
 }
 
-fn validate_program_request(request: &LiveProgramRequest) -> Result<(), AppError> {
-    validate_scene(&request.current_scene)?;
+/// Returns the normalized scene. Validating without binding the normalized value
+/// let `"resolver"` through to the database, where the CHECK rejected it with a
+/// 500 instead of the 400 the client deserved.
+fn validate_program_request(request: &LiveProgramRequest) -> Result<&'static str, AppError> {
+    let scene = validate_scene(&request.current_scene)?;
     if !(100..=5000).contains(&request.transition_milliseconds) {
         return Err(AppError::validation("transitionMilliseconds", "must be between 100 and 5000"));
     }
     if request.title_card_text.as_ref().is_some_and(|value| value.trim().chars().count() > 240) {
         return Err(AppError::validation("titleCardText", "is too long"));
     }
-    Ok(())
+    Ok(scene)
 }
 
 async fn validate_resolver_run(
@@ -235,11 +238,33 @@ async fn validate_resolver_run(
 async fn save_program(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     contest: i64,
+    scene: &'static str,
     request: &LiveProgramRequest,
     actor: i64,
 ) -> Result<Option<(i64, i64, OffsetDateTime)>, AppError> {
+    // A client that believes it is editing version N must not silently create a
+    // fresh program when no row exists (the `ON CONFLICT` insert would do
+    // exactly that, and its conflict clause never runs for a plain insert).
+    // Only version 0 — or no expectation at all — may create the row. The
+    // statement's own `WHERE live_programs.version = $9` still covers the
+    // concurrent case.
+    if request.expected_version != 0 {
+        let exists = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM live_programs WHERE contest_id = $1)",
+        )
+        .bind(contest)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|error| AppError::internal("check live program existence", error))?;
+        if !exists {
+            return Ok(None);
+        }
+    }
     sqlx::query_as::<_, (i64, i64, OffsetDateTime)>(
         r#"
+        -- `VALUES`, not `SELECT ... WHERE NOT EXISTS`: ON CONFLICT only fires
+        -- for a row that is actually being inserted, so guarding the insert in
+        -- the statement also disabled every later update.
         INSERT INTO live_programs
             (contest_id, current_scene, resolver_run_id, transition_milliseconds,
              show_clock, ticker_enabled, title_card_text, updated_by_user_id, version)
@@ -259,7 +284,7 @@ async fn save_program(
         "#,
     )
     .bind(contest)
-    .bind(&request.current_scene)
+    .bind(scene)
     .bind(request.resolver_run_id)
     .bind(request.transition_milliseconds)
     .bind(request.show_clock)
@@ -300,7 +325,7 @@ pub async fn update_program(
     require_contest(state.database(), contest).await?;
     let Json(mut request) =
         payload.map_err(|_| AppError::validation("request", "invalid live program update"))?;
-    validate_program_request(&request)?;
+    let scene = validate_program_request(&request)?;
     request.title_card_text = request
         .title_card_text
         .take()
@@ -314,7 +339,7 @@ pub async fn update_program(
         .await
         .map_err(|e| AppError::internal("begin live program update", e))?;
     let Some((_, version, updated_at)) =
-        save_program(&mut tx, contest, &request, context.user().id).await?
+        save_program(&mut tx, contest, scene, &request, context.user().id).await?
     else {
         return Err(AppError::conflict(
             "LIVE_PROGRAM_VERSION_CONFLICT",
@@ -335,7 +360,7 @@ pub async fn update_program(
     tx.commit().await.map_err(|e| AppError::internal("commit live program update", e))?;
     Ok(Json(LiveProgramResponse {
         contest_id: contest,
-        current_scene: request.current_scene,
+        current_scene: scene.to_owned(),
         resolver_run_id: request.resolver_run_id,
         transition_milliseconds: request.transition_milliseconds,
         show_clock: request.show_clock,
@@ -354,8 +379,14 @@ pub async fn get_published_program(
 ) -> Result<Json<PublishedLiveProgram>, AppError> {
     require_access(state.database(), contest, "LIVE", supplied_token(&headers)).await?;
     let row = load_program(state.database(), contest).await?;
-    let resolver_run_id =
-        resolve_public_resolver_run(state.database(), contest, row.resolver_run_id).await?;
+    // The run id is the key to `/resolver/state`, which reveals the standings
+    // ceremony. Handing it out while the program is still on another scene let a
+    // viewer read the reveal before it happens.
+    let resolver_run_id = if row.current_scene == "RESOLVER" {
+        resolve_public_resolver_run(state.database(), contest, row.resolver_run_id).await?
+    } else {
+        None
+    };
     Ok(Json(PublishedLiveProgram {
         contest_id: contest,
         current_scene: row.current_scene,
@@ -446,9 +477,10 @@ mod tests {
         // A fresh row is created from version 0; the outbox receives the event.
         let saved = {
             let mut tx = pool.begin().await.expect("begin transaction");
-            let row = save_program(&mut tx, contest, &request("FIRST_BLOOD", 0), user)
-                .await
-                .expect("save program");
+            let row =
+                save_program(&mut tx, contest, "FIRST_BLOOD", &request("FIRST_BLOOD", 0), user)
+                    .await
+                    .expect("save program");
             tx.commit().await.expect("commit transaction");
             row
         }
@@ -460,7 +492,7 @@ mod tests {
         // A stale expectedVersion conflicts instead of silently overwriting.
         let stale = {
             let mut tx = pool.begin().await.expect("begin transaction");
-            let row = save_program(&mut tx, contest, &request("AWARDS", 0), user)
+            let row = save_program(&mut tx, contest, "AWARDS", &request("AWARDS", 0), user)
                 .await
                 .expect("save program");
             tx.commit().await.expect("commit transaction");
@@ -469,7 +501,7 @@ mod tests {
         assert!(stale.is_none(), "stale version must not overwrite");
         let second = {
             let mut tx = pool.begin().await.expect("begin transaction");
-            let row = save_program(&mut tx, contest, &request("AWARDS", 1), user)
+            let row = save_program(&mut tx, contest, "AWARDS", &request("AWARDS", 1), user)
                 .await
                 .expect("save program");
             tx.commit().await.expect("commit transaction");

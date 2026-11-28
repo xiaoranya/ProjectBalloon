@@ -9,13 +9,13 @@ use crate::{
 };
 
 use crate::features::submissions::exports::helpers::{
-    append_zip_entry, build_zip, enforce_sync_source_limit, load_export_rows, metadata_csv,
-    record_export_audit, source_manifest_csv, source_manifest_entries_csv, source_path,
-    temporary_export_path, write_new_file,
+    append_zip_entry, build_zip, enforce_sync_source_limit, ensure_sync_source_headroom,
+    load_export_rows, measure_export, metadata_csv, record_export_audit, source_manifest_csv,
+    source_manifest_entries_csv, source_path, temporary_export_path, write_new_file,
 };
 use crate::features::submissions::exports::{
     ExportArtifact, ExportRow, MAX_ASYNC_SOURCE_BYTES, MAX_SYNC_METADATA_ROWS,
-    MAX_SYNC_SOURCE_BYTES, SourceFile, SourceManifestEntry,
+    MAX_SYNC_SOURCE_BYTES, MAX_SYNC_SOURCE_COUNT, SourceFile, SourceManifestEntry,
 };
 use crate::features::submissions::{
     export_tasks::ExportTaskKind, query::require_admin_access, service::SubmissionService,
@@ -28,7 +28,7 @@ impl SubmissionService {
         kind: ExportTaskKind,
         storage: &ObjectStorageHandle,
     ) -> Result<ExportArtifact, AppError> {
-        let rows = load_export_rows(&self.database, contest_id).await?;
+        let rows = load_export_rows(&self.database, contest_id, None).await?;
         let path = temporary_export_path(contest_id, kind);
         let result = async {
             match kind {
@@ -70,7 +70,15 @@ impl SubmissionService {
         request_ip: IpAddr,
     ) -> Result<String, AppError> {
         require_admin_access(&self.database, contest_id, actor).await?;
-        let rows = load_export_rows(&self.database, contest_id).await?;
+        let (count, _) = measure_export(&self.database, contest_id).await?;
+        if count > MAX_SYNC_METADATA_ROWS {
+            return Err(AppError::conflict(
+                "SOURCE_EXPORT_TOO_LARGE",
+                "Synchronous metadata export is limited to 10,000 submissions; use the async export task for larger contests",
+            ));
+        }
+        let rows =
+            load_export_rows(&self.database, contest_id, Some(MAX_SYNC_METADATA_ROWS + 1)).await?;
         let count = i64::try_from(rows.len())
             .map_err(|error| AppError::internal("convert metadata export count", error))?;
         if count > MAX_SYNC_METADATA_ROWS {
@@ -101,7 +109,10 @@ impl SubmissionService {
         storage: &ObjectStorageHandle,
     ) -> Result<Bytes, AppError> {
         require_admin_access(&self.database, contest_id, actor).await?;
-        let rows = load_export_rows(&self.database, contest_id).await?;
+        ensure_sync_source_headroom(&self.database, contest_id).await?;
+        let rows =
+            load_export_rows(&self.database, contest_id, Some(MAX_SYNC_SOURCE_COUNT + 1)).await?;
+        // Second gate: submissions can land between the probe and the fetch.
         enforce_sync_source_limit(&rows)?;
         let archive = build_sources_archive(rows, storage).await?;
         record_export_audit(

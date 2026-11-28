@@ -31,18 +31,33 @@ pub struct RabbitDeadLetterConsumer {
     request_timeout: Duration,
     reconnect_delay: Duration,
     prefetch: u16,
+    /// Per-judgement requeue counter. A deterministic database failure used to
+    /// requeue the same dead letter forever, pinning a CPU and log line to it.
+    redeliveries: std::sync::Mutex<std::collections::HashMap<Uuid, u32>>,
 }
+
+/// Requeues allowed for one dead letter before it is acknowledged without being
+/// repaired. The message is already a dead letter; keeping it in the queue only
+/// keeps retrying the same failure.
+const MAX_DEAD_LETTER_REDELIVERIES: u32 = 10;
 
 impl RabbitDeadLetterConsumer {
     #[must_use]
-    pub const fn new(
+    pub fn new(
         database: PgPool,
         uri: String,
         request_timeout: Duration,
         reconnect_delay: Duration,
         prefetch: u16,
     ) -> Self {
-        Self { database, uri, request_timeout, reconnect_delay, prefetch }
+        Self {
+            database,
+            uri,
+            request_timeout,
+            reconnect_delay,
+            prefetch,
+            redeliveries: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
     }
 
     pub async fn run(self, mut shutdown: watch::Receiver<bool>) {
@@ -115,7 +130,7 @@ impl RabbitDeadLetterConsumer {
                         return Err(JudgeDispatchError::ConsumerCancelled("Judge dead-letter"));
                     };
                     let delivery = delivery?;
-                    process_delivery(&self.database, &delivery).await?;
+                    process_delivery(&self.database, &delivery, &self.redeliveries).await?;
                 }
                 changed = shutdown.changed() => {
                     if changed.is_err() || *shutdown.borrow() {
@@ -155,6 +170,7 @@ struct DeadLetterContext {
 async fn process_delivery(
     database: &PgPool,
     delivery: &Delivery,
+    redeliveries: &std::sync::Mutex<std::collections::HashMap<Uuid, u32>>,
 ) -> Result<(), JudgeDispatchError> {
     let Some((judgement_id, submission_id)) = parse_dead_letter(&delivery.data) else {
         warn!("judge.dead message is neither a JudgeTask nor a JudgeResult; acknowledging");
@@ -163,6 +179,7 @@ async fn process_delivery(
     };
     match recover_stuck_submission(database, judgement_id, submission_id).await {
         Ok(()) => {
+            forget_redeliveries(redeliveries, judgement_id);
             delivery.ack(BasicAckOptions::default()).await?;
             info!(
                 %judgement_id,
@@ -172,6 +189,7 @@ async fn process_delivery(
             Ok(())
         }
         Err(error) if error.is_permanent() => {
+            forget_redeliveries(redeliveries, judgement_id);
             warn!(
                 %judgement_id,
                 submission_id,
@@ -182,16 +200,48 @@ async fn process_delivery(
             Ok(())
         }
         Err(error) => {
+            let attempt = bump_redeliveries(redeliveries, judgement_id);
+            if attempt > MAX_DEAD_LETTER_REDELIVERIES {
+                error!(
+                    %judgement_id,
+                    submission_id,
+                    %error,
+                    attempt,
+                    "dead-letter retry budget exhausted; acknowledging without recovery"
+                );
+                forget_redeliveries(redeliveries, judgement_id);
+                delivery.ack(BasicAckOptions::default()).await?;
+                return Ok(());
+            }
             warn!(
                 %judgement_id,
                 submission_id,
                 %error,
+                attempt,
                 "requeueing dead-letter after transient database failure"
             );
             delivery.nack(BasicNackOptions { multiple: false, requeue: true }).await?;
             Err(JudgeDispatchError::from(error))
         }
     }
+}
+
+fn bump_redeliveries(
+    redeliveries: &std::sync::Mutex<std::collections::HashMap<Uuid, u32>>,
+    judgement_id: Uuid,
+) -> u32 {
+    let mut attempts = redeliveries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let entry = attempts.entry(judgement_id).or_insert(0);
+    *entry = entry.saturating_add(1);
+    *entry
+}
+
+fn forget_redeliveries(
+    redeliveries: &std::sync::Mutex<std::collections::HashMap<Uuid, u32>>,
+    judgement_id: Uuid,
+) {
+    let mut attempts = redeliveries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    attempts.remove(&judgement_id);
 }
 
 fn parse_dead_letter(data: &[u8]) -> Option<(Uuid, i64)> {

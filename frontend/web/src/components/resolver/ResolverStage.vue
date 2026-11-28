@@ -9,14 +9,15 @@
         <p>{{ focusRow.school ?? t('学校未填写') }}</p>
         <h1>{{ focusRow.teamName }}</h1>
         <div>
-          <span>{{ focusRow.penaltyMinutes }} penalty</span><span>Team #{{ focusRow.teamId }}</span>
+          <span>{{ focusRow.penaltyMinutes }} penalty</span>
+          <span v-if="focusRow.groupName">{{ focusRow.groupName }}</span>
         </div>
       </div>
       <div
         class="resolver-display-verdict"
         :class="run.state.lastReveal.after.solved ? 'accepted' : 'rejected'"
       >
-        <small>PROBLEM {{ focusProblem?.alias ?? run.state.lastReveal.problemId }}</small
+        <small>PROBLEM {{ focusProblem?.alias ?? '—' }}</small
         ><strong>{{ run.state.lastReveal.after.solved ? 'ACCEPTED' : 'REVEALED' }}</strong
         ><span>Step {{ run.currentStep }}</span>
       </div>

@@ -318,29 +318,6 @@ impl SubmissionService {
                     .with_judgement_id(judgement_id)
                     .with_user_id(actor.id)
             })?;
-        for (scope, recipient) in [("TEAM", Some(context.team_id)), ("STAFF", None)] {
-            crate::features::realtime::outbox::enqueue_optional(
-                self.outbox.as_ref(),
-                contest_id,
-                "SUBMISSION_REJUDGED",
-                scope,
-                recipient,
-                json!({
-                    "submissionId": submission_id,
-                    "previousJudgementId": context.active_judgement_id,
-                    "judgementId": judgement_id,
-                    "status": SubmissionStatus::Pending.as_str()
-                }),
-            )
-            .await
-            .map_err(|error| {
-                error
-                    .with_contest_id(contest_id)
-                    .with_submission_id(submission_id)
-                    .with_judgement_id(judgement_id)
-                    .with_user_id(actor.id)
-            })?;
-        }
         sqlx::query(
             r#"
                 INSERT INTO audit_logs
@@ -367,6 +344,23 @@ impl SubmissionService {
                 .with_judgement_id(judgement_id)
                 .with_user_id(actor.id)
         })?;
+        // The rejudge is durable; the screens can be told about it afterwards.
+        for (scope, recipient) in [("TEAM", Some(context.team_id)), ("STAFF", None)] {
+            crate::features::realtime::outbox::publish_best_effort(
+                self.outbox.as_ref(),
+                contest_id,
+                "SUBMISSION_REJUDGED",
+                scope,
+                recipient,
+                json!({
+                    "submissionId": submission_id,
+                    "previousJudgementId": context.active_judgement_id,
+                    "judgementId": judgement_id,
+                    "status": SubmissionStatus::Pending.as_str()
+                }),
+            )
+            .await;
+        }
         if let Some(projection) = &self.projection
             && let Err(error) = projection
                 .recompute_cell(&self.database, contest_id, context.team_id, context.problem_id)

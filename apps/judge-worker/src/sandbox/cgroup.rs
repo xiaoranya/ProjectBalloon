@@ -51,20 +51,18 @@ pub(crate) fn subtree_control_payload(enabled: &BTreeSet<String>) -> Option<Stri
     (!missing.is_empty()).then(|| missing.join(" "))
 }
 
-/// Recognizes a per-action sandbox cgroup directory name:
-/// `<judgement>-compile`, `<judgement>-run`, or the `probe-<judgement>` probe.
-/// Unknown entries under the base are never touched.
-pub(crate) fn is_sandbox_cgroup_name(name: &str) -> bool {
-    let Some(rest) = name.strip_prefix(CGROUP_PREFIX) else { return false };
+/// Recognizes a per-action sandbox cgroup directory name and returns its
+/// judgement id: `<judgement>-compile`, `<judgement>-run`, or
+/// `probe-<judgement>`. Unknown entries under the base are never touched.
+/// The judgement id embedded in a sandbox cgroup name, if any.
+pub(crate) fn sandbox_cgroup_uuid(name: &str) -> Option<Uuid> {
+    let rest = name.strip_prefix(CGROUP_PREFIX)?;
     for suffix in ["-compile", "-run"] {
         if let Some(id) = rest.strip_suffix(suffix) {
-            return Uuid::parse_str(id).is_ok();
+            return Uuid::parse_str(id).ok();
         }
     }
-    if let Some(id) = rest.strip_prefix("probe-") {
-        return Uuid::parse_str(id).is_ok();
-    }
-    false
+    rest.strip_prefix("probe-").and_then(|id| Uuid::parse_str(id).ok())
 }
 
 /// Extracts the `oom_kill` counter from a `memory.events` file. Returns `None`
@@ -176,9 +174,17 @@ impl CgroupManager {
         Ok(guard)
     }
 
-    /// Removes every leftover sandbox cgroup under the base (worker restarts
-    /// can leak them when a SIGKILL lands between create and release).
-    pub(crate) async fn sweep(&self) -> Result<usize, std::io::Error> {
+    /// Removes leftover sandbox cgroups under the base (worker restarts can
+    /// leak them when a SIGKILL lands between create and release).
+    ///
+    /// `keep` holds the judgements currently in flight. Their cgroups must be
+    /// spared: between `create` and `attach` a cgroup has no processes, so an
+    /// unattended sweep could delete it and the following `attach` would fail
+    /// with ENOENT.
+    pub(crate) async fn sweep(
+        &self,
+        keep: &std::collections::HashSet<Uuid>,
+    ) -> Result<usize, std::io::Error> {
         let mut removed = 0;
         let mut entries = tokio::fs::read_dir(&self.base)
             .await
@@ -189,7 +195,10 @@ impl CgroupManager {
             .map_err(|error| with_path_context(error, "read cgroup base entry", &self.base))?
         {
             let name = entry.file_name();
-            if !is_sandbox_cgroup_name(&name.to_string_lossy()) {
+            let Some(judgement_id) = sandbox_cgroup_uuid(&name.to_string_lossy()) else {
+                continue;
+            };
+            if keep.contains(&judgement_id) {
                 continue;
             }
             if tokio::fs::remove_dir(entry.path()).await.is_ok() {
@@ -225,8 +234,16 @@ impl CgroupGuard {
         }
         // Swap is disabled, matching the container backend's
         // `memory_swap == memory`. Hosts without swap accounting still accept
-        // the plain memory limit, so this write is best-effort.
-        let _ = std::fs::write(self.path.join("memory.swap.max"), "0");
+        // the plain memory limit, so this write is best-effort — but silently
+        // dropping it means the memory cap can be exceeded through swap, so the
+        // failure has to be visible.
+        if let Err(error) = std::fs::write(self.path.join("memory.swap.max"), "0") {
+            tracing::warn!(
+                path = %self.path.display(),
+                %error,
+                "swap is not disabled for this sandbox cgroup"
+            );
+        }
         Ok(())
     }
 
@@ -277,19 +294,19 @@ impl Drop for CgroupGuard {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_sandbox_cgroup_name, parse_controller_list, parse_oom_kill, subtree_control_payload,
+        parse_controller_list, parse_oom_kill, sandbox_cgroup_uuid, subtree_control_payload,
     };
 
     #[test]
     fn sandbox_cgroup_names_match_the_action_naming_scheme() {
-        let id = uuid::Uuid::new_v4().to_string();
-        assert!(is_sandbox_cgroup_name(&format!("pb-judge-{id}-compile")));
-        assert!(is_sandbox_cgroup_name(&format!("pb-judge-{id}-run")));
-        assert!(is_sandbox_cgroup_name(&format!("pb-judge-probe-{id}")));
-        assert!(!is_sandbox_cgroup_name("pb-judge-probe"));
-        assert!(!is_sandbox_cgroup_name("pb-judge-not-a-uuid-run"));
-        assert!(!is_sandbox_cgroup_name(&format!("{id}-run")));
-        assert!(!is_sandbox_cgroup_name("unrelated-group"));
+        let id = uuid::Uuid::new_v4();
+        assert_eq!(sandbox_cgroup_uuid(&format!("pb-judge-{id}-compile")), Some(id));
+        assert_eq!(sandbox_cgroup_uuid(&format!("pb-judge-{id}-run")), Some(id));
+        assert_eq!(sandbox_cgroup_uuid(&format!("pb-judge-probe-{id}")), Some(id));
+        assert_eq!(sandbox_cgroup_uuid("pb-judge-probe"), None);
+        assert_eq!(sandbox_cgroup_uuid("pb-judge-not-a-uuid-run"), None);
+        assert_eq!(sandbox_cgroup_uuid(&format!("{id}-run")), None);
+        assert_eq!(sandbox_cgroup_uuid("unrelated-group"), None);
     }
 
     #[test]

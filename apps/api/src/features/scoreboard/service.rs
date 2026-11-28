@@ -19,6 +19,9 @@ use crate::features::scoreboard::model::{
 };
 use crate::features::scoreboard::redis_state::ProjectionSnapshot;
 
+/// Upper bound on dirty cells replayed inside a single board read.
+const MAX_DIRTY_CELLS_PER_REQUEST: usize = 200;
+
 pub struct ScoreboardService {
     database: PgPool,
     cache: Option<ScoreboardCache>,
@@ -369,29 +372,86 @@ impl ScoreboardService {
         } else {
             "LIVE"
         };
-        // With a Redis projection the monotonic version counter is the cache
-        // key: every applied judgement invalidates the whole-board cache
-        // immediately. Without one the (static) scoreboard revision is used,
-        // and invalidation relies on the TTL alone.
+        // With a Redis projection the monotonic version counter tracks applied
+        // judgements, so a new judgement invalidates the whole-board cache
+        // immediately. It does *not* track roster edits: renaming a team, moving
+        // it between groups or flipping STAR only bumps `scoreboard_revision`,
+        // which is why the key always carries both numbers.
         let projection = self.projection.as_ref();
-        let cache_revision = match projection {
+        let projection_version = match projection {
             Some(p) if phase != "FROZEN" => p.version(contest_id).await.unwrap_or(0),
-            _ => contest.scoreboard_revision,
+            _ => 0,
+        };
+        let cache_revision = format!("{projection_version}:{}", contest.scoreboard_revision);
+        if let Some(cache) = &self.cache
+            && let Some(board) =
+                cache.get(contest_id, &cache_revision, variant, phase, &query).await
+        {
+            return Ok(board);
+        }
+        // A miss is the expensive path. Serialize rebuilds of this exact board so
+        // a cache expiry — or a Redis outage, where `get` always misses — cannot
+        // send every waiting screen to PostgreSQL at once; the followers wake up
+        // and find the leader's board in the cache.
+        let _flight = match &self.cache {
+            Some(cache) => {
+                Some(cache.flight(contest_id, &cache_revision, variant, phase, &query).await)
+            }
+            None => None,
         };
         if let Some(cache) = &self.cache
-            && let Some(board) = cache.get(contest_id, cache_revision, variant, phase, &query).await
+            && let Some(board) =
+                cache.get(contest_id, &cache_revision, variant, phase, &query).await
         {
             return Ok(board);
         }
         // Load the complete roster before applying the requested view filter.
         // First-blood is a contest-wide fact and must not be recomputed from a
         // filtered subset of teams.
-        let roster = self
-            .load_roster(
+        let roster = if frozen {
+            // A frozen board publishes the roster as it was at the milestone: a
+            // team renamed, moved between groups or deleted afterwards must not
+            // change what the audience already saw.
+            match projection.map(|p| p.read_frozen_roster(contest_id)) {
+                Some(read) => match read.await {
+                    Ok(Some(roster)) => roster,
+                    Ok(None) => {
+                        self.load_roster(
+                            contest_id,
+                            &ValidatedScoreboardQuery {
+                                group_name: None,
+                                participation_type: None,
+                            },
+                        )
+                        .await?
+                    }
+                    Err(error) => {
+                        tracing::warn!(?error, %contest_id, "frozen roster read failed; using the live roster");
+                        self.load_roster(
+                            contest_id,
+                            &ValidatedScoreboardQuery {
+                                group_name: None,
+                                participation_type: None,
+                            },
+                        )
+                        .await?
+                    }
+                },
+                None => {
+                    self.load_roster(
+                        contest_id,
+                        &ValidatedScoreboardQuery { group_name: None, participation_type: None },
+                    )
+                    .await?
+                }
+            }
+        } else {
+            self.load_roster(
                 contest_id,
                 &ValidatedScoreboardQuery { group_name: None, participation_type: None },
             )
-            .await?;
+            .await?
+        };
         let problems = sqlx::query_as::<_, ScoreboardProblem>(
             r#"
             SELECT problem_id, alias, display_order
@@ -404,13 +464,20 @@ impl ScoreboardService {
         .fetch_all(&self.database)
         .await
         .map_err(|error| AppError::internal("load scoreboard problems", error))?;
+        // Extended caching is only safe for the snapshot taken at the freeze
+        // milestone: the PostgreSQL replay below is bounded by `freeze_at` but
+        // still reflects later rejudges, so it is correct, not immutable.
+        let mut immutable_snapshot = false;
         let cells = if frozen {
             // Frozen boards read the immutable Redis snapshot taken at the
             // freeze milestone; PostgreSQL is only consulted when no snapshot
             // exists (e.g. the projection was introduced mid-contest).
             match projection.map(|p| p.read_cells(contest_id, "FROZEN")) {
                 Some(read) => match read.await {
-                    Ok(Some(snapshot)) => snapshot.cells,
+                    Ok(Some(snapshot)) => {
+                        immutable_snapshot = true;
+                        snapshot.cells
+                    }
                     _ => {
                         self.calculate_frozen_cells(
                             contest_id,
@@ -444,6 +511,15 @@ impl ScoreboardService {
                 }
             }
         } else if let Some(p) = projection {
+            // An incremental update that could not even be recorded as dirty
+            // leaves a cell the projection can never repair on its own.
+            if p.is_untrusted(contest_id).await {
+                tracing::warn!(
+                    %contest_id,
+                    "scoreboard projection was flagged untrusted; rebuilding from PostgreSQL"
+                );
+                self.rebuild_projection(contest_id, p).await?;
+            }
             let snapshot = match p.read_cells(contest_id, "LIVE").await {
                 Ok(Some(snapshot)) if projection_is_usable(&snapshot, roster.is_empty()) => {
                     snapshot
@@ -491,7 +567,7 @@ impl ScoreboardService {
         );
         apply_scoreboard_filter(&mut board, &query);
         if let Some(cache) = &self.cache {
-            cache.put(cache_revision, phase, &query, &board).await;
+            cache.put(&cache_revision, phase, &query, &board, immutable_snapshot).await;
         }
         Ok(board)
     }
@@ -538,13 +614,52 @@ impl ScoreboardService {
         })
     }
 
+    /// Rebuilds the whole projection from PostgreSQL after a change that
+    /// invalidates every cell (scoring mode or aggregation).
+    ///
+    /// [`Self::rebuild_projection`] deliberately short-circuits when the
+    /// projection already has a version — that is right for "the hash was
+    /// evicted" but wrong here, because the existing cells were computed with
+    /// the rules that just changed.
+    pub async fn rebuild_after_rule_change(&self, contest_id: i64) -> Result<(), AppError> {
+        let Some(projection) = self.projection.as_ref() else { return Ok(()) };
+        let gate = {
+            let mut gates = self.rebuilds.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            gates.entry(contest_id).or_default().clone()
+        };
+        let _held = gate.lock_owned().await;
+        match projection.rebuild_contest(&self.database, contest_id).await {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                // Reads must not keep trusting cells from the previous rules.
+                projection.flag_untrusted_after_failed_rebuild(contest_id).await;
+                Err(AppError::internal("rebuild scoreboard projection after a rule change", error))
+            }
+        }
+    }
+
     /// Replays cells whose incremental apply failed, then re-reads once.
+    ///
+    /// The replay is bounded per request: a Redis outage can leave thousands of
+    /// cells dirty, and the first request to arrive after it would otherwise pay
+    /// for all of them inline. The remainder stays dirty and is drained by the
+    /// following reads, which keeps the board converging without a request ever
+    /// stalling on the whole backlog.
     async fn repair_dirty(&self, contest_id: i64, snapshot: ProjectionSnapshot) -> Vec<CellRow> {
         if snapshot.dirty.is_empty() {
             return snapshot.cells;
         }
         if let Some(projection) = &self.projection {
-            for (team_id, problem_id) in &snapshot.dirty {
+            let budget = snapshot.dirty.len().min(MAX_DIRTY_CELLS_PER_REQUEST);
+            if snapshot.dirty.len() > budget {
+                tracing::warn!(
+                    %contest_id,
+                    dirty = snapshot.dirty.len(),
+                    repairing = budget,
+                    "scoreboard dirty backlog is large; repairing a bounded slice"
+                );
+            }
+            for (team_id, problem_id) in snapshot.dirty.iter().take(budget) {
                 if let Err(error) = projection
                     .recompute_cell(&self.database, contest_id, *team_id, *problem_id)
                     .await

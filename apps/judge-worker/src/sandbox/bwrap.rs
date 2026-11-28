@@ -805,7 +805,7 @@ impl crate::sandbox::SandboxJanitor for BubblewrapSandbox {
         let job_dirs = crate::sandbox::gc::sweep_orphan_job_dirs(&self.cache_dir, keep).await?;
         let cgroups = match &self.cgroup {
             Some(manager) => {
-                manager.sweep().await.map_err(|error| SandboxError::Api(error.to_string()))?
+                manager.sweep(keep).await.map_err(|error| SandboxError::Api(error.to_string()))?
             }
             None => 0,
         };

@@ -124,13 +124,51 @@ impl AwardService {
             .execute(&mut *tx)
             .await
             .map_err(|e| AppError::internal("replace generated awards", e))?;
+        // Problem aliases for per-problem first-blood awards.
+        let aliases: std::collections::HashMap<i64, String> = board
+            .problems
+            .iter()
+            .map(|problem| (problem.problem_id, problem.alias.clone()))
+            .collect();
         for category in &categories {
             let mut eligible =
                 board.rows.iter().filter(|row| eligible(row, category)).collect::<Vec<_>>();
             eligible.sort_by_key(|row| row.rank);
+            if category.first_blood {
+                // First blood is a per-problem fact: a team that drew first
+                // blood on two problems wins two awards. Collapsing them into
+                // one team row made the second award overwrite the first and
+                // left no trace of which problem it was for.
+                for row in &eligible {
+                    for cell in row.problems.iter().filter(|cell| cell.first_blood) {
+                        insert_recipient(
+                            &mut tx,
+                            contest,
+                            category.id,
+                            row,
+                            snapshot_id,
+                            false,
+                            &format!("FB:{}", cell.problem_id),
+                            Some((cell.problem_id, aliases.get(&cell.problem_id).cloned())),
+                        )
+                        .await?;
+                    }
+                }
+                continue;
+            }
             let selected = select_rows(&eligible, category);
             for row in selected {
-                insert_recipient(&mut tx, contest, category.id, row, snapshot_id, false).await?;
+                insert_recipient(
+                    &mut tx,
+                    contest,
+                    category.id,
+                    row,
+                    snapshot_id,
+                    false,
+                    "TEAM",
+                    None,
+                )
+                .await?;
             }
         }
         audit(&mut tx, actor.id, "AWARDS_GENERATED", set_id, ip).await?;
@@ -180,7 +218,17 @@ impl AwardService {
                 "Award category was not found",
             ));
         }
-        insert_recipient(&mut tx, contest, request.category_id, row, snapshot_id, true).await?;
+        insert_recipient(
+            &mut tx,
+            contest,
+            request.category_id,
+            row,
+            snapshot_id,
+            true,
+            "MANUAL",
+            None,
+        )
+        .await?;
         sqlx::query("UPDATE award_sets SET version=version+1 WHERE id=$1")
             .bind(set_id)
             .execute(&mut *tx)
@@ -204,8 +252,28 @@ impl AwardService {
             .begin()
             .await
             .map_err(|error| AppError::internal("begin manual award removal", error))?;
-        let (contest, manual) = sqlx::query_as::<_, (i64, bool)>(
-            "SELECT contest_id,is_manual FROM award_recipients WHERE id=$1 FOR UPDATE",
+        // Lock order must match `manual_add`: the award set first, then the
+        // recipient row. Taking them the other way round let two concurrent
+        // operators deadlock (40P01 surfacing as a 500).
+        let contest =
+            sqlx::query_scalar::<_, i64>("SELECT contest_id FROM award_recipients WHERE id=$1")
+                .bind(recipient)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|error| AppError::internal("load award recipient", error))?
+                .ok_or_else(|| {
+                    AppError::not_found(
+                        "AWARD_RECIPIENT_NOT_FOUND",
+                        "Award recipient was not found",
+                    )
+                })?;
+        require_active_contest_tx(&mut tx, contest).await?;
+        let (set_id, _, version) = lock_set(&mut tx, contest).await?;
+        if version != expected_version {
+            return Err(stale());
+        }
+        let manual = sqlx::query_scalar::<_, bool>(
+            "SELECT is_manual FROM award_recipients WHERE id=$1 FOR UPDATE",
         )
         .bind(recipient)
         .fetch_optional(&mut *tx)
@@ -214,11 +282,6 @@ impl AwardService {
         .ok_or_else(|| {
             AppError::not_found("AWARD_RECIPIENT_NOT_FOUND", "Award recipient was not found")
         })?;
-        require_active_contest_tx(&mut tx, contest).await?;
-        let (set_id, _, version) = lock_set(&mut tx, contest).await?;
-        if version != expected_version {
-            return Err(stale());
-        }
         if !manual {
             return Err(AppError::conflict(
                 "AWARD_RECIPIENT_GENERATED",
@@ -521,8 +584,13 @@ pub(crate) fn select_rows<'a>(
         "RANK_RANGE" => rows
             .iter()
             .filter(|r| {
-                c.rank_from.is_some_and(|a| r.rank >= a as u32)
-                    && c.rank_to.is_some_and(|b| r.rank <= b as u32)
+                // `rank` counts STAR teams too. A category that excludes them
+                // must select by the official position, otherwise STAR teams
+                // squatting on the top places push the real winners out of the
+                // configured range.
+                let rank = if c.include_star { r.rank } else { r.official_rank.unwrap_or(r.rank) };
+                c.rank_from.is_some_and(|a| rank >= a as u32)
+                    && c.rank_to.is_some_and(|b| rank <= b as u32)
             })
             .copied()
             .collect(),
@@ -530,6 +598,8 @@ pub(crate) fn select_rows<'a>(
     }
 }
 
+// One bind per column: splitting the row would only move the same list around.
+#[allow(clippy::too_many_arguments)]
 async fn insert_recipient(
     tx: &mut Transaction<'_, Postgres>,
     contest: i64,
@@ -537,15 +607,24 @@ async fn insert_recipient(
     row: &ScoreboardRow,
     snapshot: i64,
     manual: bool,
+    award_key: &str,
+    problem: Option<(i64, Option<String>)>,
 ) -> Result<(), AppError> {
+    let (problem_id, problem_alias) = match problem {
+        Some((problem_id, alias)) => (Some(problem_id), alias),
+        None => (None, None),
+    };
     sqlx::query(
         r#"
         INSERT INTO award_recipients
-            (contest_id,category_id,team_id,rank,solved,penalty_minutes,team_name,school,
+            (contest_id,category_id,team_id,award_key,problem_id,problem_alias,
+             rank,solved,penalty_minutes,team_name,school,
              group_name,is_star,is_manual,participation_type,source_scoreboard_snapshot_id)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
         ON CONFLICT(contest_id,category_id,team_id,award_key) DO UPDATE
-            SET rank=excluded.rank,
+            SET problem_id=excluded.problem_id,
+                problem_alias=excluded.problem_alias,
+                rank=excluded.rank,
                 solved=excluded.solved,
                 penalty_minutes=excluded.penalty_minutes,
                 team_name=excluded.team_name,
@@ -562,6 +641,9 @@ async fn insert_recipient(
     .bind(contest)
     .bind(category)
     .bind(row.team_id)
+    .bind(award_key)
+    .bind(problem_id)
+    .bind(problem_alias)
     .bind(i32::try_from(row.rank).unwrap_or(i32::MAX))
     .bind(row.solved_count)
     .bind(row.penalty_minutes)

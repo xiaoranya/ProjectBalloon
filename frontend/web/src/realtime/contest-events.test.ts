@@ -70,6 +70,46 @@ describe('Rust contest SSE client', () => {
     expect(source.close).toHaveBeenCalled();
   });
 
+  it('collapses a burst of matching events into one trailing callback', () => {
+    const onEvent = vi.fn();
+    const subscription = subscribeContestEvents({
+      contestId: 7,
+      scope: 'TEAM',
+      eventTypes: ['RESOLVER_STATE_CHANGED'],
+      onEvent,
+      poll: vi.fn(),
+      coalesceMs: 250,
+    });
+    const source = EventSourceMock.instances[0];
+    const event = (step: number) => ({
+      ...baseEvent,
+      id: `00000000-0000-4000-8000-0000000000${String(step).padStart(2, '0')}`,
+      type: 'RESOLVER_STATE_CHANGED',
+      payload: { step },
+    });
+
+    source.message(event(1));
+    source.message(event(2));
+    source.message(event(3));
+    expect(onEvent).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(249);
+    expect(onEvent).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    // The newest event wins: the handler refetches the whole scene anyway.
+    expect(onEvent).toHaveBeenLastCalledWith(expect.objectContaining({ payload: { step: 3 } }));
+
+    source.message(event(4));
+    vi.advanceTimersByTime(250);
+    expect(onEvent).toHaveBeenCalledTimes(2);
+
+    // Stopping drops whatever is still inside the window.
+    source.message(event(5));
+    subscription.stop();
+    vi.advanceTimersByTime(1_000);
+    expect(onEvent).toHaveBeenCalledTimes(2);
+  });
+
   it('stops fallback polling after the Rust CONNECTED data event', () => {
     const poll = vi.fn();
     const connected = vi.fn();

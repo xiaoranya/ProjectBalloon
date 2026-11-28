@@ -85,6 +85,54 @@ impl DockerSandbox {
                 .await
                 .map_err(|error| SandboxError::Api(format!("runtime image {image}: {error}")))?;
         }
+        self.probe_sandbox_user().await
+    }
+
+    /// Runs one real command as the configured sandbox user.
+    ///
+    /// The daemon and the images can both be healthy while `XCPC_SANDBOX_USER`
+    /// does not match the worker's uid: every bind-mounted file is then EACCES
+    /// for the contestant. That mismatch used to surface on the first
+    /// submission, i.e. in the middle of a contest, instead of at startup.
+    async fn probe_sandbox_user(&self) -> Result<(), SandboxError> {
+        const PROBE_CONTAINER: &str = "pb-preflight-probe";
+        let probe_dir = self.cache_dir.join("preflight");
+        remove_dir_if_present(&probe_dir).await?;
+        create_private_dir(&probe_dir).await?;
+        let _stale = self.remove_container_by_name(PROBE_CONTAINER).await;
+        let container_id = self
+            .create_judgement_container(
+                PROBE_CONTAINER,
+                &self.c_image,
+                &probe_dir,
+                None,
+                64 * 1024 * 1024,
+            )
+            .await?;
+        let run = self
+            .run_exec(
+                &container_id,
+                vec![
+                    "/bin/sh".to_owned(),
+                    "-c".to_owned(),
+                    "id -u && printf ok > /work/.preflight-probe && cat /work/.preflight-probe"
+                        .to_owned(),
+                ],
+                &[],
+                Duration::from_secs(10),
+                crate::sandbox::COMPILE_FILE_SIZE_LIMIT_BYTES,
+            )
+            .await;
+        let _removed = self.remove_container_by_name(PROBE_CONTAINER).await;
+        let _cleaned = remove_dir_if_present(&probe_dir).await;
+        let run = run?;
+        if run.exit_code != 0 {
+            return Err(SandboxError::Api(format!(
+                "sandbox user probe failed (exit {}); check XCPC_SANDBOX_USER: {}",
+                run.exit_code,
+                truncate_log(&run.logs, 1_024)
+            )));
+        }
         Ok(())
     }
 
@@ -161,7 +209,8 @@ impl DockerSandbox {
             LanguageConfig::Go => &self.go_image,
             LanguageConfig::Rust => &self.rust_image,
         };
-        let run_memory_bytes = i64::from(task.memory_limit_mb) * 1024 * 1024;
+        let run_memory_bytes =
+            i64::from(crate::sandbox::effective_memory_limit(task.memory_limit_mb)) * 1024 * 1024;
         let container_id = self
             .create_judgement_container(
                 &judgement_container_name(task.judgement_id),
@@ -273,28 +322,32 @@ impl DockerSandbox {
             });
         }
 
-        if let Err(update_error) = self
-            .docker
-            .update_container(
+        let combined = timeout(
+            self.docker_api_timeout,
+            self.docker.update_container(
                 container_id,
                 ContainerUpdateBody {
                     memory: Some(run_memory_bytes),
                     memory_swap: Some(run_memory_bytes),
                     ..ContainerUpdateBody::default()
                 },
-            )
-            .await
-        {
-            let fallback = self
-                .docker
-                .update_container(
+            ),
+        )
+        .await
+        .map_err(|_| SandboxError::Api("timed out updating sandbox limits".to_owned()))?;
+        if let Err(update_error) = combined {
+            let fallback = timeout(
+                self.docker_api_timeout,
+                self.docker.update_container(
                     container_id,
                     ContainerUpdateBody {
                         memory: Some(run_memory_bytes),
                         ..ContainerUpdateBody::default()
                     },
-                )
-                .await;
+                ),
+            )
+            .await
+            .map_err(|_| SandboxError::Api("timed out updating sandbox limits".to_owned()))?;
             memory_update_outcome(update_error, fallback)?;
         }
 
@@ -313,7 +366,8 @@ impl DockerSandbox {
             let actual_path = work_dir.join("actual.out");
             remove_file_if_present(&actual_path).await?;
             let output_blocks = output_file_blocks(task.output_limit_kb);
-            let program = language.run_command(task.memory_limit_mb);
+            let program =
+                language.run_command(crate::sandbox::effective_memory_limit(task.memory_limit_mb));
             let shell = if interactive {
                 interactive_shell("/usr/bin/time", SANDBOX_INTERACTOR_PATH, &program, output_blocks)
             } else {
@@ -491,6 +545,10 @@ impl DockerSandbox {
             privileged: Some(false),
             cap_drop: Some(vec!["ALL".to_owned()]),
             security_opt: Some(vec!["no-new-privileges:true".to_owned()]),
+            // A real init reaps the orphans the contestant leaves behind.
+            // Without it PID 1 is `sleep infinity`, zombies accumulate, and the
+            // 64-PID ceiling turns into a resource the submission can exhaust.
+            init: Some(true),
             pids_limit: Some(64),
             memory: Some(memory_bytes),
             memory_swap: Some(memory_bytes),
@@ -517,11 +575,13 @@ impl DockerSandbox {
         };
         let options =
             bollard::query_parameters::CreateContainerOptionsBuilder::default().name(name).build();
-        let container = match self
-            .docker
-            .create_container(Some(options.clone()), body.clone())
-            .await
-        {
+        let created = timeout(
+            self.docker_api_timeout,
+            self.docker.create_container(Some(options.clone()), body.clone()),
+        )
+        .await
+        .map_err(|_| SandboxError::Api("timed out creating sandbox container".to_owned()))?;
+        let container = match created {
             Ok(container) => container,
             // A previous run of this judgement (SIGKILL, OOM, drain expiry)
             // can leave its container behind. Remove the stale one once and
@@ -529,15 +589,21 @@ impl DockerSandbox {
             Err(error) if is_container_name_conflict(&error) => {
                 warn!(name = %name, error = %error, "sandbox container name already exists; removing the stale container and retrying");
                 self.remove_container_by_name(name).await?;
-                self.docker
-                    .create_container(Some(options), body)
+                timeout(self.docker_api_timeout, self.docker.create_container(Some(options), body))
                     .await
+                    .map_err(|_| {
+                        SandboxError::Api("timed out creating sandbox container".to_owned())
+                    })?
                     .map_err(|error| SandboxError::Api(error.to_string()))?
             }
             Err(error) => return Err(SandboxError::Api(error.to_string())),
         };
-        if let Err(error) =
-            self.docker.start_container(&container.id, None::<StartContainerOptions>).await
+        if let Err(error) = timeout(
+            self.docker_api_timeout,
+            self.docker.start_container(&container.id, None::<StartContainerOptions>),
+        )
+        .await
+        .map_err(|_| SandboxError::Api("timed out starting sandbox container".to_owned()))?
         {
             let _cleanup = timeout(
                 self.docker_api_timeout,
@@ -569,9 +635,9 @@ impl DockerSandbox {
         // cumulative for the whole container, so the exec's share is the
         // difference between two snapshots taken around the exec.
         let base_cpu_ns = snapshot_container_cpu(&self.docker, container_id).await;
-        let exec = self
-            .docker
-            .create_exec(
+        let exec = timeout(
+            self.docker_api_timeout,
+            self.docker.create_exec(
                 container_id,
                 ExecConfig {
                     attach_stdout: Some(true),
@@ -582,15 +648,19 @@ impl DockerSandbox {
                     working_dir: Some("/work".to_owned()),
                     ..ExecConfig::default()
                 },
-            )
-            .await
-            .map_err(|error| SandboxError::Api(error.to_string()))?;
+            ),
+        )
+        .await
+        .map_err(|_| SandboxError::Api("timed out creating sandbox exec".to_owned()))?
+        .map_err(|error| SandboxError::Api(error.to_string()))?;
         let started = Instant::now();
-        let started_exec = self
-            .docker
-            .start_exec(&exec.id, Some(StartExecOptions::default()))
-            .await
-            .map_err(|error| SandboxError::Api(error.to_string()))?;
+        let started_exec = timeout(
+            self.docker_api_timeout,
+            self.docker.start_exec(&exec.id, Some(StartExecOptions::default())),
+        )
+        .await
+        .map_err(|_| SandboxError::Api("timed out starting sandbox exec".to_owned()))?
+        .map_err(|error| SandboxError::Api(error.to_string()))?;
         let StartExecResults::Attached { mut output, .. } = started_exec else {
             return Err(SandboxError::Api("sandbox exec unexpectedly detached".to_owned()));
         };
@@ -696,10 +766,16 @@ impl DockerSandbox {
     /// they must never be concatenated into the exec stream the GNU-time
     /// marker is parsed from, and losing them must not fail a completed run.
     async fn fetch_interactor_diagnostics(&self, container_id: &str) -> String {
+        // `-f` skips anything that is not a regular file (a FIFO left by the
+        // contestant used to block `cat`), and the shell-level `timeout` keeps
+        // the exec well inside its wall limit: run_exec kills the *container* on
+        // timeout, which took every later test point of the submission with it.
         let command = vec![
             "/bin/sh".to_owned(),
             "-c".to_owned(),
-            "cat /work/program.err /work/interactor.err 2>/dev/null".to_owned(),
+            "for f in /work/program.err /work/interactor.err; do \
+             [ -f \"$f\" ] && timeout 2 cat \"$f\" 2>/dev/null; done"
+                .to_owned(),
         ];
         match self
             .run_exec(
@@ -740,9 +816,9 @@ impl DockerSandbox {
         {
             return Ok(());
         }
-        let exec = self
-            .docker
-            .create_exec(
+        let exec = timeout(
+            self.docker_api_timeout,
+            self.docker.create_exec(
                 container_id,
                 ExecConfig {
                     cmd: Some(vec![
@@ -754,17 +830,21 @@ impl DockerSandbox {
                     working_dir: Some("/work".to_owned()),
                     ..ExecConfig::default()
                 },
-            )
-            .await
-            .map_err(|error| SandboxError::Api(error.to_string()))?;
+            ),
+        )
+        .await
+        .map_err(|_| SandboxError::Api("timed out creating sandbox exec".to_owned()))?
+        .map_err(|error| SandboxError::Api(error.to_string()))?;
         // PID 1 is the non-root reusable init process. The cleanup shell can kill
         // other processes owned by the same UID, while preserving both itself and
         // PID 1 so the container remains available for the next exec.
-        let started = self
-            .docker
-            .start_exec(&exec.id, Some(StartExecOptions::default()))
-            .await
-            .map_err(|error| SandboxError::Api(error.to_string()))?;
+        let started = timeout(
+            self.docker_api_timeout,
+            self.docker.start_exec(&exec.id, Some(StartExecOptions::default())),
+        )
+        .await
+        .map_err(|_| SandboxError::Api("timed out starting sandbox exec".to_owned()))?
+        .map_err(|error| SandboxError::Api(error.to_string()))?;
         let StartExecResults::Attached { mut output, .. } = started else {
             return Err(SandboxError::Api(
                 "contestant process cleanup unexpectedly detached".to_owned(),
@@ -983,8 +1063,14 @@ pub(super) fn resource_verdict(
     charged_time_ms: i32,
     effective_time_limit_ms: i32,
 ) -> Option<JudgeVerdict> {
-    if oom_killed || (exit_code == 137 && !timed_out) {
+    if oom_killed {
         Some(JudgeVerdict::MemoryLimitExceeded)
+    } else if exit_code == 137 && !timed_out {
+        // SIGKILL without an OOM event is the contestant killing itself
+        // (`kill -9 $$`) or a crash, not memory exhaustion. Both backends report
+        // `oom_killed` from the kernel — the Docker container state and the
+        // cgroup `memory.events` counter — so 137 alone is not evidence of OOM.
+        Some(JudgeVerdict::RuntimeError)
     } else if output_bytes > output_limit_bytes
         || (exit_code != 0 && output_bytes >= output_limit_bytes)
     {
@@ -1007,14 +1093,15 @@ mod tests {
 
     #[test]
     fn resource_verdicts_precede_output_comparison() {
-        // OOM kills and exit code 137 mean memory exhaustion.
+        // OOM kills mean memory exhaustion.
         assert_eq!(
             resource_verdict(true, 0, false, 0, 1_024, 1, 1_000),
             Some(JudgeVerdict::MemoryLimitExceeded)
         );
+        // SIGKILL without an OOM event is a self-kill or a crash.
         assert_eq!(
             resource_verdict(false, 137, false, 0, 1_024, 1, 1_000),
-            Some(JudgeVerdict::MemoryLimitExceeded)
+            Some(JudgeVerdict::RuntimeError)
         );
         // Exit 137 with a wall-clock timeout is a time limit, not OOM.
         assert_eq!(

@@ -6,7 +6,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use time::OffsetDateTime;
 use tokio::{io::AsyncWriteExt, process::Command, sync::watch};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::object_storage::ObjectStorageHandle;
@@ -15,6 +15,9 @@ const DELIVERY_LEASE_SECONDS: i32 = 10;
 const MONITOR_DELAY_SECONDS: i32 = 5;
 const UNKNOWN_JOB_GRACE_MINUTES: i32 = 30;
 const MAX_DELIVERY_ATTEMPTS: i32 = 3;
+/// How often a failing `cancel` is retried before the request is failed. The
+/// delay doubles per attempt, so this covers roughly half an hour.
+const CANCELLATION_MAX_ATTEMPTS: i32 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CupsJobStatus {
@@ -324,7 +327,11 @@ impl CupsDeliveryRunner {
 
     async fn process_cancellation(&self, request: &ClaimedPrintRequest) {
         let Some(job_id) = request.cups_job_id.as_deref() else {
-            self.fail_internal(request, "cancelled print request has no CUPS job identifier").await;
+            // Nothing reached CUPS, so there is nothing to cancel: the operator
+            // asked for a cancellation and the request is already cancelled.
+            // Marking it FAILED made a deliberate cancellation look like a
+            // printer fault.
+            self.finish_with_status(request, "CANCELLED", "cancelled before CUPS submission").await;
             return;
         };
         match self.gateway.cancel(job_id).await {
@@ -353,7 +360,28 @@ impl CupsDeliveryRunner {
                     warn!(print_request_id = request.id, %error, "failed to persist CUPS cancellation");
                 }
             }
-            Err(error) => self.defer(request.id, request.delivery_attempts, error.as_str()).await,
+            Err(error) => {
+                // Cancellations were deferred without ever counting an attempt,
+                // so a printer that keeps refusing the cancel request kept the
+                // row retrying forever. Count them and give up eventually.
+                let attempt = request.delivery_attempts.saturating_add(1);
+                if attempt >= CANCELLATION_MAX_ATTEMPTS {
+                    error!(
+                        print_request_id = request.id,
+                        %job_id,
+                        %error,
+                        "CUPS cancellation kept failing; marking the request failed"
+                    );
+                    self.finish_with_status(
+                        request,
+                        "FAILED",
+                        "CUPS cancellation failed repeatedly",
+                    )
+                    .await;
+                } else {
+                    self.defer_cancellation(request.id, attempt, error.as_str()).await;
+                }
+            }
         }
     }
 
@@ -380,8 +408,48 @@ impl CupsDeliveryRunner {
             format!("XCPC {} #{}", request.team_name.as_deref().unwrap_or("team"), request.id);
         match self.gateway.submit(&title, pdf).await {
             Ok(job_id) => {
-                if let Err(error) = self.mark_printing(request, &job_id).await {
-                    warn!(print_request_id = request.id, cups_job_id = %job_id, %error, "CUPS accepted job but database update failed");
+                // CUPS already has the job. If the row cannot be updated the
+                // request stays QUEUED with no job id, and the next round would
+                // hand the same PDF to the printer a second time.
+                let mut attempt = 0_u8;
+                loop {
+                    match self.mark_printing(request, &job_id).await {
+                        Ok(()) => break,
+                        Err(error) if attempt < 2 => {
+                            attempt += 1;
+                            warn!(
+                                print_request_id = request.id,
+                                %job_id,
+                                %error,
+                                attempt,
+                                "CUPS accepted the job but the update failed; retrying"
+                            );
+                            tokio::time::sleep(Duration::from_millis(200)).await;
+                        }
+                        Err(error) => {
+                            error!(
+                                print_request_id = request.id,
+                                %job_id,
+                                %error,
+                                "CUPS accepted the job but it could not be recorded; cancelling it"
+                            );
+                            if let Err(cancel_error) = self.gateway.cancel(&job_id).await {
+                                error!(
+                                    print_request_id = request.id,
+                                    %job_id,
+                                    %cancel_error,
+                                    "failed to cancel an unrecorded CUPS job"
+                                );
+                            }
+                            self.finish_with_status(
+                                request,
+                                "FAILED",
+                                "CUPS accepted the job but the request could not be updated",
+                            )
+                            .await;
+                            return;
+                        }
+                    }
                 }
             }
             Err(error) => self.fail_delivery(request, error.as_str()).await,
@@ -533,6 +601,17 @@ impl CupsDeliveryRunner {
     }
 
     async fn fail_internal(&self, request: &ClaimedPrintRequest, message: &str) {
+        self.finish_with_status(request, "FAILED", message).await;
+    }
+
+    /// Moves a claimed request to a terminal status and publishes the matching
+    /// realtime event. `status` is always a compile-time constant here.
+    async fn finish_with_status(
+        &self,
+        request: &ClaimedPrintRequest,
+        status: &'static str,
+        message: &str,
+    ) {
         let message = SanitizedError::sanitize(message);
         let mut tx = match self.database.begin().await {
             Ok(tx) => tx,
@@ -544,9 +623,9 @@ impl CupsDeliveryRunner {
         match sqlx::query(
             r#"
             UPDATE print_requests request
-            SET status = 'FAILED',
-                failed_reason = $3,
-                last_delivery_error = $3,
+            SET status = $3,
+                failed_reason = $4,
+                last_delivery_error = $4,
                 cancellation_pending = false,
                 delivery_lease_owner = NULL,
                 delivery_lease_until = NULL,
@@ -561,14 +640,15 @@ impl CupsDeliveryRunner {
         )
         .bind(request.id)
         .bind(self.instance_id)
+        .bind(status)
         .bind(message.as_str())
         .execute(&mut *tx)
         .await
         {
             Ok(result) if result.rows_affected() == 1 => {
-                if insert_events(&self.outbox, request, "FAILED").await.is_ok() {
+                if insert_events(&self.outbox, request, status).await.is_ok() {
                     if let Err(error) = tx.commit().await {
-                        warn!(print_request_id = request.id, %error, "failed to commit terminal print failure");
+                        warn!(print_request_id = request.id, %error, "failed to commit terminal print update");
                     }
                 } else {
                     let _ignored = tx.rollback().await;
@@ -579,8 +659,41 @@ impl CupsDeliveryRunner {
             }
             Err(error) => {
                 let _ignored = tx.rollback().await;
-                warn!(print_request_id = request.id, %error, "failed to persist terminal print failure");
+                warn!(print_request_id = request.id, %error, "failed to persist terminal print update");
             }
+        }
+    }
+
+    /// Defers a stuck cancellation and records the attempt, so a printer that
+    /// keeps rejecting `cancel` eventually reaches a terminal state instead of
+    /// being retried forever.
+    async fn defer_cancellation(&self, id: i64, attempts: i32, message: &str) {
+        let sanitized = (!message.is_empty()).then(|| SanitizedError::sanitize(message));
+        let message = sanitized.as_ref().map(SanitizedError::as_str);
+        let delay_seconds = delivery_retry_delay(attempts);
+        if let Err(error) = sqlx::query(
+            r#"
+            UPDATE print_requests request
+            SET delivery_lease_until = now() + make_interval(secs => $3),
+                delivery_attempts = $5,
+                last_delivery_error = COALESCE($4, request.last_delivery_error),
+                updated_at = now()
+            WHERE request.id = $1 AND request.delivery_lease_owner = $2
+                AND EXISTS (
+                    SELECT 1 FROM contests contest
+                    WHERE contest.id = request.contest_id AND contest.deleted_at IS NULL
+                )
+            "#,
+        )
+        .bind(id)
+        .bind(self.instance_id)
+        .bind(delay_seconds)
+        .bind(message)
+        .bind(attempts)
+        .execute(&self.database)
+        .await
+        {
+            warn!(print_request_id = id, %error, "failed to defer a print cancellation");
         }
     }
 

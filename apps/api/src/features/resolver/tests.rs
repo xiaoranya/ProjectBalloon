@@ -311,80 +311,142 @@ fn recompute_board_rewrites_aggregates_ranks_and_first_blood() {
     assert!(!board.rows[1].problems[0].first_blood);
 }
 
-fn tiebreak_row(
-    team_id: i64,
-    solved_count: i32,
-    penalty_minutes: i64,
-    last_solved_at: Option<OffsetDateTime>,
-) -> ScoreboardRow {
+fn scored_cell(
+    problem_id: i64,
+    score_milli: i32,
+    solved: bool,
+    solved_at: Option<OffsetDateTime>,
+) -> ScoreboardCell {
+    ScoreboardCell {
+        problem_id,
+        wrong_attempts: 0,
+        solved,
+        solved_at,
+        penalty_minutes: 0,
+        score_milli,
+        first_blood: false,
+    }
+}
+
+fn scored_problem(problem_id: i64, alias: &str) -> ScoreboardProblem {
+    ScoreboardProblem {
+        problem_id,
+        alias: alias.into(),
+        display_order: i32::try_from(problem_id).expect("problem id fits"),
+        first_blood_team_id: None,
+        first_blood_at: None,
+    }
+}
+
+fn scored_row(team_id: i64, name: &str, problems: Vec<ScoreboardCell>) -> ScoreboardRow {
     ScoreboardRow {
         rank: 0,
         official_rank: None,
         team_id,
-        team_name: format!("Team {team_id}"),
+        team_name: name.into(),
         school: None,
         participation_type: "OFFICIAL".into(),
         group_name: None,
         is_star: false,
-        solved_count,
-        penalty_minutes,
+        solved_count: 0,
+        penalty_minutes: 0,
         total_score_milli: 0,
-        last_solved_at,
-        problems: Vec::new(),
+        last_solved_at: None,
+        problems,
     }
 }
 
+/// The ceremony used to carry its own ICPC-only comparator, so an OI/IOI board
+/// ranked a team with two 10-point solves above a team with one 100-point solve
+/// — the live board did the opposite. Both now share `scoreboard::helpers`.
 #[test]
-fn resolver_tiebreaks_follow_the_icpc_rulebook() {
-    use crate::features::resolver::plan::compare_rows;
-    use std::cmp::Ordering;
+fn recompute_board_ranks_oi_teams_by_score_not_by_solved_count() {
+    use crate::features::resolver::plan::recompute_board;
 
-    let early = OffsetDateTime::from_unix_timestamp(60).expect("timestamp");
-    let late = OffsetDateTime::from_unix_timestamp(120).expect("timestamp");
-    assert_eq!(
-        compare_rows(&tiebreak_row(1, 3, 500, Some(late)), &tiebreak_row(2, 2, 10, Some(early))),
-        Ordering::Less
-    );
-    assert_eq!(
-        compare_rows(&tiebreak_row(1, 2, 90, None), &tiebreak_row(2, 2, 120, None)),
-        Ordering::Less
-    );
-    assert_eq!(
-        compare_rows(&tiebreak_row(1, 2, 100, Some(early)), &tiebreak_row(2, 2, 100, Some(late))),
-        Ordering::Less
-    );
-    assert_eq!(
-        compare_rows(&tiebreak_row(2, 2, 100, None), &tiebreak_row(1, 2, 100, None)),
-        Ordering::Greater
-    );
+    let early = OffsetDateTime::from_unix_timestamp(300).expect("timestamp");
+    let late = OffsetDateTime::from_unix_timestamp(540).expect("timestamp");
+    let mut board = ScoreboardResponse {
+        contest_id: 1,
+        variant: "PUBLIC".into(),
+        frozen: false,
+        scoring_mode: "OI".into(),
+        score_aggregation: "LAST".into(),
+        generated_at: early,
+        problems: vec![scored_problem(1, "A"), scored_problem(2, "B"), scored_problem(3, "C")],
+        rows: vec![
+            scored_row(
+                1,
+                "Two small solves",
+                vec![
+                    scored_cell(1, 10_000, true, Some(early)),
+                    scored_cell(2, 10_000, true, Some(late)),
+                    scored_cell(3, 0, false, None),
+                ],
+            ),
+            scored_row(
+                2,
+                "One big solve",
+                vec![
+                    scored_cell(1, 0, false, None),
+                    scored_cell(2, 0, false, None),
+                    scored_cell(3, 100_000, true, Some(late)),
+                ],
+            ),
+        ],
+    };
+
+    recompute_board(&mut board);
+    assert_eq!(board.rows[0].team_id, 2, "the 100-point solve must lead the ceremony");
+    assert_eq!(board.rows[0].total_score_milli, 100_000);
+    assert_eq!(board.rows[0].official_rank, Some(1));
+    assert_eq!(board.rows[1].team_id, 1);
+    assert_eq!(board.rows[1].total_score_milli, 20_000);
+    assert_eq!(board.rows[1].solved_count, 2, "solved count is still reported, just not ranked on");
 }
 
+/// Guard against a future regression that reintroduces a private comparator:
+/// the same two reveals must produce the ICPC order under ICPC and the score
+/// order under OI/IOI.
 #[test]
-fn resolver_ranking_matches_the_scoreboard_icpc_ordering() {
-    use crate::features::resolver::plan::compare_rows as resolver_compare;
-    use crate::features::scoreboard::helpers::compare_rows as scoreboard_compare;
+fn recompute_board_ordering_follows_the_contest_scoring_mode() {
+    use crate::features::resolver::plan::recompute_board;
 
-    let early = OffsetDateTime::from_unix_timestamp(60).expect("timestamp");
-    let late = OffsetDateTime::from_unix_timestamp(120).expect("timestamp");
-    let mut rows = Vec::new();
-    let mut team_id = 0;
-    for solved_count in [0_i32, 1, 2] {
-        for penalty_minutes in [0_i64, 90, 300] {
-            for last_solved_at in [None, Some(early), Some(late)] {
-                team_id += 1;
-                rows.push(tiebreak_row(team_id, solved_count, penalty_minutes, last_solved_at));
-            }
-        }
-    }
-    for left in &rows {
-        for right in &rows {
-            assert_eq!(
-                scoreboard_compare("ICPC", left, right),
-                resolver_compare(left, right),
-                "scoreboard and resolver must agree when ranking team {} against team {}",
-                left.team_id,
-                right.team_id
-            );
-        }
+    let early = OffsetDateTime::from_unix_timestamp(300).expect("timestamp");
+    let late = OffsetDateTime::from_unix_timestamp(540).expect("timestamp");
+    for (scoring_mode, expected) in [("ICPC", vec![1, 2]), ("OI", vec![2, 1]), ("IOI", vec![2, 1])]
+    {
+        let mut board = ScoreboardResponse {
+            contest_id: 1,
+            variant: "PUBLIC".into(),
+            frozen: false,
+            scoring_mode: scoring_mode.into(),
+            score_aggregation: "BEST".into(),
+            generated_at: early,
+            problems: vec![scored_problem(1, "A"), scored_problem(2, "B")],
+            rows: vec![
+                scored_row(
+                    1,
+                    "Small early solve",
+                    vec![scored_cell(1, 0, false, None), scored_cell(2, 10_000, true, Some(early))],
+                ),
+                scored_row(
+                    2,
+                    "Big late solve",
+                    vec![scored_cell(1, 100_000, true, Some(late)), scored_cell(2, 0, false, None)],
+                ),
+            ],
+        };
+
+        recompute_board(&mut board);
+        assert_eq!(
+            board.rows.iter().map(|row| row.team_id).collect::<Vec<_>>(),
+            expected,
+            "{scoring_mode}: the ceremony must rank like the live board"
+        );
+        assert_eq!(
+            board.rows.iter().map(|row| row.rank).collect::<Vec<_>>(),
+            vec![1, 2],
+            "{scoring_mode}: ranks must be dense after sorting"
+        );
     }
 }

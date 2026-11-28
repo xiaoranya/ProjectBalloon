@@ -106,6 +106,14 @@ impl OutboxDispatcher {
         let fresh =
             self.outbox.read_new(&self.instance_id, self.config.batch_size.max(1) as usize).await?;
         for (stream_id, entry) in fresh {
+            // An undecodable payload can never be delivered; acknowledging it
+            // keeps the pending list (and `/health`'s backlog gauge) honest.
+            let Some(entry) = entry else {
+                warn!(%stream_id, "dropping undecodable realtime outbox entry");
+                self.outbox.record_dead_letter().await?;
+                self.outbox.ack(&stream_id).await?;
+                continue;
+            };
             if self.deliver(&stream_id, entry).await? {
                 published += 1;
             }
@@ -119,6 +127,12 @@ impl OutboxDispatcher {
             )
             .await?;
         for (stream_id, entry, delivery_count) in reclaimed {
+            let Some(entry) = entry else {
+                warn!(%stream_id, "dropping undecodable realtime outbox entry");
+                self.outbox.record_dead_letter().await?;
+                self.outbox.ack(&stream_id).await?;
+                continue;
+            };
             // `delivery_count` already includes the delivery this entry is
             // about to get, so `>=` keeps the budget exact; `>` delivered one
             // extra time past the configured maximum.

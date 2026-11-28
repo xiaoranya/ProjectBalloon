@@ -14,6 +14,19 @@ pub struct StagedTestdataUpload {
 const MAX_TESTDATA_BYTES: u64 = 256 * 1024 * 1024;
 
 impl ProblemService {
+    /// Authorizes a test-data upload before its body is streamed to disk.
+    ///
+    /// The handler used to stage the full 256 MiB archive and only then discover
+    /// that the caller lacked the rights (or that the problem was gone).
+    pub async fn preflight_testdata_upload(
+        &self,
+        problem_id: i64,
+        actor: &AuthUser,
+    ) -> Result<(), AppError> {
+        require_positive_id(problem_id)?;
+        preflight_attachment_change(&self.database, problem_id, actor).await
+    }
+
     pub async fn upload_testdata(
         &self,
         problem_id: i64,
@@ -38,9 +51,12 @@ impl ProblemService {
                 "#,
         )
         .bind(problem_id)
-        .fetch_one(&self.database)
+        // The preflight above raced a concurrent soft delete: `fetch_one` turned
+        // that into a 500, while every other read path answers 404.
+        .fetch_optional(&self.database)
         .await
-        .map_err(|error| AppError::internal("load current test-data version", error))?;
+        .map_err(|error| AppError::internal("load current test-data version", error))?
+        .ok_or_else(|| AppError::not_found("PROBLEM_NOT_FOUND", "Problem was not found"))?;
         let version = maximum_version.checked_add(1).ok_or_else(|| {
             AppError::conflict("TESTDATA_VERSION_EXHAUSTED", "Test-data version is exhausted")
         })?;
@@ -299,11 +315,18 @@ impl ProblemService {
                 "Test data was changed by another request",
             ));
         }
-        let response = sqlx::query_as::<_, ProblemTestdataResponse>(
+        // The version number is allocated before the object upload, i.e. outside
+        // this transaction, so the `previous_version` comparison above cannot be
+        // the only guard: rolling back to an older version in between restores
+        // the value this request compared against, and the INSERT then hit the
+        // `(problem_id, version)` unique index as a 500. A lost race is a
+        // conflict for the caller, not an internal error.
+        let inserted = sqlx::query_as::<_, ProblemTestdataResponse>(
                 r#"
                 INSERT INTO problem_testdata_versions
                     (problem_id, version, object_key, sha256, bytes, case_count, uploaded_by_user_id)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (problem_id, version) DO NOTHING
                 RETURNING problem_id, version, case_count, bytes, sha256, created_at
                 "#,
             )
@@ -314,9 +337,15 @@ impl ProblemService {
             .bind(bytes)
             .bind(case_count)
             .bind(actor.id)
-            .fetch_one(&mut *transaction)
+            .fetch_optional(&mut *transaction)
             .await
             .map_err(|error| AppError::internal("insert immutable test-data version", error))?;
+        let Some(response) = inserted else {
+            return Err(AppError::conflict(
+                "TESTDATA_VERSION_STALE",
+                "Test data was changed by another request",
+            ));
+        };
         sqlx::query(
             r#"
                 UPDATE problems

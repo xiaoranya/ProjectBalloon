@@ -162,18 +162,27 @@ impl CreateTeamRequest {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateTeamRequest {
     pub name: Option<String>,
-    pub school: Option<String>,
-    pub seat_no: Option<String>,
-    pub group_name: Option<String>,
+    // `None` = absent, `Some(None)` = explicit `null` (clear the column),
+    // `Some(Some(value))` = new value. Kept as a `//` comment so the Rust
+    // representation does not leak into the published schema.
+    #[serde(default, deserialize_with = "deserialize_clearable")]
+    #[schema(value_type = String, nullable)]
+    pub school: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_clearable")]
+    #[schema(value_type = String, nullable)]
+    pub seat_no: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_clearable")]
+    #[schema(value_type = String, nullable)]
+    pub group_name: Option<Option<String>>,
     pub star: Option<bool>,
     pub expected_version: Option<i64>,
 }
 
 pub struct ValidatedUpdateTeam {
     pub name: Option<String>,
-    pub school: Option<String>,
-    pub seat_no: Option<String>,
-    pub group_name: Option<String>,
+    pub school: Option<Option<String>>,
+    pub seat_no: Option<Option<String>>,
+    pub group_name: Option<Option<String>>,
     pub star: Option<bool>,
     pub expected_version: Option<i64>,
 }
@@ -181,9 +190,10 @@ pub struct ValidatedUpdateTeam {
 impl UpdateTeamRequest {
     pub fn validate(self) -> Result<ValidatedUpdateTeam, AppError> {
         let name = self.name.map(|value| required_text("name", value, 255)).transpose()?;
-        let school = optional_text("school", self.school, 255)?;
-        let seat_no = optional_text("seatNo", self.seat_no, 64)?;
-        let group_name = optional_text("groupName", self.group_name, 128)?;
+        let school = self.school.map(|value| optional_text("school", value, 255)).transpose()?;
+        let seat_no = self.seat_no.map(|value| optional_text("seatNo", value, 64)).transpose()?;
+        let group_name =
+            self.group_name.map(|value| optional_text("groupName", value, 128)).transpose()?;
         if name.is_none()
             && school.is_none()
             && seat_no.is_none()
@@ -524,6 +534,17 @@ fn optional_text(
         .transpose()
 }
 
+/// Deserializes a field that distinguishes "absent" from "present and null".
+///
+/// Without this, `{"school": null}` and `{}` both arrived as `None`, so a team
+/// could never have its school, seat number or group cleared.
+fn deserialize_clearable<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Some)
+}
+
 fn validate_username(value: String) -> Result<String, AppError> {
     let value = value.trim().to_ascii_lowercase();
     if !(3..=64).contains(&value.len())
@@ -579,6 +600,28 @@ mod tests {
             expected_version: Some(1),
         };
         assert!(request.validate().is_err());
+    }
+
+    #[test]
+    fn team_update_distinguishes_absent_from_explicit_null() {
+        let absent: UpdateTeamRequest =
+            serde_json::from_str(r#"{"name":"New name"}"#).expect("absent fields parse");
+        assert_eq!(absent.school, None, "absent must keep the stored value");
+
+        let cleared: UpdateTeamRequest =
+            serde_json::from_str(r#"{"school":null,"seatNo":null,"groupName":null}"#)
+                .expect("explicit null parses");
+        assert_eq!(cleared.school, Some(None), "explicit null must clear the column");
+        assert_eq!(cleared.seat_no, Some(None));
+        assert_eq!(cleared.group_name, Some(None));
+        // Clearing counts as a change, so the request is accepted.
+        let validated = cleared.validate().expect("clearing is a valid update");
+        assert_eq!(validated.school, Some(None));
+
+        let set: UpdateTeamRequest =
+            serde_json::from_str(r#"{"school":"  Tsinghua  "}"#).expect("a value parses");
+        let validated = set.validate().expect("a value is a valid update");
+        assert_eq!(validated.school, Some(Some("Tsinghua".to_owned())));
     }
 
     #[test]

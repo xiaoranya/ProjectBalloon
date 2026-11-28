@@ -109,7 +109,20 @@ impl SubmissionService {
     ) -> Result<Vec<SimilarityPairResponse>, AppError> {
         require_admin_access(&self.database, contest_id, actor).await?;
         let (problem_id, language, min_similarity_percent) = query.validate()?;
-        sqlx::query_as::<_, SimilarityPairResponse>(
+        // The pair join is O(n^2) within each (problem, language) group and the
+        // Hamming filter cannot be pushed into an index, so a contest with tens
+        // of thousands of submissions can pin a core for minutes. Bound it and
+        // report a typed error instead of letting the pool time out.
+        let mut tx = self
+            .database
+            .begin()
+            .await
+            .map_err(|error| AppError::internal("begin similarity pair scan", error))?;
+        sqlx::query("SET LOCAL statement_timeout = '10s'")
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| AppError::internal("bound similarity pair scan", error))?;
+        let rows = sqlx::query_as::<_, SimilarityPairResponse>(
             r#"
             WITH pairs AS (
                 SELECT a.problem_id, a.language,
@@ -141,8 +154,26 @@ impl SubmissionService {
         .bind(problem_id)
         .bind(language)
         .bind(min_similarity_percent)
-        .fetch_all(&self.database)
+        .fetch_all(&mut *tx)
         .await
-        .map_err(|error| AppError::internal("list submission similarity pairs", error))
+        .map_err(similarity_scan_error)?;
+        tx.commit()
+            .await
+            .map_err(|error| AppError::internal("finish similarity pair scan", error))?;
+        Ok(rows)
     }
+}
+
+fn similarity_scan_error(error: sqlx::Error) -> AppError {
+    let cancelled = error
+        .as_database_error()
+        .and_then(|failure| failure.code())
+        .is_some_and(|code| code == "57014");
+    if cancelled {
+        return AppError::conflict(
+            "SIMILARITY_SCAN_TIMEOUT",
+            "The similarity scan exceeded 10s; narrow it by problem or language",
+        );
+    }
+    AppError::internal("list submission similarity pairs", error)
 }

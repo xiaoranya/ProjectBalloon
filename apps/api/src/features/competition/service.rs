@@ -57,6 +57,10 @@ impl CompetitionService {
              AND second.start_at IS NOT NULL AND second.end_at IS NOT NULL
              AND first.start_at < second.end_at
              AND second.start_at < first.end_at
+             -- A finished contest keeps its schedule forever; only contests that
+             -- can still run must stay disjoint.
+             AND first.status NOT IN ('ENDED', 'ARCHIVED')
+             AND second.status NOT IN ('ENDED', 'ARCHIVED')
             LIMIT 1
             "#,
         )
@@ -221,10 +225,41 @@ impl CompetitionService {
         })
     }
 
-    pub async fn list_workstations(&self) -> Result<Vec<WorkstationResponse>, AppError> {
+    /// Lists the workstation pool from the caller's point of view.
+    ///
+    /// Workstations are deployment-wide, but a contest manager only needs the
+    /// ones they can actually use: those bound to a contest they manage, plus
+    /// the unbound pool they are about to bind. A terminal currently serving
+    /// another contest is that contest's business.
+    pub async fn list_workstations(
+        &self,
+        actor: &AuthUser,
+    ) -> Result<Vec<WorkstationResponse>, AppError> {
         sqlx::query_as(
-            "SELECT id,ip_address,seat_no,label,enabled,last_seen_at,version,created_at,updated_at FROM competition_workstations ORDER BY seat_no,id",
+            r#"
+            SELECT workstation.id, workstation.ip_address, workstation.seat_no, workstation.label,
+                   workstation.enabled, workstation.last_seen_at, workstation.version,
+                   workstation.created_at, workstation.updated_at
+            FROM competition_workstations workstation
+            WHERE $1
+               OR NOT EXISTS (
+                    SELECT 1
+                    FROM contest_workstation_bindings binding
+                    JOIN contests contest
+                      ON contest.id = binding.contest_id AND contest.deleted_at IS NULL
+                    WHERE binding.workstation_id = workstation.id
+                      AND binding.revoked_at IS NULL
+                      AND NOT EXISTS (
+                          SELECT 1 FROM contest_management_assignments assignment
+                          WHERE assignment.contest_id = binding.contest_id
+                            AND assignment.user_id = $2
+                      )
+               )
+            ORDER BY workstation.seat_no, workstation.id
+            "#,
         )
+        .bind(actor.is_super_admin())
+        .bind(actor.id)
         .fetch_all(&self.database)
         .await
         .map_err(|error| AppError::internal("list competition workstations", error))

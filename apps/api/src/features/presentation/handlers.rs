@@ -162,7 +162,7 @@ pub async fn list_templates(
 ) -> Result<Json<Vec<PresentationTemplateResponse>>, AppError> {
     context.require_password_ready()?;
     require_presentation_operator(context.user())?;
-    Ok(Json(sqlx::query_as::<_, PresentationTemplateResponse>("SELECT id,name,description,background_color,foreground_color,accent_color,font_family,density,show_clock,show_logo,logo_object_key,updated_at FROM presentation_templates ORDER BY updated_at DESC,id DESC").fetch_all(state.database()).await.map_err(|e| AppError::internal("list presentation templates",e))?))
+    Ok(Json(sqlx::query_as::<_, PresentationTemplateResponse>("SELECT id,name,description,background_color,foreground_color,accent_color,font_family,density,show_clock,show_logo,logo_object_key,created_by_user_id,updated_at FROM presentation_templates ORDER BY updated_at DESC,id DESC").fetch_all(state.database()).await.map_err(|e| AppError::internal("list presentation templates",e))?))
 }
 
 #[utoipa::path(post, path = "/api/presentation-templates", operation_id = "createPresentationTemplate", tag = "live", request_body = PresentationTemplateRequest, responses((status = 201, body = PresentationTemplateResponse)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
@@ -182,7 +182,7 @@ pub async fn create_template(
              density,show_clock,show_logo,logo_object_key,created_by_user_id)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
         RETURNING id,name,description,background_color,foreground_color,accent_color,
-            font_family,density,show_clock,show_logo,logo_object_key,updated_at
+            font_family,density,show_clock,show_logo,logo_object_key,created_by_user_id,updated_at
         "#,
     )
     .bind(request.name.trim())
@@ -202,7 +202,7 @@ pub async fn create_template(
     Ok((StatusCode::CREATED, Json(row)))
 }
 
-#[utoipa::path(put, path = "/api/presentation-templates/{template_id}", operation_id = "updatePresentationTemplate", tag = "live", params(("template_id" = i64, Path)), request_body = PresentationTemplateRequest, responses((status = 200, body = PresentationTemplateResponse)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
+#[utoipa::path(put, path = "/api/presentation-templates/{template_id}", operation_id = "updatePresentationTemplate", tag = "live", params(("template_id" = i64, Path)), request_body = PresentationTemplateRequest, responses((status = 200, body = PresentationTemplateResponse), (status = 403, body = crate::error::ApiErrorBody), (status = 404, body = crate::error::ApiErrorBody)), security(("session_cookie" = [], "csrf_cookie" = [], "csrf_header" = [])))]
 pub async fn update_template(
     context: AuthContext,
     State(state): State<AppState>,
@@ -213,31 +213,5 @@ pub async fn update_template(
     require_presentation_operator(context.user())?;
     let Json(request) = payload.map_err(|_| AppError::validation("request", "invalid template"))?;
     validate_template_request(&request)?;
-    let row = sqlx::query_as::<_, PresentationTemplateResponse>(
-        r#"
-        UPDATE presentation_templates
-        SET name=$2,description=$3,background_color=$4,foreground_color=$5,accent_color=$6,
-            font_family=$7,density=$8,show_clock=$9,show_logo=$10,logo_object_key=$11,
-            updated_at=now()
-        WHERE id=$1
-        RETURNING id,name,description,background_color,foreground_color,accent_color,
-            font_family,density,show_clock,show_logo,logo_object_key,updated_at
-        "#,
-    )
-    .bind(template_id)
-    .bind(request.name.trim())
-    .bind(request.description.trim())
-    .bind(request.background_color)
-    .bind(request.foreground_color)
-    .bind(request.accent_color)
-    .bind(request.font_family.trim())
-    .bind(request.density)
-    .bind(request.show_clock)
-    .bind(request.show_logo)
-    .bind(request.logo_object_key)
-    .fetch_optional(state.database())
-    .await
-    .map_err(|e| AppError::internal("update presentation template", e))?
-    .ok_or_else(|| AppError::not_found("PRESENTATION_TEMPLATE_NOT_FOUND", "Template not found"))?;
-    Ok(Json(row))
+    Ok(Json(state.presentation().update_template(template_id, &request, context.user()).await?))
 }

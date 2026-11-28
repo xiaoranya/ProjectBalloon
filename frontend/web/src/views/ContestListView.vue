@@ -110,7 +110,13 @@ function enterContest(contestId: number) {
 }
 
 async function logout() {
-  await session.logout();
+  // The store clears the local session in its own finally block, so a rejected
+  // logout request must not leave the user stranded on a signed-out page.
+  try {
+    await session.logout();
+  } catch {
+    // Nothing to recover: the session is already gone locally.
+  }
   await router.push('/login');
 }
 

@@ -75,7 +75,7 @@ impl DeploymentMode {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AppConfig {
     pub deployment_mode: DeploymentMode,
     pub bind_address: SocketAddr,
@@ -144,6 +144,77 @@ pub struct AppConfig {
     pub cups_enabled: bool,
     pub cups_printer: String,
     pub cups_command_timeout: Duration,
+}
+
+impl std::fmt::Debug for AppConfig {
+    /// Redacts everything that carries a credential. This struct is logged
+    /// during startup, and the derived `Debug` printed the database password,
+    /// the S3 keys, the CSRF secret, and the broker credentials with it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const REDACTED: &str = "<redacted>";
+        f.debug_struct("AppConfig")
+            .field("deployment_mode", &self.deployment_mode)
+            .field("bind_address", &self.bind_address)
+            .field("trusted_proxy_cidrs", &self.trusted_proxy_cidrs)
+            .field("metrics_token_configured", &self.metrics_token.is_some())
+            .field("database_url", &REDACTED)
+            .field("database_max_connections", &self.database_max_connections)
+            .field("database_acquire_timeout", &self.database_acquire_timeout)
+            .field("readiness_timeout", &self.readiness_timeout)
+            .field("run_migrations", &self.run_migrations)
+            .field("session_ttl", &self.session_ttl)
+            .field("secure_cookies", &self.secure_cookies)
+            .field("login_attempt_limit_per_ip", &self.login_attempt_limit_per_ip)
+            .field("login_account_attempt_limit", &self.login_account_attempt_limit)
+            .field("csrf_secret", &REDACTED)
+            .field("uses_development_csrf_secret", &self.uses_development_csrf_secret)
+            .field("allow_development_csrf_secret", &self.allow_development_csrf_secret)
+            .field("realtime_dispatcher_enabled", &self.realtime_dispatcher_enabled)
+            .field("realtime_channel_capacity", &self.realtime_channel_capacity)
+            .field("realtime_poll_interval", &self.realtime_poll_interval)
+            .field("realtime_lease", &self.realtime_lease)
+            .field("realtime_retry_base", &self.realtime_retry_base)
+            .field("realtime_batch_size", &self.realtime_batch_size)
+            .field("realtime_max_attempts", &self.realtime_max_attempts)
+            .field("realtime_redis_enabled", &self.realtime_redis_enabled)
+            .field("redis_url", &REDACTED)
+            .field("redis_operation_timeout", &self.redis_operation_timeout)
+            .field("redis_pool_size", &self.redis_pool_size)
+            .field("realtime_redis_channel", &self.realtime_redis_channel)
+            .field("realtime_redis_reconnect_delay", &self.realtime_redis_reconnect_delay)
+            .field("scoreboard_cache_enabled", &self.scoreboard_cache_enabled)
+            .field("scoreboard_cache_ttl", &self.scoreboard_cache_ttl)
+            .field("scoreboard_cache_timeout", &self.scoreboard_cache_timeout)
+            .field("object_storage_enabled", &self.object_storage_enabled)
+            .field("object_storage_endpoint", &self.object_storage_endpoint)
+            .field("object_storage_region", &self.object_storage_region)
+            .field("object_storage_access_key", &REDACTED)
+            .field("object_storage_secret_key", &REDACTED)
+            .field("object_storage_problem_bucket", &self.object_storage_problem_bucket)
+            .field("object_storage_source_bucket", &self.object_storage_source_bucket)
+            .field("object_storage_force_path_style", &self.object_storage_force_path_style)
+            .field("object_storage_request_timeout", &self.object_storage_request_timeout)
+            .field("object_storage_upload_timeout", &self.object_storage_upload_timeout)
+            .field("object_cleanup_poll_interval", &self.object_cleanup_poll_interval)
+            .field("object_cleanup_lease", &self.object_cleanup_lease)
+            .field("object_cleanup_retry_base", &self.object_cleanup_retry_base)
+            .field("object_cleanup_batch_size", &self.object_cleanup_batch_size)
+            .field("rabbitmq_enabled", &self.rabbitmq_enabled)
+            .field("rabbitmq_url", &REDACTED)
+            .field("rabbitmq_request_timeout", &self.rabbitmq_request_timeout)
+            .field("judge_dispatch_poll_interval", &self.judge_dispatch_poll_interval)
+            .field("judge_dispatch_lease", &self.judge_dispatch_lease)
+            .field("judge_dispatch_retry_base", &self.judge_dispatch_retry_base)
+            .field("judge_dispatch_batch_size", &self.judge_dispatch_batch_size)
+            .field("judge_dispatch_max_attempts", &self.judge_dispatch_max_attempts)
+            .field("judge_stuck_requeue_interval", &self.judge_stuck_requeue_interval)
+            .field("judge_result_prefetch", &self.judge_result_prefetch)
+            .field("judge_result_reconnect_delay", &self.judge_result_reconnect_delay)
+            .field("cups_enabled", &self.cups_enabled)
+            .field("cups_printer", &self.cups_printer)
+            .field("cups_command_timeout", &self.cups_command_timeout)
+            .finish()
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

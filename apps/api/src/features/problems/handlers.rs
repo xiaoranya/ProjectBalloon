@@ -418,6 +418,13 @@ pub async fn delete_attachment(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Test-data uploads allowed to run at once in this process.
+///
+/// Each one stages up to 256 MiB on disk and then validates the archive on a
+/// blocking thread; unbounded concurrency exhausts both.
+static TESTDATA_UPLOAD_SLOTS: std::sync::LazyLock<tokio::sync::Semaphore> =
+    std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(4));
+
 #[utoipa::path(
     post,
     path = "/api/problems/{problem_id}/testdata",
@@ -443,6 +450,18 @@ pub async fn upload_testdata(
     Path(problem_id): Path<i64>,
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<ProblemTestdataResponse>), AppError> {
+    // Authorize before touching the body: the archive used to be streamed to
+    // disk (up to 256 MiB) before the caller's rights were checked.
+    state.problems().preflight_testdata_upload(problem_id, context.user()).await?;
+    // Validation and extraction run on blocking threads and can expand the
+    // archive to about a gigabyte. Unbounded concurrency therefore exhausts both
+    // the blocking pool and the disk, so admission is capped per process.
+    let slot = TESTDATA_UPLOAD_SLOTS.try_acquire().map_err(|_| {
+        AppError::too_many_requests(
+            "TESTDATA_UPLOAD_BUSY",
+            "Another test-data upload is in progress; retry shortly",
+        )
+    })?;
     let mut upload = None;
     while let Some(mut field) = multipart
         .next_field()
@@ -470,6 +489,9 @@ pub async fn upload_testdata(
     }
     let (staging_file, bytes, sha256) = upload
         .ok_or_else(|| AppError::validation("request", "must contain exactly one file field"))?;
+    // `slot` is held until the handler returns: validation, object upload and
+    // persistence all consume disk or a blocking thread.
+    let _slot = slot;
     let storage = require_storage(&state)?;
     let response = state
         .problems()

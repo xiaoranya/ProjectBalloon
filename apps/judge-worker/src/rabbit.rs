@@ -68,6 +68,28 @@ pub(crate) fn retry_budget_exhausted(retry_count: u32) -> bool {
 /// acquisition, archive extraction, container lifecycle, and result
 /// publication.
 pub(crate) const TASK_DEADLINE_MARGIN: Duration = Duration::from_secs(300);
+/// No single judge task may hold a worker slot longer than this.
+pub(crate) const MAX_TASK_DEADLINE: Duration = Duration::from_secs(4 * 60 * 60);
+
+/// Verifies the broker is reachable and accepts our credentials.
+///
+/// ADR-001 requires preflight to fail when RabbitMQ is unavailable. The worker
+/// connects lazily otherwise, so an unreachable broker looked healthy while
+/// every task sat in the queue unnoticed.
+pub async fn probe_broker(uri: &str, request_timeout: Duration) -> Result<(), String> {
+    let connection =
+        timeout(request_timeout, Connection::connect(uri, ConnectionProperties::default()))
+            .await
+            .map_err(|_| "timed out connecting to RabbitMQ".to_owned())?
+            .map_err(|error| format!("cannot connect to RabbitMQ: {error}"))?;
+    let channel = timeout(request_timeout, connection.create_channel())
+        .await
+        .map_err(|_| "timed out opening a RabbitMQ channel".to_owned())?
+        .map_err(|error| format!("cannot open a RabbitMQ channel: {error}"))?;
+    let _closed = channel.close(200, ShortString::from("preflight")).await;
+    let _closed = connection.close(200, ShortString::from("preflight")).await;
+    Ok(())
+}
 
 /// Worst-case wall clock of one Judge task, mirroring the sandbox's own stage
 /// limits: the compile allowance plus, per test case, the same wall limit the
@@ -80,7 +102,11 @@ pub(crate) fn task_deadline(task: &JudgeTask, max_cases: u32) -> Duration {
     }
     let per_case =
         run_wall_limit(effective_time_limit(task.time_limit_ms, task.language_multiplier));
-    COMPILE_WALL_LIMIT + TASK_DEADLINE_MARGIN + per_case.saturating_mul(max_cases)
+    // `max_cases` is a config bound, not a task field: without a ceiling here a
+    // large case count multiplied by the per-run wall limit produced deadlines
+    // measured in days.
+    (COMPILE_WALL_LIMIT + TASK_DEADLINE_MARGIN + per_case.saturating_mul(max_cases))
+        .min(MAX_TASK_DEADLINE)
 }
 
 /// What to do with a delivery whose handler missed its wall-clock deadline.
@@ -123,9 +149,21 @@ fn deadline_system_error(task: &JudgeTask, worker_id: &str, reason: &str) -> Jud
 /// the wall-clock deadline it was granted. The orphan sweeper never touches
 /// registered judgements, and the session drain derives its bound from the
 /// longest remaining deadline.
+///
+/// Entries are reference counted: the broker can redeliver a judgement while
+/// the first delivery is still running (a consumer cancel followed by a
+/// reconnect does exactly that). Keyed by judgement id alone, the second guard
+/// replaced the first, and the first one to finish removed the entry — the
+/// sweeper then deleted the job directory of a judgement still being judged.
 #[derive(Clone, Default)]
 pub struct InFlightTasks {
-    entries: Arc<Mutex<HashMap<Uuid, Instant>>>,
+    entries: Arc<Mutex<HashMap<Uuid, InFlightEntry>>>,
+}
+
+#[derive(Clone, Copy)]
+struct InFlightEntry {
+    deadline: Instant,
+    handlers: usize,
 }
 
 impl InFlightTasks {
@@ -136,7 +174,16 @@ impl InFlightTasks {
 
     /// Registers a judgement until the returned guard is dropped.
     pub(crate) fn guard(&self, judgement_id: Uuid, deadline: Instant) -> InFlightGuard {
-        self.entries.lock().expect("in-flight task lock").insert(judgement_id, deadline);
+        let mut entries = self.entries.lock().expect("in-flight task lock");
+        entries
+            .entry(judgement_id)
+            .and_modify(|entry| {
+                entry.handlers = entry.handlers.saturating_add(1);
+                // Keep the later deadline: the drain must wait for the slowest
+                // delivery of the same judgement.
+                entry.deadline = entry.deadline.max(deadline);
+            })
+            .or_insert(InFlightEntry { deadline, handlers: 1 });
         InFlightGuard { registry: self.clone(), judgement_id }
     }
 
@@ -151,7 +198,7 @@ impl InFlightTasks {
     pub fn max_remaining_deadline(&self) -> Option<Duration> {
         let entries = self.entries.lock().expect("in-flight task lock");
         let now = Instant::now();
-        entries.values().map(|deadline| deadline.saturating_duration_since(now)).max()
+        entries.values().map(|entry| entry.deadline.saturating_duration_since(now)).max()
     }
 }
 
@@ -162,7 +209,12 @@ pub(crate) struct InFlightGuard {
 
 impl Drop for InFlightGuard {
     fn drop(&mut self) {
-        self.registry.entries.lock().expect("in-flight task lock").remove(&self.judgement_id);
+        let mut entries = self.registry.entries.lock().expect("in-flight task lock");
+        let Some(entry) = entries.get_mut(&self.judgement_id) else { return };
+        entry.handlers = entry.handlers.saturating_sub(1);
+        if entry.handlers == 0 {
+            entries.remove(&self.judgement_id);
+        }
     }
 }
 
@@ -577,7 +629,25 @@ async fn process_delivery(context: &DeliveryContext, delivery: &Delivery) -> Del
             .await;
         }
     };
+    let retry_count = retry_count(delivery, &context.task_queue);
     if let Err(error) = task.validate() {
+        // An unknown schema version is what a rolling deployment looks like from
+        // an old worker: the API is already publishing the next version. Bouncing
+        // the task back through the retry queue (10s per cycle) gives an upgraded
+        // worker time to pick it up, instead of failing the submission with
+        // SYSTEM_ERROR while the upgrade is still in progress. Once the retry
+        // budget is spent the task dead-letters as usual.
+        if matches!(error, project_balloon_contracts::ContractError::UnsupportedSchemaVersion(_))
+            && !retry_budget_exhausted(retry_count)
+        {
+            warn!(
+                %error,
+                judgement_id = %task.judgement_id,
+                retry_count,
+                "Judge task uses an unknown schema version; retrying through the broker"
+            );
+            return nack_for_retry(delivery).await;
+        }
         return dead_letter_and_ack(context, delivery, &format!("invalid JudgeTask: {error}"))
             .await;
     }
@@ -592,7 +662,6 @@ async fn process_delivery(context: &DeliveryContext, delivery: &Delivery) -> Del
         .await;
     }
 
-    let retry_count = retry_count(delivery, &context.task_queue);
     let deadline = task_deadline(&task, context.max_task_cases);
     let _in_flight_guard = context.in_flight.guard(task.judgement_id, Instant::now() + deadline);
     let _activity_guard = context.activity.begin_task();
@@ -1108,6 +1177,32 @@ mod tests {
         assert_eq!(registry.judgement_ids().len(), 1);
         drop(second);
         assert_eq!(registry.max_remaining_deadline(), None);
+    }
+
+    #[test]
+    fn duplicate_delivery_of_one_judgement_keeps_it_registered() {
+        let registry = InFlightTasks::new();
+        let judgement_id = Uuid::new_v4();
+        let first =
+            registry.guard(judgement_id, std::time::Instant::now() + Duration::from_secs(5));
+        let second =
+            registry.guard(judgement_id, std::time::Instant::now() + Duration::from_secs(60));
+        assert!(registry.judgement_ids().contains(&judgement_id));
+        assert_eq!(registry.judgement_ids().len(), 1);
+
+        // The first delivery finishing must not unregister a judgement that a
+        // redelivered copy is still judging: the orphan sweeper would delete
+        // its job directory out from under it.
+        drop(first);
+        assert!(registry.judgement_ids().contains(&judgement_id));
+        assert_eq!(registry.judgement_ids().len(), 1);
+        assert!(
+            registry.max_remaining_deadline().is_some_and(|left| left > Duration::from_secs(30)),
+            "the later deadline must survive the first guard"
+        );
+
+        drop(second);
+        assert!(registry.judgement_ids().is_empty());
     }
 
     fn test_worker(in_flight: InFlightTasks) -> RabbitJudgeWorker {

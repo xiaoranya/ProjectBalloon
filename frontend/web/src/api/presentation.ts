@@ -48,9 +48,14 @@ export interface PresentationTemplate {
   showClock: boolean;
   showLogo: boolean;
   logoObjectKey: string | null;
+  /** Creator; only that user (or a super administrator) may update it. */
+  createdByUserId: number | null;
   updatedAt: string;
 }
-export type PresentationTemplatePayload = Omit<PresentationTemplate, 'id' | 'updatedAt'>;
+export type PresentationTemplatePayload = Omit<
+  PresentationTemplate,
+  'id' | 'updatedAt' | 'createdByUserId'
+>;
 export interface BroadcastToken {
   id: number;
   label: string;

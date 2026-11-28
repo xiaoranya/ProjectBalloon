@@ -220,8 +220,18 @@ pub async fn update_policy(
         .await
         .map_err(|error| AppError::internal("begin scoring policy update", error))?;
     lock_configurable(&mut tx, contest_id, context.user()).await?;
+    let previous = sqlx::query_as::<_, (String, String)>(
+        "SELECT scoring_mode, score_aggregation FROM contests WHERE id=$1",
+    )
+    .bind(contest_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|error| AppError::internal("load the previous scoring policy", error))?;
+    // `scoreboard_revision` is the cache key's static half. The contests trigger
+    // that normally bumps it does not watch scoring columns, so without this
+    // explicit bump a mode switch kept serving boards built under the old rules.
     let response = sqlx::query_as::<_, ScoringPolicyResponse>(
-        "UPDATE contests SET scoring_mode=$2,score_aggregation=$3,feedback_policy=$4,updated_at=now(),version=version+1 WHERE id=$1 RETURNING id contest_id,scoring_mode,score_aggregation,feedback_policy",
+        "UPDATE contests SET scoring_mode=$2,score_aggregation=$3,feedback_policy=$4,scoreboard_revision=scoreboard_revision+1,updated_at=now(),version=version+1 WHERE id=$1 RETURNING id contest_id,scoring_mode,score_aggregation,feedback_policy",
     )
     .bind(contest_id)
     .bind(request.scoring_mode)
@@ -240,6 +250,20 @@ pub async fn update_policy(
     )
     .await?;
     tx.commit().await.map_err(|error| AppError::internal("commit scoring policy update", error))?;
+    if (previous.0, previous.1)
+        != (response.scoring_mode.clone(), response.score_aggregation.clone())
+    {
+        // Every projected cell was computed with the previous rules; rewriting
+        // the policy without replaying them left penalties or scores from the
+        // old mode on the live board.
+        if let Err(error) = state.scoreboard().rebuild_after_rule_change(contest_id).await {
+            tracing::warn!(
+                ?error,
+                %contest_id,
+                "scoreboard projection rebuild after a scoring-rule change failed"
+            );
+        }
+    }
     Ok(Json(response))
 }
 
