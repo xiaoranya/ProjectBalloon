@@ -1,11 +1,11 @@
-use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
 
 use crate::error::AppError;
-use crate::features::scoreboard::{ScoreboardResponse, ScoreboardRow};
+use crate::features::scoreboard::ScoreboardResponse;
+use crate::features::scoreboard::helpers::compare_rows;
 
 use crate::features::resolver::model::{ResolverState, Reveal};
 
@@ -119,12 +119,16 @@ pub(super) fn recompute_board(board: &mut ScoreboardResponse) {
             .unwrap_or(i32::MAX);
         row.penalty_minutes =
             row.problems.iter().filter(|cell| cell.solved).map(|cell| cell.penalty_minutes).sum();
+        row.total_score_milli = row.problems.iter().map(|cell| i64::from(cell.score_milli)).sum();
         row.last_solved_at = row.problems.iter().filter_map(|cell| cell.solved_at).max();
         for cell in &mut row.problems {
             cell.first_blood = false;
         }
     }
-    board.rows.sort_by(compare_rows);
+    // The ceremony must rank exactly like the live board, so the comparator and
+    // the OI/ICPC split stay in one place (`scoreboard::helpers`). Keeping a
+    // second copy here is what made OI/IOI ceremonies disagree with the result.
+    board.rows.sort_by(|left, right| compare_rows(&board.scoring_mode, left, right));
     let mut official_rank = 0_u32;
     for (index, row) in board.rows.iter_mut().enumerate() {
         row.rank = u32::try_from(index + 1).unwrap_or(u32::MAX);
@@ -159,20 +163,6 @@ pub(super) fn recompute_board(board: &mut ScoreboardResponse) {
             cell.first_blood = true;
         }
     }
-}
-
-pub(super) fn compare_rows(left: &ScoreboardRow, right: &ScoreboardRow) -> Ordering {
-    right
-        .solved_count
-        .cmp(&left.solved_count)
-        .then_with(|| left.penalty_minutes.cmp(&right.penalty_minutes))
-        .then_with(|| match (left.last_solved_at, right.last_solved_at) {
-            (Some(left), Some(right)) => left.cmp(&right),
-            (Some(_), None) => Ordering::Less,
-            (None, Some(_)) => Ordering::Greater,
-            (None, None) => Ordering::Equal,
-        })
-        .then_with(|| left.team_id.cmp(&right.team_id))
 }
 
 pub(super) fn encode_state(state: &ResolverState) -> Result<(String, String), AppError> {
