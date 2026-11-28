@@ -1,9 +1,9 @@
-use std::time::Duration;
+use std::{sync::Mutex, time::Duration};
 
 use serde_json::json;
 use sqlx::{PgPool, Postgres, Transaction};
 use tokio::sync::watch;
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::error::AppError;
 use crate::features::realtime::RealtimeOutbox;
@@ -12,18 +12,38 @@ use crate::features::realtime::RealtimeOutbox;
 // extension window. Explicit transitions remain the only way to reopen a
 // contest after automatic finalization.
 const AUTOMATIC_END_GRACE_SECONDS: i32 = 60;
+/// Bounded retries for the durable scoreboard backfill after a contest ends.
+const MAX_BACKFILL_ATTEMPTS: u32 = 5;
+const BACKFILL_RETRY_BASE_SECONDS: u64 = 30;
+
+/// A scoreboard backfill that has to be retried on a later tick.
+struct PendingBackfill {
+    contest_id: i64,
+    attempts: u32,
+    next_attempt: tokio::time::Instant,
+}
 
 pub struct ContestLifecycleRunner {
     database: PgPool,
     poll_interval: Duration,
     outbox: Option<RealtimeOutbox>,
     projection: Option<crate::features::scoreboard::ScoreboardProjection>,
+    /// Backfills that failed once and need another try. Process-local on
+    /// purpose: it only has to survive until the next tick, and a restart
+    /// simply stops retrying (the cells stay unbuilt rather than wrong).
+    pending_backfills: Mutex<Vec<PendingBackfill>>,
 }
 
 impl ContestLifecycleRunner {
     #[must_use]
     pub const fn new(database: PgPool) -> Self {
-        Self { database, poll_interval: Duration::from_secs(1), outbox: None, projection: None }
+        Self {
+            database,
+            poll_interval: Duration::from_secs(1),
+            outbox: None,
+            projection: None,
+            pending_backfills: Mutex::new(Vec::new()),
+        }
     }
 
     #[must_use]
@@ -132,9 +152,81 @@ impl ContestLifecycleRunner {
             }
         }
         for contest_id in ended {
-            if let Err(error) = backfill_cells(&self.database, *contest_id).await {
-                warn!(?error, %contest_id, "scoreboard DB backfill after contest end failed");
+            self.backfill_once(*contest_id).await;
+        }
+        self.retry_pending_backfills().await;
+    }
+
+    /// Backfills one contest and records a retry when it fails. A contest only
+    /// ends once, so an attempt that failed here used to be the last one: the
+    /// durable cells stayed unbuilt until somebody noticed.
+    async fn backfill_once(&self, contest_id: i64) {
+        match backfill_cells(&self.database, contest_id).await {
+            Ok(()) => {
+                let mut pending = self
+                    .pending_backfills
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                pending.retain(|entry| entry.contest_id != contest_id);
             }
+            Err(error) => {
+                let mut pending = self
+                    .pending_backfills
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let attempts = match pending.iter_mut().find(|e| e.contest_id == contest_id) {
+                    Some(entry) => {
+                        entry.attempts = entry.attempts.saturating_add(1);
+                        entry.attempts
+                    }
+                    None => {
+                        pending.push(PendingBackfill {
+                            contest_id,
+                            attempts: 1,
+                            next_attempt: tokio::time::Instant::now(),
+                        });
+                        1
+                    }
+                };
+                if attempts >= MAX_BACKFILL_ATTEMPTS {
+                    pending.retain(|entry| entry.contest_id != contest_id);
+                    error!(
+                        ?error,
+                        %contest_id,
+                        attempts,
+                        "scoreboard DB backfill failed; giving up until the next restart"
+                    );
+                    return;
+                }
+                let delay = Duration::from_secs(
+                    BACKFILL_RETRY_BASE_SECONDS.saturating_mul(1 << attempts.min(4)),
+                );
+                if let Some(entry) = pending.iter_mut().find(|e| e.contest_id == contest_id) {
+                    entry.next_attempt = tokio::time::Instant::now() + delay;
+                }
+                warn!(
+                    ?error,
+                    %contest_id,
+                    attempts,
+                    "scoreboard DB backfill failed; retrying later"
+                );
+            }
+        }
+    }
+
+    async fn retry_pending_backfills(&self) {
+        let due: Vec<i64> = {
+            let pending =
+                self.pending_backfills.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let now = tokio::time::Instant::now();
+            pending
+                .iter()
+                .filter(|entry| entry.next_attempt <= now)
+                .map(|entry| entry.contest_id)
+                .collect()
+        };
+        for contest_id in due {
+            self.backfill_once(contest_id).await;
         }
     }
 }

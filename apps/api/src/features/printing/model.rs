@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 use crate::error::AppError;
 
 const MAX_CONTENT_BYTES: usize = 20 * 1024;
-const MAX_PAGES: usize = 5;
+pub(super) const MAX_PAGES: usize = 5;
 const LINES_PER_PAGE: usize = 50;
 const COLUMNS_PER_LINE: usize = 100;
 
@@ -119,4 +119,36 @@ pub(super) fn estimate_pages(content: &str) -> usize {
         })
         .sum::<usize>();
     lines.max(1).div_ceil(LINES_PER_PAGE)
+}
+
+/// Counts `/Type /Page` objects in a rendered PDF.
+///
+/// The estimate above assumes 50 lines of 100 ASCII columns per page, which
+/// undercounts CJK text and wide glyphs — a request could pass validation and
+/// still come out of the printer as six or more pages. The renderer has already
+/// produced the real document by the time this runs, so the actual count wins.
+/// `None` means the page tree could not be read (e.g. compressed object
+/// streams); the caller then keeps the estimate.
+pub(super) fn count_pdf_pages(pdf: &[u8]) -> Option<usize> {
+    const NEEDLE: &[u8] = b"/Type";
+    let mut pages = 0_usize;
+    let mut index = 0_usize;
+    while let Some(found) = find_bytes(&pdf[index..], NEEDLE) {
+        let mut cursor = index + found + NEEDLE.len();
+        while matches!(pdf.get(cursor), Some(b' ' | b'\r' | b'\n' | b'\t')) {
+            cursor += 1;
+        }
+        // `/Pages` is the page *tree*, not a page.
+        if pdf.get(cursor..).is_some_and(|rest| rest.starts_with(b"/Page"))
+            && pdf.get(cursor + 5) != Some(&b's')
+        {
+            pages += 1;
+        }
+        index = index + found + NEEDLE.len();
+    }
+    (pages > 0).then_some(pages)
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|window| window == needle)
 }

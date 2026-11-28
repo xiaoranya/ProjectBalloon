@@ -228,7 +228,11 @@ impl SubmissionOutboxDispatcher {
             r#"
             UPDATE submission_outbox
             SET status = 'FAILED', last_error = $3,
-                available_at = now() + $4 * interval '1 millisecond',
+                -- `infinity` marks a terminal failure: no dispatcher query ever
+                -- selects it again and the queue status can tell it apart from a
+                -- failure that is still scheduled for another attempt.
+                available_at = CASE WHEN $5 THEN 'infinity'::timestamptz
+                                    ELSE now() + $4 * interval '1 millisecond' END,
                 lease_owner = NULL, lease_until = NULL, version = version + 1
             WHERE id = $1 AND status = 'PUBLISHING' AND lease_owner = $2
             RETURNING submission_id
@@ -238,11 +242,15 @@ impl SubmissionOutboxDispatcher {
         .bind(self.instance_id)
         .bind(safe_message)
         .bind(delay_milliseconds)
+        .bind(terminal)
         .fetch_optional(&mut *transaction)
         .await?;
         if terminal && let Some(submission_id) = submission_id {
             let context = sqlx::query_as::<_, (i64, i64)>(
-                    "UPDATE submissions SET status='COMPLETED', verdict='SYSTEM_ERROR', judged_at=now() WHERE id=$1 AND status='PENDING' RETURNING contest_id, team_id",
+                    // A submission that the worker already claimed is JUDGING, not
+                    // PENDING; matching only PENDING left it stuck there forever
+                    // once the dispatch budget ran out.
+                    "UPDATE submissions SET status='COMPLETED', verdict='SYSTEM_ERROR', judged_at=now() WHERE id=$1 AND status IN ('PENDING','JUDGING') RETURNING contest_id, team_id",
                 )
                 .bind(submission_id)
                 .fetch_optional(&mut *transaction)

@@ -58,6 +58,18 @@ fn print_content_size_controls_and_page_estimate_are_closed() {
     assert!(CreateRequest { content: "x".repeat(20 * 1024 + 1) }.validate().is_err());
 }
 
+#[test]
+fn rendered_page_count_ignores_the_page_tree() {
+    // `/Pages` is the tree node; only `/Type /Page` entries are pages. Object
+    // spacing varies between writers, so both `/Type /Page` and `/Type/Page`
+    // must count.
+    let pdf = b"%PDF-1.4\n1 0 obj<</Type /Page/Parent 2 0 R>>endobj\
+2 0 obj<</Type /Pages/Count 2>>endobj\
+3 0 obj<</Type/Page/Parent 2 0 R>>endobj\n%%EOF";
+    assert_eq!(crate::features::printing::model::count_pdf_pages(pdf), Some(2));
+    assert_eq!(crate::features::printing::model::count_pdf_pages(b"%PDF-1.4\n%%EOF"), None);
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 #[ignore = "requires PostgreSQL and the cupsfilter executable"]
 async fn print_request_renders_archives_limits_and_hides_other_teams(pool: PgPool) {

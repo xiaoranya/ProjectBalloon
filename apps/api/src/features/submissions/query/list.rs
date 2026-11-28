@@ -57,7 +57,11 @@ impl SubmissionService {
         actor: &AuthUser,
     ) -> Result<JudgeQueueStatusResponse, AppError> {
         require_admin_access(&self.database, contest_id, actor).await?;
-        let counts = sqlx::query_as::<_, (i64, i64, i64, i64, time::OffsetDateTime)>(
+        // `outbox_failed` is informational (operators want to see every failed
+        // row), but a terminal failure — marked by an `infinity` retry time —
+        // will never be retried, so only retryable rows keep the queue from
+        // draining.
+        let counts = sqlx::query_as::<_, (i64, i64, i64, i64, i64, time::OffsetDateTime)>(
             r#"
             SELECT
                 (SELECT count(*) FROM submissions
@@ -70,6 +74,10 @@ impl SubmissionService {
                 (SELECT count(*) FROM submission_outbox outbox
                  JOIN submissions submission ON submission.id=outbox.submission_id
                  WHERE submission.contest_id=$1 AND outbox.status='FAILED'),
+                (SELECT count(*) FROM submission_outbox outbox
+                 JOIN submissions submission ON submission.id=outbox.submission_id
+                 WHERE submission.contest_id=$1 AND outbox.status='FAILED'
+                   AND outbox.available_at <> 'infinity'::timestamptz),
                 now()
             FROM contests contest
             WHERE contest.id=$1 AND contest.deleted_at IS NULL
@@ -82,12 +90,12 @@ impl SubmissionService {
         .ok_or_else(submission_not_found)?;
         Ok(JudgeQueueStatusResponse {
             contest_id,
-            drained: counts.0 == 0 && counts.1 == 0 && counts.2 == 0 && counts.3 == 0,
+            drained: counts.0 == 0 && counts.1 == 0 && counts.2 == 0 && counts.4 == 0,
             pending_submissions: counts.0,
             judging_submissions: counts.1,
             outbox_pending: counts.2,
             outbox_failed: counts.3,
-            checked_at: counts.4,
+            checked_at: counts.5,
         })
     }
 }

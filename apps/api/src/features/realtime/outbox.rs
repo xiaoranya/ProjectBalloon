@@ -38,6 +38,12 @@ const CONSUMER_GROUP: &str = "dispatchers";
 const REPLAY_WINDOW_MILLIS: i64 = 5 * 60 * 1000;
 /// Matches the SSE replay cap (`handlers::REPLAY_MAX_EVENTS`).
 const REPLAY_MAX_EVENTS: usize = 100;
+/// Replay index members read per round trip. `LIMIT` is applied inside Redis,
+/// so the page must be scanned in full before the scope/team filter runs.
+const REPLAY_PAGE_EVENTS: usize = 100;
+/// Upper bound on members scanned for one replay, so a busy public scope
+/// cannot turn a single resume into an unbounded scan.
+const REPLAY_SCAN_CAP: usize = 1_000;
 /// Hard cap of replay index members per contest; the window trims the rest.
 const REPLAY_INDEX_CAP: isize = 2_000;
 /// Approximate entry cap for the outbox stream. `XACK` only removes entries
@@ -207,11 +213,15 @@ impl RealtimeOutbox {
     }
 
     /// Reads up to `count` never-delivered entries for this consumer group.
+    ///
+    /// `None` marks an entry that cannot be decoded. Those must still travel to
+    /// the caller: dropping them here left them pending in the consumer group
+    /// forever, because nothing ever acknowledged them.
     pub(crate) async fn read_new(
         &self,
         consumer: &str,
         count: usize,
-    ) -> Result<Vec<(String, OutboxEntry)>, AppError> {
+    ) -> Result<Vec<(String, Option<OutboxEntry>)>, AppError> {
         let mut read = cmd("XREADGROUP");
         read.arg("GROUP")
             .arg(CONSUMER_GROUP)
@@ -224,26 +234,28 @@ impl RealtimeOutbox {
         let reply = self.redis.query_value(&mut read).await?;
         let mut parsed = Vec::new();
         for (stream_id, fields) in Self::parse_xread(reply) {
-            let Some(payload) = fields.get("entry") else { continue };
-            match serde_json::from_str::<OutboxEntry>(payload) {
-                Ok(entry) => parsed.push((stream_id, entry)),
-                Err(error) => {
-                    tracing::warn!(%error, %stream_id, "ignoring malformed outbox entry")
-                }
-            }
+            let entry = fields.get("entry").and_then(|payload| {
+                serde_json::from_str::<OutboxEntry>(payload)
+                    .inspect_err(
+                        |error| tracing::warn!(%error, %stream_id, "malformed outbox entry"),
+                    )
+                    .ok()
+            });
+            parsed.push((stream_id, entry));
         }
         Ok(parsed)
     }
 
     /// Reclaims entries whose delivery lease expired (idle longer than
     /// `lease`), returning them with their delivery count so the caller can
-    /// dead-letter exhausted entries.
+    /// dead-letter exhausted entries. `None` marks an undecodable payload that
+    /// the caller must acknowledge rather than leave pending.
     pub(crate) async fn reclaim_expired(
         &self,
         consumer: &str,
         lease: Duration,
         count: usize,
-    ) -> Result<Vec<(String, OutboxEntry, i64)>, AppError> {
+    ) -> Result<Vec<(String, Option<OutboxEntry>, i64)>, AppError> {
         let min_idle = i64::try_from(lease.as_millis()).unwrap_or(i64::MAX);
         let pending: Vec<(String, String, i64, i64)> = self
             .redis
@@ -271,11 +283,13 @@ impl RealtimeOutbox {
         let entries = Self::parse_claim(claim_reply);
         let mut reclaimed = Vec::with_capacity(entries.len());
         for (stream_id, fields) in entries {
-            let Some(payload) = fields.get("entry") else { continue };
-            let Ok(entry) = serde_json::from_str::<OutboxEntry>(payload) else {
-                tracing::warn!(%stream_id, "ignoring malformed outbox entry");
-                continue;
-            };
+            let entry = fields.get("entry").and_then(|payload| {
+                serde_json::from_str::<OutboxEntry>(payload)
+                    .inspect_err(
+                        |error| tracing::warn!(%error, %stream_id, "malformed outbox entry"),
+                    )
+                    .ok()
+            });
             let Some((_, _, _, delivery_count)) =
                 pending.iter().find(|(id, _, _, _)| *id == stream_id)
             else {
@@ -334,28 +348,46 @@ impl RealtimeOutbox {
         let Ok(anchor_score) = anchor_score.parse::<f64>() else {
             return Ok(Vec::new());
         };
-        let members: Vec<String> = self
-            .redis
-            .query(
-                cmd("ZRANGEBYSCORE")
-                    .arg(replay_key(contest_id))
-                    .arg(format!("({anchor_score}"))
-                    .arg("+inf")
-                    .arg("LIMIT")
-                    .arg(0)
-                    .arg(REPLAY_MAX_EVENTS),
-            )
-            .await?;
+        // Scores come from a millisecond clock, so several events can share the
+        // anchor's score. An exclusive bound (`(`) therefore dropped every
+        // sibling published in the same millisecond; scan inclusively and skip
+        // the anchor by id instead.
+        //
+        // The scan is also paged: capping the reply *before* the scope/team
+        // filter let a burst of PUBLIC events crowd a team's own TEAM events
+        // out of the replay entirely.
         let mut events = Vec::new();
-        for member in members {
-            let Ok(entry) = serde_json::from_str::<OutboxEntry>(&member) else { continue };
-            if entry.scope != scope.as_str() || entry.team_id != team_id {
-                continue;
+        let mut offset = 0usize;
+        while events.len() < REPLAY_MAX_EVENTS && offset < REPLAY_SCAN_CAP {
+            let members: Vec<String> = self
+                .redis
+                .query(
+                    cmd("ZRANGEBYSCORE")
+                        .arg(replay_key(contest_id))
+                        .arg(format!("{anchor_score}"))
+                        .arg("+inf")
+                        .arg("LIMIT")
+                        .arg(offset)
+                        .arg(REPLAY_PAGE_EVENTS),
+                )
+                .await?;
+            if members.is_empty() {
+                break;
             }
-            if let Some(event) = entry.into_event(contest_id) {
-                events.push(event);
-                if events.len() >= REPLAY_MAX_EVENTS {
-                    break;
+            offset += members.len();
+            for member in members {
+                let Ok(entry) = serde_json::from_str::<OutboxEntry>(&member) else { continue };
+                if entry.event_id == last_event_id {
+                    continue;
+                }
+                if entry.scope != scope.as_str() || entry.team_id != team_id {
+                    continue;
+                }
+                if let Some(event) = entry.into_event(contest_id) {
+                    events.push(event);
+                    if events.len() >= REPLAY_MAX_EVENTS {
+                        break;
+                    }
                 }
             }
         }

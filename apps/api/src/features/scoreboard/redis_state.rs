@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use redis::cmd;
 use sqlx::PgPool;
 use time::OffsetDateTime;
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::error::AppError;
 use crate::features::redis::RedisHandle;
@@ -35,6 +35,11 @@ const CELLS_KEY_TEMPLATE: &str = "xcpc:sb:cells:{cid}";
 const VERSION_KEY_TEMPLATE: &str = "xcpc:sb:ver:{cid}";
 const FROZEN_KEY_TEMPLATE: &str = "xcpc:sb:frozen:{cid}";
 const DIRTY_KEY_TEMPLATE: &str = "xcpc:sb:dirty:{cid}";
+/// Set when an incremental update could not be recorded, so the projection can
+/// no longer be trusted and must be rebuilt before it is read.
+const UNTRUSTED_KEY_TEMPLATE: &str = "xcpc:sb:untrusted:{cid}";
+/// The trust flag only has to survive until the next read rebuilds the board.
+const UNTRUSTED_TTL_SECONDS: i64 = 3_600;
 
 /// Verdicts that increment the ICPC wrong-attempt counter.
 const PENALIZED: [&str; 5] = [
@@ -116,6 +121,11 @@ else
         cell.last_at = t
     end
     cell.penalty = 0
+    -- POINTS boards show every attempt, matching the PostgreSQL rebuild
+    -- (`rebuild_points_cell`) and the submission-based fallback. Without this
+    -- the live OI board reported zero attempts while a rebuilt one reported all
+    -- of them.
+    cell.wa = cell.attempts
 end
 redis.call('HSET', KEYS[1], ARGV[1], cjson.encode(cell))
 redis.call('INCR', KEYS[2])
@@ -198,6 +208,10 @@ fn dirty_key(contest_id: i64) -> String {
     DIRTY_KEY_TEMPLATE.replace("{cid}", &contest_id.to_string())
 }
 
+fn untrusted_key(contest_id: i64) -> String {
+    UNTRUSTED_KEY_TEMPLATE.replace("{cid}", &contest_id.to_string())
+}
+
 fn cell_field(team_id: i64, problem_id: i64) -> String {
     format!("{team_id}:{problem_id}")
 }
@@ -250,6 +264,11 @@ impl ScoreboardProjection {
 
     /// Flags a cell whose incremental update could not be applied; the read
     /// path replays it from PostgreSQL.
+    ///
+    /// A failure here would leave the stale cell in place *without* the dirty
+    /// marker, so the board would keep serving it forever. Instead of swallowing
+    /// the error, flag the whole projection untrusted: the next read rebuilds
+    /// from PostgreSQL rather than trusting a board it can no longer repair.
     pub async fn mark_dirty(&self, contest_id: i64, team_id: i64, problem_id: i64) {
         let mut pipeline = redis::pipe();
         pipeline
@@ -257,7 +276,53 @@ impl ScoreboardProjection {
             .ignore()
             .incr(version_key(contest_id), 1)
             .ignore();
-        let _ = self.redis.query_pipeline::<()>(pipeline).await;
+        if let Err(error) = self.redis.query_pipeline::<()>(pipeline).await {
+            error!(
+                ?error,
+                %contest_id,
+                team_id,
+                problem_id,
+                "failed to flag a scoreboard cell dirty; marking the projection untrusted"
+            );
+            if let Err(error) = self.flag_untrusted(contest_id).await {
+                error!(?error, %contest_id, "failed to flag the scoreboard projection untrusted");
+            }
+        }
+    }
+
+    /// Marks the whole projection for `contest_id` as needing a rebuild.
+    async fn flag_untrusted(&self, contest_id: i64) -> Result<(), AppError> {
+        self.redis
+            .query::<()>(
+                cmd("SET")
+                    .arg(untrusted_key(contest_id))
+                    .arg("1")
+                    .arg("EX")
+                    .arg(UNTRUSTED_TTL_SECONDS),
+            )
+            .await
+    }
+
+    /// Best-effort variant used when a rebuild failed: the caller has already
+    /// logged the rebuild error, so a failure here is only worth a log line.
+    pub(crate) async fn flag_untrusted_after_failed_rebuild(&self, contest_id: i64) {
+        if let Err(error) = self.flag_untrusted(contest_id).await {
+            error!(?error, %contest_id, "failed to flag the scoreboard projection untrusted");
+        }
+    }
+
+    /// True when an earlier incremental update could not be recorded, so the
+    /// projection must be rebuilt before it is read.
+    pub async fn is_untrusted(&self, contest_id: i64) -> bool {
+        match self.redis.query::<Option<String>>(cmd("GET").arg(untrusted_key(contest_id))).await {
+            Ok(flag) => flag.is_some(),
+            Err(error) => {
+                // A Redis read failure means the caller cannot trust *any* of
+                // this projection; the caller already treats that as a rebuild.
+                warn!(?error, %contest_id, "cannot read the scoreboard trust flag");
+                false
+            }
+        }
     }
 
     /// Reads the projection for one phase. `None` means the projection has no
@@ -376,13 +441,18 @@ impl ScoreboardProjection {
                 score_milli,
             });
         }
+        // Build into a staging key and publish it with a single RENAME. The old
+        // `DEL cells → HSET …` pipeline could be interrupted after the DEL,
+        // leaving an empty board that the very same pipeline then blessed with
+        // a fresh version — readers trust a freshly versioned hash.
+        let staging = format!("{CELLS_KEY_TEMPLATE}:building:{contest_id}");
         let mut pipeline = redis::pipe();
-        pipeline.del(cells_key(contest_id)).ignore();
+        pipeline.del(&staging).ignore();
         for ((team_id, problem_id), (max_score, replay)) in &grouped {
             let state = project_cell(start_ms, meta.1, meta.2, *max_score, replay);
             pipeline
                 .hset(
-                    cells_key(contest_id),
+                    &staging,
                     cell_field(*team_id, *problem_id),
                     serde_json::to_string(&state).map_err(|error| {
                         sqlx::Error::Protocol(format!("encode cell: {error:?}"))
@@ -390,8 +460,17 @@ impl ScoreboardProjection {
                 )
                 .ignore();
         }
+        if grouped.is_empty() {
+            // Nothing to publish: an empty contest must not keep a stale hash.
+            pipeline.del(cells_key(contest_id)).ignore();
+        } else {
+            // The TTL only matters if the pipeline dies before the RENAME.
+            pipeline.cmd("EXPIRE").arg(&staging).arg(300).ignore();
+            pipeline.cmd("RENAME").arg(&staging).arg(cells_key(contest_id)).ignore();
+        }
         pipeline.incr(version_key(contest_id), 1).ignore();
         pipeline.del(dirty_key(contest_id)).ignore();
+        pipeline.del(untrusted_key(contest_id)).ignore();
         self.redis.query_pipeline::<()>(pipeline).await.map_err(|error| {
             sqlx::Error::Protocol(format!("rebuild contest projection: {error:?}"))
         })
@@ -617,6 +696,9 @@ fn project_cell(
                 cell.last_at = t;
             }
             cell.penalty = 0;
+            // Mirrors `APPLY_SCRIPT`: POINTS boards expose every attempt, so the
+            // live projection agrees with the PostgreSQL rebuild.
+            cell.wa = cell.attempts;
         }
     }
     cell
@@ -692,5 +774,26 @@ mod tests {
         assert_eq!(last.score_milli, 7_500);
         assert!(last.solved, "LAST aggregation reaches max score");
         assert_eq!(last.penalty, 0);
+    }
+
+    #[test]
+    fn points_replay_reports_every_attempt() {
+        // The PostgreSQL rebuild counts every completed judgement in POINTS
+        // mode, so the replay (and, through `APPLY_SCRIPT`, the incremental
+        // path) must expose the same number instead of zero.
+        let start = 1_000_000;
+        let rows = [
+            row(60_000, "WRONG_ANSWER", 0),
+            row(120_000, "TIME_LIMIT_EXCEEDED", 0),
+            row(180_000, "ACCEPTED", 10_000),
+        ];
+        let cell = project_cell(start, false, true, 10_000, &rows);
+        assert_eq!(cell.attempts, 3);
+        assert_eq!(cell.wa, 3, "a POINTS board shows all attempts");
+        assert_eq!(to_cell_row(1, 1, &cell).wrong_attempts, 3);
+
+        // ICPC keeps counting only penalised rejections before the solve.
+        let icpc = project_cell(start, true, true, 10_000, &rows);
+        assert_eq!(icpc.wa, 2);
     }
 }

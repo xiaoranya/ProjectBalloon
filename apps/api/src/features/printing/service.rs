@@ -53,6 +53,20 @@ impl PrintingService {
         let (team_id, _, _) = resolve_team(&self.database, contest_id, actor.id).await?;
         check_print_quota(&self.database, contest_id, team_id).await?;
         let pdf = render_pdf(&command.content).await?;
+        // Validate against the rendered document rather than the line/column
+        // estimate: CJK and wide glyphs make the estimate optimistic.
+        let page_count = match crate::features::printing::model::count_pdf_pages(&pdf) {
+            Some(pages) if pages > crate::features::printing::model::MAX_PAGES => {
+                return Err(AppError::validation(
+                    "content",
+                    "renders to more A4 pages than a single print request allows",
+                ));
+            }
+            Some(pages) => i32::try_from(pages)
+                .map_err(|error| AppError::internal("convert rendered print page count", error))?,
+            None => command.page_count,
+        };
+        let command = ValidatedContent { page_count, ..command };
         let object_key = format!("prints/{contest_id}/{team_id}/{}.pdf", Uuid::new_v4());
         storage
             .backend()
@@ -215,10 +229,14 @@ impl PrintingService {
             .await
             .map_err(|error| AppError::internal("lock print request", error))?
             .ok_or_else(print_not_found)?;
-        if action == "CANCEL" && status == "QUEUED" && delivery_in_progress {
+        // A live delivery lease means a worker is mid-flight to CUPS. Clearing
+        // the lease (RETRY) or cancelling underneath it let the same PDF reach
+        // the printer twice, which is not something an operator can take back.
+        if delivery_in_progress && (action == "RETRY" || (action == "CANCEL" && status == "QUEUED"))
+        {
             return Err(AppError::conflict(
                 "PRINTING_DELIVERY_IN_PROGRESS",
-                "Print request is being submitted to CUPS; retry cancellation shortly",
+                "Print request is being submitted to CUPS; retry shortly",
             ));
         }
         let (next, failed_reason) = match action {

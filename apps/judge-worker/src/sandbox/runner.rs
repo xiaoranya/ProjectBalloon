@@ -696,10 +696,16 @@ impl DockerSandbox {
     /// they must never be concatenated into the exec stream the GNU-time
     /// marker is parsed from, and losing them must not fail a completed run.
     async fn fetch_interactor_diagnostics(&self, container_id: &str) -> String {
+        // `-f` skips anything that is not a regular file (a FIFO left by the
+        // contestant used to block `cat`), and the shell-level `timeout` keeps
+        // the exec well inside its wall limit: run_exec kills the *container* on
+        // timeout, which took every later test point of the submission with it.
         let command = vec![
             "/bin/sh".to_owned(),
             "-c".to_owned(),
-            "cat /work/program.err /work/interactor.err 2>/dev/null".to_owned(),
+            "for f in /work/program.err /work/interactor.err; do \
+             [ -f \"$f\" ] && timeout 2 cat \"$f\" 2>/dev/null; done"
+                .to_owned(),
         ];
         match self
             .run_exec(
@@ -983,8 +989,14 @@ pub(super) fn resource_verdict(
     charged_time_ms: i32,
     effective_time_limit_ms: i32,
 ) -> Option<JudgeVerdict> {
-    if oom_killed || (exit_code == 137 && !timed_out) {
+    if oom_killed {
         Some(JudgeVerdict::MemoryLimitExceeded)
+    } else if exit_code == 137 && !timed_out {
+        // SIGKILL without an OOM event is the contestant killing itself
+        // (`kill -9 $$`) or a crash, not memory exhaustion. Both backends report
+        // `oom_killed` from the kernel — the Docker container state and the
+        // cgroup `memory.events` counter — so 137 alone is not evidence of OOM.
+        Some(JudgeVerdict::RuntimeError)
     } else if output_bytes > output_limit_bytes
         || (exit_code != 0 && output_bytes >= output_limit_bytes)
     {
@@ -1007,14 +1019,15 @@ mod tests {
 
     #[test]
     fn resource_verdicts_precede_output_comparison() {
-        // OOM kills and exit code 137 mean memory exhaustion.
+        // OOM kills mean memory exhaustion.
         assert_eq!(
             resource_verdict(true, 0, false, 0, 1_024, 1, 1_000),
             Some(JudgeVerdict::MemoryLimitExceeded)
         );
+        // SIGKILL without an OOM event is a self-kill or a crash.
         assert_eq!(
             resource_verdict(false, 137, false, 0, 1_024, 1, 1_000),
-            Some(JudgeVerdict::MemoryLimitExceeded)
+            Some(JudgeVerdict::RuntimeError)
         );
         // Exit 137 with a wall-clock timeout is a time limit, not OOM.
         assert_eq!(

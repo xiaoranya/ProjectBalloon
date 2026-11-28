@@ -28,7 +28,7 @@ impl ScoreboardCache {
     pub async fn get(
         &self,
         contest_id: i64,
-        revision: i64,
+        revision: &str,
         variant: &str,
         phase: &str,
         query: &ValidatedScoreboardQuery,
@@ -59,12 +59,15 @@ impl ScoreboardCache {
         }
     }
 
+    /// `immutable` says the payload came from the freeze snapshot, which no
+    /// later write can change; only that variant earns the extended TTL.
     pub async fn put(
         &self,
-        revision: i64,
+        revision: &str,
         phase: &str,
         query: &ValidatedScoreboardQuery,
         board: &ScoreboardResponse,
+        immutable: bool,
     ) {
         let key = cache_key(board.contest_id, revision, &board.variant, phase, query);
         let payload = match serde_json::to_string(board) {
@@ -78,7 +81,7 @@ impl ScoreboardCache {
         // Immutable phases (the frozen board only counts submissions before
         // freeze_at) can be cached far longer than live boards — freeze is
         // exactly when public read pressure peaks.
-        let ttl_seconds = if phase == "FROZEN" {
+        let ttl_seconds = if immutable && phase == "FROZEN" {
             self.ttl.as_secs().max(1) * 20
         } else {
             self.ttl.as_secs().max(1)
@@ -102,7 +105,7 @@ impl ScoreboardCache {
 
 fn cache_key(
     contest_id: i64,
-    revision: i64,
+    revision: &str,
     variant: &str,
     phase: &str,
     query: &ValidatedScoreboardQuery,
@@ -131,20 +134,20 @@ mod tests {
             participation_type: None,
         };
         assert_ne!(
-            cache_key(1, 1, "PUBLIC", "LIVE", &base),
-            cache_key(1, 2, "PUBLIC", "LIVE", &base)
+            cache_key(1, "1:1", "PUBLIC", "LIVE", &base),
+            cache_key(1, "1:2", "PUBLIC", "LIVE", &base)
         );
         assert_ne!(
-            cache_key(1, 1, "PUBLIC", "LIVE", &base),
-            cache_key(1, 1, "ADMIN", "LIVE", &base)
+            cache_key(1, "1:1", "PUBLIC", "LIVE", &base),
+            cache_key(1, "1:1", "ADMIN", "LIVE", &base)
         );
         assert_ne!(
-            cache_key(1, 1, "PUBLIC", "LIVE", &base),
-            cache_key(1, 1, "PUBLIC", "FROZEN", &base)
+            cache_key(1, "1:1", "PUBLIC", "LIVE", &base),
+            cache_key(1, "1:1", "PUBLIC", "FROZEN", &base)
         );
         assert_ne!(
-            cache_key(1, 1, "PUBLIC", "LIVE", &base),
-            cache_key(1, 1, "PUBLIC", "LIVE", &east)
+            cache_key(1, "1:1", "PUBLIC", "LIVE", &base),
+            cache_key(1, "1:1", "PUBLIC", "LIVE", &east)
         );
     }
 
@@ -179,7 +182,7 @@ mod tests {
         let result = cache
             .get(
                 1,
-                1,
+                "1:1",
                 "PUBLIC",
                 "LIVE",
                 &ValidatedScoreboardQuery { group_name: None, participation_type: None },

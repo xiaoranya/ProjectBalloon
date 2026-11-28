@@ -148,18 +148,38 @@ pub(super) async fn record_audit_result(
     .map_err(|error| AppError::internal("record contest audit", error))
 }
 
-pub(super) async fn insert_realtime_outbox(
+/// Publishes a lifecycle event to the public and staff scopes **after** the
+/// business transaction has committed.
+///
+/// Realtime events are refresh hints (see `realtime/outbox.rs`): a Redis blip
+/// must not fail the write that already happened, so errors are logged, never
+/// returned.
+pub(super) async fn publish_contest_event(
     outbox: Option<&crate::features::realtime::RealtimeOutbox>,
     contest_id: i64,
     event_type: &'static str,
-    scope: &'static str,
-    payload_json: &str,
-) -> Result<(), AppError> {
-    let payload = serde_json::from_str(payload_json).unwrap_or(serde_json::Value::Null);
-    crate::features::realtime::outbox::enqueue_optional(
-        outbox, contest_id, event_type, scope, None, payload,
-    )
-    .await
+    payload: serde_json::Value,
+) {
+    for scope in ["PUBLIC", "STAFF"] {
+        if let Err(error) = crate::features::realtime::outbox::enqueue_optional(
+            outbox,
+            contest_id,
+            event_type,
+            scope,
+            None,
+            payload.clone(),
+        )
+        .await
+        {
+            tracing::warn!(
+                ?error,
+                %contest_id,
+                event_type,
+                scope,
+                "failed to enqueue a contest lifecycle event"
+            );
+        }
+    }
 }
 
 pub(super) fn schedule_values(
@@ -373,9 +393,8 @@ mod tests {
         )
         .await
         .expect("record audit result");
-        super::insert_realtime_outbox(None, contest_id, "CONTESTS_UPDATED", "PUBLIC", "{}")
-            .await
-            .expect("insert outbox");
+        super::publish_contest_event(None, contest_id, "CONTESTS_UPDATED", serde_json::json!({}))
+            .await;
         let audit_rows: i64 =
             sqlx::query_scalar("SELECT count(*) FROM audit_logs WHERE target_id=$1")
                 .bind(contest_id.to_string())

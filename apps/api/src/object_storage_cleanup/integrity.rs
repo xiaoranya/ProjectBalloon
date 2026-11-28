@@ -137,6 +137,12 @@ const REFERENCED_OBJECT_KEYS_SQL: &str = r#"
     UNION SELECT output_object_key FROM submission_export_tasks
     WHERE output_bucket = $1 AND output_object_key IS NOT NULL
       AND status = 'SUCCEEDED' AND expires_at > now()
+    -- Presentation logos are configured by path, not uploaded through a
+    -- dedicated endpoint, so the column can point anywhere. Treat the key as
+    -- referenced in whichever bucket the scan is looking at instead of letting
+    -- the 15-minute sweep delete a logo the operator selected.
+    UNION SELECT logo_object_key FROM presentation_templates
+    WHERE logo_object_key IS NOT NULL
 "#;
 
 pub async fn referenced_object_keys(

@@ -1,4 +1,4 @@
-use std::{convert::Infallible, time::Duration};
+use std::{collections::HashSet, convert::Infallible, time::Duration};
 
 use axum::{
     extract::{Path, State},
@@ -52,9 +52,12 @@ pub async fn subscribe_public(
     last_event_id: LastEventId,
 ) -> Result<Response, AppError> {
     state.contests().get(contest_id, context.user()).await?;
+    // Subscribe first: reading the replay before the subscription left a window
+    // in which an event was neither replayed nor broadcast.
+    let receiver = state.realtime().subscribe();
     let replay = replay(&state, contest_id, RealtimeScope::Public, None, last_event_id.0).await;
     Ok(stream_response(
-        state.realtime().subscribe(),
+        receiver,
         state.shutdown_receiver(),
         contest_id,
         RealtimeScope::Public,
@@ -90,9 +93,10 @@ pub async fn subscribe_staff(
             return Err(AppError::not_found("CONTEST_NOT_FOUND", "Contest not found"));
         }
     }
+    let receiver = state.realtime().subscribe();
     let replay = replay(&state, contest_id, RealtimeScope::Staff, None, last_event_id.0).await;
     Ok(stream_response(
-        state.realtime().subscribe(),
+        receiver,
         state.shutdown_receiver(),
         contest_id,
         RealtimeScope::Staff,
@@ -113,10 +117,11 @@ pub async fn subscribe_team(
         return Err(AppError::not_found("CONTEST_NOT_FOUND", "Contest not found"));
     }
     let team_id = state.contests().require_team_id(contest_id, context.user().id).await?;
+    let receiver = state.realtime().subscribe();
     let replay =
         replay(&state, contest_id, RealtimeScope::Team, Some(team_id), last_event_id.0).await;
     Ok(stream_response(
-        state.realtime().subscribe(),
+        receiver,
         state.shutdown_receiver(),
         contest_id,
         RealtimeScope::Team,
@@ -169,21 +174,27 @@ fn stream_response(
     team_id: Option<i64>,
     replay: Vec<RealtimeEvent>,
 ) -> Response {
+    // Handlers subscribe before they read the replay so no event can slip
+    // between the two steps; the price is that the broadcast may repeat events
+    // the replay already carried. Remember the replayed ids and drop each one
+    // once on the live path — the set is bounded by the replay cap.
+    let replayed: HashSet<Uuid> = replay.iter().map(|event| event.id).collect();
     let replay_frames = stream::iter(replay).map(|event| event_frame(&event));
     let connected =
         stream::once(async move { event_frame(&RealtimeEvent::connected(contest_id, scope)) });
     let messages = stream::unfold(
-        (receiver, shutdown),
-        move |(mut receiver, mut shutdown)| async move {
+        (receiver, shutdown, replayed),
+        move |(mut receiver, mut shutdown, mut replayed)| async move {
             loop {
                 if *shutdown.borrow_and_update() {
                     return None;
                 }
                 tokio::select! {
                     changed = shutdown.changed() => {
-                        // A dropped sender means no shutdown can ever be signaled
-                        // through this clone; fall back to the hub's own close.
-                        if changed.is_ok() && *shutdown.borrow_and_update() {
+                        // A dropped sender cannot ever signal shutdown again;
+                        // waiting on it would spin at 100% CPU, so end the
+                        // stream (the hub's own close is the other exit).
+                        if changed.is_err() || *shutdown.borrow_and_update() {
                             return None;
                         }
                     }
@@ -194,7 +205,13 @@ fn stream_response(
                                     && envelope.event.scope == scope
                                     && envelope.team_id == team_id =>
                             {
-                                return Some((event_frame(&envelope.event), (receiver, shutdown)));
+                                if replayed.remove(&envelope.event.id) {
+                                    continue;
+                                }
+                                return Some((
+                                    event_frame(&envelope.event),
+                                    (receiver, shutdown, replayed),
+                                ));
                             }
                             Ok(_) => {}
                             Err(broadcast::error::RecvError::Lagged(skipped)) => {
@@ -264,6 +281,25 @@ mod tests {
 
         shutdown_tx.send(true).expect("shutdown channel must be open");
         assert!(frames.next().await.is_none(), "the stream must end once the shutdown watch fires");
+    }
+
+    #[tokio::test]
+    async fn sse_stream_ends_when_the_shutdown_sender_is_dropped() {
+        let hub = RealtimeHub::new(4, false);
+        let receiver = hub.subscribe();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let response =
+            stream_response(receiver, shutdown_rx, 7, RealtimeScope::Public, None, Vec::new());
+        let mut frames = response.into_body().into_data_stream();
+        let _connected = frames.next().await.expect("the connected frame must arrive");
+
+        // `AppState::new` drops its own sender; before the `changed().is_err()`
+        // guard this made the stream poll a closed watch forever.
+        drop(shutdown_tx);
+        let next = tokio::time::timeout(Duration::from_secs(1), frames.next())
+            .await
+            .expect("a dropped shutdown sender must end the stream instead of spinning");
+        assert!(next.is_none());
     }
 
     #[tokio::test]

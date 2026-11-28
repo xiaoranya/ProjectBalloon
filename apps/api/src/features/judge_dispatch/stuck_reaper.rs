@@ -67,11 +67,16 @@ impl SubmissionStuckReaper {
         let mut transaction = self.database.begin().await?;
         // Single transaction with FOR UPDATE SKIP LOCKED keeps concurrent API
         // instances from requeueing the same row twice.
+        // Joining the judgement is what keeps a rejudge from being undone: the
+        // outbox row of a superseded judgement still says SENT forever, and
+        // requeueing it made the dispatcher flip a re-queued (PENDING)
+        // submission back to JUDGING, where nothing would ever pick it up.
         let stuck = sqlx::query_as::<_, (i64, i64, uuid::Uuid, i32)>(
             r#"
             SELECT o.id, s.id, o.judgement_id, o.attempts
             FROM submissions s
             JOIN submission_outbox o ON o.submission_id = s.id
+            JOIN judgements j ON j.id = o.judgement_id AND j.active_marker IS TRUE
             WHERE s.status = 'JUDGING'
               AND s.submitted_at < now() - $2::interval
               AND o.status = 'SENT'
