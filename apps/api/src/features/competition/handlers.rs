@@ -22,11 +22,11 @@ pub async fn deployment(
 }
 
 pub async fn list_workstations(
-    _context: ContestManagerContext,
+    context: ContestManagerContext,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<WorkstationResponse>>, AppError> {
     require_competition(&state)?;
-    Ok(Json(state.competition().list_workstations().await?))
+    Ok(Json(state.competition().list_workstations(context.user()).await?))
 }
 
 pub async fn create_workstation(

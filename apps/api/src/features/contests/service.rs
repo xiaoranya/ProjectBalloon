@@ -340,6 +340,12 @@ impl ContestService {
         require_manage(&mut transaction, contest_id, actor).await?;
         let current = lock_active_contest(&mut transaction, contest_id).await?;
         let status: ContestStatus = current.status.parse()?;
+        if status == ContestStatus::Archived {
+            // Archiving is the "this contest is history" state: its rows feed
+            // awards, certificates, and exports, so renaming or re-publishing it
+            // afterwards rewrites records people already printed.
+            return Err(AppError::conflict("CONTEST_ARCHIVED", "An archived contest is read-only"));
+        }
         if request.changes_schedule() && !status.can_reschedule() {
             return Err(AppError::conflict(
                 "CONTEST_SCHEDULE_LOCKED",

@@ -89,9 +89,13 @@ fn metrics_token_defaults_to_open_and_accepts_only_header_safe_values() {
     let config = AppConfig::from_lookup(dev_lookup(&values)).expect("metrics token");
     assert_eq!(config.metrics_token.as_deref(), Some("s3cr3t"));
 
+    // An explicitly empty value is a configuration mistake, not a request to
+    // leave the endpoint open: operators who set the variable expect auth.
     let empty = HashMap::from([("PROJECT_BALLOON_METRICS_TOKEN", "   ".to_owned())]);
-    let config = AppConfig::from_lookup(dev_lookup(&empty)).expect("empty token disables auth");
-    assert!(config.metrics_token.is_none());
+    assert!(matches!(
+        AppConfig::from_lookup(dev_lookup(&empty)),
+        Err(ConfigError::Invalid { name: "PROJECT_BALLOON_METRICS_TOKEN", .. })
+    ));
 
     let control = HashMap::from([("PROJECT_BALLOON_METRICS_TOKEN", "bad\nvalue".to_owned())]);
     assert!(matches!(
@@ -283,4 +287,36 @@ fn enabled_rabbitmq_requires_an_amqp_url() {
         ("PROJECT_BALLOON_RABBITMQ_URL", "http://rabbit.invalid".to_owned()),
     ]);
     assert!(AppConfig::from_lookup(dev_lookup(&values)).is_err());
+}
+
+#[test]
+fn debug_output_never_carries_credentials() {
+    let values = [
+        ("DATABASE_URL", "postgres://balloon:s3cret@db:5432/balloon"),
+        ("PROJECT_BALLOON_METRICS_TOKEN", "metrics-token"),
+        ("PROJECT_BALLOON_CSRF_SECRET", "csrf-secret-value-that-is-long-enough"),
+        ("PROJECT_BALLOON_OBJECT_STORAGE_ACCESS_KEY", "access-key"),
+        ("PROJECT_BALLOON_OBJECT_STORAGE_SECRET_KEY", "secret-key"),
+        ("PROJECT_BALLOON_OBJECT_STORAGE_ENABLED", "true"),
+        ("PROJECT_BALLOON_OBJECT_STORAGE_ENDPOINT", "http://minio:9000"),
+    ]
+    .into_iter()
+    .map(|(name, value)| (name, value.to_owned()))
+    .collect::<HashMap<_, _>>();
+    let config =
+        AppConfig::from_lookup(dev_lookup(&values)).expect("the fixture must be a valid config");
+
+    let rendered = format!("{config:?}");
+    for secret in [
+        "s3cret",
+        "metrics-token",
+        "csrf-secret-value-that-is-long-enough",
+        "access-key",
+        "secret-key",
+    ] {
+        assert!(!rendered.contains(secret), "Debug leaked {secret}: {rendered}");
+    }
+    // Presence is still visible: operators need to know a token is configured.
+    assert!(rendered.contains("metrics_token_configured"));
+    assert!(rendered.contains("<redacted>"));
 }

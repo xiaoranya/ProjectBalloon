@@ -441,6 +441,18 @@ async fn require_problem_manage_pool(
     problem_id: i64,
     actor: &AuthUser,
 ) -> Result<(), AppError> {
+    // A soft-deleted problem must 404 here exactly like `get` does; the scope
+    // check below only looks at contest assignments, which outlive the delete.
+    let active = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM problems WHERE id = $1 AND deleted_at IS NULL)",
+    )
+    .bind(problem_id)
+    .fetch_one(database)
+    .await
+    .map_err(|error| AppError::internal("check problem existence", error))?;
+    if !active {
+        return Err(problem_not_found());
+    }
     if actor.is_super_admin() {
         return Ok(());
     }

@@ -354,8 +354,14 @@ pub async fn get_published_program(
 ) -> Result<Json<PublishedLiveProgram>, AppError> {
     require_access(state.database(), contest, "LIVE", supplied_token(&headers)).await?;
     let row = load_program(state.database(), contest).await?;
-    let resolver_run_id =
-        resolve_public_resolver_run(state.database(), contest, row.resolver_run_id).await?;
+    // The run id is the key to `/resolver/state`, which reveals the standings
+    // ceremony. Handing it out while the program is still on another scene let a
+    // viewer read the reveal before it happens.
+    let resolver_run_id = if row.current_scene == "RESOLVER" {
+        resolve_public_resolver_run(state.database(), contest, row.resolver_run_id).await?
+    } else {
+        None
+    };
     Ok(Json(PublishedLiveProgram {
         contest_id: contest,
         current_scene: row.current_scene,

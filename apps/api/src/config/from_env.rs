@@ -156,12 +156,20 @@ fn parse_deployment(
         lookup("PROJECT_BALLOON_TRUSTED_PROXY_CIDRS")
             .unwrap_or_else(|| DEFAULT_TRUSTED_PROXY_CIDRS.to_owned()),
     )?;
-    // Optional bearer token guarding /metrics. Absent or empty keeps the
-    // endpoint open (loop-back or firewalled deployments); anything else must
-    // be a header-safe token.
+    // Optional bearer token guarding /metrics. Absent keeps the endpoint open
+    // (loop-back or firewalled deployments); anything else must be a header-safe
+    // token. An explicitly empty value is rejected rather than treated as
+    // "absent": operators who set `METRICS_TOKEN=` expect the endpoint to be
+    // guarded, and silently leaving it world-readable is the worst outcome.
     let metrics_token =
         match lookup("PROJECT_BALLOON_METRICS_TOKEN").map(|value| value.trim().to_owned()) {
-            Some(value) if value.is_empty() => None,
+            Some(value) if value.is_empty() => {
+                return Err(ConfigError::Invalid {
+                    name: "PROJECT_BALLOON_METRICS_TOKEN",
+                    value,
+                    reason: "must not be empty; unset the variable to leave /metrics open",
+                });
+            }
             Some(value) if value.chars().any(char::is_control) => {
                 return Err(ConfigError::Invalid {
                     name: "PROJECT_BALLOON_METRICS_TOKEN",
@@ -172,6 +180,13 @@ fn parse_deployment(
             Some(value) => Some(value),
             None => None,
         };
+    if deployment_mode == DeploymentMode::Competition && metrics_token.is_none() {
+        // Queue depths and worker capacity are live contest data; the endpoint
+        // stays open for compatibility, but the deployment must say so out loud.
+        tracing::warn!(
+            "PROJECT_BALLOON_METRICS_TOKEN is unset in competition mode: /metrics is world-readable"
+        );
+    }
     Ok(DeploymentSettings { deployment_mode, bind_address, trusted_proxy_cidrs, metrics_token })
 }
 
@@ -320,6 +335,12 @@ fn parse_session(
             value: "[redacted]".to_owned(),
             reason: "must be explicitly set; the development secret is only permitted with PROJECT_BALLOON_ALLOW_DEV_CSRF_SECRET",
         });
+    }
+    if !secure_cookies {
+        // Offline venues legitimately run over plain HTTP on a LAN address, where
+        // a Secure cookie would never be stored — so this cannot be an error, but
+        // silently shipping session cookies over HTTP is worth a line in the log.
+        tracing::warn!("secure cookies are disabled: session cookies travel over plain HTTP");
     }
     if secure_cookies && uses_development_csrf_secret {
         return Err(ConfigError::Invalid {
@@ -734,7 +755,7 @@ fn parse_judge_dispatch(
 }
 
 fn parse_proxy_cidrs(value: String) -> Result<Vec<IpNet>, ConfigError> {
-    let parsed: Result<Vec<_>, _> =
+    let parsed: Result<Vec<IpNet>, _> =
         value.split(',').map(str::trim).filter(|item| !item.is_empty()).map(str::parse).collect();
     let parsed = parsed.map_err(|_| ConfigError::Invalid {
         name: "PROJECT_BALLOON_TRUSTED_PROXY_CIDRS",
@@ -746,6 +767,16 @@ fn parse_proxy_cidrs(value: String) -> Result<Vec<IpNet>, ConfigError> {
             name: "PROJECT_BALLOON_TRUSTED_PROXY_CIDRS",
             value,
             reason: "must contain at least one CIDR",
+        });
+    }
+    // A zero-length prefix trusts every source, which makes `X-Real-Ip` (and
+    // every other forwarded header) whatever the client says it is: login
+    // throttling degrades to per-request, and audit rows record forged IPs.
+    if parsed.iter().any(|network| network.prefix_len() == 0) {
+        return Err(ConfigError::Invalid {
+            name: "PROJECT_BALLOON_TRUSTED_PROXY_CIDRS",
+            value,
+            reason: "must not trust every address; list the reverse proxy's network instead",
         });
     }
     Ok(parsed)
@@ -831,5 +862,22 @@ mod tests {
                 reason: "must contain at least one CIDR",
             })
         );
+    }
+
+    #[test]
+    fn refuses_to_trust_every_forwarded_header() {
+        // A zero-length prefix means "trust anybody", which turns `X-Real-Ip`
+        // into a client-controlled value: per-IP throttling and audit IPs both
+        // become meaningless.
+        for value in ["0.0.0.0/0", "::/0", "10.0.0.0/8, 0.0.0.0/0"] {
+            assert_eq!(
+                parse_proxy_cidrs(value.to_owned()),
+                Err(ConfigError::Invalid {
+                    name: "PROJECT_BALLOON_TRUSTED_PROXY_CIDRS",
+                    value: value.to_owned(),
+                    reason: "must not trust every address; list the reverse proxy's network instead",
+                })
+            );
+        }
     }
 }

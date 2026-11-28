@@ -66,13 +66,14 @@ pub async fn update_dispatch_policy(
 pub async fn dispatch(
     context: AuthContext,
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Path(contest_id): Path<i64>,
     query: Result<Query<DispatchQuery>, QueryRejection>,
 ) -> Result<Json<Vec<BalloonTaskResponse>>, AppError> {
     context.require_password_ready()?;
     let Query(query) =
         query.map_err(|_| AppError::validation("query", "invalid dispatch request"))?;
-    Ok(Json(state.balloons().dispatch(contest_id, query, context.user()).await?))
+    Ok(Json(state.balloons().dispatch(contest_id, query, context.user(), peer.ip()).await?))
 }
 
 async fn version_payload(
