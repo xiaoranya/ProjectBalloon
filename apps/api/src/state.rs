@@ -60,6 +60,8 @@ pub struct AppState {
     submissions: Arc<SubmissionService>,
     batch_rejudge: Arc<BatchRejudgeService>,
     teams: Arc<TeamService>,
+    /// Short-lived cache for the anonymous presentation metrics endpoint.
+    metrics_cache: Arc<crate::features::presentation::MetricsCache>,
     /// The shared Redis handle. Readiness probes it directly: sessions, rate
     /// limiting and the realtime outbox all depend on it, regardless of
     /// whether the Redis fan-out is enabled.
@@ -229,6 +231,7 @@ impl AppState {
             submissions,
             batch_rejudge,
             teams,
+            metrics_cache: Arc::new(crate::features::presentation::MetricsCache::default()),
             object_storage,
             redis,
             judge_publisher: None,
@@ -248,6 +251,10 @@ impl AppState {
     #[must_use]
     pub fn shutdown_receiver(&self) -> watch::Receiver<bool> {
         self.shutdown.clone()
+    }
+
+    pub(crate) fn metrics_cache(&self) -> &crate::features::presentation::MetricsCache {
+        &self.metrics_cache
     }
 
     #[must_use]

@@ -1,4 +1,8 @@
-use std::net::SocketAddr;
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    time::{Duration, Instant},
+};
 
 use axum::{
     Json,
@@ -94,7 +98,7 @@ pub struct BroadcastTokenCreated {
     created_at: OffsetDateTime,
 }
 
-#[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, ToSchema, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct CountByName {
     #[sqlx(rename = "name")]
@@ -102,7 +106,7 @@ pub struct CountByName {
     total: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, ToSchema, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct TrendPoint {
     #[serde(with = "time::serde::rfc3339")]
@@ -111,7 +115,7 @@ pub struct TrendPoint {
     accepted: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BalloonMetrics {
     total: i64,
@@ -124,7 +128,7 @@ pub struct BalloonMetrics {
     colors: Vec<CountByName>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SubmissionMetrics {
     total: i64,
@@ -134,10 +138,50 @@ pub struct SubmissionMetrics {
     trend: Vec<TrendPoint>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PresentationMetrics {
     balloons: BalloonMetrics,
     submissions: SubmissionMetrics,
+}
+
+type MetricsCacheKey = (i64, Option<OffsetDateTime>);
+type MetricsCacheEntry = (Instant, PresentationMetrics);
+
+/// SCREEN mode is anonymous and every big screen in the room polls it, so a
+/// 2-second window turns a stadium of tablets into one set of aggregates while
+/// keeping the numbers visually live. Owned by `AppState`: a process-global
+/// would leak between tests and between tenants of the same process.
+#[derive(Debug, Default)]
+pub(crate) struct MetricsCache {
+    entries: tokio::sync::Mutex<HashMap<MetricsCacheKey, MetricsCacheEntry>>,
+}
+
+const METRICS_CACHE_TTL: Duration = Duration::from_secs(2);
+
+impl MetricsCache {
+    pub(crate) async fn load(
+        &self,
+        database: &PgPool,
+        contest: i64,
+        cutoff: Option<OffsetDateTime>,
+    ) -> Result<PresentationMetrics, AppError> {
+        let key = (contest, cutoff);
+        {
+            let entries = self.entries.lock().await;
+            if let Some((fetched_at, metrics)) = entries.get(&key)
+                && fetched_at.elapsed() < METRICS_CACHE_TTL
+            {
+                return Ok(metrics.clone());
+            }
+        }
+        let metrics = load_metrics(database, contest, cutoff).await?;
+        let mut entries = self.entries.lock().await;
+        // Drop expired rows on write so a long-lived process with many contests
+        // does not grow the map without bound.
+        entries.retain(|_, (fetched_at, _)| fetched_at.elapsed() < METRICS_CACHE_TTL);
+        entries.insert(key, (Instant::now(), metrics.clone()));
+        Ok(metrics)
+    }
 }
 
 pub(super) fn require_live_operator(actor: &AuthUser) -> Result<(), AppError> {
@@ -185,14 +229,32 @@ pub(super) async fn require_access(
         let raw = token.filter(|value| !value.trim().is_empty()).ok_or_else(|| {
             AppError::unauthorized("BROADCAST_TOKEN_INVALID", "Broadcast token is invalid")
         })?;
-        let changed = sqlx::query("UPDATE broadcast_tokens SET last_used_at=now() WHERE contest_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>now()")
-            .bind(contest).bind(hash(raw)).execute(database).await.map_err(|e| AppError::internal("validate broadcast token", e))?.rows_affected();
-        if changed != 1 {
+        let token_hash = hash(raw);
+        // Validate with a read, then refresh `last_used_at` at most once a
+        // minute. Every screen polls these endpoints, so a row write per request
+        // turns one hot row into a queue of lock waits for no extra information.
+        let valid = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM broadcast_tokens WHERE contest_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>now())",
+        )
+        .bind(contest)
+        .bind(&token_hash)
+        .fetch_one(database)
+        .await
+        .map_err(|error| AppError::internal("validate broadcast token", error))?;
+        if !valid {
             return Err(AppError::unauthorized(
                 "BROADCAST_TOKEN_INVALID",
                 "Broadcast token is invalid",
             ));
         }
+        sqlx::query(
+            "UPDATE broadcast_tokens SET last_used_at=now() WHERE contest_id=$1 AND token_hash=$2 AND (last_used_at IS NULL OR last_used_at < now() - interval '60 seconds')",
+        )
+        .bind(contest)
+        .bind(&token_hash)
+        .execute(database)
+        .await
+        .map_err(|error| AppError::internal("record broadcast token use", error))?;
     }
     sqlx::query_as::<_, ConfigResponse>(
         r#"
@@ -306,7 +368,7 @@ pub async fn metrics(
     } else {
         None
     };
-    Ok(Json(load_metrics(state.database(), contest, cutoff).await?))
+    Ok(Json(state.metrics_cache().load(state.database(), contest, cutoff).await?))
 }
 
 async fn load_metrics(

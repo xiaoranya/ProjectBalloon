@@ -17,7 +17,7 @@ use object_store::{
 use project_balloon_contracts::JudgeTask;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tokio::{io::AsyncReadExt, sync::Mutex as AsyncMutex, time::timeout};
+use tokio::{sync::Mutex as AsyncMutex, time::timeout};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -370,8 +370,23 @@ async fn verify_file_hash(
     expected: &str,
     max_bytes: u64,
 ) -> Result<(), ArtifactError> {
-    let mut file = tokio::fs::File::open(path)
+    // Hashing up to 300 MiB is CPU-bound: doing it on the async worker stalls
+    // every other task on that thread for hundreds of milliseconds.
+    let owned = path.to_path_buf();
+    let expected = expected.to_owned();
+    tokio::task::spawn_blocking(move || verify_file_hash_blocking(&owned, &expected, max_bytes))
         .await
+        .map_err(|error| ArtifactError::Request(format!("hash test data: {error}")))?
+}
+
+fn verify_file_hash_blocking(
+    path: &std::path::Path,
+    expected: &str,
+    max_bytes: u64,
+) -> Result<(), ArtifactError> {
+    use std::io::Read as _;
+
+    let mut file = std::fs::File::open(path)
         .map_err(|error| with_path_context(error, "open cached test data", path))?;
     let mut hasher = Sha256::new();
     let mut total = 0_u64;
@@ -379,7 +394,6 @@ async fn verify_file_hash(
     loop {
         let read = file
             .read(&mut buffer)
-            .await
             .map_err(|error| with_path_context(error, "read cached test data", path))?;
         if read == 0 {
             break;

@@ -39,9 +39,36 @@ pub(super) fn write_new_file(path: &std::path::Path, content: &[u8]) -> Result<(
         .map_err(|error| AppError::internal("write export temporary file", error))
 }
 
+/// Counts and sums before anything is loaded. The limits used to be checked
+/// after `fetch_all`, which meant a 10,001-row contest was already in memory by
+/// the time the request was rejected.
+pub(super) async fn measure_export(
+    database: &sqlx::PgPool,
+    contest_id: i64,
+) -> Result<(i64, i64), AppError> {
+    sqlx::query_as::<_, (i64, i64)>(
+        r#"
+        SELECT count(*)::bigint, coalesce(sum(submission.source_size_bytes), 0)::bigint
+        FROM submissions submission
+        JOIN teams team ON team.id = submission.team_id
+        JOIN contests contest ON contest.id = submission.contest_id
+                            AND contest.deleted_at IS NULL
+        JOIN contest_problems assignment
+          ON assignment.contest_id = submission.contest_id
+         AND assignment.problem_id = submission.problem_id
+        WHERE submission.contest_id = $1
+        "#,
+    )
+    .bind(contest_id)
+    .fetch_one(database)
+    .await
+    .map_err(|error| AppError::internal("measure submissions for export", error))
+}
+
 pub(super) async fn load_export_rows(
     database: &sqlx::PgPool,
     contest_id: i64,
+    limit: Option<i64>,
 ) -> Result<Vec<ExportRow>, AppError> {
     sqlx::query_as::<_, ExportRow>(
         r#"
@@ -64,12 +91,28 @@ pub(super) async fn load_export_rows(
          AND judgement.active_marker IS TRUE
         WHERE submission.contest_id = $1
         ORDER BY submission.submitted_at, submission.id
+        LIMIT $2
         "#,
     )
     .bind(contest_id)
+    .bind(limit)
     .fetch_all(database)
     .await
     .map_err(|error| AppError::internal("load submissions for export", error))
+}
+
+pub(super) async fn ensure_sync_source_headroom(
+    database: &sqlx::PgPool,
+    contest_id: i64,
+) -> Result<(), AppError> {
+    let (count, bytes) = measure_export(database, contest_id).await?;
+    if count > MAX_SYNC_SOURCE_COUNT || bytes > MAX_SYNC_SOURCE_BYTES {
+        return Err(AppError::conflict(
+            "SOURCE_EXPORT_TOO_LARGE",
+            "Synchronous source export is limited to 10,000 files and 128 MiB",
+        ));
+    }
+    Ok(())
 }
 
 pub(super) fn enforce_sync_source_limit(rows: &[ExportRow]) -> Result<(), AppError> {
