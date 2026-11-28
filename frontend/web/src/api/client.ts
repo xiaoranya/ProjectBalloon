@@ -525,6 +525,7 @@ const businessMessages: Record<string, string> = {
   SUBMISSION_NOT_ALLOWED: '当前比赛、名单、题目或测试数据状态不允许提交',
   SUBMISSION_RATE_LIMITED: '提交过于频繁，请稍后再试',
   SUBMISSION_SOURCE_UNAVAILABLE: '该提交缺少通过完整性校验的源码，无法重判',
+  SIMILARITY_SCAN_TIMEOUT: '查重扫描超时：请按题目或语言缩小范围后重试',
   TEAM_ACCOUNT_NOT_FOUND: '参赛队账号不存在',
   TEAM_IN_USE: '队伍仍分配在比赛中，删除前请先移除',
   TEAM_MEMBER_NOT_FOUND: '队伍成员不存在',
